@@ -1,5 +1,6 @@
 .env
-node_modules/**/*
+**/node_modules
+**/.DS_Store
 # yarn
 .yarn/*
 !.yarn/patches
@@ -7,3 +8,10 @@ node_modules/**/*
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+# logs
+**/*.log
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
