@@ -1,19 +1,21 @@
-FROM node:20.11.0-alpine3.18
+FROM --platform=linux/amd64 golang:1.22.0-bookworm as builder
 
 WORKDIR /api
 
-RUN corepack enable yarn
+COPY ./go.mod /api/
+COPY ./go.sum /api/
+COPY ./graphql/ /api/graphql/
+COPY main.go /api/
 
-COPY ./package.json /api/package.json
-COPY ./.yarn/releases/yarn-4.0.2.cjs /api/.yarn/releases/yarn-4.0.2.cjs
-COPY ./yarn.lock /api/yarn.lock
-COPY .yarnrc.yml /api/.yarnrc.yml
-COPY ./tsconfig.json /api/tsconfig.json
+RUN go install ./...
 
-RUN yarn install --immutable
+RUN openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes -sha256 -days 3650 \ 
+  -subj "/C=US/ST=Maryland/L=Baltimore/O=Centers for Medicare and Medicaid Services/OU=OIT\ISPG/CN=us-east-1.elb.amazonaws.com" \
+  -addext "subjectAltName=DNS:*.us-east-1.elb.amazonaws.com"
 
-COPY ./src /api/src
+FROM --platform=linux/amd64 scratch
 
-RUN yarn build
-
-RUN rm -rf ./src
+COPY --from=builder /go/bin/api /usr/local/bin/ztmfapi
+COPY --from=builder /api/*.pem /api/
+COPY --from=builder /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libc.so.6 /usr/lib/x86_64-linux-gnu/libc.so.6
