@@ -26,7 +26,7 @@ func main() {
 		log.Fatalf("unable to parse ennvironment variables: %e", err)
 	}
 
-	http.Handle("/query", graphql.GetHttpHandler())
+	http.Handle("/graphql", graphql.GetHttpHandler())
 
 	log.Printf("%s environment listening on %s\n", cfg.ENV, cfg.PORT)
 
