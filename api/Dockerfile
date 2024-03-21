@@ -4,7 +4,7 @@ WORKDIR /api
 
 COPY ./go.mod /api/
 COPY ./go.sum /api/
-COPY ./graphql/ /api/graphql/
+COPY ./engine/ /api/engine/
 COPY main.go /api/
 
 RUN go install ./...
