@@ -21,22 +21,6 @@ type FismaSystem struct {
 	Issoemail             string
 }
 
-var fismaSystems = []*FismaSystem{
-	{
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-		"test",
-	},
-}
-
 func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 	var fismaSystemsRxs []*FismaSystemResolver
 
