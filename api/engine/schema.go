@@ -7,20 +7,20 @@ schema {
 
 type Query {
   fismasystems: [FismaSystem!]!
-	fismasystem(fismaGUID: ID!): FismaSystem!
+	fismasystem(fismasystemid: ID!): FismaSystem!
 }
 
 type FismaSystem {
-	fismaGUID:             ID!
+	fismasystemid:             ID!
 	fismaacronym:          String!
 	fismaname:             String!
-	fismasubsystem:        String!
-	component:             String!
-	groupacronym:          String!
-	groupname:             String!
-	divisionname:          String!
-	datacenterenvironment: String!
-	datacallcontact:       String!
-	issoemail:             String!
+	fismasubsystem:        String
+	component:             String
+	groupacronym:          String
+	groupname:             String
+	divisionname:          String
+	datacenterenvironment: String
+	datacallcontact:       String
+	issoemail:             String
 }
 `
