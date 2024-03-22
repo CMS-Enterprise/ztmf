@@ -12,7 +12,7 @@ type dbconfig struct {
 	Pass     string `json:"password"`
 	RawCreds string `env:"DB_CREDS" envDefault:"{\"username\":\"none\",\"password\":\"none\"}"`
 	Database string `env:"DB_NAME"`
-	Endpoint string `env:"DB_ENDPOINT"`
+	Endpoint string `env:"DB_ENDPOINT" envDefault:"localhost"`
 	Port     string `env:"DB_PORT" envDefault:"5432"`
 }
 
