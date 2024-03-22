@@ -8,17 +8,17 @@ import (
 )
 
 type FismaSystem struct {
-	FismaGUID             graphql.ID
+	Fismasystemid         graphql.ID
 	Fismaacronym          string
 	Fismaname             string
-	Fismasubsystem        string
-	Component             string
-	Groupacronym          string
-	Groupname             string
-	Divisionname          string
-	Datacenterenvironment string
-	Datacallcontact       string
-	Issoemail             string
+	Fismasubsystem        *string
+	Component             *string
+	Groupacronym          *string
+	Groupname             *string
+	Divisionname          *string
+	Datacenterenvironment *string
+	Datacallcontact       *string
+	Issoemail             *string
 }
 
 func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
@@ -26,16 +26,15 @@ func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 
 	db, _ := getDb()
 
-	rows, err := db.Query(context.Background(), "SELECT * FROM public.fismasysteminfo")
+	rows, err := db.Query(context.Background(), "SELECT * FROM public.fismasystems ORDER BY fismasystemid ASC")
 	if err != nil {
 		log.Print(err)
 		return nil, err
 	}
 
 	for rows.Next() {
-		var fismaGUID, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail string
-		rows.Scan(&fismaGUID, &fismaacronym, &fismaname, &fismasubsystem, &component, &groupacronym, &groupname, &divisionname, &datacenterenvironment, &datacallcontact, &issoemail)
-		fismaSystem := FismaSystem{graphql.ID(fismaGUID), fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail}
+		fismaSystem := FismaSystem{}
+		rows.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
 		fismaSystemRx := FismaSystemResolver{&fismaSystem}
 		fismaSystemsRxs = append(fismaSystemsRxs, &fismaSystemRx)
 	}
@@ -43,26 +42,24 @@ func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 	return fismaSystemsRxs, nil
 }
 
-func (r *rootResolver) FismaSystem(args struct{ FismaGUID graphql.ID }) (*FismaSystemResolver, error) {
-	// args.FismaGUID
+func (r *rootResolver) FismaSystem(args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
+	// args.Fismasystemid
 	db, _ := getDb()
-	row := db.QueryRow(context.Background(), "SELECT * FROM public.fismasysteminfo WHERE \"fismaGUID\"=$1", string(args.FismaGUID))
+	row := db.QueryRow(context.Background(), "SELECT * FROM public.fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
 
-	var fismaGUID, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail string
-
-	err := row.Scan(&fismaGUID, &fismaacronym, &fismaname, &fismasubsystem, &component, &groupacronym, &groupname, &divisionname, &datacenterenvironment, &datacallcontact, &issoemail)
+	fismaSystem := FismaSystem{}
+	err := row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
 	if err != nil {
 		log.Println(err)
 	}
 
-	fismaSystem := FismaSystem{graphql.ID(fismaGUID), fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail}
 	return &FismaSystemResolver{&fismaSystem}, nil
 }
 
 type FismaSystemResolver struct{ f *FismaSystem }
 
-func (r *FismaSystemResolver) FismaGUID() graphql.ID {
-	return r.f.FismaGUID
+func (r *FismaSystemResolver) Fismasystemid() graphql.ID {
+	return r.f.Fismasystemid
 }
 
 func (r *FismaSystemResolver) Fismaacronym() string {
@@ -73,34 +70,66 @@ func (r *FismaSystemResolver) Fismaname() string {
 	return r.f.Fismaname
 }
 
-func (r *FismaSystemResolver) Fismasubsystem() string {
+func (r *FismaSystemResolver) Fismasubsystem() *string {
+	if r.f.Fismasubsystem == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Fismasubsystem
 }
 
-func (r *FismaSystemResolver) Component() string {
+func (r *FismaSystemResolver) Component() *string {
+	if r.f.Component == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Component
 }
 
-func (r *FismaSystemResolver) Groupacronym() string {
+func (r *FismaSystemResolver) Groupacronym() *string {
+	if r.f.Groupacronym == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Groupacronym
 }
 
-func (r *FismaSystemResolver) Groupname() string {
+func (r *FismaSystemResolver) Groupname() *string {
+	if r.f.Groupname == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Groupname
 }
 
-func (r *FismaSystemResolver) Divisionname() string {
+func (r *FismaSystemResolver) Divisionname() *string {
+	if r.f.Divisionname == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Divisionname
 }
 
-func (r *FismaSystemResolver) Datacenterenvironment() string {
+func (r *FismaSystemResolver) Datacenterenvironment() *string {
+	if r.f.Datacenterenvironment == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Datacenterenvironment
 }
 
-func (r *FismaSystemResolver) Datacallcontact() string {
+func (r *FismaSystemResolver) Datacallcontact() *string {
+	if r.f.Datacallcontact == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Datacallcontact
 }
 
-func (r *FismaSystemResolver) Issoemail() string {
+func (r *FismaSystemResolver) Issoemail() *string {
+	if r.f.Issoemail == nil {
+		s := ""
+		return &s
+	}
 	return r.f.Issoemail
 }
