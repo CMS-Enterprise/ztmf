@@ -9,6 +9,7 @@ import (
 
 type FismaSystem struct {
 	Fismasystemid         graphql.ID
+	Fismauid              string
 	Fismaacronym          string
 	Fismaname             string
 	Fismasubsystem        *string
@@ -34,7 +35,7 @@ func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 
 	for rows.Next() {
 		fismaSystem := FismaSystem{}
-		rows.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
+		rows.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
 		fismaSystemRx := FismaSystemResolver{&fismaSystem}
 		fismaSystemsRxs = append(fismaSystemsRxs, &fismaSystemRx)
 	}
@@ -48,7 +49,7 @@ func (r *rootResolver) FismaSystem(args struct{ Fismasystemid graphql.ID }) (*Fi
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
 
 	fismaSystem := FismaSystem{}
-	err := row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
+	err := row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
 	if err != nil {
 		log.Println(err)
 	}
@@ -60,6 +61,10 @@ type FismaSystemResolver struct{ f *FismaSystem }
 
 func (r *FismaSystemResolver) Fismasystemid() graphql.ID {
 	return r.f.Fismasystemid
+}
+
+func (r *FismaSystemResolver) Fismauid() string {
+	return r.f.Fismauid
 }
 
 func (r *FismaSystemResolver) Fismaacronym() string {
