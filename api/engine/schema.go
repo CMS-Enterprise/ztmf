@@ -12,6 +12,7 @@ type Query {
 
 type FismaSystem {
 	fismasystemid:             ID!
+	fismauid:          		 String!
 	fismaacronym:          String!
 	fismaname:             String!
 	fismasubsystem:        String
