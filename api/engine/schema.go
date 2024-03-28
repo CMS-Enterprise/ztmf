@@ -8,6 +8,8 @@ schema {
 type Query {
   fismasystems: [FismaSystem!]!
 	fismasystem(fismasystemid: ID!): FismaSystem!
+	functions: [Function!]!
+	function(functionid: ID!): Function!
 }
 
 type FismaSystem {
@@ -23,5 +25,17 @@ type FismaSystem {
 	datacenterenvironment: String
 	datacallcontact:       String
 	issoemail:             String
+}
+
+type Function {
+	functionid:               ID!
+  pillar:                String
+  name:                  String
+  description:           String
+  traditional:           String
+  initial:               String
+  advanced:              String
+  optimal:               String
+  datacenterenvironment: String
 }
 `
