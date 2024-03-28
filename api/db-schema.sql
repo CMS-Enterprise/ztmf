@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS public.fismasystems
 (
     fismasystemid integer NOT NULL DEFAULT nextval('fismasystems_fismasystemid_seq'::regclass),
+    fismauid character varying(255) COLLATE pg_catalog."default" NOT NULL,
     fismaacronym character varying(255) COLLATE pg_catalog."default" NOT NULL,
     fismaname character varying(255) COLLATE pg_catalog."default" NOT NULL,
     fismasubsystem character varying(255) COLLATE pg_catalog."default",
@@ -15,8 +16,6 @@ CREATE TABLE IF NOT EXISTS public.fismasystems
 )
 
 TABLESPACE pg_default;
-
-ALTER TABLE IF EXISTS public.fismasystems OWNER to "ztmfAdmin";
 
 ALTER TABLE IF EXISTS public.fismasystems OWNER to "ztmfAdmin";
 
