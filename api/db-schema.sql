@@ -27,7 +27,7 @@ CREATE TABLE public.functions (
     initial varchar(1024),
     advanced varchar(1024),
     optimal varchar(1024),
-    datacenterenvironment varchar(255)
+    environment varchar(255)
 )
 TABLESPACE pg_default;
 
