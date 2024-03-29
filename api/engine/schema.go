@@ -28,14 +28,14 @@ type FismaSystem {
 }
 
 type Function {
-	functionid:               ID!
-  pillar:                String
-  name:                  String
-  description:           String
-  traditional:           String
-  initial:               String
-  advanced:              String
-  optimal:               String
-  datacenterenvironment: String
+	functionid:     ID!
+  pillar:      String
+  name:        String
+  description: String
+  traditional: String
+  initial:     String
+  advanced:    String
+  optimal:     String
+  environment: String
 }
 `
