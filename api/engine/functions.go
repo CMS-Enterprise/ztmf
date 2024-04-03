@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/CMS-Enterprise/ztmf/api/db"
 	"github.com/graph-gophers/graphql-go"
 )
 
@@ -22,7 +23,7 @@ type Function struct {
 func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
 	var functionsRxs []*FunctionResolver
 
-	db, _ := getDb()
+	db := db.GetPool()
 
 	rows, err := db.Query(context.Background(), "SELECT * FROM public.functions ORDER BY functionid ASC")
 	if err != nil {
@@ -42,7 +43,7 @@ func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
 
 func (r *rootResolver) Function(args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
 	// args.Functionid
-	db, _ := getDb()
+	db := db.GetPool()
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.functions WHERE \"functionid\"=$1", string(args.Functionid))
 
 	function := Function{}
