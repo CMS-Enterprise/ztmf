@@ -11,9 +11,9 @@ import (
 type dbconfig struct {
 	User     string `json:"username"`
 	Pass     string `json:"password"`
-	RawCreds string `env:"DB_CREDS" envDefault:"{\"username\":\"none\",\"password\":\"none\"}"`
+	RawCreds string `env:"DB_CREDS"`
 	Database string `env:"DB_NAME"`
-	Endpoint string `env:"DB_ENDPOINT" envDefault:"postgre"`
+	Endpoint string `env:"DB_ENDPOINT"`
 	Port     string `env:"DB_PORT" envDefault:"5432"`
 }
 
