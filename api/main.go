@@ -4,12 +4,13 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/api/config"
 	"github.com/CMS-Enterprise/ztmf/api/engine"
 )
 
 func main() {
 
-	cfg := engine.GetConfig()
+	cfg := config.GetConfig()
 
 	http.Handle("/graphql", engine.GetHttpHandler())
 

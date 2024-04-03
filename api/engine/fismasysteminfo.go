@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/CMS-Enterprise/ztmf/api/db"
 	"github.com/graph-gophers/graphql-go"
 )
 
@@ -25,7 +26,7 @@ type FismaSystem struct {
 func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 	var fismaSystemsRxs []*FismaSystemResolver
 
-	db, _ := getDb()
+	db := db.GetPool()
 
 	rows, err := db.Query(context.Background(), "SELECT * FROM public.fismasystems ORDER BY fismasystemid ASC")
 	if err != nil {
@@ -45,7 +46,7 @@ func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 
 func (r *rootResolver) FismaSystem(args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
 	// args.Fismasystemid
-	db, _ := getDb()
+	db := db.GetPool()
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
 
 	fismaSystem := FismaSystem{}
