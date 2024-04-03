@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS public.fismasystems
 (
-    fismasystemid integer NOT NULL DEFAULT nextval('fismasystems_fismasystemid_seq'::regclass),
+    fismasystemid SERIAL PRIMARY KEY,
     fismauid character varying(255) COLLATE pg_catalog."default" NOT NULL,
     fismaacronym character varying(255) COLLATE pg_catalog."default" NOT NULL,
     fismaname character varying(255) COLLATE pg_catalog."default" NOT NULL,
@@ -11,28 +11,27 @@ CREATE TABLE IF NOT EXISTS public.fismasystems
     divisionname character varying(255) COLLATE pg_catalog."default",
     datacenterenvironment character varying(255) COLLATE pg_catalog."default",
     datacallcontact character varying(255) COLLATE pg_catalog."default",
-    issoemail character varying(255) COLLATE pg_catalog."default",
-    CONSTRAINT fismasystems_pkey PRIMARY KEY (fismasystemid)
+    issoemail character varying(255) COLLATE pg_catalog."default"
 )
 
 TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.fismasystems OWNER to "ztmfAdmin";
 
-CREATE TABLE public.functiondetails (
-    functionId SERIAL PRIMARY KEY,
-    pillar varchar(255) NOT NULL,
-    functionName varchar(255) NOT NULL,
-    descrip varchar(1024) NOT NULL,
-    traditional varchar(1024) NOT NULL,
-    initial varchar(1024) NOT NULL,
-    advanced varchar(1024) NOT NULL,
-    optimal varchar(1024) NOT NULL,
-    dataCenterEnvironment varchar(255)
+CREATE TABLE public.functions (
+    functionid SERIAL PRIMARY KEY,
+    pillar varchar(255),
+    name varchar(255),
+    description varchar(1024),
+    traditional varchar(1024),
+    initial varchar(1024),
+    advanced varchar(1024),
+    optimal varchar(1024),
+    environment varchar(255)
 )
 TABLESPACE pg_default;
 
-ALTER TABLE IF EXISTS public.functiondetails OWNER to "ztmfAdmin";
+ALTER TABLE IF EXISTS public.functions OWNER to "ztmfAdmin";
 
 CREATE TABLE public.functionscores (
   scoreId SERIAL PRIMARY KEY,
