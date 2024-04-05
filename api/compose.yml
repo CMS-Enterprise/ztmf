@@ -1,0 +1,22 @@
+services:
+  postgre:
+    image: "postgres:16.2-alpine3.19"
+    env_file:
+      - compose.env
+    ports:
+      - 5432:5432
+  api:
+    depends_on:
+      - postgre
+    build: .
+    env_file:
+      - compose.env
+    ports:
+      - 3000:3000
+    command:
+      - "/usr/local/bin/ztmfapi"
+  # echo:
+  #   image: "debian:bullseye"
+  #   command:
+  #     - "echo"
+  #     - ${DB_CREDS}
