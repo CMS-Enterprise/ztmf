@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/api/config"
-	"github.com/CMS-Enterprise/ztmf/api/engine"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/engine"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/CMS-Enterprise/ztmf/api/db"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/graph-gophers/graphql-go"
 )
 
