@@ -15,8 +15,3 @@ services:
       - 3000:3000
     command:
       - "/usr/local/bin/ztmfapi"
-  # echo:
-  #   image: "debian:bullseye"
-  #   command:
-  #     - "echo"
-  #     - ${DB_CREDS}
