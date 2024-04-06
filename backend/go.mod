@@ -1,4 +1,4 @@
-module github.com/CMS-Enterprise/ztmf/api
+module github.com/CMS-Enterprise/ztmf/backend
 
 go 1.22.0
 

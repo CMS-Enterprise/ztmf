@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/CMS-Enterprise/ztmf/api/config"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
