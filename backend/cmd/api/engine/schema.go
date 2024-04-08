@@ -10,6 +10,7 @@ type Query {
 	fismasystem(fismasystemid: ID!): FismaSystem!
 	functions: [Function!]!
 	function(functionid: ID!): Function!
+	functionscores: [FunctionScore!]!
 }
 
 type FismaSystem {
@@ -28,14 +29,14 @@ type FismaSystem {
 }
 
 type Function {
-	functionid:     ID!
-  pillar:      String
-  name:        String
-  description: String
-  traditional: String
-  initial:     String
-  advanced:    String
-  optimal:     String
-  environment: String
+	functionid:                ID!
+  pillar:                String
+  name:                  String
+  description:           String
+  traditional:           String
+  initial:               String
+  advanced:              String
+  optimal:               String
+  datacenterenvironment: String
 }
 `
