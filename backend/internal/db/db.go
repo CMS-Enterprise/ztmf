@@ -16,7 +16,7 @@ func GetPool() *pgxpool.Pool {
 
 	if dbpool == nil {
 		once.Do(func() {
-
+			log.Println("Initializing DB connection pool...")
 			cfg := config.GetConfig()
 			var err error
 			// dbpool, err := pgxpool.New(context.Background(), "postgres://"+cfg.DB.User+":"+cfg.DB.Pass+"@"+cfg.DB.Endpoint+":"+cfg.DB.Port+"/"+cfg.DB.Database+"?sslmode=verify-ca&pool_max_conns=10")

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/csv"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -12,14 +11,16 @@ import (
 )
 
 func main() {
+	db.GetPool()
 
 	inputCsvFile := os.Args[1]
-
+	log.Println("Opening CSV", inputCsvFile, "...")
 	file, err := os.Open(inputCsvFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	log.Println("Reading records from CSV...")
 	reader := csv.NewReader(file)
 	rows, err := reader.ReadAll()
 	if err != nil {
@@ -29,12 +30,14 @@ func main() {
 	headers := rows[0]
 	functionNames := headers[5:]
 	records := rows[1:]
+	count := 0
 
-	for i, columns := range records {
+	log.Println("Processing scores...")
+	for _, columns := range records {
 		acronym := columns[0]
 		datacenterenvironment := columns[3]
 		scoresNotes := columns[5:]
-		fmt.Println("Processing record", i, ":", acronym, datacenterenvironment, "-------------------------------------------------------------------")
+		// fmt.Println("Processing record", i, ":", acronym, datacenterenvironment, "-------------------------------------------------------------------")
 
 		fismaSystemId := getFismaSystemId(acronym)
 
@@ -51,12 +54,15 @@ func main() {
 			funcScore := &functionScore{fismaSystemId, functionId, score, note}
 			funcScore.save()
 		}
+		count++
 	}
+
+	log.Printf("FINISHED processing %d records.\n", count)
 }
 
 func getFismaSystemId(acronym string) int {
 	dbpool := db.GetPool()
-	row := dbpool.QueryRow(context.Background(), "SELECT fismasystemid FROM fismasystems WHERE LOWER(fismaacronym)=LOWER($1)", acronym)
+	row := dbpool.QueryRow(context.Background(), "SELECT fismasystemid FROM fismasystems WHERE UPPER(fismaacronym)=UPPER($1)", acronym)
 
 	var fismaSystemId int
 	err := row.Scan(&fismaSystemId)
