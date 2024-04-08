@@ -39,4 +39,13 @@ type Function {
   optimal:               String
   datacenterenvironment: String
 }
+
+type FunctionScore {
+	scoreid:                 ID!
+	fismasystemid:          Int!
+	functionid:             Int!
+	datecalculated:       Float!
+	score:                Float!
+	notes:               String
+}
 `
