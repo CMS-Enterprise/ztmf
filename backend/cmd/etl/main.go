@@ -31,10 +31,10 @@ func main() {
 	records := rows[1:]
 
 	for i, columns := range records {
-		fmt.Println("Processing record", i, "-------------------------------------------------------------------")
 		acronym := columns[0]
 		datacenterenvironment := columns[3]
 		scoresNotes := columns[5:]
+		fmt.Println("Processing record", i, ":", acronym, datacenterenvironment, "-------------------------------------------------------------------")
 
 		fismaSystemId := getFismaSystemId(acronym)
 
@@ -61,7 +61,7 @@ func getFismaSystemId(acronym string) int {
 	var fismaSystemId int
 	err := row.Scan(&fismaSystemId)
 	if err != nil {
-		log.Printf("fismasystemid could not be found with fismaacronum: %s\n", acronym)
+		log.Printf("fismasystemid could not be found with fismaacronym: %s\n", acronym)
 	}
 
 	return fismaSystemId
