@@ -27,20 +27,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	headers := rows[0]
-	functionNames := headers[5:]
+	headers := rows[0]           // headers, if present, are always row 0
+	functionNames := headers[5:] // function NAMES are in the headers, VALUES are in the rows starting with column F
 	records := rows[1:]
 	count := 0
 
 	log.Println("Processing scores...")
+	// iterate over the records
 	for _, columns := range records {
 		acronym := columns[0]
 		datacenterenvironment := columns[3]
-		scoresNotes := columns[5:]
-		// fmt.Println("Processing record", i, ":", acronym, datacenterenvironment, "-------------------------------------------------------------------")
-
 		fismaSystemId := getFismaSystemId(acronym)
 
+		// collection of scores+notes pairs start at column F
+		scoresNotes := columns[5:]
+
+		// iterate through the score+notes columns by 2s
 		for ii := 0; ii < len(scoresNotes); ii += 2 {
 			if scoresNotes[ii] == "" {
 				// in case we have trailing empty columns
@@ -50,7 +52,7 @@ func main() {
 			functionName := functionNames[ii]
 			functionId := getFunctionId(functionName, datacenterenvironment)
 			score, _ := strconv.ParseFloat(scoresNotes[ii][0:1], 32) // first char
-			note := scoresNotes[ii+1]
+			note := scoresNotes[ii+1]                                // notes are always to the right of the score
 			funcScore := &functionScore{fismaSystemId, functionId, score, note}
 			funcScore.save()
 		}
