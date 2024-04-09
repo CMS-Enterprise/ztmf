@@ -10,11 +10,10 @@ type Query {
 	fismasystem(fismasystemid: ID!): FismaSystem!
 	functions: [Function!]!
 	function(functionid: ID!): Function!
-	functionscores: [FunctionScore!]!
 }
 
 type FismaSystem {
-	fismasystemid:             ID!
+	fismasystemid:         ID!
 	fismauid:          		 String!
 	fismaacronym:          String!
 	fismaname:             String!
@@ -26,10 +25,11 @@ type FismaSystem {
 	datacenterenvironment: String
 	datacallcontact:       String
 	issoemail:             String
+	functionscores:        [FunctionScore!]!
 }
 
 type Function {
-	functionid:                ID!
+	functionid:            ID!
   pillar:                String
   name:                  String
   description:           String
@@ -41,11 +41,12 @@ type Function {
 }
 
 type FunctionScore {
-	scoreid:                 ID!
-	fismasystemid:          Int!
-	functionid:             Int!
-	datecalculated:       Float!
-	score:                Float!
-	notes:               String
+	scoreid:        ID!
+	fismasystemid:  Int!
+	functionid:     Int!
+	datecalculated: Float!
+	score:          Float!
+	notes:          String
+	function:       Function!
 }
 `

@@ -17,12 +17,12 @@ type FunctionScore struct {
 	Notes          *string
 }
 
-func (r *rootResolver) FunctionScores() ([]*FunctionScoreResolver, error) {
+func (r *FismaSystemResolver) FunctionScores() ([]*FunctionScoreResolver, error) {
 	var functionScoreRxs []*FunctionScoreResolver
 
 	db := db.GetPool()
 
-	rows, err := db.Query(context.Background(), "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores ORDER BY scoreid ASC")
+	rows, err := db.Query(context.Background(), "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores WHERE fismasystemid=$1 ORDER BY scoreid ASC", r.f.Fismasystemid)
 	if err != nil {
 		log.Print(err)
 		return nil, err
