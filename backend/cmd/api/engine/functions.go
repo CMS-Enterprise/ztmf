@@ -9,15 +9,15 @@ import (
 )
 
 type Function struct {
-	Functionid  graphql.ID
-	Pillar      *string
-	Name        *string
-	Description *string
-	Traditional *string
-	Initial     *string
-	Advanced    *string
-	Optimal     *string
-	Environment *string
+	Functionid            graphql.ID
+	Pillar                *string
+	Name                  *string
+	Description           *string
+	Traditional           *string
+	Initial               *string
+	Advanced              *string
+	Optimal               *string
+	Datacenterenvironment *string
 }
 
 func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
@@ -33,7 +33,7 @@ func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
 
 	for rows.Next() {
 		function := Function{}
-		rows.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Environment)
+		rows.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
 		functionRx := FunctionResolver{&function}
 		functionsRxs = append(functionsRxs, &functionRx)
 	}
@@ -41,13 +41,29 @@ func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
 	return functionsRxs, nil
 }
 
+// resolver for graph entry from root
 func (r *rootResolver) Function(args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
 	// args.Functionid
 	db := db.GetPool()
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.functions WHERE \"functionid\"=$1", string(args.Functionid))
 
 	function := Function{}
-	err := row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Environment)
+	err := row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
+	if err != nil {
+		log.Println(err)
+	}
+
+	return &FunctionResolver{&function}, nil
+}
+
+// resolver for function score
+func (r *FunctionScoreResolver) Function() (*FunctionResolver, error) {
+	// args.Functionid
+	db := db.GetPool()
+	row := db.QueryRow(context.Background(), "SELECT * FROM public.functions WHERE \"functionid\"=$1", r.f.Functionid)
+
+	function := Function{}
+	err := row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
 	if err != nil {
 		log.Println(err)
 	}
@@ -117,10 +133,10 @@ func (r *FunctionResolver) Optimal() *string {
 	return r.f.Optimal
 }
 
-func (r *FunctionResolver) Environment() *string {
-	if r.f.Environment == nil {
+func (r *FunctionResolver) Datacenterenvironment() *string {
+	if r.f.Datacenterenvironment == nil {
 		s := ""
 		return &s
 	}
-	return r.f.Environment
+	return r.f.Datacenterenvironment
 }

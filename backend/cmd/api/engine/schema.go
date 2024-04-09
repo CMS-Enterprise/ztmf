@@ -13,7 +13,7 @@ type Query {
 }
 
 type FismaSystem {
-	fismasystemid:             ID!
+	fismasystemid:         ID!
 	fismauid:          		 String!
 	fismaacronym:          String!
 	fismaname:             String!
@@ -25,17 +25,28 @@ type FismaSystem {
 	datacenterenvironment: String
 	datacallcontact:       String
 	issoemail:             String
+	functionscores:        [FunctionScore!]!
 }
 
 type Function {
-	functionid:     ID!
-  pillar:      String
-  name:        String
-  description: String
-  traditional: String
-  initial:     String
-  advanced:    String
-  optimal:     String
-  environment: String
+	functionid:            ID!
+  pillar:                String
+  name:                  String
+  description:           String
+  traditional:           String
+  initial:               String
+  advanced:              String
+  optimal:               String
+  datacenterenvironment: String
+}
+
+type FunctionScore {
+	scoreid:        ID!
+	fismasystemid:  Int!
+	functionid:     Int!
+	datecalculated: Float!
+	score:          Float!
+	notes:          String
+	function:       Function!
 }
 `
