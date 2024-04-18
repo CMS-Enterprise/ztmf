@@ -6,6 +6,7 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/graph-gophers/graphql-go"
+	"github.com/jackc/pgx/v5"
 )
 
 type FismaSystem struct {
@@ -23,12 +24,24 @@ type FismaSystem struct {
 	Issoemail             *string
 }
 
-func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
+func (r *rootResolver) FismaSystems(args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
 	var fismaSystemsRxs []*FismaSystemResolver
 
 	db := db.GetPool()
+	sql := "SELECT * FROM fismasystems"
+	if args.Fismaacronym != nil {
+		sql += " WHERE fismaacronym=$1"
+	}
+	sql += " ORDER BY fismasystemid ASC"
 
-	rows, err := db.Query(context.Background(), "SELECT * FROM public.fismasystems ORDER BY fismasystemid ASC")
+	var rows pgx.Rows
+	var err error
+	if args.Fismaacronym != nil {
+		rows, err = db.Query(context.Background(), sql, args.Fismaacronym)
+	} else {
+		rows, err = db.Query(context.Background(), sql)
+	}
+
 	if err != nil {
 		log.Print(err)
 		return nil, err
@@ -47,7 +60,7 @@ func (r *rootResolver) FismaSystems() ([]*FismaSystemResolver, error) {
 func (r *rootResolver) FismaSystem(args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
 	// args.Fismasystemid
 	db := db.GetPool()
-	row := db.QueryRow(context.Background(), "SELECT * FROM public.fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
+	row := db.QueryRow(context.Background(), "SELECT * FROM fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
 
 	fismaSystem := FismaSystem{}
 	err := row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
