@@ -1,0 +1,4 @@
+*.env
+**/.DS_Store
+
+/zt-maturity-dashboard-ts
