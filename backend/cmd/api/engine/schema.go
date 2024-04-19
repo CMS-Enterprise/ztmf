@@ -6,7 +6,7 @@ schema {
 }
 
 type Query {
-  fismasystems: [FismaSystem!]!
+  fismasystems(fismaacronym: String): [FismaSystem!]!
 	fismasystem(fismasystemid: ID!): FismaSystem!
 	functions: [Function!]!
 	function(functionid: ID!): Function!
