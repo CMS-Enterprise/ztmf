@@ -67,12 +67,12 @@ data "aws_network_interface" "s3" {
   depends_on = [aws_vpc_endpoint.ztmf["s3"]]
 }
 
-# data "aws_network_interface" "appsync" {
-#   count      = length(data.aws_subnets.private.ids)
-#   id         = flatten(aws_vpc_endpoint.appsync.*.network_interface_ids)[count.index]
-#   depends_on = [aws_vpc_endpoint.appsync]
-# }
-
 data "aws_ssm_parameter" "ztmf_api_tag" {
   name = "ztmf_api_tag"
+}
+
+// this resource needed to be created manually by importing a Digitcert certificate
+data "aws_acm_certificate" "ztmf" {
+  domain   = local.domain_name
+  statuses = ["ISSUED"]
 }
