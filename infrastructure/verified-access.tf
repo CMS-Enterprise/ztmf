@@ -80,7 +80,7 @@ resource "aws_verifiedaccess_endpoint" "ztmf_va_ep" {
   application_domain     = local.domain_name
   attachment_type        = "vpc"
   description            = "ztmf"
-  domain_certificate_arn = local.certificate_arn
+  domain_certificate_arn = data.aws_acm_certificate.ztmf.id
   endpoint_domain_prefix = "devztmfcmsgov"
   endpoint_type          = "load-balancer"
   load_balancer_options {
