@@ -1,13 +1,16 @@
 data "aws_caller_identity" "current" {}
 
-data "aws_vpc" "ztmf_dev" {
-  id = "vpc-0e4c297dc1d596d2a"
+data "aws_vpc" "ztmf" {
+  filter {
+    name   = "tag:Name"
+    values = ["ztmf-east-${var.environment}"]
+  }
 }
 
 data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.ztmf_dev.id]
+    values = [data.aws_vpc.ztmf.id]
   }
 
   filter {
@@ -24,7 +27,7 @@ data "aws_subnet" "private" {
 data "aws_subnets" "public" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.ztmf_dev.id]
+    values = [data.aws_vpc.ztmf.id]
   }
 
   filter {

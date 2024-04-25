@@ -61,7 +61,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       environment = [
         {
           name  = "ENVIRONMENT"
-          value = "dev"
+          value = var.environment
         },
         {
           name  = "PORT"
@@ -109,14 +109,14 @@ resource "aws_ecs_task_definition" "ztmf_api" {
 resource "aws_security_group" "ztmf_api_task" {
   name        = "ztmf-api-task"
   description = "Allow TLS inbound traffic"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
     description = "HTTPS from VPC CIDR"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.ztmf_dev.cidr_block]
+    cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
   }
 
   egress {

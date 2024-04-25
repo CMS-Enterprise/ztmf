@@ -3,7 +3,7 @@
 resource "aws_security_group" "ztmf_vpc_endpoints" {
   name        = "ztmf_vpc_endpoints"
   description = "Allow HTTP(S) traffic from private subnets"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
     description = "HTTPS from private subnets"
@@ -23,14 +23,14 @@ resource "aws_security_group" "ztmf_vpc_endpoints" {
 }
 
 resource "aws_vpc_endpoint" "s3_gateway" {
-  vpc_id            = data.aws_vpc.ztmf_dev.id
+  vpc_id            = data.aws_vpc.ztmf.id
   service_name      = "com.amazonaws.us-east-1.s3"
   vpc_endpoint_type = "Gateway"
 }
 
 resource "aws_vpc_endpoint" "ztmf" {
   for_each            = toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"])
-  vpc_id              = data.aws_vpc.ztmf_dev.id
+  vpc_id              = data.aws_vpc.ztmf.id
   service_name        = "com.amazonaws.us-east-1.${each.value}"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids

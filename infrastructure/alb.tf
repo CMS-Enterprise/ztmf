@@ -1,14 +1,14 @@
 resource "aws_security_group" "ztmf_alb" {
   name        = "ztmf"
   description = "Allow TLS inbound traffic"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
     description = "HTTPS from VPC CIDR"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.ztmf_dev.cidr_block]
+    cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
   }
 
   // only initiate connections to IPs in private subnets
@@ -43,7 +43,7 @@ resource "aws_lb_target_group" "ztmf_api" {
   port        = 443
   protocol    = "HTTPS"
   target_type = "ip"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   health_check {
     protocol            = "HTTPS"
@@ -60,7 +60,7 @@ resource "aws_lb_target_group" "s3" {
   port        = 443
   protocol    = "HTTPS"
   target_type = "ip"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   health_check {
     protocol            = "HTTPS"
