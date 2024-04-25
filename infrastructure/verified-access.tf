@@ -59,7 +59,7 @@ resource "aws_verifiedaccess_group" "ztmf_va_users" {
 resource "aws_security_group" "ztmf_va_ep_sg" {
   name        = "ztmf-verified-access-endpoint"
   description = "Allow TLS inbound traffic"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
     from_port   = 443
@@ -72,7 +72,7 @@ resource "aws_security_group" "ztmf_va_ep_sg" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.ztmf_dev.cidr_block]
+    cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
   }
 }
 
