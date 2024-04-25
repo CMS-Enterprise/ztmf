@@ -6,7 +6,7 @@ resource "aws_db_subnet_group" "ztmf" {
 resource "aws_security_group" "ztmf_db" {
   name        = "ztmf_db"
   description = "Allow postgresql inbound traffic"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
     description = "PostgreSQL from VPC private subnets"

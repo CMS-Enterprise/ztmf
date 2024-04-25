@@ -32,7 +32,7 @@ resource "aws_iam_instance_profile" "ec2_bastion" {
 resource "aws_security_group" "ztmf_bastion" {
   name        = "ztmf_bastion"
   description = "bastion host"
-  vpc_id      = data.aws_vpc.ztmf_dev.id
+  vpc_id      = data.aws_vpc.ztmf.id
 
   // only initiate connections to IPs in private subnets
   egress {
