@@ -61,7 +61,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       environment = [
         {
           name  = "ENVIRONMENT"
-          value = "dev"
+          value = var.environment
         },
         {
           name  = "PORT"
