@@ -25,6 +25,18 @@ type config struct {
 	DB        *dbconfig
 }
 
+func (c *config) GetCorsOrigin() string {
+	switch c.ENV {
+	case "local":
+		return "http://localhost"
+	case "dev":
+		return "https://dev.ztmf.cms.gov"
+	case "prod":
+		return "https://ztmf.cms.gov"
+	}
+	return ""
+}
+
 var cfg *config
 
 func GetConfig() *config {
