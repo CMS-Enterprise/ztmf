@@ -4,13 +4,13 @@ resource "aws_verifiedaccess_trust_provider" "ztmf_idmokta" {
   user_trust_provider_type = "oidc"
   policy_reference_name    = "ztmf_idm_okta"
   oidc_options {
-    authorization_endpoint = "https://test.idp.idm.cms.gov/oauth2/ausmi72sydh3BuvsV297/v1/authorize"
-    client_id              = jsondecode(data.aws_secretsmanager_secret_version.ztmf_va_trust_provider_current.secret_string)["client_id"]
-    issuer                 = "https://test.idp.idm.cms.gov/oauth2/ausmi72sydh3BuvsV297"
+    authorization_endpoint = local.oidc_options["authorization_endpoint"]
+    client_id              = local.oidc_options["client_id"]
+    issuer                 = local.oidc_options["issuer"]
     scope                  = "openid profile email groups"
-    token_endpoint         = "https://test.idp.idm.cms.gov/oauth2/ausmi72sydh3BuvsV297/v1/token"
-    user_info_endpoint     = "https://test.idp.idm.cms.gov/oauth2/ausmi72sydh3BuvsV297/v1/userinfo"
-    client_secret          = jsondecode(data.aws_secretsmanager_secret_version.ztmf_va_trust_provider_current.secret_string)["client_secret"]
+    token_endpoint         = local.oidc_options["token_endpoint"]
+    user_info_endpoint     = local.oidc_options["user_info_endpoint"]
+    client_secret          = local.oidc_options["client_secret"]
   }
   tags = {
     "Name" = "ztmf_idm_okta"
