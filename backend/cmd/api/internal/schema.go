@@ -1,4 +1,4 @@
-package engine
+package internal
 
 var schema = `
 schema {

@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/engine"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
@@ -12,7 +12,7 @@ func main() {
 
 	cfg := config.GetConfig()
 
-	http.Handle("/graphql", engine.GetHttpHandler())
+	http.Handle("/graphql", internal.GetHttpHandler())
 
 	log.Printf("%s environment listening on %s\n", cfg.ENV, cfg.PORT)
 	switch cfg.ENV {
