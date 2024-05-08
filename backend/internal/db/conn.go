@@ -38,7 +38,7 @@ func Conn(ctx context.Context) (*pgx.Conn, error) {
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
-		log.Println("could not acquire db config", err)
+		log.Println("could not connect to db", err)
 		return nil, err
 	}
 
