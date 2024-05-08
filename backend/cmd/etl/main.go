@@ -58,7 +58,7 @@ func main() {
 			score, _ := strconv.ParseFloat(scoresNotes[ii][0:1], 32) // first char
 			note := scoresNotes[ii+1]                                // notes are always to the right of the score
 			funcScore := &functionScore{fismaSystemId, functionId, score, note}
-			funcScore.save()
+			funcScore.save(conn)
 		}
 		count++
 	}
@@ -100,9 +100,7 @@ type functionScore struct {
 	notes         string
 }
 
-func (fs *functionScore) save() {
-	conn := db.Conn()
-
+func (fs *functionScore) save(conn *pgx.Conn) {
 	_, err := conn.Exec(context.Background(), "INSERT INTO functionscores(fismasystemid,functionid,datecalculated,score,notes) VALUES($1,$2,TO_TIMESTAMP('2024-09-01 12:00:00','YYYY-MM-DD HH:MI:SS'),$3,$4)", fs.fismasystemid, fs.functionid, fs.score, fs.notes)
 	if err != nil {
 		log.Println("function score could not be saved", err)
