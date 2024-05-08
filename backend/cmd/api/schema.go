@@ -1,4 +1,4 @@
-package internal
+package main
 
 var schema = `
 schema {

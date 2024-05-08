@@ -1,4 +1,4 @@
-package internal
+package main
 
 import (
 	"context"
@@ -17,14 +17,18 @@ type FunctionScore struct {
 	Notes          *string
 }
 
-func (r *FismaSystemResolver) FunctionScores() ([]*FunctionScoreResolver, error) {
+func (r *FismaSystemResolver) FunctionScores(ctx context.Context) ([]*FunctionScoreResolver, error) {
 	var functionScoreRxs []*FunctionScoreResolver
 
-	db := db.GetPool()
-
-	rows, err := db.Query(context.Background(), "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores WHERE fismasystemid=$1 ORDER BY scoreid ASC", r.f.Fismasystemid)
+	db, err := db.Conn(ctx)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
+		return nil, err
+	}
+
+	rows, err := db.Query(ctx, "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores WHERE fismasystemid=$1 ORDER BY scoreid ASC", r.f.Fismasystemid)
+	if err != nil {
+		log.Println(err)
 		return nil, err
 	}
 
@@ -32,7 +36,7 @@ func (r *FismaSystemResolver) FunctionScores() ([]*FunctionScoreResolver, error)
 		functionScore := FunctionScore{}
 		err := rows.Scan(&functionScore.Scoreid, &functionScore.Fismasystemid, &functionScore.Functionid, &functionScore.Datecalculated, &functionScore.Score, &functionScore.Notes)
 		if err != nil {
-			log.Print(err)
+			log.Println(err)
 		}
 		functionRx := &FunctionScoreResolver{&functionScore}
 		functionScoreRxs = append(functionScoreRxs, functionRx)

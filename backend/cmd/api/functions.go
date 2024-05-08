@@ -1,4 +1,4 @@
-package internal
+package main
 
 import (
 	"context"
@@ -20,14 +20,18 @@ type Function struct {
 	Datacenterenvironment *string
 }
 
-func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
+func (r *rootResolver) Functions(ctx context.Context) ([]*FunctionResolver, error) {
 	var functionsRxs []*FunctionResolver
 
-	db := db.GetPool()
-
-	rows, err := db.Query(context.Background(), "SELECT * FROM public.functions ORDER BY functionid ASC")
+	db, err := db.Conn(ctx)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
+		return nil, err
+	}
+
+	rows, err := db.Query(ctx, "SELECT * FROM public.functions ORDER BY functionid ASC")
+	if err != nil {
+		log.Println(err)
 		return nil, err
 	}
 
@@ -42,13 +46,17 @@ func (r *rootResolver) Functions() ([]*FunctionResolver, error) {
 }
 
 // resolver for graph entry from root
-func (r *rootResolver) Function(args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
-	// args.Functionid
-	db := db.GetPool()
+func (r *rootResolver) Function(ctx context.Context, args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
+	db, err := db.Conn(ctx)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.functions WHERE \"functionid\"=$1", string(args.Functionid))
 
 	function := Function{}
-	err := row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
+	err = row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
 	if err != nil {
 		log.Println(err)
 	}
@@ -57,13 +65,17 @@ func (r *rootResolver) Function(args struct{ Functionid graphql.ID }) (*Function
 }
 
 // resolver for function score
-func (r *FunctionScoreResolver) Function() (*FunctionResolver, error) {
-	// args.Functionid
-	db := db.GetPool()
+func (r *FunctionScoreResolver) Function(ctx context.Context) (*FunctionResolver, error) {
+	db, err := db.Conn(ctx)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
 	row := db.QueryRow(context.Background(), "SELECT * FROM public.functions WHERE \"functionid\"=$1", r.f.Functionid)
 
 	function := Function{}
-	err := row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
+	err = row.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
 	if err != nil {
 		log.Println(err)
 	}
