@@ -8,11 +8,10 @@ import (
 	"strconv"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/jackc/pgx/v5"
 )
 
 func main() {
-	db.GetPool()
-
 	inputCsvFile := os.Args[1]
 	log.Println("Opening CSV", inputCsvFile, "...")
 	file, err := os.Open(inputCsvFile)
@@ -32,12 +31,17 @@ func main() {
 	records := rows[1:]
 	count := 0
 
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Println("Processing scores...")
 	// iterate over the records
 	for _, columns := range records {
 		acronym := columns[0]
 		datacenterenvironment := columns[3]
-		fismaSystemId := getFismaSystemId(acronym)
+		fismaSystemId := getFismaSystemId(conn, acronym)
 
 		// collection of scores+notes pairs start at column F
 		scoresNotes := columns[5:]
@@ -50,7 +54,7 @@ func main() {
 			}
 
 			functionName := functionNames[ii]
-			functionId := getFunctionId(functionName, datacenterenvironment)
+			functionId := getFunctionId(conn, functionName, datacenterenvironment)
 			score, _ := strconv.ParseFloat(scoresNotes[ii][0:1], 32) // first char
 			note := scoresNotes[ii+1]                                // notes are always to the right of the score
 			funcScore := &functionScore{fismaSystemId, functionId, score, note}
@@ -62,9 +66,9 @@ func main() {
 	log.Printf("FINISHED processing %d records.\n", count)
 }
 
-func getFismaSystemId(acronym string) int {
-	dbpool := db.GetPool()
-	row := dbpool.QueryRow(context.Background(), "SELECT fismasystemid FROM fismasystems WHERE UPPER(fismaacronym)=UPPER($1)", acronym)
+func getFismaSystemId(conn *pgx.Conn, acronym string) int {
+
+	row := conn.QueryRow(context.Background(), "SELECT fismasystemid FROM fismasystems WHERE UPPER(fismaacronym)=UPPER($1)", acronym)
 
 	var fismaSystemId int
 	err := row.Scan(&fismaSystemId)
@@ -75,9 +79,9 @@ func getFismaSystemId(acronym string) int {
 	return fismaSystemId
 }
 
-func getFunctionId(functionName, datacenterenvironment string) int {
-	dbpool := db.GetPool()
-	row := dbpool.QueryRow(context.Background(), "SELECT functionid FROM functions WHERE LOWER(function)=LOWER($1) AND LOWER(datacenterenvironment)=LOWER($2)", functionName, datacenterenvironment)
+func getFunctionId(conn *pgx.Conn, functionName, datacenterenvironment string) int {
+
+	row := conn.QueryRow(context.Background(), "SELECT functionid FROM functions WHERE LOWER(function)=LOWER($1) AND LOWER(datacenterenvironment)=LOWER($2)", functionName, datacenterenvironment)
 
 	var functionid int
 
@@ -97,9 +101,9 @@ type functionScore struct {
 }
 
 func (fs *functionScore) save() {
-	dbpool := db.GetPool()
+	conn := db.Conn()
 
-	_, err := dbpool.Exec(context.Background(), "INSERT INTO functionscores(fismasystemid,functionid,datecalculated,score,notes) VALUES($1,$2,TO_TIMESTAMP('2024-09-01 12:00:00','YYYY-MM-DD HH:MI:SS'),$3,$4)", fs.fismasystemid, fs.functionid, fs.score, fs.notes)
+	_, err := conn.Exec(context.Background(), "INSERT INTO functionscores(fismasystemid,functionid,datecalculated,score,notes) VALUES($1,$2,TO_TIMESTAMP('2024-09-01 12:00:00','YYYY-MM-DD HH:MI:SS'),$3,$4)", fs.fismasystemid, fs.functionid, fs.score, fs.notes)
 	if err != nil {
 		log.Println("function score could not be saved", err)
 	}
