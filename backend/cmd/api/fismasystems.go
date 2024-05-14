@@ -1,4 +1,4 @@
-package engine
+package main
 
 import (
 	"context"
@@ -24,10 +24,15 @@ type FismaSystem struct {
 	Issoemail             *string
 }
 
-func (r *rootResolver) FismaSystems(args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
+func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
 	var fismaSystemsRxs []*FismaSystemResolver
 
-	db := db.GetPool()
+	db, err := db.Conn(ctx)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
 	sql := "SELECT * FROM fismasystems"
 	if args.Fismaacronym != nil {
 		sql += " WHERE fismaacronym=$1"
@@ -35,15 +40,15 @@ func (r *rootResolver) FismaSystems(args struct{ Fismaacronym *string }) ([]*Fis
 	sql += " ORDER BY fismasystemid ASC"
 
 	var rows pgx.Rows
-	var err error
+
 	if args.Fismaacronym != nil {
-		rows, err = db.Query(context.Background(), sql, args.Fismaacronym)
+		rows, err = db.Query(ctx, sql, args.Fismaacronym)
 	} else {
-		rows, err = db.Query(context.Background(), sql)
+		rows, err = db.Query(ctx, sql)
 	}
 
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 		return nil, err
 	}
 
@@ -57,13 +62,18 @@ func (r *rootResolver) FismaSystems(args struct{ Fismaacronym *string }) ([]*Fis
 	return fismaSystemsRxs, nil
 }
 
-func (r *rootResolver) FismaSystem(args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
+func (r *rootResolver) FismaSystem(ctx context.Context, args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
 	// args.Fismasystemid
-	db := db.GetPool()
+	db, err := db.Conn(ctx)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
 	row := db.QueryRow(context.Background(), "SELECT * FROM fismasystems WHERE \"fismasystemid\"=$1", string(args.Fismasystemid))
 
 	fismaSystem := FismaSystem{}
-	err := row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
+	err = row.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
 	if err != nil {
 		log.Println(err)
 	}

@@ -20,14 +20,17 @@ module "api_task" {
   principal = { Service = "ecs-tasks.amazonaws.com" }
 }
 
-resource "aws_iam_role_policy" "ztmf_api_task_execution" {
+resource "aws_iam_role_policy" "ztmf_api_task" {
   name = "taskExecutionPermissions"
-  role = module.api_task_execution.role_id
+  role = module.api_task.role_id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = ["secretsmanager:GetSecretValue"]
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
         Effect = "Allow"
         Resource = [
           local.db_cred_secret
@@ -69,11 +72,11 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         },
         {
           name  = "CERT_FILE"
-          value = "/api/cert.pem"
+          value = "/src/cert.pem"
         },
         {
           name  = "KEY_FILE"
-          value = "/api/key.pem"
+          value = "/src/key.pem"
         },
         {
           name  = "DB_NAME"
@@ -86,12 +89,10 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         {
           name  = "DB_PORT"
           value = "5432"
-        }
-      ]
-      secrets = [
+        },
         {
-          name      = "DB_CREDS"
-          valueFrom = local.db_cred_secret
+          name = "DB_SECRET_ID"
+          value = local.db_cred_secret
         }
       ]
       logConfiguration = {
