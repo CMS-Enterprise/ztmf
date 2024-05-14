@@ -1,51 +1,47 @@
 package config
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 
 	"github.com/caarlos0/env/v10"
 )
 
-type dbconfig struct {
-	User     string `json:"username"`
-	Pass     string `json:"password"`
-	RawCreds string `env:"DB_CREDS"`
-	Database string `env:"DB_NAME"`
-	Endpoint string `env:"DB_ENDPOINT"`
-	Port     string `env:"DB_PORT" envDefault:"5432"`
-}
-
+// config is shared by all binaries with values derived from environment variables
 type config struct {
-	ENV       string `env:"ENVIRONMENT" envDefault:"local"`
-	PORT      string `env:"PORT" envDefault:"3000"`
-	CERT_FILE string `env:"CERT_FILE"`
-	KEY_FILE  string `env:"KEY_FILE"`
-	DB        *dbconfig
+	Env      string `env:"ENVIRONMENT" envDefault:"local"`
+	Port     string `env:"PORT" envDefault:"3000"`
+	CertFile string `env:"CERT_FILE"`
+	KeyFile  string `env:"KEY_FILE"`
+	Db       struct {
+		Host     string `env:"DB_ENDPOINT"`
+		Port     string `env:"DB_PORT" envDefault:"5432"`
+		Name     string `env:"DB_NAME"`
+		User     string `env:"DB_USER"`
+		Pass     string `env:"DB_PASS"`
+		SecretId string `env:"DB_SECRET_ID"`
+	}
 }
 
-var cfg *config
+var (
+	cfg  *config
+	once sync.Once
+)
 
-func GetConfig() *config {
-
+// GetInstance returns a singleton of *config
+func GetInstance() *config {
 	if cfg == nil {
-		log.Print("Initializing config...")
+		var err error
+		log.Println("Initializing config...")
 
-		var once sync.Once
 		once.Do(func() {
-			cfg = &config{DB: &dbconfig{}}
-			err := env.Parse(cfg)
-			if err != nil {
-				log.Fatalf("unable to parse environment variables: %e", err)
-			}
-
-			err = json.Unmarshal([]byte(cfg.DB.RawCreds), cfg.DB)
-			if err != nil {
-				log.Fatalf("unable to parse db creds: %e", err)
-			}
+			cfg = &config{}
+			err = env.Parse(cfg)
 		})
+		if err != nil {
+			log.Fatal("could not parse environment variables", err)
+			return nil
+		}
 	}
-
 	return cfg
 }
