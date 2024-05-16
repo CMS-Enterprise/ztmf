@@ -56,3 +56,5 @@ stats.*
 .storybook/README.md
 
 src/__generated__/**
+
+public/build/p-*
