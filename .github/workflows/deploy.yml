@@ -1,0 +1,63 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  Deploy:
+    environment: DEV
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+        # the following checks will exit non-zero when grep fails to find a match, but that doesnt block later steps
+      - name: Check for backend/ changes
+        id: backendDiff
+        run: git --no-pager diff --name-only origin/main HEAD | grep backend/
+        continue-on-error: true
+
+      - name: Check for infrastructure/ changes
+        id: infraDiff
+        run: git --no-pager diff --name-only origin/main HEAD | grep infrastructure/
+        continue-on-error: true
+
+      - name: Check for ui/ changes
+        id: uiDiff
+        run: git --no-pager diff --name-only origin/main HEAD | grep ui/
+        continue-on-error: true
+
+      - name: Build backend image
+        id: backendImage
+        if: steps.backendDiff.outcome == 'success'
+        run: echo "building backend image"
+
+      - name: Get AWS Creds
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLEARN }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+      
+      - name: Deploy Infrastructure
+        if: steps.infraDiff.outcome == 'success' || steps.backendImage.outcome == 'success'
+        run: echo "deploying terraform"
+
+      - name: Deploy UI
+        if: steps.uiDiff.outcome == 'success'
+        run: echo "building yard and syncing S3"
