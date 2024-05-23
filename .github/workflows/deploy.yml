@@ -42,6 +42,17 @@ jobs:
         id: uiDiff
         run: git --no-pager diff --name-only origin/main HEAD | grep ui/
         continue-on-error: true
+      
+      - uses: actions/setup-go@v5
+        if: steps.backendDiff.outcome == 'success'
+        with:
+          go-version: '1.22'
+      
+      - name: golangci-lint
+        if: steps.backendDiff.outcome == 'success'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.58
 
       - name: Get AWS Creds
         if: steps.backendDiff.outcome == 'success' || steps.infraDiff.outcome == 'success' || steps.uiDiff.outcome == 'success'
