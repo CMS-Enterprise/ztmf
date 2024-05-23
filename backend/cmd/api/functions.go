@@ -6,6 +6,7 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/graph-gophers/graphql-go"
+	"github.com/jackc/pgx/v5"
 )
 
 type Function struct {
@@ -21,8 +22,6 @@ type Function struct {
 }
 
 func (r *rootResolver) Functions(ctx context.Context) ([]*FunctionResolver, error) {
-	var functionsRxs []*FunctionResolver
-
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)
@@ -35,14 +34,12 @@ func (r *rootResolver) Functions(ctx context.Context) ([]*FunctionResolver, erro
 		return nil, err
 	}
 
-	for rows.Next() {
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*FunctionResolver, error) {
 		function := Function{}
-		rows.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
-		functionRx := FunctionResolver{&function}
-		functionsRxs = append(functionsRxs, &functionRx)
-	}
+		err := rows.Scan(&function.Functionid, &function.Pillar, &function.Name, &function.Description, &function.Traditional, &function.Initial, &function.Advanced, &function.Optimal, &function.Datacenterenvironment)
+		return &FunctionResolver{&function}, err
+	})
 
-	return functionsRxs, nil
 }
 
 // resolver for graph entry from root
