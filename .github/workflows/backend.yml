@@ -13,13 +13,9 @@ on:
       - synchronize
 
 jobs:
-  deploy:
-    name: Deploy
-    environment: DEV
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -36,11 +32,24 @@ jobs:
           version: v1.58
           working-directory: backend
 
-      # This step will "fail" only if no changes were found in the backend
-      # If no changes were found we dont need to build, push, and update the parameter
+        # this check will exit non-zero when grep fails to find a match
+        # but that status is used in later if statements hence continue on error
       - name: Check for changes in backend/
         id: backendDiff
-        run: git --no-pager diff --name-only origin/main HEAD | grep backend/; test $? -eq 0
+        run: git --no-pager diff --name-only origin/main HEAD | grep backend/
+        continue-on-error: true
+
+  build:
+    name: Build and Push
+    if: jobs.lint.steps.backendDiff.outcome == 'success'
+    environment: DEV
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
 
       - name: Get AWS Creds
         uses: aws-actions/configure-aws-credentials@v4
@@ -71,3 +80,5 @@ jobs:
 
       - name: Update Parameter
         run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revparse.outputs.sha_short }} --overwrite
+
+      # Deployment of the latest image will happen with terraform during infrastructure deploy
