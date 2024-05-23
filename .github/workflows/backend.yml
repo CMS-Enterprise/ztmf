@@ -34,7 +34,7 @@ jobs:
 
       - name: Check for changes in backend/
         id: diff
-        run: echo "files_changed=$(git --no-pager diff --name-only origin/main HEAD)" >> $GITHUB_OUTPUT
+        run: echo "files_changed=$(git --no-pager diff --name-only origin/main HEAD | grep backend/ | head -n 1)" >> $GITHUB_OUTPUT
         
   build:
     name: Build and Push
