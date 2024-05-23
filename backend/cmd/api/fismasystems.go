@@ -25,8 +25,6 @@ type FismaSystem struct {
 }
 
 func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
-	// var fismaSystemsRxs []*FismaSystemResolver
-
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)
