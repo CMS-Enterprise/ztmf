@@ -24,5 +24,4 @@ func main() {
 	} else {
 		log.Fatal("could not listen and serve:", http.ListenAndServe(":"+cfg.Port, nil))
 	}
-
 }

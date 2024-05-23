@@ -25,8 +25,6 @@ type FismaSystem struct {
 }
 
 func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
-	var fismaSystemsRxs []*FismaSystemResolver
-
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)
@@ -52,14 +50,12 @@ func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacron
 		return nil, err
 	}
 
-	for rows.Next() {
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*FismaSystemResolver, error) {
 		fismaSystem := FismaSystem{}
-		rows.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
-		fismaSystemRx := FismaSystemResolver{&fismaSystem}
-		fismaSystemsRxs = append(fismaSystemsRxs, &fismaSystemRx)
-	}
+		err := rows.Scan(&fismaSystem.Fismasystemid, &fismaSystem.Fismauid, &fismaSystem.Fismaacronym, &fismaSystem.Fismaname, &fismaSystem.Fismasubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.Groupname, &fismaSystem.Divisionname, &fismaSystem.Datacenterenvironment, &fismaSystem.Datacallcontact, &fismaSystem.Issoemail)
+		return &FismaSystemResolver{&fismaSystem}, err
+	})
 
-	return fismaSystemsRxs, nil
 }
 
 func (r *rootResolver) FismaSystem(ctx context.Context, args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
