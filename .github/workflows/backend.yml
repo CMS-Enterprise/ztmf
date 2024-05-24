@@ -1,0 +1,78 @@
+name: Backend
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: LINT - backend/
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          working-directory: backend
+
+      - name: Check for changes in backend/
+        id: diff
+        run: echo "files_changed=$(git --no-pager diff --name-only origin/main HEAD | grep backend/ | head -n 1)" >> $GITHUB_OUTPUT
+        
+  build:
+    name: Build and Push
+    needs: lint
+    if: contains(needs.lint.outputs.files_changed, 'backend/')
+    environment: DEV
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Get AWS Creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLEARN }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Get Commit SHA
+        id: revparse
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Docker Login
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/
+          push: true
+          tags: ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
+
+      - name: Update Parameter
+        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revparse.outputs.sha_short }} --overwrite
+
+      # Deployment of the latest image will happen with terraform during infrastructure deploy
