@@ -4,7 +4,7 @@ services:
     env_file:
       - compose.env
     ports:
-      - 54321:5432
+      - 5432:5432
   api:
     depends_on:
       - postgre
