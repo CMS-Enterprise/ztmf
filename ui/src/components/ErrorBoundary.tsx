@@ -54,9 +54,7 @@ const ErrorBoundary: React.FC = (): JSX.Element => {
       {error.data && <Typography variant="h3">{error.data}</Typography>}
       <p aria-label="error-message">
         <strong>{message}</strong>
-        <pre>
-          {JSON.stringify(error)}
-        </pre>
+        <pre>{JSON.stringify(error)}</pre>
       </p>
     </Container>
   )
