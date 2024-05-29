@@ -66,7 +66,7 @@ data "aws_secretsmanager_secrets" "rds" {
 
 data "aws_network_interface" "s3" {
   count      = length(data.aws_subnets.private.ids)
-  id         = flatten(aws_vpc_endpoint.ztmf["s3"].*.network_interface_ids)[count.index]
+  id         = flatten(aws_vpc_endpoint.ztmf["s3"][*].network_interface_ids)[count.index]
   depends_on = [aws_vpc_endpoint.ztmf["s3"]]
 }
 
