@@ -1,0 +1,65 @@
+name: Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    outputs: 
+      diff: ${{ steps.diff.outputs.files_changed }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TFLINT - setup
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: TFLINT version
+        run: tflint --version
+
+      - name: TFLINT - init
+        run: tflint --chdir=infrastructure/ --init
+        # env:
+        #   # https://github.com/terraform-linters/tflint/blob/master/docs/user-guide/plugins.md#avoiding-rate-limiting
+        #   GITHUB_TOKEN: ${{ github.token }}
+
+      - name: TFLINT - run
+        run: tflint  --chdir=infrastructure/ -f compact
+
+      - name: Check for changes in infrastructure/
+        id: diff
+        run: echo "files_changed=$(git --no-pager diff --name-only origin/main infrastructure/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
+      
+
+  # apply:
+  #   name: Terraform Apply
+  #   needs: lint
+  #   if: contains(needs.lint.outputs.diff, 'infrastructure/')
+  #   environment: DEV
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - name: Check out repo
+  #       uses: actions/checkout@v4
+
+  #     - name: Get AWS Creds
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.ROLEARN }}
+  #         role-duration-seconds: 900
+  #         aws-region: us-east-1
