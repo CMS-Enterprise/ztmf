@@ -10,16 +10,16 @@ import { Outlet } from 'react-router-dom'
  */
 
 const Title: React.FC = (): JSX.Element => {
-    return (
-      <>
-        <Container maxWidth="md">
-          <Typography variant="h3" align='center'>
-            Zero Trust Maturity Score Dashboard
-          </Typography>
-          <Outlet />
-        </Container>
-      </>
-    )
+  return (
+    <>
+      <Container maxWidth="md">
+        <Typography variant="h3" align="center">
+          Zero Trust Maturity Score Dashboard
+        </Typography>
+        <Outlet />
+      </Container>
+    </>
+  )
 }
 
 export default Title
