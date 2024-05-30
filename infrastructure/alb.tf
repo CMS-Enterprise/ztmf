@@ -72,7 +72,7 @@ resource "aws_lb_target_group" "s3" {
 }
 
 resource "aws_lb_target_group_attachment" "s3" {
-  for_each         = toset(flatten(data.aws_network_interface.s3.*.private_ips))
+  for_each         = toset(flatten(data.aws_network_interface.s3[*].private_ips))
   target_group_arn = aws_lb_target_group.s3.arn
   target_id        = each.value
   port             = 443
