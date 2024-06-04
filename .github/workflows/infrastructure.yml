@@ -1,28 +1,29 @@
 name: Infrastructure
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - reopened
-      - synchronize
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        description: environment to deploy to
+        required: true
 
 jobs:
-  lint:
-    name: Lint
+  infrastructure:
+    name: Deploy
     runs-on: ubuntu-latest
-    outputs: 
-      diff: ${{ steps.diff.outputs.files_changed }}
+    # environment: tells github which configured environment to use
+    environment: ${{ inputs.environment }}
+    # env: tell this job which env vars to set
+    env:
+      ENV: ${{ inputs.environment }}
+    # 👆 makes your eyes cross I know
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: TFLINT - setup
         uses: terraform-linters/setup-tflint@v4
@@ -32,34 +33,25 @@ jobs:
 
       - name: TFLINT - init
         run: tflint --chdir=infrastructure/ --init
-        # env:
-        #   # https://github.com/terraform-linters/tflint/blob/master/docs/user-guide/plugins.md#avoiding-rate-limiting
-        #   GITHUB_TOKEN: ${{ github.token }}
 
       - name: TFLINT - run
         run: tflint  --chdir=infrastructure/ -f compact
-
-      - name: Check for changes in infrastructure/
-        id: diff
-        run: echo "files_changed=$(git --no-pager diff --name-only origin/main infrastructure/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
       
+      - name: Get AWS Creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLEARN }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
 
-  # apply:
-  #   name: Terraform Apply
-  #   needs: lint
-  #   if: contains(needs.lint.outputs.diff, 'infrastructure/')
-  #   environment: DEV
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - name: Check out repo
-  #       uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+      
+      # these last 2 steps use some bash magic to convert to lowercase: ${ENV VAR,,}
+      - name: Terraform init and validate
+        run: terraform -chdir=infrastructure init -backend-config="config/backend-${ENV,,}.tf"
 
-  #     - name: Get AWS Creds
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.ROLEARN }}
-  #         role-duration-seconds: 900
-  #         aws-region: us-east-1
+      - name: Terraform apply
+        run: terraform -chdir=infrastructure apply -no-color -var-file="tfvars/${ENV,,}.tfvars" -auto-approve
