@@ -35,7 +35,7 @@ jobs:
       - name: Check for changes in ui/
         id: ui
         run: echo "ui=$(git --no-pager diff --name-only origin/main ui/ | head -n 1)" >> $GITHUB_OUTPUT
-    
+        
   backend:
     name: Backend
     needs: diff
@@ -56,5 +56,15 @@ jobs:
     with:
       environment: DEV
     secrets: inherit
-      
+  
+  ui:
+    name: UI
+    needs: 
+      - diff
+      - infrastructure
+    if: contains(needs.diff.outputs.ui, 'ui/') && !cancelled()
+    uses: ./.github/workflows/ui.yml
+    with:
+      environment: DEV
+    secrets: inherit
 
