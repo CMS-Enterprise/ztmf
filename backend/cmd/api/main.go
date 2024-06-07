@@ -38,7 +38,7 @@ func main() {
 		}
 
 		server := &http.Server{
-			Addr:      cfg.Port,
+			Addr:      ":" + cfg.Port,
 			Handler:   handler,
 			TLSConfig: tlsConfig,
 		}
