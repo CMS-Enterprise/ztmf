@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-
+	log.SetFlags(0)
 	cfg := config.GetInstance()
 
 	handler, err := HttpHandler()
