@@ -12,7 +12,7 @@ COPY ./cmd/api /src/cmd/api
 COPY ./internal/ /src/internal/
 
 # enable FIPS only crypto
-RUN GOEXPERIMENT=boringcrypto go build ./cmd/api/...
+RUN go build ./cmd/api/...
 
 FROM --platform=linux/amd64 scratch
 
