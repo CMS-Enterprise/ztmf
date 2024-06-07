@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	_ "crypto/tls/fipsonly"
 	"log"
 	"net/http"
 
@@ -23,6 +22,7 @@ func main() {
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)
 
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
+		log.Print("Loading TLS configuration")
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
 			log.Fatal(err)
