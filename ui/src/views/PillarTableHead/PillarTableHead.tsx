@@ -27,6 +27,18 @@ const PillarTableHead: React.FC = (): JSX.Element => {
             Score
           </Typography>
         </TableCell>
+        <TableCell
+          key="Notes"
+          id="notes"
+          sx={{ border: 1, backgroundColor: '#DCDCDC' }}
+          align="center"
+          size="small"
+        >
+          {' '}
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Notes
+          </Typography>{' '}
+        </TableCell>
       </TableRow>
     </TableHead>
   )

@@ -1,11 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import FISMASYSTEMQUERY from '../PillarTable/PillarTable.query'
-import { fismaSystem } from '../PillarTable/PillarTable.query'
+import FISMASYSTEMQUERY, {
+  functionscores,
+  fismaSystem,
+  determineLevel,
+} from '../PillarTable/PillarTable.query'
 import { useQuery } from '@apollo/client'
 import TableTitle from '../TableTitle/TableTitle'
 import PillarTableHead from '../PillarTableHead/PillarTableHead'
-import { Button, Table, TableBody, TableCell, TableRow } from '@mui/material'
+import {
+  Box,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+
 // import { Typography } from '@mui/material'
 import { Link } from 'react-router-dom'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -14,17 +28,22 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
  * Component that renders the contents of the Identity Page view.
  * @returns {JSX.Element} Component that renders the dashboard contents.
  */
-
+type dataPillarFunction = functionscores[]
 const IdentityPage: React.FC = (): JSX.Element => {
+  const pillarNameMap: { [key: string]: string } = {
+    AccessManagement: 'ACCESS MANAGEMENT',
+    'Identity-AutomationOrchestration': 'AUTOMATION & ORCHESTRATION',
+    'Identity-Governance': 'GOVERNANCE CAPABILITY',
+    'IdentityStores-Users': 'IDENTITY STORES',
+    RiskAssessment: 'RISK ASSESSMENT',
+    'Authentication-Users': 'USER AUTH',
+    'Identity-VisibilityAnalytics': 'VISABILITY & ANALYTICS',
+  }
   const param = useParams<{ systemId?: string }>()
   const id = param.systemId
-  const [authUser, setAuthUser] = useState<number>(0.0)
-  const [idStoreUser, setIdStoreUser] = useState<number>(0.0)
-  const [visAnalystics, setVisAnalystics] = useState<number>(0.0)
-  const [autoOrch, setAutoOrch] = useState<number>(0.0)
-  const [governance, setGovernance] = useState<number>(0.0)
-  const [accMgnt, setAccMgnt] = useState<number>(0.0)
-  const [riskAssmnt, setRiskAssmnt] = useState<number>(0.0)
+  const [fismaIdentityPillars, setFismaIdentityPillars] = useState<
+    functionscores[]
+  >([])
   const [fismaSystem, setFismaSystem] = useState<fismaSystem>({
     fismasystemid: '',
     fismauid: '',
@@ -45,30 +64,29 @@ const IdentityPage: React.FC = (): JSX.Element => {
     }
   }, [data])
   useEffect(() => {
+    const order: string[] = [
+      'AccessManagement',
+      'Identity-AutomationOrchestration',
+      'Identity-Governance',
+      'IdentityStores-Users',
+      'RiskAssessment',
+      'Authentication-Users',
+      'Identity-VisibilityAnalytics',
+    ]
+    function customSort(a: functionscores, b: functionscores) {
+      return order.indexOf(a.function.name) - order.indexOf(b.function.name)
+    }
     let isCancelled: boolean = false
     if (!isCancelled) {
       if (fismaSystem && fismaSystem.functionscores) {
+        const dataArr: dataPillarFunction = []
         fismaSystem.functionscores.forEach((fn) => {
           if (fn.function.pillar === 'Identity') {
-            if (fn.function.name === 'Authentication-Users') {
-              setAuthUser(fn.score)
-            } else if (fn.function.name === 'IdentityStores-Users') {
-              setIdStoreUser(fn.score)
-            } else if (fn.function.name === 'Identity-VisibilityAnalytics') {
-              setVisAnalystics(fn.score)
-            } else if (
-              fn.function.name === 'Identity-AutomationOrchestration'
-            ) {
-              setAutoOrch(fn.score)
-            } else if (fn.function.name === 'Identity-Governance') {
-              setGovernance(fn.score)
-            } else if (fn.function.name === 'AccessManagement') {
-              setAccMgnt(fn.score)
-            } else if (fn.function.name === 'RiskAssessment') {
-              setRiskAssmnt(fn.score)
-            }
+            dataArr.push(fn)
           }
         })
+        const sortedDataArr = dataArr.slice().sort(customSort)
+        setFismaIdentityPillars((prev) => [...prev, ...sortedDataArr])
       }
     }
     return () => {
@@ -82,78 +100,76 @@ const IdentityPage: React.FC = (): JSX.Element => {
       ) : (
         <>
           <TableTitle system={fismaSystem.fismaacronym} pillarType="Identity" />
-          <Table sx={{ minWidth: 650, border: 1 }}>
+          <Table sx={{ border: 1 }}>
             <PillarTableHead />
             <TableBody>
-              {/* Access Management */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  ACCESS MANAGEMENT
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {accMgnt}
-                </TableCell>
-              </TableRow>
-              {/* Automation & orchestration */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  AUTOMATION & ORCHESTRATION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {autoOrch}
-                </TableCell>
-              </TableRow>
-              {/* Governance */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  GOVERNANCE CAPABILITY
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {governance}
-                </TableCell>
-              </TableRow>
-              {/* Identity stores */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  IDENTITY STORES
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {idStoreUser}
-                </TableCell>
-              </TableRow>
-              {/* Risk Assessment */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  RISK ASSESSMENT
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {riskAssmnt}
-                </TableCell>
-              </TableRow>
-              {/* User Auth */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  USER AUTH
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {authUser}
-                </TableCell>
-              </TableRow>
-              {/* visability & analytics */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  VISABILITY & ANALYTICS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {visAnalystics}
-                </TableCell>
-              </TableRow>
+              {fismaIdentityPillars.map((fn, idx) => {
+                const [fnLevel, description] = determineLevel(
+                  fn.score,
+                  fn.function
+                )
+                return (
+                  <TableRow key={idx}>
+                    <TableCell
+                      key={fn.function.name}
+                      sx={{ border: 1 }}
+                      align="center"
+                    >
+                      <Box display="flex" justifyContent="flex-end">
+                        <sub>
+                          <Tooltip
+                            title={fn.function.description}
+                            placement="top"
+                          >
+                            <InfoOutlinedIcon
+                              color="primary"
+                              shapeRendering="geometricPrecision"
+                              fontSize="small"
+                            />
+                          </Tooltip>
+                        </sub>
+                      </Box>
+                      <Box sx={{ fontWeight: 'bold' }}>
+                        {pillarNameMap[fn.function.name]}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      <Box
+                        display="flex"
+                        justifyContent="center"
+                        alignItems="center"
+                      >
+                        <Typography component="span" fontWeight="bold">
+                          {fnLevel}
+                        </Typography>
+                        <Typography component="span"> (</Typography>
+                        <Typography component="span" fontWeight="bold">
+                          {fn.score}
+                        </Typography>
+                        <Typography component="span"> )</Typography>
+                      </Box>
+                      <Box sx={{ textTransform: 'capitalize' }}>
+                        {description}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      {fn.notes}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           <Link to={`/pillars/${id}`}>
             <Button
               variant="contained"
-              sx={{ mt: 10, ml: 1 }}
+              sx={{
+                mt: 10,
+                ml: 1,
+                marginLeft: 0,
+                marginTop: 4,
+                marginBottom: 10,
+              }}
               endIcon={<ArrowBackIcon />}
             >
               Back

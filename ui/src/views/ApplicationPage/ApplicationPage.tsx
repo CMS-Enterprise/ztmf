@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import FISMASYSTEMQUERY from '../PillarTable/PillarTable.query'
-import { fismaSystem } from '../PillarTable/PillarTable.query'
+import FISMASYSTEMQUERY, {
+  fismaSystem,
+  determineLevel,
+  functionscores,
+} from '../PillarTable/PillarTable.query'
 import { useQuery } from '@apollo/client'
 import TableTitle from '../TableTitle/TableTitle'
-import { Button, Table, TableBody, TableCell, TableRow } from '@mui/material'
-// import { Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { Link } from 'react-router-dom'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PillarTableHead from '../PillarTableHead/PillarTableHead'
@@ -14,17 +26,23 @@ import PillarTableHead from '../PillarTableHead/PillarTableHead'
  * @returns {JSX.Element} Component that renders the Application Page contents.
  */
 
+type dataPillarFunction = functionscores[]
 const ApplicationPage: React.FC = (): JSX.Element => {
   const param = useParams<{ systemId?: string }>()
   const id = param.systemId
-  const [accessibleApp, setAccessibleApp] = useState<number>(0.0)
-  const [accessAuthUser, setAccessAuthUser] = useState<number>(0.0)
-  const [secDevDplyWrkFlw, setSecDevDplyWrkFlw] = useState<number>(0.0)
-  const [visAnalystics, setVisAnalystics] = useState<number>(0.0)
-  const [autoOrch, setAutOrch] = useState<number>(0.0)
-  const [secTest, setSecTest] = useState<number>(0.0)
-  const [thrtPrctn, setThrtPrctn] = useState<number>(0.0)
-  const [governance, setGovernance] = useState<number>(0.0)
+  const pillarNameMap: { [key: string]: string } = {
+    AccessibleApplications: 'ACCESSABILITY',
+    'AccessAuthorization-Users': 'ACCESS AUTHORIZATION-USERS',
+    'Application-AutomationOrchestration': 'AUTOMATION & ORCHESTRATION',
+    'Application-Governance': 'GOVERNANCE',
+    SecureDevDeployWorkflow: 'SECURE DEVELOPER DEPLOY WORKFLOW',
+    ApplicationSecurityTesting: 'SECURITY TESTING',
+    AppThreatProtection: 'THREAT PROTECTION',
+    'Application-VisibilityAnalytics': 'VISIBILITY & ANALYTICS',
+  }
+  const [fismaNetworkPillars, setFismaNetworkPillars] = useState<
+    functionscores[]
+  >([])
   const [fismaSystem, setFismaSystem] = useState<fismaSystem>({
     fismasystemid: '',
     fismauid: '',
@@ -45,33 +63,30 @@ const ApplicationPage: React.FC = (): JSX.Element => {
     }
   }, [data])
   useEffect(() => {
+    const order: string[] = [
+      'AccessibleApplications',
+      'AccessAuthorization-Users',
+      'Application-AutomationOrchestration',
+      'Application-Governance',
+      'SecureDevDeployWorkflow',
+      'ApplicationSecurityTesting',
+      'AppThreatProtection',
+      'Application-VisibilityAnalytics',
+    ]
+    function customSort(a: functionscores, b: functionscores) {
+      return order.indexOf(a.function.name) - order.indexOf(b.function.name)
+    }
     let isCancelled: boolean = false
     if (!isCancelled) {
       if (fismaSystem && fismaSystem.functionscores) {
+        const dataArr: dataPillarFunction = []
         fismaSystem.functionscores.forEach((fn) => {
           if (fn.function.pillar === 'Applications') {
-            console.log(fn.function.name, fn.score)
-            if (fn.function.name === 'AccessibleApplications') {
-              setAccessibleApp(fn.score)
-            } else if (fn.function.name === 'AccessAuthorization-Users') {
-              setAccessAuthUser(fn.score)
-            } else if (fn.function.name === 'AppThreatProtection') {
-              setThrtPrctn(fn.score)
-            } else if (fn.function.name === 'SecureDevDeployWorkflow') {
-              setSecDevDplyWrkFlw(fn.score)
-            } else if (fn.function.name === 'ApplicationSecurityTesting') {
-              setSecTest(fn.score)
-            } else if (fn.function.name === 'Application-VisibilityAnalytics') {
-              setVisAnalystics(fn.score)
-            } else if (
-              fn.function.name === 'Application-AutomationOrchestration'
-            ) {
-              setAutOrch(fn.score)
-            } else if (fn.function.name === 'Application-Governance') {
-              setGovernance(fn.score)
-            }
+            dataArr.push(fn)
           }
         })
+        const sortedDataArr = dataArr.slice().sort(customSort)
+        setFismaNetworkPillars((prev) => [...prev, ...sortedDataArr])
       }
     }
     return () => {
@@ -91,78 +106,61 @@ const ApplicationPage: React.FC = (): JSX.Element => {
           <Table sx={{ minWidth: 650, border: 1 }}>
             <PillarTableHead />
             <TableBody>
-              {/* Accessible Applications */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  ACCESSABILITY
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {accessibleApp}
-                </TableCell>
-              </TableRow>
-              {/* AccessAuthorization-Users */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  ACCESS AUTHORIZATION-USERS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {accessAuthUser}
-                </TableCell>
-              </TableRow>
-              {/* Automation Orchestration */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  AUTOMATION & ORCHESTRATION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {autoOrch}
-                </TableCell>
-              </TableRow>
-              {/* Governance */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  GOVERNANCE
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {governance}
-                </TableCell>
-              </TableRow>
-              {/* SECURE DEVELOPER DEPLOY WORKFLOW */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  SECURE DEVELOPER DEPLOY WORKFLOW
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {secDevDplyWrkFlw}
-                </TableCell>
-              </TableRow>
-              {/* Security Testing */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  SECURITY TESTING
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {secTest}
-                </TableCell>
-              </TableRow>
-              {/* Threat Protection */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  THREAT PROTECTION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {thrtPrctn}
-                </TableCell>
-              </TableRow>
-              {/* Visbility & Analytics */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  VISIBILITY & ANALYTICS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {visAnalystics}
-                </TableCell>
-              </TableRow>
+              {fismaNetworkPillars.map((fn, idx) => {
+                const [fnLevel, description] = determineLevel(
+                  fn.score,
+                  fn.function
+                )
+                return (
+                  <TableRow key={idx}>
+                    <TableCell
+                      key={fn.function.name}
+                      sx={{ border: 1 }}
+                      align="center"
+                    >
+                      <Box display="flex" justifyContent="flex-end">
+                        <sub>
+                          <Tooltip
+                            title={fn.function.description}
+                            placement="top"
+                          >
+                            <InfoOutlinedIcon
+                              color="primary"
+                              shapeRendering="geometricPrecision"
+                              fontSize="small"
+                            />
+                          </Tooltip>
+                        </sub>
+                      </Box>
+                      <Box sx={{ fontWeight: 'bold' }}>
+                        {pillarNameMap[fn.function.name]}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      <Box
+                        display="flex"
+                        justifyContent="center"
+                        alignItems="center"
+                      >
+                        <Typography component="span" fontWeight="bold">
+                          {fnLevel}
+                        </Typography>
+                        <Typography component="span"> (</Typography>
+                        <Typography component="span" fontWeight="bold">
+                          {fn.score}
+                        </Typography>
+                        <Typography component="span"> )</Typography>
+                      </Box>
+                      <Box sx={{ textTransform: 'capitalize' }}>
+                        {description}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      {fn.notes}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           <Link to={`/pillars/${id}`}>
