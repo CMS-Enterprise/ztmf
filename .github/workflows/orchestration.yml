@@ -51,7 +51,7 @@ jobs:
     needs: 
       - diff
       - backend
-    if: contains(needs.diff.outputs.infrastructure, 'infrastructure/') || needs.backend.result=='success'
+    if: contains(needs.diff.outputs.infrastructure, 'infrastructure/') && !cancelled()
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: DEV
