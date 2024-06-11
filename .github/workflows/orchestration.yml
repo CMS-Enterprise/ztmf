@@ -13,7 +13,6 @@ jobs:
   diff:
     name: Check for Changes
     runs-on: ubuntu-latest
-    environment: DEV
     outputs:
       backend: ${{ steps.backend.outputs.backend }}
       infrastructure: ${{ steps.infrastructure.outputs.infrastructure }}

@@ -1,10 +1,23 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import FISMASYSTEMQUERY from '../PillarTable/PillarTable.query'
-import { fismaSystem } from '../PillarTable/PillarTable.query'
+import FISMASYSTEMQUERY, {
+  fismaSystem,
+  determineLevel,
+  functionscores,
+} from '../PillarTable/PillarTable.query'
 import { useQuery } from '@apollo/client'
 import TableTitle from '../TableTitle/TableTitle'
-import { Button, Table, TableBody, TableCell, TableRow } from '@mui/material'
+import {
+  Box,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 // import { Typography } from '@mui/material'
 import { Link } from 'react-router-dom'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -13,7 +26,7 @@ import PillarTableHead from '../PillarTableHead/PillarTableHead'
  * Component that renders the contents of the Dashboard view.
  * @returns {JSX.Element} Component that renders the dashboard contents.
  */
-
+type dataPillarFunction = functionscores[]
 const NetworksPage: React.FC = (): JSX.Element => {
   const param = useParams<{ systemId?: string }>()
   const id = param.systemId
@@ -23,13 +36,18 @@ const NetworksPage: React.FC = (): JSX.Element => {
     fismaacronym: '',
     functionscores: [],
   })
-  const [autoOrch, setAutOrch] = useState<number>(0.0)
-  const [encrytion, setEncryption] = useState<number>(0.0)
-  const [resilience, setResilience] = useState<number>(0.0)
-  const [segmentation, setSegmentation] = useState<number>(0.0)
-  const [trafficMngt, setTrafficMngt] = useState<number>(0.0)
-  const [governance, setGovernance] = useState<number>(0.0)
-  const [visAnalystics, setVisAnalystics] = useState<number>(0.0)
+  const pillarNameMap: { [key: string]: string } = {
+    'Network-AutomationOrchestration': 'AUTOMATION & ORCHESTRATION',
+    'Network-Encryption': 'ENCRYPTION',
+    'Network-Governance': 'GOVERNANCE CAPABILITY',
+    NetworkResilience: 'RESILIENCE',
+    NetworkSegmentation: 'NETWORK SEGMENTATION',
+    NetworkTrafficManagement: 'TRAFFIC MANAGEMENT',
+    'Network-VisibilityAnalytics': 'VISIBILITY & ANALYTICS',
+  }
+  const [fismaNetworkPillars, setFismaNetworkPillars] = useState<
+    functionscores[]
+  >([])
   const { loading, data } = useQuery(FISMASYSTEMQUERY, { variables: { id } })
 
   useEffect(() => {
@@ -44,28 +62,29 @@ const NetworksPage: React.FC = (): JSX.Element => {
     }
   }, [data])
   useEffect(() => {
+    const order: string[] = [
+      'Network-AutomationOrchestration',
+      'Network-Encryption',
+      'Network-Governance',
+      'NetworkResilience',
+      'NetworkSegmentation',
+      'NetworkTrafficManagement',
+      'Network-VisibilityAnalytics',
+    ]
+    function customSort(a: functionscores, b: functionscores) {
+      return order.indexOf(a.function.name) - order.indexOf(b.function.name)
+    }
     let isCancelled: boolean = false
     if (!isCancelled) {
       if (fismaSystem && fismaSystem.functionscores) {
+        const dataArr: dataPillarFunction = []
         fismaSystem.functionscores.forEach((fn) => {
           if (fn.function.pillar === 'Networks') {
-            if (fn.function.name === 'Network-AutomationOrchestration') {
-              setAutOrch(fn.score)
-            } else if (fn.function.name === 'Network-Encryption') {
-              setEncryption(fn.score)
-            } else if (fn.function.name === 'Network-Governance') {
-              setGovernance(fn.score)
-            } else if (fn.function.name === 'NetworkResilience') {
-              setResilience(fn.score)
-            } else if (fn.function.name === 'NetworkSegmentation') {
-              setSegmentation(fn.score)
-            } else if (fn.function.name === 'NetworkTrafficManagement') {
-              setTrafficMngt(fn.score)
-            } else if (fn.function.name === 'Network-VisibilityAnalytics') {
-              setVisAnalystics(fn.score)
-            }
+            dataArr.push(fn)
           }
         })
+        const sortedDataArr = dataArr.slice().sort(customSort)
+        setFismaNetworkPillars((prev) => [...prev, ...sortedDataArr])
       }
     }
     return () => {
@@ -82,75 +101,73 @@ const NetworksPage: React.FC = (): JSX.Element => {
           <Table sx={{ minWidth: 650, border: 1 }}>
             <PillarTableHead />
             <TableBody>
-              {/* Automation Orchestration */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  AUTOMATION & ORCHESTRATION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {autoOrch}
-                </TableCell>
-              </TableRow>
-              {/* Encryption */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  ENCRYPTION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {encrytion}
-                </TableCell>
-              </TableRow>
-              {/* Governance */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  GOVERNANCE CAPABILITY
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {governance}
-                </TableCell>
-              </TableRow>
-              {/* Resilience */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  RESILIENCE
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {resilience}
-                </TableCell>
-              </TableRow>
-              {/* Segmentation */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  NETWORK SEGMENTATION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {segmentation}
-                </TableCell>
-              </TableRow>
-              {/* Traffic Management */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  TRAFFIC MANAGEMENT
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {trafficMngt}
-                </TableCell>
-              </TableRow>
-              {/* Visibility Analytics */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center">
-                  VISIBILITY & ANALYTICS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center">
-                  {visAnalystics}
-                </TableCell>
-              </TableRow>
+              {fismaNetworkPillars.map((fn, idx) => {
+                const [fnLevel, description] = determineLevel(
+                  fn.score,
+                  fn.function
+                )
+                return (
+                  <TableRow key={idx}>
+                    <TableCell
+                      key={fn.function.name}
+                      sx={{ border: 1 }}
+                      align="center"
+                    >
+                      <Box display="flex" justifyContent="flex-end">
+                        <sub>
+                          <Tooltip
+                            title={fn.function.description}
+                            placement="top"
+                          >
+                            <InfoOutlinedIcon
+                              color="primary"
+                              shapeRendering="geometricPrecision"
+                              fontSize="small"
+                            />
+                          </Tooltip>
+                        </sub>
+                      </Box>
+                      <Box sx={{ fontWeight: 'bold' }}>
+                        {pillarNameMap[fn.function.name]}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      <Box
+                        display="flex"
+                        justifyContent="center"
+                        alignItems="center"
+                      >
+                        <Typography component="span" fontWeight="bold">
+                          {fnLevel}
+                        </Typography>
+                        <Typography component="span"> (</Typography>
+                        <Typography component="span" fontWeight="bold">
+                          {fn.score}
+                        </Typography>
+                        <Typography component="span"> )</Typography>
+                      </Box>
+                      <Box sx={{ textTransform: 'capitalize' }}>
+                        {description}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      {fn.notes}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           <Link to={`/pillars/${id}`}>
             <Button
               variant="contained"
-              sx={{ mt: 10, ml: 1 }}
+              sx={{
+                mt: 10,
+                ml: 1,
+                marginLeft: 0,
+                marginTop: 4,
+                marginBottom: 10,
+              }}
               endIcon={<ArrowBackIcon />}
             >
               Back

@@ -293,7 +293,7 @@ const PillarPage: React.FC = (): JSX.Element => {
           <Link to={Routes.ROOT}>
             <Button
               variant="contained"
-              sx={{ mt: 10, ml: 1 }}
+              sx={{ mt: 10, ml: 1, marginLeft: 0, marginTop: 4 }}
               endIcon={<ArrowBackIcon />}
             >
               Back

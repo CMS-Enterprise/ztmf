@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import FISMASYSTEMQUERY from '../PillarTable/PillarTable.query'
-import { fismaSystem } from '../PillarTable/PillarTable.query'
+import FISMASYSTEMQUERY, {
+  fismaSystem,
+  determineLevel,
+  functionscores,
+} from '../PillarTable/PillarTable.query'
 import { useQuery } from '@apollo/client'
 import TableTitle from '../TableTitle/TableTitle'
-import { Button, Table, TableBody, TableCell, TableRow } from '@mui/material'
-// import { Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { Link } from 'react-router-dom'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PillarTableHead from '../PillarTableHead/PillarTableHead'
@@ -14,22 +26,28 @@ import PillarTableHead from '../PillarTableHead/PillarTableHead'
  * @returns {JSX.Element} Component that renders the dashboard contents.
  */
 
+type dataPillarFunction = functionscores[]
 const DevicesPage: React.FC = (): JSX.Element => {
   const param = useParams<{ systemId?: string }>()
   const id = param.systemId
-  const [asstRiskAssmnt, setAsstRiskAssmnt] = useState<number>(0.0)
-  const [autOrch, setAutOrch] = useState<number>(0.0)
-  const [governance, setGov] = useState<number>(0.0)
-  const [thrtPrtctn, setThrtPrtctn] = useState<number>(0.0)
-  const [visAnalystics, setVisAnalystics] = useState<number>(0.0)
-  const [policyEnforcement, setPolicyEnforcment] = useState<number>(0.0)
-  const [resourceAccess, setResourceAccess] = useState<number>(0.0)
+  const [fismaDevicePillars, setFismaDevicePillars] = useState<
+    functionscores[]
+  >([])
   const [fismaSystem, setFismaSystem] = useState<fismaSystem>({
     fismasystemid: '',
     fismauid: '',
     fismaacronym: '',
     functionscores: [],
   })
+  const pillarNameMap: { [key: string]: string } = {
+    AssetRiskManagement: 'ASSET RISK MANAGEMENT',
+    'Device-AutomationOrchestration': 'AUTOMATION & ORCHESTRATION',
+    'Device-Governance': 'GOVERNANCE',
+    DeviceThreatProtection: 'THREAT PROTECTION',
+    PolicyEnforcement: 'POLICY ENFORCEMENT',
+    ResourceAccess: 'RESOURCE ACCESS',
+    'Device-VisibilityAnalytics': 'VISIBILITY ANALYTICS',
+  }
   const { loading, data } = useQuery(FISMASYSTEMQUERY, { variables: { id } })
 
   useEffect(() => {
@@ -44,28 +62,29 @@ const DevicesPage: React.FC = (): JSX.Element => {
     }
   }, [data])
   useEffect(() => {
+    const order: string[] = [
+      'AssetRiskManagement',
+      'Device-AutomationOrchestration',
+      'Device-Governance',
+      'DeviceThreatProtection',
+      'PolicyEnforcement',
+      'Device-VisibilityAnalytics',
+      'ResourceAccess',
+    ]
+    function customSort(a: functionscores, b: functionscores) {
+      return order.indexOf(a.function.name) - order.indexOf(b.function.name)
+    }
     let isCancelled: boolean = false
     if (!isCancelled) {
       if (fismaSystem && fismaSystem.functionscores) {
+        const dataArr: dataPillarFunction = []
         fismaSystem.functionscores.forEach((fn) => {
           if (fn.function.pillar === 'Devices') {
-            if (fn.function.name === 'AssetRiskManagement') {
-              setAsstRiskAssmnt(fn.score)
-            } else if (fn.function.name === 'Device-AutomationOrchestration') {
-              setAutOrch(fn.score)
-            } else if (fn.function.name === 'Device-Governance') {
-              setGov(fn.score)
-            } else if (fn.function.name === 'DeviceThreatProtection') {
-              setThrtPrtctn(fn.score)
-            } else if (fn.function.name === 'Device-VisibilityAnalytics') {
-              setVisAnalystics(fn.score)
-            } else if (fn.function.name === 'PolicyEnforcement') {
-              setPolicyEnforcment(fn.score)
-            } else if (fn.function.name === 'ResourceAccess') {
-              setResourceAccess(fn.score)
-            }
+            dataArr.push(fn)
           }
         })
+        const sortedDataArr = dataArr.slice().sort(customSort)
+        setFismaDevicePillars((prev) => [...prev, ...sortedDataArr])
       }
     }
     return () => {
@@ -83,69 +102,61 @@ const DevicesPage: React.FC = (): JSX.Element => {
           <Table sx={{ minWidth: 650, border: 1 }}>
             <PillarTableHead />
             <TableBody>
-              {/* Asset Risk Management */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  ASSET RISK MANAGEMENT
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {asstRiskAssmnt}
-                </TableCell>
-              </TableRow>
-              {/* Device-AutomationOrchestration */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  AUTOMATION ORCHESTRATION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {autOrch}
-                </TableCell>
-              </TableRow>
-              {/* Device-Governance */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  GOVERNANCE
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {governance}
-                </TableCell>
-              </TableRow>
-              {/* Policy Enforcment */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  POLICY ENFORCEMENT
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {policyEnforcement}
-                </TableCell>
-              </TableRow>
-              {/* Resource Access */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  RESOURCE ACCESS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {resourceAccess}
-                </TableCell>
-              </TableRow>
-              {/* Threat Protection */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  THREAT PROTECTION
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {thrtPrtctn}
-                </TableCell>
-              </TableRow>
-              {/* Visibility Analytics */}
-              <TableRow>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  VISIBILITY ANALYTICS
-                </TableCell>
-                <TableCell sx={{ border: 1 }} align="center" size="medium">
-                  {visAnalystics}
-                </TableCell>
-              </TableRow>
+              {fismaDevicePillars.map((fn, idx) => {
+                const [fnLevel, description] = determineLevel(
+                  fn.score,
+                  fn.function
+                )
+                return (
+                  <TableRow key={idx}>
+                    <TableCell
+                      key={fn.function.name}
+                      sx={{ border: 1 }}
+                      align="center"
+                    >
+                      <Box display="flex" justifyContent="flex-end">
+                        <sub>
+                          <Tooltip
+                            title={fn.function.description}
+                            placement="top"
+                          >
+                            <InfoOutlinedIcon
+                              color="primary"
+                              shapeRendering="geometricPrecision"
+                              fontSize="small"
+                            />
+                          </Tooltip>
+                        </sub>
+                      </Box>
+                      <Box sx={{ fontWeight: 'bold' }}>
+                        {pillarNameMap[fn.function.name]}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      <Box
+                        display="flex"
+                        justifyContent="center"
+                        alignItems="center"
+                      >
+                        <Typography component="span" fontWeight="bold">
+                          {fnLevel}
+                        </Typography>
+                        <Typography component="span"> (</Typography>
+                        <Typography component="span" fontWeight="bold">
+                          {fn.score}
+                        </Typography>
+                        <Typography component="span"> )</Typography>
+                      </Box>
+                      <Box sx={{ textTransform: 'capitalize' }}>
+                        {description}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ border: 1 }} align="center">
+                      {fn.notes}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           <Link to={`/pillars/${id}`}>

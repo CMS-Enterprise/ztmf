@@ -87,7 +87,6 @@ const HomePageContainer: React.FC = (): JSX.Element => {
       const seenAcronyms: Set<string> = new Set()
       const newDictionary: Dictionary = {}
       data.fismasystems.forEach((system: FISMASYSTEM) => {
-        console.log(system)
         if (!seenAcronyms.has(system.fismaacronym)) {
           seenAcronyms.add(system.fismaacronym)
           newDictionary[system.fismaacronym] = {
@@ -115,7 +114,6 @@ const HomePageContainer: React.FC = (): JSX.Element => {
       ) : (
         <>
           <div>
-            {/* <Container maxWidth="md"> */}
             <Typography variant="h6" sx={{ my: 2 }} align="left">
               Welcome to the Zero Trust Maturity score dashboard!
               <br />
@@ -194,7 +192,7 @@ const HomePageContainer: React.FC = (): JSX.Element => {
                 <Link to={`/pillars/${fismaSystemID}`}>
                   <Button
                     variant="contained"
-                    sx={{ mt: 15, ml: 1 }}
+                    sx={{ mt: 10, ml: 1, marginLeft: 0, marginTop: 4 }}
                     endIcon={<NavigateNextIcon />}
                   >
                     Next
@@ -202,8 +200,6 @@ const HomePageContainer: React.FC = (): JSX.Element => {
                 </Link>
               )}
             </div>
-            {/* </Container> */}
-            {/* <Container maxWidth="md" ></Container> */}
           </div>
         </>
       )}
