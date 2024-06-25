@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.fismasystems
     issoemail varchar(255)
 ) TABLESPACE pg_default;
 
-
 CREATE TABLE public.functions (
     functionid SERIAL PRIMARY KEY,
     pillar varchar(255),
@@ -36,3 +35,11 @@ CREATE TABLE public.functionscores (
   notes varchar(1000)
 ) TABLESPACE pg_default;
 
+CREATE TABLE public.users (
+  userid uuid DEFAULT gen_random_uuid(),
+  email varchar(255) NOT NULL UNIQUE,
+  fullname varchar(255),
+  jobcode varchar(30) NOT NULL,
+  fismasystems INT [],
+  PRIMARY KEY (userid)
+)

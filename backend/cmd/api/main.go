@@ -5,22 +5,22 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/graph"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
+	"github.com/graph-gophers/graphql-go"
+	"github.com/graph-gophers/graphql-go/relay"
 )
 
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
 
-	handler, err := HttpHandler()
+	schema, err := graphql.ParseSchema(schema, &graph.RootResolver{})
 	if err != nil {
-		log.Fatal("could not get HttpHandler()", err)
+		log.Fatal(err)
 	}
-
-	http.Handle("/graphql", handler)
-
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)
-
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		log.Print("Loading TLS configuration")
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
@@ -39,7 +39,7 @@ func main() {
 
 		server := &http.Server{
 			Addr:      ":" + cfg.Port,
-			Handler:   handler,
+			Handler:   auth.Middleware(&relay.Handler{Schema: schema}),
 			TLSConfig: tlsConfig,
 		}
 		err = server.ListenAndServeTLS("", "")
@@ -48,6 +48,8 @@ func main() {
 		}
 
 	} else {
-		log.Fatal("could not listen and serve:", http.ListenAndServe(":"+cfg.Port, nil))
+		http.Handle("/graphql", auth.Middleware(&relay.Handler{Schema: schema}))
+		log.Fatal("Failed to start server:", http.ListenAndServe(":"+cfg.Port, nil))
 	}
+
 }
