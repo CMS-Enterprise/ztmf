@@ -28,7 +28,7 @@ func logRequest(next http.Handler) http.Handler {
 
 func recordUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%+v", r.Header)
+		fmt.Printf("%+v\n", r.Header)
 		next.ServeHTTP(w, r)
 	})
 }
