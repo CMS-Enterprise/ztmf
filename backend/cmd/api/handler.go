@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 )
@@ -26,12 +28,22 @@ func HttpHandler() (http.Handler, error) {
 		return nil, err
 	}
 
-	return logRequest(&relay.Handler{Schema: schema}), nil
+	return recordUser(logRequest(&relay.Handler{Schema: schema})), nil
 }
 
 func logRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s\r", tlsConstants[r.TLS.Version], tlsConstants[r.TLS.CipherSuite])
+		cfg := config.GetInstance()
+		if cfg.CertFile != "" && cfg.KeyFile != "" {
+			log.Printf("%s %s\r", tlsConstants[r.TLS.Version], tlsConstants[r.TLS.CipherSuite])
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func recordUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%+v", r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")])
 		next.ServeHTTP(w, r)
 	})
 }
