@@ -28,7 +28,10 @@ func logRequest(next http.Handler) http.Handler {
 
 func recordUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%+v\n", r.Header)
+		if userContext, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
+			fmt.Printf("x-amzn-ava-user-context: %s\n", userContext[0])
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
