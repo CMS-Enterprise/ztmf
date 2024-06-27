@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/token"
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 )
@@ -29,7 +30,12 @@ func logRequest(next http.Handler) http.Handler {
 func recordUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if userContext, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
-			fmt.Printf("x-amzn-ava-user-context: %s\n", userContext[0])
+			// fmt.Printf("x-amzn-ava-user-context: %s\n", userContext[0])
+			token, _ := token.Decode(userContext[0])
+			if !token.Valid {
+				fmt.Println("token invalid")
+			}
+			fmt.Printf("%+v\n", token.Claims)
 		}
 
 		next.ServeHTTP(w, r)
