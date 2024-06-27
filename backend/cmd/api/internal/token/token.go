@@ -1,6 +1,9 @@
 package token
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"log"
 	"net/http"
@@ -49,8 +52,20 @@ func getKey(token *jwt.Token) (interface{}, error) {
 				log.Printf("client: could not read response body: %s\n", err)
 			}
 
+			block, _ := pem.Decode(resBody)
+			if block == nil {
+				return // nil, errors.New("pubKey no pem data found")
+			}
+
+			genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+			if err != nil {
+				return // false, err
+			}
+
+			pk := genericPublicKey.(*ecdsa.PublicKey)
 			// cache it!
-			keys[kid] = resBody
+			keys[kid] = pk
+
 		})
 	}
 
