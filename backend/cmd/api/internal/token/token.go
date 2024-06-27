@@ -1,7 +1,6 @@
 package token
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -54,6 +53,6 @@ func getKey(token *jwt.Token) (interface{}, error) {
 			keys[kid] = resBody
 		})
 	}
-	fmt.Printf("%+v\n", keys)
+
 	return keys[kid], nil
 }
