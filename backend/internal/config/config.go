@@ -13,6 +13,7 @@ type config struct {
 	Port     string `env:"PORT" envDefault:"3000"`
 	CertFile string `env:"CERT_FILE"`
 	KeyFile  string `env:"KEY_FILE"`
+	Region   string `env:"AWS_REGION" envDefault:"us-east-1"`
 	Db       struct {
 		Host     string `env:"DB_ENDPOINT"`
 		Port     string `env:"DB_PORT" envDefault:"5432"`

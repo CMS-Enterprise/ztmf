@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.fismasystems
     issoemail varchar(255)
 ) TABLESPACE pg_default;
 
-
 CREATE TABLE public.functions (
     functionid SERIAL PRIMARY KEY,
     pillar varchar(255),
@@ -36,3 +35,17 @@ CREATE TABLE public.functionscores (
   notes varchar(1000)
 ) TABLESPACE pg_default;
 
+CREATE TABLE public.users (
+  userid uuid DEFAULT gen_random_uuid(),
+  email varchar(255) NOT NULL UNIQUE,
+  jobcode varchar(20) NOT NULL,
+  PRIMARY KEY (userid)
+)
+
+-- users_fismasystems is used to track which fisma systems each user has access to
+-- a user with job code ZTMF_SUPER does not need these records as they have access to all fisma systems
+CREATE TABLE public.users_fismasystems (
+  userid uuid REFERENCES users (userid) ON DELETE CASCADE,
+  fismasystemid INT REFERENCES fismasystems (fismasystemid) ON DELETE CASCADE,
+  PRIMARY KEY (userid, fismasystemid)
+)

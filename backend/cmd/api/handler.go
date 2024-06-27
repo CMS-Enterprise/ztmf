@@ -4,21 +4,12 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/token"
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 )
 
 type rootResolver struct{}
-
-var tlsConstants = map[uint16]string{
-	0x1301: "TLS_AES_128_GCM_SHA256",
-	0x1302: "TLS_AES_256_GCM_SHA384",
-	0x1303: "TLS_CHACHA20_POLY1305_SHA256",
-	0x0301: "VersionTLS10",
-	0x0302: "VersionTLS11",
-	0x0303: "VersionTLS12",
-	0x0304: "VersionTLS13",
-}
 
 func HttpHandler() (http.Handler, error) {
 	schema, err := graphql.ParseSchema(schema, &rootResolver{})
@@ -26,12 +17,26 @@ func HttpHandler() (http.Handler, error) {
 		return nil, err
 	}
 
-	return logRequest(&relay.Handler{Schema: schema}), nil
+	return recordUser(&relay.Handler{Schema: schema}), nil
 }
 
-func logRequest(next http.Handler) http.Handler {
+func recordUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s\r", tlsConstants[r.TLS.Version], tlsConstants[r.TLS.CipherSuite])
+		if userContext, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
+			// fmt.Printf("x-amzn-ava-user-context: %s\n", userContext[0])
+			tkn, err := token.Decode(userContext[0])
+			if !tkn.Valid {
+				w.WriteHeader(403)
+				if claims, ok := tkn.Claims.(*token.Claims); ok {
+					log.Printf("Invalid token received for %+v with error %s", claims, err)
+				} else {
+					log.Printf("Invalid token received with error %s", err)
+				}
+				// return now so we send nothing and don't complete the request for data!
+				return
+			}
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
