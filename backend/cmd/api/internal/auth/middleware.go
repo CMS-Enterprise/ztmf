@@ -5,7 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model/users"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
 // A private key for context that only this package can access. This is important
@@ -20,6 +21,12 @@ type contextKey struct {
 // If a record is found the resulting user is provided to the request context
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := config.GetInstance()
+		if cfg.Env == "local" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		if userContext, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
 			tkn, err := decodeJwt(userContext[0])
 			claims := tkn.Claims.(*Claims)
@@ -31,7 +38,7 @@ func Middleware(next http.Handler) http.Handler {
 				return
 			}
 
-			user, err := users.FindByEmail(r.Context(), claims.Email)
+			user, err := model.FindUserByEmail(r.Context(), claims.Email)
 
 			if err != nil {
 				log.Printf("Could not find user by email: %s with error %s\n", claims.Email, err)

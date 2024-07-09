@@ -1,6 +1,6 @@
-package main
+package graph
 
-var schema = `
+const Schema = `
 schema {
   query: Query
 }

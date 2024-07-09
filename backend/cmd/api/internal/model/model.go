@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Query is a proxy to *pgx.Conn.Query
-func Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+// query is a proxy to *pgx.Conn.Query
+func query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -20,18 +20,19 @@ func Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return conn.Query(ctx, sql, args...)
 }
 
-// QueryRow is a proxy to *pgx.Conn.QueryRow
-func QueryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
+// queryRow is a proxy to *pgx.Conn.QueryRow
+func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	row := conn.QueryRow(ctx, sql, args...)
 	return row, nil
 }
 
-// Exec is a proxy to *pgx.Conn.Exec
-func Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+// exec is a proxy to *pgx.Conn.Exec
+func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return pgconn.NewCommandTag(""), err
