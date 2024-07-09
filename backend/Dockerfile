@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 golang:1.22.0-bookworm as builder
+FROM --platform=linux/amd64 golang:1.22.0-bookworm AS builder
 
 WORKDIR /src
 
@@ -11,8 +11,7 @@ COPY ./go.sum /src/
 COPY ./cmd/api /src/cmd/api
 COPY ./internal/ /src/internal/
 
-# enable FIPS only crypto
-RUN go build ./cmd/api/...
+RUN go build -o ./ ./cmd/api/...
 
 FROM --platform=linux/amd64 scratch
 

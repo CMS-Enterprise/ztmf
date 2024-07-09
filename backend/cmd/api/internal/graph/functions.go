@@ -1,4 +1,4 @@
-package main
+package graph
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type Function struct {
 	Datacenterenvironment *string
 }
 
-func (r *rootResolver) Functions(ctx context.Context) ([]*FunctionResolver, error) {
+func (r *RootResolver) Functions(ctx context.Context) ([]*FunctionResolver, error) {
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)
@@ -43,7 +43,7 @@ func (r *rootResolver) Functions(ctx context.Context) ([]*FunctionResolver, erro
 }
 
 // resolver for graph entry from root
-func (r *rootResolver) Function(ctx context.Context, args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
+func (r *RootResolver) Function(ctx context.Context, args struct{ Functionid graphql.ID }) (*FunctionResolver, error) {
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)

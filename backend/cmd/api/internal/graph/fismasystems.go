@@ -1,4 +1,4 @@
-package main
+package graph
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type FismaSystem struct {
 	Issoemail             *string
 }
 
-func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
+func (r *RootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacronym *string }) ([]*FismaSystemResolver, error) {
 	db, err := db.Conn(ctx)
 	if err != nil {
 		log.Println(err)
@@ -58,7 +58,7 @@ func (r *rootResolver) FismaSystems(ctx context.Context, args struct{ Fismaacron
 
 }
 
-func (r *rootResolver) FismaSystem(ctx context.Context, args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
+func (r *RootResolver) FismaSystem(ctx context.Context, args struct{ Fismasystemid graphql.ID }) (*FismaSystemResolver, error) {
 	// args.Fismasystemid
 	db, err := db.Conn(ctx)
 	if err != nil {
