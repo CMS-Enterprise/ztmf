@@ -5,7 +5,7 @@ updates:
     directory: '/ui'
     schedule:
       interval: 'daily'
-      time: '11:53'
+      time: '12:00'
       timezone: 'America/New_York'
     labels:
       - 'dependencies'
