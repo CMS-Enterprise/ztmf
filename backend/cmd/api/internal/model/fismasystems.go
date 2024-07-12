@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/graph-gophers/graphql-go"
@@ -23,6 +24,12 @@ type FismaSystem struct {
 	Issoemail             *string
 }
 
+type FindFismaSystemsInput struct {
+	Fismasystemid *graphql.ID
+	Fismaacronym  *string
+	Userid        *string
+}
+
 func (f *FismaSystem) FunctionScores(ctx context.Context) ([]*FunctionScore, error) {
 	rows, err := query(ctx, "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores WHERE fismasystemid=$1 ORDER BY scoreid ASC", f.Fismasystemid)
 	if err != nil {
@@ -38,24 +45,22 @@ func (f *FismaSystem) FunctionScores(ctx context.Context) ([]*FunctionScore, err
 	})
 }
 
-func FindFismaSystems(ctx context.Context, fismaacronym *string) ([]*FismaSystem, error) {
+func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
 
-	sql := "SELECT * FROM fismasystems"
-	if fismaacronym != nil {
+	var args = []any{}
+
+	sql := "SELECT fismasystems.fismasystemid as fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail FROM fismasystems"
+	if input.Userid != nil {
+		sql += joinUserSql(*input.Userid)
+	}
+
+	if input.Fismaacronym != nil {
 		sql += " WHERE fismaacronym=$1"
+		args = append(args, input.Fismaacronym)
 	}
-	sql += " ORDER BY fismasystemid ASC"
+	sql += " ORDER BY fismasystems.fismasystemid ASC"
 
-	var (
-		err  error
-		rows pgx.Rows
-	)
-
-	if fismaacronym != nil {
-		rows, err = query(ctx, sql, fismaacronym)
-	} else {
-		rows, err = query(ctx, sql)
-	}
+	rows, err := query(ctx, sql, args...)
 
 	if err != nil {
 		log.Println(err)
@@ -69,10 +74,22 @@ func FindFismaSystems(ctx context.Context, fismaacronym *string) ([]*FismaSystem
 	})
 }
 
-func FindFismaSystemById(ctx context.Context, fismasystemid graphql.ID) (*FismaSystem, error) {
+func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSystem, error) {
+	if input.Fismasystemid == nil {
+		return nil, errors.New("input.Fismasystemid cannot be null")
+	}
 
-	row, err := queryRow(ctx, "SELECT * FROM fismasystems WHERE fismasystemid=$1", fismasystemid)
+	var args = []any{}
+	sql := "SELECT * FROM fismasystems WHERE fismasystemid=$1"
+	args = append(args, input.Fismasystemid)
+
+	if input.Userid != nil {
+		sql += joinUserSql(*input.Userid)
+	}
+
+	row, err := queryRow(ctx, sql, args...)
 	if err != nil {
+		// TODO: make errors more clear where they originated
 		log.Println(err)
 		return nil, err
 	}
@@ -85,4 +102,8 @@ func FindFismaSystemById(ctx context.Context, fismasystemid graphql.ID) (*FismaS
 	}
 
 	return &fismaSystem, nil
+}
+
+func joinUserSql(userid string) string {
+	return " JOIN users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid = '" + userid + "'"
 }
