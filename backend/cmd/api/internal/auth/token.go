@@ -11,6 +11,7 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/graph-gophers/graphql-go/errors"
 )
 
 var (
@@ -19,10 +20,8 @@ var (
 )
 
 type Claims struct {
-	Name   string   `json:"name"`
-	Email  string   `json:"email"`
-	Eua    string   `json:"preferred_username"`
-	Groups []string `json:"groups"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -32,42 +31,52 @@ func decodeJwt(tokenString string) (*jwt.Token, error) {
 
 // getKey retrieves keys via http and caches them for future requests
 func getKey(token *jwt.Token) (interface{}, error) {
-	kid := token.Header["kid"].(string)
+	cfg := config.GetInstance()
 
-	// if not already cached, request it
-	if _, ok := keys[kid]; !ok {
-		// but do it once to be thread safe
-		once.Do(func() {
-			cfg := config.GetInstance()
-			url := "https://public-keys.prod.verified-access." + cfg.Region + ".amazonaws.com/" + kid
-			req, _ := http.NewRequest("GET", url, nil)
+	switch token.Header["alg"] {
+	case "HS256":
+		return []byte(cfg.HS256_SECRET), nil
 
-			res, err := http.DefaultClient.Do(req)
-			if err != nil {
-				log.Printf("client: error making http request: %s\n", err)
-			}
+	case "ES384":
+		kid := token.Header["kid"].(string)
 
-			resBody, err := io.ReadAll(res.Body)
-			if err != nil {
-				log.Printf("client: could not read response body: %s\n", err)
-			}
+		// if not already cached, request it
+		if _, ok := keys[kid]; !ok {
+			// but do it once to be thread safe
+			once.Do(func() {
+				cfg := config.GetInstance()
+				url := "https://public-keys.prod.verified-access." + cfg.Region + ".amazonaws.com/" + kid
+				req, _ := http.NewRequest("GET", url, nil)
 
-			block, _ := pem.Decode(resBody)
-			if block == nil {
-				return // nil, errors.New("pubKey no pem data found")
-			}
+				res, err := http.DefaultClient.Do(req)
+				if err != nil {
+					log.Printf("client: error making http request: %s\n", err)
+				}
 
-			genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-			if err != nil {
-				return // false, err
-			}
+				resBody, err := io.ReadAll(res.Body)
+				if err != nil {
+					log.Printf("client: could not read response body: %s\n", err)
+				}
 
-			pk := genericPublicKey.(*ecdsa.PublicKey)
-			// cache it!
-			keys[kid] = pk
+				block, _ := pem.Decode(resBody)
+				if block == nil {
+					return // nil, errors.New("pubKey no pem data found")
+				}
 
-		})
+				genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+				if err != nil {
+					return // false, err
+				}
+
+				pk := genericPublicKey.(*ecdsa.PublicKey)
+				// cache it!
+				keys[kid] = pk
+
+			})
+		}
+
+		return keys[kid], nil
+	default:
+		return nil, errors.Errorf("unsupported jwt signing algorithm")
 	}
-
-	return keys[kid], nil
 }

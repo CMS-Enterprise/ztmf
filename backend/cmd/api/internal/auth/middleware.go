@@ -6,33 +6,22 @@ import (
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
-	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
-
-// A private key for context that only this package can access. This is important
-// to prevent collisions between different context uses
-var userCtxKey = &contextKey{"user"}
-
-type contextKey struct {
-	name string
-}
 
 // Middleware is used to validate the JWT forwarded by Verified Access and match it to a db record
 // If a record is found the resulting user is provided to the request context
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg := config.GetInstance()
-		if cfg.Env == "local" {
-			next.ServeHTTP(w, r)
-			return
+		if v, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
+			r.Header[http.CanonicalHeaderKey("authorization")] = v
 		}
 
-		if userContext, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
-			tkn, err := decodeJwt(userContext[0])
+		if encoded, ok := r.Header[http.CanonicalHeaderKey("authorization")]; ok {
+			tkn, err := decodeJwt(encoded[0])
 			claims := tkn.Claims.(*Claims)
 
 			if !tkn.Valid {
-				log.Printf("Invalid token received for %s (%s) with error %s\n", claims.Name, claims.Groups, err)
+				log.Printf("Invalid token received for %s with error %s\n", claims.Name, err)
 				// write and return now so we send an empty body without completing the request for data
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
@@ -53,8 +42,3 @@ func Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
-// func UserFromContext(ctx context.Context) *users.User {
-// 	u, _ := ctx.Value(userCtxKey).(*users.User)
-// 	return u
-// }
