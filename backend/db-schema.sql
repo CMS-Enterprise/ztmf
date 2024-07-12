@@ -35,11 +35,18 @@ CREATE TABLE public.functionscores (
   notes varchar(1000)
 ) TABLESPACE pg_default;
 
+CREATE TYPE roles AS ENUM ('user','admin','super');
+
 CREATE TABLE public.users (
   userid uuid DEFAULT gen_random_uuid(),
   email varchar(255) NOT NULL UNIQUE,
-  fullname varchar(255),
-  jobcode varchar(30) NOT NULL,
-  fismasystems INT [],
+  fullname varchar(255) NOT NULL,
+  current_role roles NOT NULL,
   PRIMARY KEY (userid)
+)
+
+CREATE TABLE public.users_fismasystems (
+  userid uuid REFERENCES users (userid) ON DELETE CASCADE,
+  fismasystemid INT REFERENCES fismasystems (fismasystemid) ON DELETE CASCADE,
+  PRIMARY KEY (userid, fismasystemid)
 )
