@@ -50,3 +50,5 @@ type FunctionScore {
 	function:       Function!
 }
 `
+
+type RootResolver struct{}
