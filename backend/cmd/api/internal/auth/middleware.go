@@ -16,7 +16,10 @@ func Middleware(next http.Handler) http.Handler {
 			r.Header[http.CanonicalHeaderKey("authorization")] = v
 		}
 
-		if encoded, ok := r.Header[http.CanonicalHeaderKey("authorization")]; ok {
+		if encoded, ok := r.Header[http.CanonicalHeaderKey("authorization")]; !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		} else {
 			tkn, err := decodeJwt(encoded[0])
 			claims := tkn.Claims.(*Claims)
 
