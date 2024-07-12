@@ -7,7 +7,6 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // query is a proxy to *pgx.Conn.Query
@@ -32,11 +31,11 @@ func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 }
 
 // exec is a proxy to *pgx.Conn.Exec
-func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return pgconn.NewCommandTag(""), err
-	}
+// func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+// 	conn, err := db.Conn(ctx)
+// 	if err != nil {
+// 		return pgconn.NewCommandTag(""), err
+// 	}
 
-	return conn.Exec(ctx, sql, args...)
-}
+// 	return conn.Exec(ctx, sql, args...)
+// }
