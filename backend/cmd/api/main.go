@@ -16,9 +16,19 @@ func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
 	log.Println("Parsing schema...")
+
 	schema, err := graphql.ParseSchema(graph.Schema, &graph.RootResolver{}, graphql.UseFieldResolvers())
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/graphql", auth.Middleware(&relay.Handler{Schema: schema}))
+	mux.Handle("/whoami", auth.Middleware(auth.WhoAmI()))
+
+	server := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: mux,
 	}
 
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)
@@ -30,7 +40,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		tlsConfig := &tls.Config{
+		server.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			CipherSuites: []uint16{
 				tls.TLS_AES_128_GCM_SHA256,
@@ -38,20 +48,10 @@ func main() {
 			},
 			MinVersion: tls.VersionTLS13,
 		}
-
-		server := &http.Server{
-			Addr:      ":" + cfg.Port,
-			Handler:   auth.Middleware(&relay.Handler{Schema: schema}),
-			TLSConfig: tlsConfig,
-		}
-		err = server.ListenAndServeTLS("", "")
-		if err != nil {
-			log.Fatalf("Failed to start server: %v", err)
-		}
+		log.Fatal("Failed to start server:", server.ListenAndServeTLS("", ""))
 
 	} else {
-		http.Handle("/graphql", auth.Middleware(&relay.Handler{Schema: schema}))
-		log.Fatal("Failed to start server:", http.ListenAndServe(":"+cfg.Port, nil))
+		log.Fatal("Failed to start server:", server.ListenAndServe())
 	}
 
 }
