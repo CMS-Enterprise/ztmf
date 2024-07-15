@@ -1,6 +1,6 @@
-package main
+package graph
 
-var schema = `
+const Schema = `
 schema {
   query: Query
 }
@@ -50,3 +50,5 @@ type FunctionScore {
 	function:       Function!
 }
 `
+
+type RootResolver struct{}

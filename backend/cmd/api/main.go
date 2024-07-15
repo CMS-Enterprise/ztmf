@@ -15,12 +15,14 @@ import (
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
-
-	schema, err := graphql.ParseSchema(schema, &graph.RootResolver{})
+	log.Println("Parsing schema...")
+	schema, err := graphql.ParseSchema(graph.Schema, &graph.RootResolver{}, graphql.UseFieldResolvers())
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)
+
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		log.Print("Loading TLS configuration")
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)

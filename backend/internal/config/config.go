@@ -9,12 +9,13 @@ import (
 
 // config is shared by all binaries with values derived from environment variables
 type config struct {
-	Env      string `env:"ENVIRONMENT" envDefault:"local"`
-	Port     string `env:"PORT" envDefault:"3000"`
-	CertFile string `env:"CERT_FILE"`
-	KeyFile  string `env:"KEY_FILE"`
-	Region   string `env:"AWS_REGION" envDefault:"us-east-1"`
-	Db       struct {
+	Env          string `env:"ENVIRONMENT" envDefault:"local"`
+	Port         string `env:"PORT" envDefault:"3000"`
+	CertFile     string `env:"CERT_FILE"`
+	KeyFile      string `env:"KEY_FILE"`
+	Region       string `env:"AWS_REGION" envDefault:"us-east-1"`
+	HS256_SECRET string `env:"HS256_SECRET"`
+	Db           struct {
 		Host     string `env:"DB_ENDPOINT"`
 		Port     string `env:"DB_PORT" envDefault:"5432"`
 		Name     string `env:"DB_NAME"`
