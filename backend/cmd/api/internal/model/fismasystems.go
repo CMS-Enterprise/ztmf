@@ -27,7 +27,7 @@ type FismaSystem struct {
 type FindFismaSystemsInput struct {
 	Fismasystemid *graphql.ID
 	Fismaacronym  *string
-	Userid        *string
+	Userid        *graphql.ID
 }
 
 func (f *FismaSystem) FunctionScores(ctx context.Context) ([]*FunctionScore, error) {
@@ -51,7 +51,7 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	sql := "SELECT fismasystems.fismasystemid as fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail FROM fismasystems"
 	if input.Userid != nil {
-		sql += joinUserSql(*input.Userid)
+		sql += joinUserSql(string(*input.Userid))
 	}
 
 	if input.Fismaacronym != nil {
@@ -84,7 +84,7 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	args = append(args, input.Fismasystemid)
 
 	if input.Userid != nil {
-		sql += joinUserSql(*input.Userid)
+		sql += joinUserSql(string(*input.Userid))
 	}
 
 	row, err := queryRow(ctx, sql, args...)

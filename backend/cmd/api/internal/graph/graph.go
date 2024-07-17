@@ -10,6 +10,8 @@ type Query {
 	fismasystem(fismasystemid: ID!): FismaSystem!
 	functions: [Function!]!
 	function(functionid: ID!): Function!
+	users: [User!]!
+	user(userid: ID!): User!
 }
 
 type FismaSystem {
@@ -48,6 +50,13 @@ type FunctionScore {
 	score:          Float!
 	notes:          String
 	function:       Function!
+}
+
+type User {
+	userid:       ID!
+	email:        String!
+	fullname:     String!
+	current_role: String!
 }
 `
 
