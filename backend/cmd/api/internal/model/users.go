@@ -15,8 +15,18 @@ type User struct {
 	Current_Role string
 }
 
-func (u *User) IsSuper() bool {
-	return u.Current_Role == "super"
+func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
+	sql := "INSERT INTO public.users (email, fullname, role) VALUES ($1,$2,$3)"
+	_, err := exec(ctx, sql, email, fullname, role)
+	if err != nil {
+		return nil, err
+	}
+
+	return FindUserByEmail(ctx, email)
+}
+
+func (u *User) IsAdmin() bool {
+	return u.Current_Role == "ADMIN"
 }
 
 // FindUsers queries the database for all users and return an array of *User

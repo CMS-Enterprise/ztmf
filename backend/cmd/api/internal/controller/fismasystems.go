@@ -14,7 +14,7 @@ func ListFismasystems(ctx context.Context, fismaacronym *string) ([]*model.Fisma
 		Fismaacronym: fismaacronym,
 	}
 
-	if !user.IsSuper() {
+	if !user.IsAdmin() {
 		input.Userid = &user.Userid
 	}
 
@@ -28,7 +28,7 @@ func GetFismasystem(ctx context.Context, fismasystemid graphql.ID) (*model.Fisma
 		Fismasystemid: &fismasystemid,
 	}
 
-	if !user.IsSuper() {
+	if !user.IsAdmin() {
 		input.Userid = &user.Userid
 	}
 
