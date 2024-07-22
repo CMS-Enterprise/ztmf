@@ -9,10 +9,10 @@ import (
 )
 
 type User struct {
-	Userid       graphql.ID
-	Email        string
-	Fullname     string
-	Current_Role string
+	Userid   graphql.ID
+	Email    string
+	Fullname string
+	Role     string
 }
 
 func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
@@ -26,7 +26,7 @@ func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
 }
 
 func (u *User) IsAdmin() bool {
-	return u.Current_Role == "ADMIN"
+	return u.Role == "ADMIN"
 }
 
 // FindUsers queries the database for all users and return an array of *User
@@ -42,7 +42,7 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
 		user := User{}
-		err := rows.Scan(&user.Userid, &user.Email, &user.Fullname, &user.Current_Role)
+		err := rows.Scan(&user.Userid, &user.Email, &user.Fullname, &user.Role)
 		return &user, err
 	})
 }
@@ -58,7 +58,7 @@ func FindUserById(ctx context.Context, userid graphql.ID) (*User, error) {
 
 	// Scan the query result into the User struct
 	u := &User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Current_Role)
+	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role)
 
 	return u, err
 }
@@ -74,7 +74,7 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 
 	// Scan the query result into the User struct
 	u := &User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Current_Role)
+	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role)
 
 	return u, err
 }
