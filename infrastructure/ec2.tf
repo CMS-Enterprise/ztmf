@@ -12,10 +12,6 @@ resource "aws_instance" "bastion" {
   }
 }
 
-output "bastion_instance_id" {
-  value = aws_instance.bastion.id
-}
-
 module "ec2_bastion" {
   name                = "ztmf_ec2_bastion"
   source              = "./modules/role"

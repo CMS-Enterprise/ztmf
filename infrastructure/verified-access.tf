@@ -104,7 +104,3 @@ resource "aws_verifiedaccess_endpoint" "ztmf_va_ep" {
   };
   EOT
 }
-
-output "aws_verifiedaccess_endpoint_domain" {
-  value = aws_verifiedaccess_endpoint.ztmf_va_ep.endpoint_domain
-}

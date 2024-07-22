@@ -43,7 +43,3 @@ resource "aws_rds_cluster_instance" "ztmf" {
   engine               = aws_rds_cluster.ztmf.engine
   engine_version       = aws_rds_cluster.ztmf.engine_version
 }
-
-output "db_endpoint" {
-  value = aws_rds_cluster.ztmf.endpoint
-}

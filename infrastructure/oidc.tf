@@ -27,7 +27,3 @@ module "github_actions" {
     }
   }
 }
-
-output "github_actions_role_arn" {
-  value = module.github_actions.role_arn
-}
