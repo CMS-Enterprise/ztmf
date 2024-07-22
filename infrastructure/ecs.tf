@@ -91,11 +91,11 @@ resource "aws_ecs_task_definition" "ztmf_api" {
           value = "5432"
         },
         {
-          name = "DB_SECRET_ID"
+          name  = "DB_SECRET_ID"
           value = local.db_cred_secret
         },
         {
-          name = "AWS_REGION"
+          name  = "AWS_REGION"
           value = "us-east-1"
         }
       ]
