@@ -100,7 +100,7 @@ resource "aws_verifiedaccess_endpoint" "ztmf_va_ep" {
     context.ztmf_idm_okta has "email_verified" &&
     context.ztmf_idm_okta.email_verified == true &&
     context.ztmf_idm_okta has "groups" &&
-    context.ztmf_idm_okta.groups.contains("ZTMF_SCORING_USER_DEV")
+    context.ztmf_idm_okta.groups.contains("${(var.environment == "dev" ? "ZTMF_SCORING_USER_DEV" : "ZTMF_SCORING_USER")}")
   };
   EOT
 }
