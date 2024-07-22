@@ -37,8 +37,3 @@ resource "aws_ecr_registry_scanning_configuration" "ztmf_api" {
     }
   }
 }
-
-
-output "ztmf_api_repository_url" {
-  value = aws_ecr_repository.ztmf_api.repository_url
-}
