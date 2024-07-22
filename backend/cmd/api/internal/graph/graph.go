@@ -64,7 +64,7 @@ type User {
 	userid:       ID!
 	email:        String!
 	fullname:     String!
-	current_role: String!
+	role: String!
 }
 
 type Mutation {

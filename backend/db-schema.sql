@@ -41,7 +41,7 @@ CREATE TABLE public.users (
   userid uuid DEFAULT gen_random_uuid(),
   email varchar(255) NOT NULL UNIQUE,
   fullname varchar(255) NOT NULL,
-  current_role roles NOT NULL,
+  role roles NOT NULL,
   PRIMARY KEY (userid)
 )
 
