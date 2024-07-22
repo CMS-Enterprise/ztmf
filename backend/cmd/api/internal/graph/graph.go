@@ -1,8 +1,16 @@
 package graph
 
+type RootResolver struct{}
+
+type Response struct {
+	Code    int32
+	Message string
+}
+
 const Schema = `
 schema {
   query: Query
+	mutation: Mutation
 }
 
 type Query {
@@ -58,6 +66,20 @@ type User {
 	fullname:     String!
 	current_role: String!
 }
-`
 
-type RootResolver struct{}
+type Mutation {
+  createUser(email: String!, fullname: String!, role: String!): CreateUserResponse!
+}
+
+interface Response {
+	code: Int!
+	message: String!
+}
+
+type CreateUserResponse implements Response {
+	code:    Int!
+	message: String!
+	user:    User
+}
+
+`
