@@ -1,5 +1,5 @@
 resource "aws_iam_openid_connect_provider" "github_actions" {
-  url = "https://token.actions.githubusercontent.com"
+  url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
   thumbprint_list = [
     "6938fd4d98bab03faadb97b34396831e3780aea1",
@@ -8,9 +8,9 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 module "github_actions" {
-  name                = "ztmf_github_actions"
-  source              = "./modules/role"
-  principal           = {Federated = aws_iam_openid_connect_provider.github_actions.arn}
+  name      = "ztmf_github_actions"
+  source    = "./modules/role"
+  principal = { Federated = aws_iam_openid_connect_provider.github_actions.arn }
   managed_policy_arns = [
     "arn:aws:iam::${local.account_id}:policy/CMSApprovedAWSServices",
     "arn:aws:iam::${local.account_id}:policy/ADO-Restriction-Policy",

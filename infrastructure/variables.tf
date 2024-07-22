@@ -3,6 +3,11 @@ variable "environment" {
 }
 
 variable "domain_name_prefix" {
-  type = string
+  type    = string
+  default = ""
+}
+
+variable "job_code" {
+  type    = string
   default = ""
 }

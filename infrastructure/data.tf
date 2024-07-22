@@ -59,7 +59,7 @@ data "aws_secretsmanager_secrets" "rds" {
   }
 
   filter {
-    name = "tag-value"
+    name   = "tag-value"
     values = ["arn:aws:rds:us-east-1:${local.account_id}:cluster:ztmf"]
   }
 }
