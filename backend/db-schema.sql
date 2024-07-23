@@ -30,7 +30,7 @@ CREATE TABLE public.functionscores (
   scoreid SERIAL PRIMARY KEY,
   fismasystemid INT NOT NULL,
   functionid INT NOT NULL,
-  datecalculated TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  datecalculated TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   score FLOAT NOT NULL,
   notes varchar(1000)
 ) TABLESPACE pg_default;
