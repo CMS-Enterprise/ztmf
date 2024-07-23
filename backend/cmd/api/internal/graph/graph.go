@@ -15,11 +15,11 @@ schema {
 
 type Query {
   fismasystems(fismaacronym: String): [FismaSystem!]!
-	fismasystem(fismasystemid: ID!): FismaSystem!
-	functions: [Function!]!
-	function(functionid: ID!): Function!
-	users: [User!]!
-	user(userid: ID!): User!
+	fismasystem(fismasystemid: ID!):    FismaSystem!
+	functions:                          [Function!]!
+	function(functionid: ID!):          Function!
+	users:                              [User!]!
+	user(userid: ID!):                  User!
 }
 
 type FismaSystem {
@@ -61,18 +61,19 @@ type FunctionScore {
 }
 
 type User {
-	userid:       ID!
-	email:        String!
-	fullname:     String!
-	role: String!
+	userid:   ID!
+	email:    String!
+	fullname: String!
+	role:     String!
 }
 
 type Mutation {
   createUser(email: String!, fullname: String!, role: String!): CreateUserResponse!
+  saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): SaveFunctionScoreReponse!
 }
 
 interface Response {
-	code: Int!
+	code:    Int!
 	message: String!
 }
 
@@ -82,4 +83,9 @@ type CreateUserResponse implements Response {
 	user:    User
 }
 
+type SaveFunctionScoreReponse implements Response {
+  code:          Int!
+  message:       String!
+  functionscore: FunctionScore
+}
 `

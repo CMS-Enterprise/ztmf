@@ -9,10 +9,11 @@ import (
 )
 
 type User struct {
-	Userid   graphql.ID
-	Email    string
-	Fullname string
-	Role     string
+	Userid       graphql.ID
+	Email        string
+	Fullname     string
+	Role         string
+	Fismasystems []*int32
 }
 
 func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
@@ -27,6 +28,15 @@ func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
 
 func (u *User) IsAdmin() bool {
 	return u.Role == "ADMIN"
+}
+
+func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
+	for _, fid := range u.Fismasystems {
+		if *fid == fismasystemid {
+			return true
+		}
+	}
+	return false
 }
 
 // FindUsers queries the database for all users and return an array of *User
@@ -57,15 +67,19 @@ func FindUserById(ctx context.Context, userid graphql.ID) (*User, error) {
 	}
 
 	// Scan the query result into the User struct
-	u := &User{}
+	u := User{}
 	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role)
 
-	return u, err
+	return &u, err
 }
 
 // FindUserByEmail queries the database for a User with the given email address and returns *User or error
 func FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	sql := "SELECT * FROM public.users WHERE email=$1"
+	sql := `SELECT users.userid,email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
+LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
+WHERE users.email=$1
+GROUP BY users.userid
+`
 
 	row, err := queryRow(ctx, sql, email)
 	if err != nil {
@@ -74,7 +88,7 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 
 	// Scan the query result into the User struct
 	u := &User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role)
+	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role, &u.Fismasystems)
 
 	return u, err
 }
