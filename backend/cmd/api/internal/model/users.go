@@ -117,7 +117,6 @@ func DeleteUserFismaSystems(ctx context.Context, userid string, fismasystemids [
 		values = append(values, fismasystemid)
 	}
 	sql += ")"
-	fmt.Println(sql)
 	_, err := exec(ctx, sql, values...)
 	return err
 }
