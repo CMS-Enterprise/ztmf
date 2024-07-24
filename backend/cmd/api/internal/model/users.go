@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/graph-gophers/graphql-go"
@@ -9,11 +10,11 @@ import (
 )
 
 type User struct {
-	Userid       graphql.ID
-	Email        string
-	Fullname     string
-	Role         string
-	Fismasystems []*int32
+	Userid         graphql.ID
+	Email          string
+	Fullname       string
+	Role           string
+	Fismasystemids []*int32
 }
 
 func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
@@ -31,7 +32,7 @@ func (u *User) IsAdmin() bool {
 }
 
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
-	for _, fid := range u.Fismasystems {
+	for _, fid := range u.Fismasystemids {
 		if *fid == fismasystemid {
 			return true
 		}
@@ -59,36 +60,48 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 // FindUserByIf queries the database for a User with the given ID and returns *User or error
 func FindUserById(ctx context.Context, userid graphql.ID) (*User, error) {
-	sql := "SELECT * FROM public.users WHERE userid=$1"
+	sql := `SELECT users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
+LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
+WHERE users.userid=$1
+GROUP BY users.userid
+`
+	return findUser(ctx, sql, []any{userid})
+}
 
-	row, err := queryRow(ctx, sql, userid)
+// FindUserByEmail queries the database for a User with the given email address and returns *User or error
+func FindUserByEmail(ctx context.Context, email string) (*User, error) {
+	sql := `SELECT users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
+LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
+WHERE users.email=$1
+GROUP BY users.userid
+`
+	return findUser(ctx, sql, []any{email})
+}
+
+func findUser(ctx context.Context, sql string, args []any) (*User, error) {
+	row, err := queryRow(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 
 	// Scan the query result into the User struct
 	u := User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role)
+	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role, &u.Fismasystemids)
 
 	return &u, err
 }
 
-// FindUserByEmail queries the database for a User with the given email address and returns *User or error
-func FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	sql := `SELECT users.userid,email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
-LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
-WHERE users.email=$1
-GROUP BY users.userid
-`
-
-	row, err := queryRow(ctx, sql, email)
-	if err != nil {
-		return nil, err
+func CreateUserFismaSystem(ctx context.Context, userid string, fismasystemids []int32) error {
+	sql := "INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES"
+	values := []any{userid}
+	for i, fismasystemid := range fismasystemids {
+		if i > 0 {
+			sql += ","
+		}
+		sql += " ($1,$" + fmt.Sprintf("%d", i+2) + ")"
+		values = append(values, fismasystemid)
 	}
-
-	// Scan the query result into the User struct
-	u := &User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role, &u.Fismasystems)
-
-	return u, err
+	sql += " ON CONFLICT DO NOTHING"
+	_, err := exec(ctx, sql, values...)
+	return err
 }

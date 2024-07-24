@@ -61,15 +61,17 @@ type FunctionScore {
 }
 
 type User {
-	userid:   ID!
-	email:    String!
-	fullname: String!
-	role:     String!
+	userid:         ID!
+	email:          String!
+	fullname:       String!
+	role:           String!
+	fismasystemids: [Int]!
 }
 
 type Mutation {
   createUser(email: String!, fullname: String!, role: String!): CreateUserResponse!
   saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): SaveFunctionScoreReponse!
+	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): AssignFismaSystemsReponse!
 }
 
 interface Response {
@@ -87,5 +89,11 @@ type SaveFunctionScoreReponse implements Response {
   code:          Int!
   message:       String!
   functionscore: FunctionScore
+}
+
+type AssignFismaSystemsReponse implements Response {
+	code:    Int!
+	message: String!
+	user:    User
 }
 `
