@@ -78,3 +78,28 @@ func (r *RootResolver) AssignFismaSystems(ctx context.Context, args struct {
 
 	return &res, nil
 }
+
+func (r *RootResolver) UnassignFismaSystems(ctx context.Context, args struct {
+	Userid         string
+	Fismasystemids []int32
+}) (*AssignFismaSystemsResponse, error) {
+	res := AssignFismaSystemsResponse{}
+	user, err := controller.RemoveUserFismaSystems(ctx, args.Userid, args.Fismasystemids)
+	res.User = user
+	if err != nil {
+		res.Message = err.Error()
+		switch err.(type) {
+		case *controller.ForbiddenError:
+			res.Code = 403
+		case *controller.InvalidInputError:
+			res.Code = 400
+		default:
+			res.Code = 500
+		}
+	} else {
+		res.Code = 201
+		res.Message = "OK"
+	}
+
+	return &res, nil
+}

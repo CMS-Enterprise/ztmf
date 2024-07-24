@@ -60,7 +60,28 @@ func SaveUserFismaSystems(ctx context.Context, userid string, fismasystemids []i
 		}
 	}
 
-	err := model.CreateUserFismaSystem(ctx, userid, fismasystemids)
+	err := model.CreateUserFismaSystems(ctx, userid, fismasystemids)
+	if err != nil {
+		return nil, err
+	}
+
+	return model.FindUserById(ctx, graphql.ID(userid))
+}
+
+func RemoveUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) (*model.User, error) {
+	user := auth.UserFromContext(ctx)
+	if !user.IsAdmin() {
+		return nil, &ForbiddenError{}
+	}
+
+	if len(fismasystemids) < 1 {
+		return nil, &InvalidInputError{
+			field: "fismasystemids",
+			value: fmt.Sprintf("%v", fismasystemids),
+		}
+	}
+
+	err := model.DeleteUserFismaSystems(ctx, userid, fismasystemids)
 	if err != nil {
 		return nil, err
 	}

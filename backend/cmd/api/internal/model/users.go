@@ -91,7 +91,7 @@ func findUser(ctx context.Context, sql string, args []any) (*User, error) {
 	return &u, err
 }
 
-func CreateUserFismaSystem(ctx context.Context, userid string, fismasystemids []int32) error {
+func CreateUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) error {
 	sql := "INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES"
 	values := []any{userid}
 	for i, fismasystemid := range fismasystemids {
@@ -102,6 +102,22 @@ func CreateUserFismaSystem(ctx context.Context, userid string, fismasystemids []
 		values = append(values, fismasystemid)
 	}
 	sql += " ON CONFLICT DO NOTHING"
+	_, err := exec(ctx, sql, values...)
+	return err
+}
+
+func DeleteUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) error {
+	sql := "DELETE FROM public.users_fismasystems WHERE userid=$1 AND fismasystemid IN ("
+	values := []any{userid}
+	for i, fismasystemid := range fismasystemids {
+		if i > 0 {
+			sql += ","
+		}
+		sql += "$" + fmt.Sprintf("%d", i+2)
+		values = append(values, fismasystemid)
+	}
+	sql += ")"
+	fmt.Println(sql)
 	_, err := exec(ctx, sql, values...)
 	return err
 }
