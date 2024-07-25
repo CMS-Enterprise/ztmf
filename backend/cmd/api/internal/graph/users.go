@@ -8,8 +8,8 @@ import (
 	"github.com/graph-gophers/graphql-go"
 )
 
-// CreateUserResponse represents the code and message returned
-type CreateUserResponse struct {
+// UserMutationResponse represents the code and message returned
+type UserMutationResponse struct {
 	Response
 	User *model.User
 }
@@ -26,80 +26,32 @@ func (r *RootResolver) CreateUser(ctx context.Context, args struct {
 	Email    string
 	Fullname string
 	Role     string
-}) *CreateUserResponse {
-	res := CreateUserResponse{}
+}) *UserMutationResponse {
+	res := UserMutationResponse{}
 	user, err := controller.CreateUser(ctx, args.Email, args.Fullname, args.Role)
+	res.SetCreated().SetError(err)
 	res.User = user
-	if err != nil {
-		res.Message = err.Error()
-		switch err.(type) {
-		case *controller.ForbiddenError:
-			res.Code = 403
-		case *controller.InvalidInputError:
-			res.Code = 400
-		default:
-			res.Code = 500
-		}
-	} else {
-		res.Code = 201
-		res.Message = "OK"
-	}
-
 	return &res
-}
-
-// AssignFismaSystemsReponse represents the code and message returned
-type AssignFismaSystemsResponse struct {
-	Response
-	User *model.User
 }
 
 func (r *RootResolver) AssignFismaSystems(ctx context.Context, args struct {
 	Userid         string
 	Fismasystemids []int32
-}) (*AssignFismaSystemsResponse, error) {
-	res := AssignFismaSystemsResponse{}
+}) *UserMutationResponse {
+	res := UserMutationResponse{}
 	user, err := controller.SaveUserFismaSystems(ctx, args.Userid, args.Fismasystemids)
+	res.SetOK().SetError(err)
 	res.User = user
-	if err != nil {
-		res.Message = err.Error()
-		switch err.(type) {
-		case *controller.ForbiddenError:
-			res.Code = 403
-		case *controller.InvalidInputError:
-			res.Code = 400
-		default:
-			res.Code = 500
-		}
-	} else {
-		res.Code = 201
-		res.Message = "OK"
-	}
-
-	return &res, nil
+	return &res
 }
 
 func (r *RootResolver) UnassignFismaSystems(ctx context.Context, args struct {
 	Userid         string
 	Fismasystemids []int32
-}) (*AssignFismaSystemsResponse, error) {
-	res := AssignFismaSystemsResponse{}
+}) *UserMutationResponse {
+	res := UserMutationResponse{}
 	user, err := controller.RemoveUserFismaSystems(ctx, args.Userid, args.Fismasystemids)
+	res.SetOK().SetError(err)
 	res.User = user
-	if err != nil {
-		res.Message = err.Error()
-		switch err.(type) {
-		case *controller.ForbiddenError:
-			res.Code = 403
-		case *controller.InvalidInputError:
-			res.Code = 400
-		default:
-			res.Code = 500
-		}
-	} else {
-		res.Code = 201
-		res.Message = "OK"
-	}
-
-	return &res, nil
+	return &res
 }
