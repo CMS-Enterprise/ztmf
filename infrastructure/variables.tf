@@ -7,7 +7,7 @@ variable "domain_name_prefix" {
   default = ""
 }
 
-variable "job_code" {
-  type    = string
-  default = ""
-}
+# variable "job_code" {
+#   type    = string
+#   default = ""
+# }

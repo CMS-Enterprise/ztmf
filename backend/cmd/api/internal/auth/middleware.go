@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 )
@@ -16,11 +17,18 @@ func Middleware(next http.Handler) http.Handler {
 			r.Header[http.CanonicalHeaderKey("authorization")] = v
 		}
 
-		if encoded, ok := r.Header[http.CanonicalHeaderKey("authorization")]; !ok {
+		if rawHeader, ok := r.Header[http.CanonicalHeaderKey("authorization")]; !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		} else {
-			tkn, err := decodeJwt(encoded[0])
+			encoded := strings.TrimSpace(strings.Replace(rawHeader[0], "Bearer", "", -1))
+			tkn, err := decodeJwt(encoded)
+			if err != nil {
+				log.Println(err)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
 			claims := tkn.Claims.(*Claims)
 
 			if !tkn.Valid {

@@ -35,7 +35,7 @@ CREATE TABLE public.functionscores (
   notes varchar(1000)
 ) TABLESPACE pg_default;
 
-CREATE TYPE roles AS ENUM ('user','admin','super');
+CREATE TYPE roles AS ENUM ('ISSO','ISSM','ADMIN');
 
 CREATE TABLE public.users (
   userid uuid DEFAULT gen_random_uuid(),
