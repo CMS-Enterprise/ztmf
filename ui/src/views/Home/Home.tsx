@@ -10,7 +10,6 @@ import Button from '@mui/material/Button'
 import gql from 'graphql-tag'
 import { Link } from 'react-router-dom'
 import { DocumentNode } from '@apollo/client'
-// import { Container } from '@mui/material'
 
 /**
  * Component that renders the contents of the Dashboard view.
@@ -120,7 +119,9 @@ const HomePageContainer: React.FC = (): JSX.Element => {
               This dashboard attempts to breakdown data silos and...
             </Typography>
             <FormControl sx={{ m: 1, width: 400 }}>
-              <InputLabel id="fisma-select-label">FISMA Systems</InputLabel>
+              <InputLabel id="fisma-select-label" sx={{ marginTop: 0 }}>
+                FISMA Systems
+              </InputLabel>
               <Select
                 labelId="fisma-select-label"
                 id="fisma-select"

@@ -5,6 +5,7 @@
  */
 import { createHashRouter } from 'react-router-dom'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import authLoader from './authLoader'
 import { RouteIds, Routes } from '@/router/constants'
 import HomePageContainer from '@/views/Home/Home'
 import Title from '@/views/Title/Title'
@@ -27,6 +28,7 @@ const router = createHashRouter([
     id: RouteIds.ROOT,
     path: Routes.ROOT,
     element: <Title />,
+    loader: authLoader,
     children: [
       {
         index: true,
