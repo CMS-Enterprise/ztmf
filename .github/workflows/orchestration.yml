@@ -56,14 +56,3 @@ jobs:
       environment: DEV
     secrets: inherit
   
-  ui:
-    name: UI
-    needs: 
-      - diff
-      - infrastructure
-    if: contains(needs.diff.outputs.ui, 'ui/') && !cancelled()
-    uses: ./.github/workflows/ui.yml
-    with:
-      environment: DEV
-    secrets: inherit
-

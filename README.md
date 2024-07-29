@@ -6,7 +6,6 @@ The ZTMF Scoring Application allows ADOs to view their Zero Trust Maturity score
 This monorepo contains the following major components:
 - `backend/` includes a GraphQL API and an ETL process both written in Go
 - `infrastructure/` includes all AWS resources as IaC managed by Terraform
-- `ui/` includes a React-based SPA written in Typescript
 - `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
 
 ## Architecture
@@ -16,3 +15,7 @@ The ZTMF Scoring Application is comprised of a React-based Single-Page Applicati
 Both the API ECS service, and the S3 bucket are configured as targets behind an _internal_ application load balancer (ALB), with S3 connectivity provided by PrivateLink VPC endpoints. The internal ALB is the target for the AWS Verified Access endpoint. The the public domain name points to the Verified Access endpoint which in turn acts as a proxy to the application, allowing access to only known trusted identites. AWS Verified Access is configured to use IDM (Okta) as the user identity trust provider. This allows users with the ZTMF job code to login via IDM and access the application.
 
 Data delivered by the API is stored in an RDS Aurora serverless PostgreSQL server.
+
+## User Interface 
+
+ZTMF UI has now been moved to a [separate repo](https://github.com/cms-enterprise/ztmf-ui).
