@@ -2,11 +2,6 @@ package graph
 
 type RootResolver struct{}
 
-type Response struct {
-	Code    int32
-	Message string
-}
-
 const Schema = `
 schema {
   query: Query
@@ -69,10 +64,10 @@ type User {
 }
 
 type Mutation {
-  createUser(email: String!, fullname: String!, role: String!): CreateUserResponse!
-  saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): SaveFunctionScoreReponse!
-	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): AssignFismaSystemsReponse!
-	unassignFismaSystems(userid: String!, fismasystemids: [Int!]!): AssignFismaSystemsReponse!
+  createUser(email: String!, fullname: String!, role: String!): UserMutationResponse!
+  saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): FunctionScoreMutationReponse!
+	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
+	unassignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
 }
 
 interface Response {
@@ -80,21 +75,15 @@ interface Response {
 	message: String!
 }
 
-type CreateUserResponse implements Response {
+type UserMutationResponse implements Response {
 	code:    Int!
 	message: String!
 	user:    User
 }
 
-type SaveFunctionScoreReponse implements Response {
+type FunctionScoreMutationReponse implements Response {
   code:          Int!
   message:       String!
   functionscore: FunctionScore
-}
-
-type AssignFismaSystemsReponse implements Response {
-	code:    Int!
-	message: String!
-	user:    User
 }
 `
