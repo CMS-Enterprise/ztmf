@@ -7,22 +7,15 @@ import * as ReactDOMClient from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
 import CONFIG from '@/utils/config'
 import router from '@/router/router'
-// import onPerfEntry from '@/utils/onPerfEntry'
 import { SIGN_IN_GREETING } from '@/locales/en'
 import '@/sass/style.scss'
 import onPerfEntry from './utils/onPerfEntry'
-// import { gql } from '@apollo/client'
 import {
   ApolloProvider,
   ApolloClient,
   InMemoryCache,
   HttpLink,
 } from '@apollo/client'
-// import { ApolloServer } from '@apollo/server'
-// import { expressMiddleware } from '@apollo/server/express4'
-// import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer'
-// import express from 'express'
-// import http from 'http'
 
 export const client = new ApolloClient({
   link: new HttpLink({

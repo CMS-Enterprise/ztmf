@@ -1,4 +1,5 @@
-import { defineConfig, transformWithEsbuild, type PluginOption } from 'vite'
+// eslint-disable-next-line prettier/prettier
+import { defineConfig, transformWithEsbuild, loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import EnvironmentPlugin from 'vite-plugin-environment'
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -9,7 +10,6 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'process.env': {},
-
       global: {},
       _global: {},
     },
@@ -52,6 +52,11 @@ export default defineConfig(({ mode }) => {
       port: 5174,
       proxy: {
         '/graphql': {
+          target: 'http://localhost:3000/',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/whoami': {
           target: 'http://localhost:3000/',
           changeOrigin: true,
           secure: false,

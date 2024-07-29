@@ -4,8 +4,8 @@
  */
 
 //* Application Strings
-export const ORG_NAME = 'Aquia'
-export const ORG_URL = 'https://aquia.us/'
+export const ORG_NAME = 'CMS'
+export const ORG_URL = 'https://www.cms.gov'
 export const COPYRIGHT_LABEL = `Copyright © ${new Date()
   .getFullYear()
   .toString()}`
