@@ -22,15 +22,21 @@ func (r *RootResolver) User(ctx context.Context, args struct{ Userid graphql.ID 
 	return controller.GetUser(ctx, args.Userid)
 }
 
-func (r *RootResolver) CreateUser(ctx context.Context, args struct {
+func (r *RootResolver) SaveUser(ctx context.Context, args struct {
+	Userid   *graphql.ID
 	Email    string
 	Fullname string
 	Role     string
 }) *UserMutationResponse {
 	res := UserMutationResponse{}
-	user, err := controller.CreateUser(ctx, args.Email, args.Fullname, args.Role)
-	res.SetCreated().SetError(err)
+	user, err := controller.SaveUser(ctx, args.Userid, args.Email, args.Fullname, args.Role)
 	res.User = user
+	if args.Userid == nil {
+		res.SetCreated()
+	} else {
+		res.SetOK()
+	}
+	res.SetError(err)
 	return &res
 }
 

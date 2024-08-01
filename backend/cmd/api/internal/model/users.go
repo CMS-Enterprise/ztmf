@@ -27,6 +27,16 @@ func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
 	return FindUserByEmail(ctx, email)
 }
 
+func UpdateUser(ctx context.Context, userid graphql.ID, email, fullname, role string) (*User, error) {
+	sql := "UPDATE public.users SET email=$2, fullname=$3, role=$4 WHERE userid=$1"
+	_, err := exec(ctx, sql, userid, email, fullname, role)
+	if err != nil {
+		return nil, err
+	}
+
+	return FindUserById(ctx, userid)
+}
+
 func (u *User) IsAdmin() bool {
 	return u.Role == "ADMIN"
 }
@@ -60,25 +70,19 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 // FindUserByIf queries the database for a User with the given ID and returns *User or error
 func FindUserById(ctx context.Context, userid graphql.ID) (*User, error) {
-	sql := `SELECT users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
-LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
-WHERE users.userid=$1
-GROUP BY users.userid
-`
-	return findUser(ctx, sql, []any{userid})
+	return findUser(ctx, "users.userid=$1", []any{userid})
 }
 
 // FindUserByEmail queries the database for a User with the given email address and returns *User or error
 func FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	sql := `SELECT users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
-LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
-WHERE users.email=$1
-GROUP BY users.userid
-`
-	return findUser(ctx, sql, []any{email})
+	return findUser(ctx, "users.email=$1", []any{email})
 }
 
-func findUser(ctx context.Context, sql string, args []any) (*User, error) {
+func findUser(ctx context.Context, where string, args []any) (*User, error) {
+	sql := `SELECT users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS fismasystems FROM users
+LEFT JOIN users_fismasystems on users_fismasystems.userid = users.userid
+WHERE ` + where + ` GROUP BY users.userid
+`
 	row, err := queryRow(ctx, sql, args...)
 	if err != nil {
 		return nil, err
