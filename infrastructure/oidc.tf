@@ -19,11 +19,14 @@ module "github_actions" {
     "arn:aws:iam::aws:policy/AdministratorAccess"
   ]
   condition = {
-    StringEquals = {
-      "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+    "ForAllValues:StringEquals" = {
+      "token.actions.githubusercontent.com:aud" = ["sts.amazonaws.com"]
     }
-    StringLike = {
-      "token.actions.githubusercontent.com:sub" = "repo:CMS-Enterprise/ztmf:*",
+    "ForAnyValue:StringLike" = {
+      "token.actions.githubusercontent.com:sub" = [
+        "repo:CMS-Enterprise/ztmf:*",
+        "repo:CMS-Enterprise/ztmf-ui:*"
+      ],
     }
   }
 }
