@@ -28,10 +28,10 @@ func GetUser(ctx context.Context, userid graphql.ID) (*model.User, error) {
 	return model.FindUserById(ctx, userid)
 }
 
-func CreateUser(ctx context.Context, email, fullname, role string) (*model.User, error) {
-	currentUser := auth.UserFromContext(ctx)
+func SaveUser(ctx context.Context, userid *graphql.ID, email, fullname, role string) (*model.User, error) {
+	authenticatedUser := auth.UserFromContext(ctx)
 
-	if !currentUser.IsAdmin() {
+	if !authenticatedUser.IsAdmin() {
 		return nil, &ForbiddenError{}
 	}
 
@@ -43,8 +43,10 @@ func CreateUser(ctx context.Context, email, fullname, role string) (*model.User,
 		return nil, err
 	}
 
+	if userid != nil {
+		return model.UpdateUser(ctx, *userid, email, fullname, role)
+	}
 	return model.NewUser(ctx, email, fullname, role)
-
 }
 
 func SaveUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) (*model.User, error) {

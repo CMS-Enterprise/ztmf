@@ -64,7 +64,7 @@ type User {
 }
 
 type Mutation {
-  createUser(email: String!, fullname: String!, role: String!): UserMutationResponse!
+  saveUser(userid: ID, email: String!, fullname: String!, role: String!): UserMutationResponse!
   saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): FunctionScoreMutationReponse!
 	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
 	unassignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
