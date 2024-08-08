@@ -7,17 +7,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/graph-gophers/graphql-go/errors"
 )
 
-var (
-	keys = make(map[string]jwt.VerificationKey)
-	once sync.Once
-)
+var keys = make(map[string]jwt.VerificationKey)
 
 type Claims struct {
 	Name  string `json:"name"`
