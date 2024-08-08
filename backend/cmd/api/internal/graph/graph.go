@@ -17,6 +17,13 @@ type Query {
 	user(userid: ID!):                  User!
 }
 
+type Mutation {
+  saveUser(userid: ID, email: String!, fullname: String!, role: String!): UserMutationResponse!
+  saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): FunctionScoreMutationReponse!
+	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
+	unassignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
+}
+
 type FismaSystem {
 	fismasystemid:         ID!
 	fismauid:          		 String!
@@ -35,14 +42,20 @@ type FismaSystem {
 
 type Function {
 	functionid:            ID!
-  pillar:                String
   name:                  String
   description:           String
-  traditional:           String
-  initial:               String
-  advanced:              String
-  optimal:               String
   datacenterenvironment: String
+  options:               [FunctionOption!]!
+	question: 						 Question
+	pillar: 							 Pillar
+}
+
+type FunctionOption {
+  functionoptionid: ID!
+  functionid:       Int!
+  score:            Int!
+  optionname:       String!
+  description:      String!
 }
 
 type FunctionScore {
@@ -63,11 +76,16 @@ type User {
 	fismasystemids: [Int]!
 }
 
-type Mutation {
-  saveUser(userid: ID, email: String!, fullname: String!, role: String!): UserMutationResponse!
-  saveFunctionScore(scoreid: ID, fismasystemid: Int!, functionid: Int!, score: Float!, notes: String): FunctionScoreMutationReponse!
-	assignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
-	unassignFismaSystems(userid: String!, fismasystemids: [Int!]!): UserMutationResponse!
+type Question {
+	questionid:  ID!
+	question:    String!
+	notesprompt: String!
+	pillar: 		 Pillar!
+}
+
+type Pillar {
+	pillarid: ID!
+	pillar:   String!
 }
 
 interface Response {

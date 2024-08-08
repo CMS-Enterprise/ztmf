@@ -63,7 +63,7 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
 		user := User{}
-		err := rows.Scan(&user.Userid, &user.Email, &user.Fullname, &user.Role)
+		err := row.Scan(&user.Userid, &user.Email, &user.Fullname, &user.Role)
 		return &user, err
 	})
 }

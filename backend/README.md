@@ -2,6 +2,14 @@
 
 The backend is comprised of a GraphQL API and an ETL process both written in Go.
 
+## Business Logic
+
+```mermaid
+erDiagram
+  Question }|--|| Function : has
+
+```
+
 ## Developer Requirement and Config
 
 - Go ~>1.22.0
@@ -40,47 +48,48 @@ The API is designed to serve with TLS when a certificate and key are provided, o
 ```mermaid
 sequenceDiagram
 
-box Transparent
-  participant Client
-end
-box Gray HTTP
-  participant Handler
-  participant Auth Middleware
-end
-box Gray GraphQL
-  participant Relay
-  participant Resolver
-end
-box Gray Business Logic
-  participant Controller
-end
-box Gray Data
-  participant Model
-  participant PGX
-end
-Client->>Handler: Request
-Handler->>Auth Middleware: Request
-Note over Auth Middleware: Validates JWT
-break Invalid JWT
-  Auth Middleware ->> Client: Response 401
-end
-destroy Auth Middleware
-Auth Middleware ->> Relay: Request
-Relay ->> Resolver: r w/ context
-Resolver ->> Controller: r w/ context
-Controller ->> Model: FindXyz()
-note over PGX: Postgre driver
-Model ->> PGX: prepared statement
-PGX ->> Postgre: query
-Postgre ->> PGX: data
-PGX ->> Model: data
-Model ->> Controller: data structs
-Controller ->> Resolver: data structs
-Resolver ->> Relay: data structs
-Relay ->> Handler: response
-Handler ->> Client: json
+  box Transparent
+    participant Client
+  end
+  box Gray HTTP
+    participant Handler
+    participant Auth Middleware
+  end
+  box Gray GraphQL
+    participant Relay
+    participant Resolver
+  end
+  box Gray Business Logic
+    participant Controller
+  end
+  box Gray Data
+    participant Model
+    participant PGX
+  end
+  Client->>Handler: Request
+  Handler->>Auth Middleware: Request
+  Note over Auth Middleware: Validates JWT
+  break Invalid JWT
+    Auth Middleware ->> Client: Response 401
+  end
+  destroy Auth Middleware
+  Auth Middleware ->> Relay: Request
+  Relay ->> Resolver: r w/ context
+  Resolver ->> Controller: r w/ context
+  Controller ->> Model: FindXyz()
+  note over PGX: Postgre driver
+  Model ->> PGX: prepared statement
+  PGX ->> Postgre: query
+  Postgre ->> PGX: data
+  PGX ->> Model: data
+  Model ->> Controller: data structs
+  Controller ->> Resolver: data structs
+  Resolver ->> Relay: data structs
+  Relay ->> Handler: response
+  Handler ->> Client: json
 ```
 
+<!-- TODO: explain the above diagram -->
 
 ### Docker
 
