@@ -6,9 +6,12 @@ import (
 	"context"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+var sqlBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 // query is a proxy to *pgx.Conn.Query
 func query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {

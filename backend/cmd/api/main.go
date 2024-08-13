@@ -5,28 +5,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/controller"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/router"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
-	"github.com/gorilla/mux"
 )
 
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
 
-	router := mux.NewRouter()
-	router.Use(auth.Middleware)
-	// router.HandleFunc("/", home.ServeHTTP)
-	router.HandleFunc("/fismasystems", controller.ListFismaSystems).Methods("GET")
-	router.HandleFunc("/fismasystems/{id}", controller.GetFismaSystem).Methods("GET")
-	// router.HandleFunc("/fismasystems", fismasystemsHandler.CreateRecipe).Methods("POST")
-	// router.HandleFunc("/fismasystems/{id}", fismasystemsHandler.UpdateRecipe).Methods("PUT")
-	// router.HandleFunc("/fismasystems/{id}", fismasystemsHandler.DeleteRecipe).Methods("DELETE")
-
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: router,
+		Handler: router.Handler(),
 	}
 
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)
