@@ -6,29 +6,27 @@ import (
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/graph"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/controller"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
-	"github.com/graph-gophers/graphql-go"
-	"github.com/graph-gophers/graphql-go/relay"
+	"github.com/gorilla/mux"
 )
 
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
-	log.Println("Parsing schema...")
 
-	schema, err := graphql.ParseSchema(graph.Schema, &graph.RootResolver{}, graphql.UseFieldResolvers())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/graphql", auth.Middleware(&relay.Handler{Schema: schema}))
-	mux.Handle("/whoami", auth.Middleware(auth.WhoAmI()))
+	router := mux.NewRouter()
+	router.Use(auth.Middleware)
+	// router.HandleFunc("/", home.ServeHTTP)
+	router.HandleFunc("/fismasystems", controller.ListFismaSystems).Methods("GET")
+	router.HandleFunc("/fismasystems/{id}", controller.GetFismaSystem).Methods("GET")
+	// router.HandleFunc("/fismasystems", fismasystemsHandler.CreateRecipe).Methods("POST")
+	// router.HandleFunc("/fismasystems/{id}", fismasystemsHandler.UpdateRecipe).Methods("PUT")
+	// router.HandleFunc("/fismasystems/{id}", fismasystemsHandler.DeleteRecipe).Methods("DELETE")
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Handler: router,
 	}
 
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)

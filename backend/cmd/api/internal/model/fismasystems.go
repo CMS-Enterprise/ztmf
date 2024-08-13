@@ -5,12 +5,11 @@ import (
 	"errors"
 	"log"
 
-	"github.com/graph-gophers/graphql-go"
 	"github.com/jackc/pgx/v5"
 )
 
 type FismaSystem struct {
-	Fismasystemid         graphql.ID
+	Fismasystemid         int32
 	Fismauid              string
 	Fismaacronym          string
 	Fismaname             string
@@ -25,24 +24,9 @@ type FismaSystem struct {
 }
 
 type FindFismaSystemsInput struct {
-	Fismasystemid *graphql.ID
+	Fismasystemid *int32
 	Fismaacronym  *string
-	Userid        *graphql.ID
-}
-
-func (f *FismaSystem) FunctionScores(ctx context.Context) ([]*FunctionScore, error) {
-	rows, err := query(ctx, "SELECT scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes FROM functionscores WHERE fismasystemid=$1 ORDER BY scoreid ASC", f.Fismasystemid)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*FunctionScore, error) {
-		functionScore := FunctionScore{}
-		err := rows.Scan(&functionScore.Scoreid, &functionScore.Fismasystemid, &functionScore.Functionid, &functionScore.Datecalculated, &functionScore.Score, &functionScore.Notes)
-		return &functionScore, err
-
-	})
+	Userid        *string
 }
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
@@ -80,13 +64,14 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	}
 
 	var args = []any{}
-	sql := "SELECT * FROM fismasystems WHERE fismasystemid=$1"
+	sql := "SELECT fismasystems.* FROM fismasystems"
 	args = append(args, input.Fismasystemid)
 
 	if input.Userid != nil {
-		sql += joinUserSql(string(*input.Userid))
+		sql += joinUserSql(*input.Userid)
 	}
 
+	sql += " WHERE fismasystems.fismasystemid=$1"
 	row, err := queryRow(ctx, sql, args...)
 	if err != nil {
 		// TODO: make errors more clear where they originated
@@ -105,5 +90,5 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 }
 
 func joinUserSql(userid string) string {
-	return " JOIN users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid = '" + userid + "'"
+	return " INNER JOIN users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid = '" + userid + "'"
 }

@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/graph-gophers/graphql-go"
 	"github.com/jackc/pgx/v5"
 )
 
 type User struct {
-	Userid         graphql.ID
+	Userid         string
 	Email          string
 	Fullname       string
 	Role           string
@@ -27,7 +26,7 @@ func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
 	return FindUserByEmail(ctx, email)
 }
 
-func UpdateUser(ctx context.Context, userid graphql.ID, email, fullname, role string) (*User, error) {
+func UpdateUser(ctx context.Context, userid string, email, fullname, role string) (*User, error) {
 	sql := "UPDATE public.users SET email=$2, fullname=$3, role=$4 WHERE userid=$1"
 	_, err := exec(ctx, sql, userid, email, fullname, role)
 	if err != nil {
@@ -69,7 +68,7 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 }
 
 // FindUserByIf queries the database for a User with the given ID and returns *User or error
-func FindUserById(ctx context.Context, userid graphql.ID) (*User, error) {
+func FindUserById(ctx context.Context, userid string) (*User, error) {
 	return findUser(ctx, "users.userid=$1", []any{userid})
 }
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
-	"github.com/graph-gophers/graphql-go"
 )
 
 func ListUsers(ctx context.Context) ([]*model.User, error) {
@@ -19,7 +18,7 @@ func ListUsers(ctx context.Context) ([]*model.User, error) {
 	return model.FindUsers(ctx)
 }
 
-func GetUser(ctx context.Context, userid graphql.ID) (*model.User, error) {
+func GetUser(ctx context.Context, userid string) (*model.User, error) {
 	user := auth.UserFromContext(ctx)
 
 	if !user.IsAdmin() && user.Userid != userid {
@@ -28,7 +27,7 @@ func GetUser(ctx context.Context, userid graphql.ID) (*model.User, error) {
 	return model.FindUserById(ctx, userid)
 }
 
-func SaveUser(ctx context.Context, userid *graphql.ID, email, fullname, role string) (*model.User, error) {
+func SaveUser(ctx context.Context, userid *string, email, fullname, role string) (*model.User, error) {
 	authenticatedUser := auth.UserFromContext(ctx)
 
 	if !authenticatedUser.IsAdmin() {
@@ -67,7 +66,7 @@ func SaveUserFismaSystems(ctx context.Context, userid string, fismasystemids []i
 		return nil, err
 	}
 
-	return model.FindUserById(ctx, graphql.ID(userid))
+	return model.FindUserById(ctx, userid)
 }
 
 func RemoveUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) (*model.User, error) {
@@ -88,5 +87,5 @@ func RemoveUserFismaSystems(ctx context.Context, userid string, fismasystemids [
 		return nil, err
 	}
 
-	return model.FindUserById(ctx, graphql.ID(userid))
+	return model.FindUserById(ctx, userid)
 }
