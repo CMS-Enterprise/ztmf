@@ -98,7 +98,7 @@ resource "aws_lb_listener" "ztmf_alb_https" {
   }
 }
 
-resource "aws_lb_listener_rule" "graphql" {
+resource "aws_lb_listener_rule" "rest" {
   listener_arn = aws_lb_listener.ztmf_alb_https.arn
   priority     = 1
 
@@ -109,7 +109,7 @@ resource "aws_lb_listener_rule" "graphql" {
 
   condition {
     path_pattern {
-      values = ["/graphql*", "/whoami"]
+      values = ["/*"]
     }
   }
 }
