@@ -16,3 +16,9 @@ type InvalidInputError struct {
 func (e *InvalidInputError) Error() string {
 	return fmt.Sprintf("invalid input for field `%s` with value `%s`", e.field, e.value)
 }
+
+type NotFoundError struct{}
+
+func (e *NotFoundError) Error() string {
+	return "not found"
+}
