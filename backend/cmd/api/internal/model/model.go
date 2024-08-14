@@ -8,7 +8,6 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var sqlBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
@@ -34,12 +33,13 @@ func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 	return row, nil
 }
 
+// TODO: reimplement for REST
 // exec is a proxy to *pgx.Conn.Exec
-func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return pgconn.NewCommandTag(""), err
-	}
+// func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+// 	conn, err := db.Conn(ctx)
+// 	if err != nil {
+// 		return pgconn.NewCommandTag(""), err
+// 	}
 
-	return conn.Exec(ctx, sql, args...)
-}
+// 	return conn.Exec(ctx, sql, args...)
+// }
