@@ -8,11 +8,11 @@ import (
 )
 
 type FunctionOption struct {
-	FunctionOptionID int32
-	FunctionID       int32
-	Score            int32
-	OptionName       string
-	Description      string
+	FunctionOptionID int32  `json:"functionoptionid"`
+	FunctionID       int32  `json:"functionid"`
+	Score            int32  `json:"score"`
+	OptionName       string `json:"optionname"`
+	Description      string `json:"description"`
 }
 
 type FindFunctionOptionsInput struct {
