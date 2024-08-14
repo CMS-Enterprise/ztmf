@@ -4,13 +4,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/graph-gophers/graphql-go/errors"
 )
 
 var keys = make(map[string]jwt.VerificationKey)
@@ -56,7 +56,7 @@ func getKey(token *jwt.Token) (interface{}, error) {
 
 			block, _ := pem.Decode(resBody)
 			if block == nil {
-				return nil, errors.Errorf("no PEM data found in public key")
+				return nil, errors.New("no PEM data found in public key")
 			}
 
 			genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
@@ -72,6 +72,6 @@ func getKey(token *jwt.Token) (interface{}, error) {
 
 		return keys[kid], nil
 	default:
-		return nil, errors.Errorf("unsupported jwt signing algorithm")
+		return nil, errors.New("unsupported jwt signing algorithm")
 	}
 }

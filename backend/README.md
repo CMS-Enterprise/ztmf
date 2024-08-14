@@ -17,22 +17,19 @@ The backend is comprised of a GraphQL API and an ETL process both written in Go.
   - `db/` is a lite wrapper around pgx that handles passing config and returning a db connection
   - `secrets/` is a lite wrapper around AWS secrets manager sdk to cache and refresh secrets that could potentially be rotated while a process is running
 
-### GraphQL API
+### REST API
 
-GraphQL was chosen because the primary purpose of this API is to drive the UI (see `ui/`). While REST APIs are popular and still make sense for some use cases, they often lead to the UI client making more requests than necessary and retrieving more data than necessary (aka "overfetching"). GraphQL is also faster and easier to develop when developing specifically for driving a UI.
-
-GraphQL functionality is provided by [github.com/graph-gophers/graphql-go](github.com/graph-gophers/graphql-go) with `main.go` providing intial bootstrapping of the lib along with the necessary http listener.
+RESTful routing is provided by [https://github.com/gorilla/mux](https://github.com/gorilla/mux) with `main.go` providing intial bootstrapping of the `router` package, along with the necessary http listener and TLS config.
 
 #### TLS
 The API is designed to serve with TLS when a certificate and key are provided, or serve unsecured http when not provided (useful for local development). The Dockerfile will generate a self-signed certificate which is fine since the containers are behind an AWS application load balancer which accepts untrusted certificates.
 
 
 #### Code Organization
-- `main.go` bootstraps HTTP server and GraphQL relay
+- `main.go` bootstraps HTTP server
 - `internal/` keeps the following packages from being imported by other projects
   - `auth/` handles JWT token decoding/validation, user claims, and middleware
-  - `controller/` encapsulates business logic and authorization rules, bridges graph resolvers and model
-  - `graph/` contains the GraphQL schema and resolvers
+  - `controller/` encapsulates business logic and authorization rules, bridges http request/response with data from `model` package
   - `model/` handles data and DB calls
 
 #### API Architecture & Request/Response Flow

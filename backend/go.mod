@@ -2,9 +2,8 @@ module github.com/CMS-Enterprise/ztmf/backend
 
 go 1.22.0
 
-require github.com/graph-gophers/graphql-go v1.5.0
-
 require (
+	github.com/Masterminds/squirrel v1.5.4
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6
 	github.com/caarlos0/env/v10 v10.0.0
@@ -14,7 +13,6 @@ require (
 )
 
 require (
-	github.com/Masterminds/squirrel v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
