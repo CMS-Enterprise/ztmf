@@ -14,7 +14,7 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	input := model.FindFismaSystemsInput{}
 
 	if !user.IsAdmin() {
-		input.Userid = &user.Userid
+		input.UserID = &user.UserID
 	}
 
 	fismasystems, err := model.FindFismaSystems(r.Context(), input)
@@ -24,14 +24,18 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 
 func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	var fismasystemid int32
-	fmt.Sscan(mux.Vars(r)["id"], &fismasystemid)
-	input := model.FindFismaSystemsInput{
-		Fismasystemid: &fismasystemid,
+	vars := mux.Vars(r)
+	input := model.FindFismaSystemsInput{}
+
+	if v, ok := vars["fismasystemid"]; ok {
+		var fismasystemID int32
+		fmt.Sscan(v, &fismasystemID)
+		input.FismaSystemID = &fismasystemID
 	}
 
-	if !user.IsAdmin() {
-		input.Userid = &user.Userid
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
+		respond(w, nil, &ForbiddenError{})
+		return
 	}
 
 	fismasystem, err := model.FindFismaSystem(r.Context(), input)

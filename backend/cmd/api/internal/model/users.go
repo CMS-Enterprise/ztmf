@@ -9,11 +9,11 @@ import (
 )
 
 type User struct {
-	Userid         string
+	UserID         string
 	Email          string
 	Fullname       string
 	Role           string
-	Fismasystemids []*int32
+	FismaSystemIDs []*int32
 }
 
 func NewUser(ctx context.Context, email, fullname, role string) (*User, error) {
@@ -41,7 +41,7 @@ func (u *User) IsAdmin() bool {
 }
 
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
-	for _, fid := range u.Fismasystemids {
+	for _, fid := range u.FismaSystemIDs {
 		if *fid == fismasystemid {
 			return true
 		}
@@ -62,7 +62,7 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
 		user := User{}
-		err := rows.Scan(&user.Userid, &user.Email, &user.Fullname, &user.Role)
+		err := rows.Scan(&user.UserID, &user.Email, &user.Fullname, &user.Role)
 		return &user, err
 	})
 }
@@ -89,7 +89,7 @@ WHERE ` + where + ` GROUP BY users.userid
 
 	// Scan the query result into the User struct
 	u := User{}
-	err = row.Scan(&u.Userid, &u.Email, &u.Fullname, &u.Role, &u.Fismasystemids)
+	err = row.Scan(&u.UserID, &u.Email, &u.Fullname, &u.Role, &u.FismaSystemIDs)
 
 	return &u, err
 }
