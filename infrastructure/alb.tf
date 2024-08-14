@@ -98,7 +98,7 @@ resource "aws_lb_listener" "ztmf_alb_https" {
   }
 }
 
-resource "aws_lb_listener_rule" "rest" {
+resource "aws_lb_listener_rule" "graphql" {
   listener_arn = aws_lb_listener.ztmf_alb_https.arn
   priority     = 1
 
@@ -109,7 +109,13 @@ resource "aws_lb_listener_rule" "rest" {
 
   condition {
     path_pattern {
-      values = ["/*"]
+      values = [
+        "/fismasystems*",
+        "/functions*",
+        "/users*",
+        "/scores*",
+        "/whoami",
+      ]
     }
   }
 }
