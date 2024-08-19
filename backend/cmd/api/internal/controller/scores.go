@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
@@ -35,22 +36,38 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	respond(w, scores, err)
 }
 
-// func SaveFunctionScore(ctx context.Context, scoreid *graphql.ID, fismasystemid int32, functionid int32, score float64, notes *string) (*model.FunctionScore, error) {
-// 	user := auth.UserFromContext(ctx)
-// 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(fismasystemid) {
-// 		return nil, &ForbiddenError{}
-// 	}
+func SaveScore(w http.ResponseWriter, r *http.Request) {
+	var (
+		scoreID int32
+		score   *model.Score
+		err     error
+	)
+	user := auth.UserFromContext(r.Context())
+	input := model.SaveScoreInput{}
 
-// 	var (
-// 		functionscore *model.FunctionScore
-// 		err           error
-// 	)
+	err = getJSON(r.Body, &input)
+	if err != nil {
+		log.Println(err)
+	}
 
-// 	if scoreid == nil {
-// 		functionscore, err = model.NewFunctionScore(ctx, fismasystemid, functionid, score, notes)
-// 	} else {
-// 		functionscore, err = model.UpdateFunctionScore(ctx, scoreid, fismasystemid, functionid, score, notes)
-// 	}
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(input.FismaSystemID) {
+		respond(w, nil, &ForbiddenError{})
+		return
+	}
 
-// 	return functionscore, err
-// }
+	vars := mux.Vars(r)
+
+	if v, ok := vars["scoreid"]; ok {
+		fmt.Sscan(v, &scoreID)
+		input.ScoreID = &scoreID
+	}
+
+	// TODO: distinguish between 200, 201, 204 and dont send body on update
+	if input.ScoreID != nil {
+		err = model.UpdateScore(r.Context(), input)
+	} else {
+		score, err = model.CreateScore(r.Context(), input)
+	}
+
+	respond(w, score, err)
+}

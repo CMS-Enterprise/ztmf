@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/jackc/pgx/v5"
@@ -11,6 +12,14 @@ type Score struct {
 	ScoreID          int32   `json:"scoreid"`
 	FismaSystemID    int32   `json:"fismasystemid"`
 	DateCalculated   float64 `json:"datecalculated"`
+	Notes            *string `json:"notes"`
+	FunctionOptionID int32   `json:"functionoptionid"`
+	DataCallID       int32   `json:"datacallid"`
+}
+
+type SaveScoreInput struct {
+	ScoreID          *int32  `json:"scoreid"`
+	FismaSystemID    int32   `json:"fismasystemid"`
 	Notes            *string `json:"notes"`
 	FunctionOptionID int32   `json:"functionoptionid"`
 	DataCallID       int32   `json:"datacallid"`
@@ -52,27 +61,37 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 	})
 }
 
-// TODO: reimplement for REST
-// func NewFunctionScore(ctx context.Context, fismasystemid int32, functionid int32, score float64, notes *string) (*FunctionScore, error) {
-// 	sql := "INSERT INTO public.functionscores (fismasystemid, functionid, datecalculated, score, notes) VALUES ($1, $2, $3, $4, $5) RETURNING scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes"
-// 	args := []any{fismasystemid, functionid, time.Now(), score, notes}
-// 	return writeFunctionScore(ctx, sql, args)
-// }
+func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
+	sqlb := sqlBuilder.Insert("public.scores").
+		Columns("fismasystemid, notes, functionoptionid, datacallid").
+		Values(input.FismaSystemID, input.Notes, input.FunctionOptionID, input.DataCallID).
+		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 
-// func UpdateFunctionScore(ctx context.Context, scoreid *graphql.ID, fismasystemid int32, functionid int32, score float64, notes *string) (*FunctionScore, error) {
-// 	sql := "UPDATE public.functionscores SET fismasystemid=$1, functionid=$2, datecalculated=$3, score=$4, notes=$5 WHERE scoreid=$6 RETURNING scoreid, fismasystemid, functionid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, score, notes"
-// 	args := []any{fismasystemid, functionid, time.Now(), score, notes, scoreid}
-// 	return writeFunctionScore(ctx, sql, args)
-// }
+	sql, boundArgs, _ := sqlb.ToSql()
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return nil, err
+	}
 
-// func writeFunctionScore(ctx context.Context, sql string, args []any) (*FunctionScore, error) {
-// 	row, err := queryRow(ctx, sql, args...)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	score := Score{}
+	err = row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
 
-// 	fs := FunctionScore{}
-// 	err = row.Scan(&fs.Scoreid, &fs.Fismasystemid, &fs.Functionid, &fs.Datecalculated, &fs.Score, &fs.Notes)
+	return &score, err
+}
 
-// 	return &fs, err
-// }
+func UpdateScore(ctx context.Context, input SaveScoreInput) error {
+	if input.ScoreID == nil {
+		return errors.New("input.ScoreID must be provided")
+	}
+
+	sqlb := sqlBuilder.Update("public.scores").
+		Set("fismasystemid", &input.FismaSystemID).
+		Set("notes", &input.Notes).
+		Set("functionoptionid", &input.FunctionOptionID).
+		Set("datacallid", &input.DataCallID).
+		Where("scoreid=?", input.ScoreID)
+
+	sql, boundArgs, _ := sqlb.ToSql()
+	err := exec(ctx, sql, boundArgs...)
+	return err
+}
