@@ -22,6 +22,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/users/{userid:[a-zA-Z0-9\\-]+}", controller.GetUserById).Methods("GET")
 
 	router.HandleFunc("/scores", controller.ListScores).Queries("datacallid", "{datacallid:[0-9]+}", "fismasystemid", "{fismasystemid:[0-9]+}").Methods("GET")
+	router.HandleFunc("/scores", controller.SaveScore).Methods("POST")
+	router.HandleFunc("/scores/{scoreid}", controller.SaveScore).Methods("PUT")
 
 	router.HandleFunc("/whoami", controller.WhoAmI).Methods("GET")
 	return router

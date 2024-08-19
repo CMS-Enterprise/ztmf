@@ -2,9 +2,11 @@ package controller
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 )
 
+// TODO: refactor to provide way of sending 201 vs 200
 func respond(w http.ResponseWriter, data any, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	status := 200
@@ -34,4 +36,21 @@ func respond(w http.ResponseWriter, data any, err error) {
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.Encode(data)
+}
+
+func getJSON(r io.Reader, dest any) error {
+	d := json.NewDecoder(r)
+	d.DisallowUnknownFields()
+
+	err := d.Decode(dest)
+	if err != nil {
+		return err
+	}
+
+	// // optional extra check
+	// if d.More() {
+	// 	http.Error(rw, "extraneous data after JSON object", http.StatusBadRequest)
+	// 	return
+	// }
+	return nil
 }

@@ -33,13 +33,12 @@ func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 	return row, nil
 }
 
-// TODO: reimplement for REST
 // exec is a proxy to *pgx.Conn.Exec
-// func exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-// 	conn, err := db.Conn(ctx)
-// 	if err != nil {
-// 		return pgconn.NewCommandTag(""), err
-// 	}
-
-// 	return conn.Exec(ctx, sql, args...)
-// }
+func exec(ctx context.Context, sql string, args ...any) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Exec(ctx, sql, args...)
+	return err
+}
