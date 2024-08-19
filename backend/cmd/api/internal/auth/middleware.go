@@ -53,10 +53,3 @@ func Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
-func WhoAmI() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/jwt")
-		w.Write([]byte(r.Header[http.CanonicalHeaderKey("authorization")][0]))
-	})
-}

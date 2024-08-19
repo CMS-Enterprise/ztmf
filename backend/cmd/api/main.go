@@ -5,30 +5,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/graph"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/router"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
-	"github.com/graph-gophers/graphql-go"
-	"github.com/graph-gophers/graphql-go/relay"
 )
 
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
-	log.Println("Parsing schema...")
-
-	schema, err := graphql.ParseSchema(graph.Schema, &graph.RootResolver{}, graphql.UseFieldResolvers())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/graphql", auth.Middleware(&relay.Handler{Schema: schema}))
-	mux.Handle("/whoami", auth.Middleware(auth.WhoAmI()))
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Handler: router.Handler(),
 	}
 
 	log.Printf("%s environment listening on %s\n", cfg.Env, cfg.Port)

@@ -1,36 +1,43 @@
 package controller
 
 import (
-	"context"
+	"fmt"
+	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
-	"github.com/graph-gophers/graphql-go"
+	"github.com/gorilla/mux"
 )
 
-func ListFismasystems(ctx context.Context, fismaacronym *string) ([]*model.FismaSystem, error) {
-	user := auth.UserFromContext(ctx)
-	input := model.FindFismaSystemsInput{
-		Fismaacronym: fismaacronym,
-	}
+func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	input := model.FindFismaSystemsInput{}
 
 	if !user.IsAdmin() {
-		input.Userid = &user.Userid
+		input.UserID = &user.UserID
 	}
 
-	return model.FindFismaSystems(ctx, input)
+	fismasystems, err := model.FindFismaSystems(r.Context(), input)
 
+	respond(w, fismasystems, err)
 }
 
-func GetFismasystem(ctx context.Context, fismasystemid graphql.ID) (*model.FismaSystem, error) {
-	user := auth.UserFromContext(ctx)
-	input := model.FindFismaSystemsInput{
-		Fismasystemid: &fismasystemid,
+func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	vars := mux.Vars(r)
+	input := model.FindFismaSystemsInput{}
+
+	if v, ok := vars["fismasystemid"]; ok {
+		var fismasystemID int32
+		fmt.Sscan(v, &fismasystemID)
+		input.FismaSystemID = &fismasystemID
 	}
 
-	if !user.IsAdmin() {
-		input.Userid = &user.Userid
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
+		respond(w, nil, &ForbiddenError{})
+		return
 	}
 
-	return model.FindFismaSystem(ctx, input)
+	fismasystem, err := model.FindFismaSystem(r.Context(), input)
+	respond(w, fismasystem, err)
 }

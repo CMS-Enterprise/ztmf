@@ -109,7 +109,13 @@ resource "aws_lb_listener_rule" "graphql" {
 
   condition {
     path_pattern {
-      values = ["/graphql*", "/whoami"]
+      values = [
+        "/fismasystems*",
+        "/functions*",
+        "/users*",
+        "/scores*",
+        "/whoami",
+      ]
     }
   }
 }

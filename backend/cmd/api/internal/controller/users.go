@@ -2,91 +2,57 @@ package controller
 
 import (
 	"context"
-	"fmt"
+	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
-	"github.com/graph-gophers/graphql-go"
+	"github.com/gorilla/mux"
 )
 
-func ListUsers(ctx context.Context) ([]*model.User, error) {
+func GetUser(ctx context.Context, userid string) (*model.User, error) {
 	user := auth.UserFromContext(ctx)
 
-	if !user.IsAdmin() {
-		return []*model.User{}, nil
-	}
-
-	return model.FindUsers(ctx)
-}
-
-func GetUser(ctx context.Context, userid graphql.ID) (*model.User, error) {
-	user := auth.UserFromContext(ctx)
-
-	if !user.IsAdmin() && user.Userid != userid {
+	if !user.IsAdmin() && user.UserID != userid {
 		return nil, nil
 	}
-	return model.FindUserById(ctx, userid)
+	return model.FindUserByID(ctx, userid)
 }
 
-func SaveUser(ctx context.Context, userid *graphql.ID, email, fullname, role string) (*model.User, error) {
-	authenticatedUser := auth.UserFromContext(ctx)
-
-	if !authenticatedUser.IsAdmin() {
-		return nil, &ForbiddenError{}
+func GetUserByEmail(w http.ResponseWriter, r *http.Request) {
+	authdUser := auth.UserFromContext(r.Context())
+	vars := mux.Vars(r)
+	email, ok := vars["email"]
+	if !ok {
+		respond(w, nil, &InvalidInputError{"email", nil})
+		return
 	}
 
-	if err := validateEmail(email); err != nil {
-		return nil, err
+	if !authdUser.IsAdmin() && email != authdUser.Email {
+		respond(w, nil, &ForbiddenError{})
+		return
 	}
 
-	if err := validateRole(role); err != nil {
-		return nil, err
-	}
+	user, err := model.FindUserByEmail(r.Context(), email)
 
-	if userid != nil {
-		return model.UpdateUser(ctx, *userid, email, fullname, role)
-	}
-	return model.NewUser(ctx, email, fullname, role)
+	respond(w, user, err)
 }
 
-func SaveUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) (*model.User, error) {
-	user := auth.UserFromContext(ctx)
-	if !user.IsAdmin() {
-		return nil, &ForbiddenError{}
+func GetUserById(w http.ResponseWriter, r *http.Request) {
+	authdUser := auth.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, nil, &ForbiddenError{})
+		return
 	}
 
-	if len(fismasystemids) < 1 {
-		return nil, &InvalidInputError{
-			field: "fismasystemids",
-			value: fmt.Sprintf("%v", fismasystemids),
-		}
+	vars := mux.Vars(r)
+	ID, ok := vars["userid"]
+	if !ok {
+		respond(w, nil, &InvalidInputError{"id", nil})
+		return
 	}
 
-	err := model.CreateUserFismaSystems(ctx, userid, fismasystemids)
-	if err != nil {
-		return nil, err
-	}
+	user, err := model.FindUserByID(r.Context(), ID)
 
-	return model.FindUserById(ctx, graphql.ID(userid))
-}
+	respond(w, user, err)
 
-func RemoveUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) (*model.User, error) {
-	user := auth.UserFromContext(ctx)
-	if !user.IsAdmin() {
-		return nil, &ForbiddenError{}
-	}
-
-	if len(fismasystemids) < 1 {
-		return nil, &InvalidInputError{
-			field: "fismasystemids",
-			value: fmt.Sprintf("%v", fismasystemids),
-		}
-	}
-
-	err := model.DeleteUserFismaSystems(ctx, userid, fismasystemids)
-	if err != nil {
-		return nil, err
-	}
-
-	return model.FindUserById(ctx, graphql.ID(userid))
 }
