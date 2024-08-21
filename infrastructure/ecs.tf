@@ -97,6 +97,14 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         {
           name  = "AWS_REGION"
           value = "us-east-1"
+        },
+        {
+          name  = "AUTH_TOKEN_KEY_URL"
+          value = "https://public-keys.auth.elb.us-east-1.amazonaws.com/"
+        },
+        {
+          name  = "AUTH_HEADER_FIELD"
+          value = "x-amzn-oidc-data"
         }
       ]
       logConfiguration = {
@@ -147,7 +155,7 @@ resource "aws_ecs_service" "ztmf_api" {
   desired_count   = 1
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.ztmf_api.arn
+    target_group_arn = aws_lb_target_group.ztmf_rest_api.arn
     container_name   = "ztmfapi"
     container_port   = 443
   }

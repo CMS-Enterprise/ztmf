@@ -21,8 +21,11 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func decodeJwt(tokenString string) (*jwt.Token, error) {
-	return jwt.ParseWithClaims(tokenString, &Claims{}, getKey)
+func decodeJWT(tokenString string) (*jwt.Token, error) {
+	// AWS ELB does not conform to JWT standards!
+	// encoded data includes illegal padding (as = chars)
+	// thus making signature verification impossible with standards-conforming packages
+	return jwt.ParseWithClaims(tokenString, &Claims{}, getKey, jwt.WithPaddingAllowed())
 }
 
 // getKey retrieves keys via http and caches them for future requests
@@ -30,10 +33,11 @@ func getKey(token *jwt.Token) (interface{}, error) {
 	cfg := config.GetInstance()
 
 	switch token.Header["alg"] {
+	case "none":
+		return nil, errors.New("unsupported jwt signing algorithm")
 	case "HS256":
-		return []byte(cfg.HS256_SECRET), nil
-
-	case "ES384":
+		return []byte(cfg.Auth.HS256_SECRET), nil
+	default:
 		kid := token.Header["kid"].(string)
 
 		// if not already cached, request it
@@ -41,7 +45,7 @@ func getKey(token *jwt.Token) (interface{}, error) {
 			// but do it once to be thread safe
 
 			cfg := config.GetInstance()
-			url := "https://public-keys.prod.verified-access." + cfg.Region + ".amazonaws.com/" + kid
+			url := cfg.Auth.TokenKeyUrl + kid
 			req, _ := http.NewRequest("GET", url, nil)
 
 			res, err := http.DefaultClient.Do(req)
@@ -71,7 +75,6 @@ func getKey(token *jwt.Token) (interface{}, error) {
 		}
 
 		return keys[kid], nil
-	default:
-		return nil, errors.New("unsupported jwt signing algorithm")
+
 	}
 }
