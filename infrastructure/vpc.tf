@@ -22,14 +22,14 @@ resource "aws_security_group" "ztmf_vpc_endpoints" {
   # }
 }
 
-resource "aws_vpc_endpoint" "s3_gateway" {
-  vpc_id            = data.aws_vpc.ztmf.id
-  service_name      = "com.amazonaws.us-east-1.s3"
-  vpc_endpoint_type = "Gateway"
-}
+# resource "aws_vpc_endpoint" "s3_gateway" {
+#   vpc_id            = data.aws_vpc.ztmf.id
+#   service_name      = "com.amazonaws.us-east-1.s3"
+#   vpc_endpoint_type = "Gateway"
+# }
 
 resource "aws_vpc_endpoint" "ztmf" {
-  for_each            = toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"])
+  for_each            = toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages"])
   vpc_id              = data.aws_vpc.ztmf.id
   service_name        = "com.amazonaws.us-east-1.${each.value}"
   vpc_endpoint_type   = "Interface"
