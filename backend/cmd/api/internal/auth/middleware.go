@@ -7,22 +7,22 @@ import (
 	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
 // Middleware is used to validate the JWT forwarded by Verified Access and match it to a db record
 // If a record is found the resulting user is provided to the request context
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if v, ok := r.Header[http.CanonicalHeaderKey("x-amzn-ava-user-context")]; ok {
-			r.Header[http.CanonicalHeaderKey("authorization")] = v
-		}
+		cfg := config.GetInstance()
 
-		if rawHeader, ok := r.Header[http.CanonicalHeaderKey("authorization")]; !ok {
+		if rawHeader, ok := r.Header[http.CanonicalHeaderKey(cfg.Auth.HeaderField)]; !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		} else {
 			encoded := strings.TrimSpace(strings.Replace(rawHeader[0], "Bearer", "", -1))
-			tkn, err := decodeJwt(encoded)
+			log.Println(encoded)
+			tkn, err := decodeJWT(encoded)
 			if err != nil {
 				log.Println(err)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -42,7 +42,7 @@ func Middleware(next http.Handler) http.Handler {
 
 			if err != nil {
 				log.Printf("Could not find user by email: %s with error %s\n", claims.Email, err)
-				http.Error(w, "unauthorized", http.StatusForbidden)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 

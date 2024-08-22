@@ -17,3 +17,7 @@ resource "aws_secretsmanager_secret" "ztmf_tls_key" {
 resource "aws_secretsmanager_secret" "ztmf_db_user" {
   name = "ztmf_db_user"
 }
+
+resource "aws_secretsmanager_secret" "ztmf_x_auth_token" {
+  name = "ztmf_x_auth_token"
+}
