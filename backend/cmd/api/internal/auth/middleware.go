@@ -21,7 +21,6 @@ func Middleware(next http.Handler) http.Handler {
 			return
 		} else {
 			encoded := strings.TrimSpace(strings.Replace(rawHeader[0], "Bearer", "", -1))
-			log.Println(encoded)
 			tkn, err := decodeJWT(encoded)
 			if err != nil {
 				log.Println(err)
