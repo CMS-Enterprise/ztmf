@@ -72,7 +72,7 @@ resource "aws_lb_listener" "ztmf_rest_api" {
 }
 
 # RULES
-resource "aws_lb_listener_rule" "ztmf_rest_api" {
+resource "aws_lb_listener_rule" "login" {
   listener_arn = aws_lb_listener.ztmf_rest_api.arn
   priority     = 1
 
@@ -93,6 +93,50 @@ resource "aws_lb_listener_rule" "ztmf_rest_api" {
   }
 
   action {
+    type             = "redirect"
+    redirect {
+      status_code = "HTTP_302"
+      path = "/"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = [
+        "/login*",
+      ]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "x-auth-token"
+      values           = [data.aws_secretsmanager_secret_version.ztmf_x_auth_token_current.secret_string]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "api" {
+  listener_arn = aws_lb_listener.ztmf_rest_api.arn
+  priority     = 2
+
+  action {
+    type = "authenticate-oidc"
+
+    authenticate_oidc {
+      authorization_endpoint     = local.oidc_options["authorization_endpoint"]
+      client_id                  = local.oidc_options["client_id"]
+      client_secret              = local.oidc_options["client_secret"]
+      issuer                     = local.oidc_options["issuer"]
+      token_endpoint             = local.oidc_options["token_endpoint"]
+      user_info_endpoint         = local.oidc_options["user_info_endpoint"]
+      scope                      = "openid profile email groups"
+      session_timeout            = 3600
+      on_unauthenticated_request = "deny"
+    }
+  }
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.ztmf_rest_api.arn
   }
@@ -100,7 +144,7 @@ resource "aws_lb_listener_rule" "ztmf_rest_api" {
   condition {
     path_pattern {
       values = [
-        "/api/*",
+        "/api/*"
       ]
     }
   }
