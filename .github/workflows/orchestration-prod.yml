@@ -1,4 +1,4 @@
-name: Orchestration DEV
+name: Orchestration PROD
 
 on:
   pull_request:
@@ -40,7 +40,7 @@ jobs:
     if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/backend.yml
     with:
-      environment: DEV
+      environment: PROD
     secrets: inherit
       
   # terraform apply should be run if there were changes to the backend that resulted in a new image
@@ -52,6 +52,6 @@ jobs:
     if: contains(needs.diff.outputs.infrastructure, 'infrastructure/') || !cancelled()
     uses: ./.github/workflows/infrastructure.yml
     with:
-      environment: DEV
+      environment: PROD
     secrets: inherit
   
