@@ -7,7 +7,7 @@ resource "aws_cloudfront_origin_access_control" "cloudfront_s3_oac" {
 }
 
 resource "aws_cloudfront_distribution" "ztmf" {
-  aliases             = ["dev.ztmf.cms.gov"]
+  aliases             = [local.domain_name]
   enabled             = true
   is_ipv6_enabled     = false
   comment             = "ZTMF Scoring"

@@ -152,7 +152,7 @@ resource "aws_ecs_service" "ztmf_api" {
   cluster         = aws_ecs_cluster.ztmf.id
   task_definition = aws_ecs_task_definition.ztmf_api.arn
   launch_type     = "FARGATE"
-  desired_count   = 1
+  desired_count   = var.ecs_service_task_count
 
   load_balancer {
     target_group_arn = aws_lb_target_group.ztmf_rest_api.arn

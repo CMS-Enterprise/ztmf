@@ -13,7 +13,7 @@ Where `<env>` is one of `dev` or `prod`. See files in `infrastructure/config/`.
 
 ## Vars
 
-While there are only 2 input vars, they still need to be passed in during plan and apply
+While there are few input vars, they still need to be passed in during plan and apply
 ```bash
 terraform <plan|apply> -var-file="tfvars/<env>.tfvars"
 ```
