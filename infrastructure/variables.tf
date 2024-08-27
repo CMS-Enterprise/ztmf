@@ -7,7 +7,8 @@ variable "domain_name_prefix" {
   default = ""
 }
 
-# variable "job_code" {
-#   type    = string
-#   default = ""
-# }
+variable "ecs_service_task_count" {
+  type    = number
+  default = 1
+}
+
