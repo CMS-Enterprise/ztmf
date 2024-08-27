@@ -29,10 +29,6 @@ jobs:
       - name: Check for changes in infrastructure/
         id: infrastructure
         run: echo "infrastructure=$(git --no-pager diff --name-only origin/main infrastructure/ | grep ".tf\|.tfvars" | head -n 1)" >> $GITHUB_OUTPUT
-
-      - name: Check for changes in ui/
-        id: ui
-        run: echo "ui=$(git --no-pager diff --name-only origin/main ui/ | head -n 1)" >> $GITHUB_OUTPUT
         
   backend:
     name: Backend
