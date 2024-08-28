@@ -116,6 +116,27 @@ resource "aws_cloudfront_distribution" "ztmf" {
     viewer_protocol_policy = "redirect-to-https"
   }
 
+  ordered_cache_behavior {
+    path_pattern     = "/whoami"
+    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods   = ["HEAD", "GET", "OPTIONS"]
+    target_origin_id = "ztmf_rest_api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+    compress               = true
+    viewer_protocol_policy = "redirect-to-https"
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "whitelist"
