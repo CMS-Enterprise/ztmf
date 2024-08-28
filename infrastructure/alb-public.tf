@@ -145,7 +145,6 @@ resource "aws_lb_listener_rule" "api" {
     path_pattern {
       values = [
         "/api/*",
-        "/whoami"
       ]
     }
   }

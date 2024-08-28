@@ -20,13 +20,12 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/functions/{functionid}/options", controller.ListFunctionOptions).Methods("GET")
 
-	router.HandleFunc("/api/v1/users/{email:[a-zA-Z0-9.]+@[a-zA-Z0-9.]+}", controller.GetUserByEmail).Methods("GET")
+	router.HandleFunc("/api/v1/users/current", controller.GetCurrentUser).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:[a-zA-Z0-9\\-]+}", controller.GetUserById).Methods("GET")
 
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Queries("datacallid", "{datacallid:[0-9]+}", "fismasystemid", "{fismasystemid:[0-9]+}").Methods("GET")
 	router.HandleFunc("/api/v1/scores", controller.SaveScore).Methods("POST")
 	router.HandleFunc("/api/v1/scores/{scoreid}", controller.SaveScore).Methods("PUT")
 
-	router.HandleFunc("/whoami", controller.WhoAmI).Methods("GET")
 	return router
 }
