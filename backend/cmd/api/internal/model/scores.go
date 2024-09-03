@@ -122,7 +122,6 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 		GroupBy("datacallid, fismasystemid, systemscore")
 
 	sql, boundArgs, _ := sqlb.PlaceholderFormat(squirrel.Dollar).ToSql()
-	log.Println(sql)
 	rows, err := query(ctx, sql, boundArgs...)
 
 	if err != nil {
