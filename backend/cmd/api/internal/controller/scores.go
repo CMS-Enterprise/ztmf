@@ -18,17 +18,16 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 		input.UserID = &user.UserID
 	}
 
-	vars := mux.Vars(r)
-
-	if v, ok := vars["datacallid"]; ok {
+	vars := r.URL.Query()
+	if vars.Has("datacallid") {
 		var dataCallID int32
-		fmt.Sscan(v, &dataCallID)
+		fmt.Sscan(vars.Get("datacallid"), &dataCallID)
 		input.DataCallID = &dataCallID
 	}
 
-	if v, ok := vars["fismasystemid"]; ok {
+	if vars.Has("fismasystemid") {
 		var fismaSystemID int32
-		fmt.Sscan(v, &fismaSystemID)
+		fmt.Sscan(vars.Get("fismasystemid"), &fismaSystemID)
 		input.FismaSystemID = &fismaSystemID
 	}
 
@@ -70,4 +69,24 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, score, err)
+}
+
+func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	input := model.FindScoresInput{}
+
+	if !user.IsAdmin() {
+		input.FismaSystemIDs = user.AssignedFismaSystems
+	}
+
+	vars := r.URL.Query()
+	if vars.Has("datacallid") {
+		var dataCallID int32
+		fmt.Sscan(vars.Get("datacallid"), &dataCallID)
+		input.DataCallID = &dataCallID
+	}
+
+	aggregate, err := model.FindScoresAggregate(r.Context(), input)
+
+	respond(w, aggregate, err)
 }
