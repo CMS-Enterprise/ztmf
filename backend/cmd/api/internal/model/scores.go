@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -17,6 +18,12 @@ type Score struct {
 	DataCallID       int32   `json:"datacallid"`
 }
 
+type ScoreAggregate struct {
+	DataCallID    int32   `json:"datacallid"`
+	FismaSystemID int32   `json:"fismasystemid"`
+	SystemScore   float64 `json:"systemscore"`
+}
+
 type SaveScoreInput struct {
 	ScoreID          *int32  `json:"scoreid"`
 	FismaSystemID    int32   `json:"fismasystemid"`
@@ -26,9 +33,10 @@ type SaveScoreInput struct {
 }
 
 type FindScoresInput struct {
-	FismaSystemID *int32
-	DataCallID    *int32
-	UserID        *string
+	FismaSystemID  *int32
+	FismaSystemIDs []*int32
+	DataCallID     *int32
+	UserID         *string
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
@@ -94,4 +102,37 @@ func UpdateScore(ctx context.Context, input SaveScoreInput) error {
 	sql, boundArgs, _ := sqlb.ToSql()
 	err := exec(ctx, sql, boundArgs...)
 	return err
+}
+
+func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {
+	subSqlb := squirrel.Select("datacallid, fismasystemid, AVG(score) OVER (PARTITION BY datacallid, fismasystemid) as systemscore").
+		From("scores").
+		InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid")
+
+	if input.DataCallID != nil {
+		subSqlb = subSqlb.Where("datacallid=?", input.DataCallID)
+	}
+
+	if len(input.FismaSystemIDs) > 0 {
+		subSqlb = subSqlb.Where(squirrel.Eq{"fismasystemid": input.FismaSystemIDs})
+	}
+
+	sqlb := squirrel.Select("*").
+		FromSelect(subSqlb, "avg_by_datacall_fismasystem").
+		GroupBy("datacallid, fismasystemid, systemscore")
+
+	sql, boundArgs, _ := sqlb.PlaceholderFormat(squirrel.Dollar).ToSql()
+	log.Println(sql)
+	rows, err := query(ctx, sql, boundArgs...)
+
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*ScoreAggregate, error) {
+		sagg := ScoreAggregate{}
+		err := row.Scan(&sagg.DataCallID, &sagg.FismaSystemID, &sagg.SystemScore)
+		return &sagg, err
+	})
 }
