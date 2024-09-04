@@ -7,32 +7,10 @@ on:
     types:
       - closed
 
-jobs:
-  diff:
-    if: ${{ github.event.pull_request.merged }}
-    name: Check for Changes
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.backend.outputs.backend }}
-      infrastructure: ${{ steps.infrastructure.outputs.infrastructure }}
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check for changes in backend/
-        id: backend
-        run: echo "backend=$(git --no-pager diff --name-only origin/main backend/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
-
-      - name: Check for changes in infrastructure/
-        id: infrastructure
-        run: echo "infrastructure=$(git --no-pager diff --name-only origin/main infrastructure/ | grep ".tf\|.tfvars" | head -n 1)" >> $GITHUB_OUTPUT
-        
+jobs:   
   backend:
+    if: ${{ github.event.pull_request.merged }}
     name: Backend
-    needs: diff
-    if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/backend.yml
     with:
       environment: PROD
@@ -42,9 +20,7 @@ jobs:
   infrastructure:
     name: Infrastructure
     needs: 
-      - diff
       - backend
-    if: contains(needs.diff.outputs.infrastructure, 'infrastructure/') || !cancelled()
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: PROD
