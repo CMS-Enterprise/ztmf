@@ -12,7 +12,9 @@ resource "aws_cloudfront_distribution" "ztmf" {
   is_ipv6_enabled     = false
   comment             = "ZTMF Scoring"
   default_root_object = "index.html"
-
+  // CMS provides a pre configured web acl, but it cant be tagged thus it can 
+  // only be found by looking to the stack outputs
+  web_acl_id = data.aws_cloudformation_stack.web_acl.outputs["SamQuickACLEnforcingV2"]
   origin {
     origin_id                = "ztmf_web_assets"
     domain_name              = aws_s3_bucket.ztmf_web_assets.bucket_regional_domain_name
