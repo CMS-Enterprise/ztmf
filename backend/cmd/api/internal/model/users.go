@@ -72,6 +72,42 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 	return &u, err
 }
 
+func CreateUser(ctx context.Context, user User) (*User, error) {
+	sqlb := sqlBuilder.Insert("users").
+		Columns("email, fullname, role").
+		Values(user.Email, user.FullName, user.Role).
+		Suffix("RETURNING userid")
+
+	sql, boundArgs, _ := sqlb.ToSql()
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	err = row.Scan(&user.UserID)
+
+	return &user, err
+}
+
+func UpdateUser(ctx context.Context, user User) (*User, error) {
+	sqlb := sqlBuilder.Update("users").
+		Set("email", user.Email).
+		Set("fullname", user.FullName).
+		Set("role", user.Role).
+		Where("userid=?", user.UserID).
+		Suffix("RETURNING userid, email, fullname, role")
+
+	sql, boundArgs, _ := sqlb.ToSql()
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	err = row.Scan(&user.UserID, &user.Email, &user.FullName, &user.Role)
+
+	return &user, err
+}
+
 // func CreateUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) error {
 // 	sql := "INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES"
 // 	values := []any{userid}
