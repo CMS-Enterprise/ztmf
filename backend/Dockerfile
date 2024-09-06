@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 golang:1.22.0-bookworm AS builder
+FROM golang:1.22.4-bookworm AS builder
 
 WORKDIR /src
 
@@ -13,7 +13,7 @@ COPY ./internal/ /src/internal/
 
 RUN go build -o ./ ./cmd/api/...
 
-FROM --platform=linux/amd64 scratch
+FROM scratch
 
 WORKDIR /src
 
