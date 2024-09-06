@@ -8,5 +8,5 @@ import (
 
 func ListDataCalls(w http.ResponseWriter, r *http.Request) {
 	datacalls, err := model.FindDataCalls(r.Context())
-	respond(w, datacalls, err)
+	respond(w, r, datacalls, err)
 }

@@ -19,5 +19,5 @@ func ListFunctionOptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	functionoptions, err := model.FindFunctionOptions(r.Context(), input)
-	respond(w, functionoptions, err)
+	respond(w, r, functionoptions, err)
 }

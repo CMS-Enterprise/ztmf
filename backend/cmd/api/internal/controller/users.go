@@ -13,45 +13,45 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	// TODO: replace the repititious admin checks with ACL
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, nil, &ForbiddenError{})
+		respond(w, r, nil, &ForbiddenError{})
 		return
 	}
 
 	users, err := model.FindUsers(r.Context())
 
-	respond(w, users, err)
+	respond(w, r, users, err)
 }
 
 func GetUserById(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, nil, &ForbiddenError{})
+		respond(w, r, nil, &ForbiddenError{})
 		return
 	}
 
 	vars := mux.Vars(r)
 	ID, ok := vars["userid"]
 	if !ok {
-		respond(w, nil, &InvalidInputError{"id", nil})
+		respond(w, r, nil, &InvalidInputError{"id", nil})
 		return
 	}
 
 	user, err := model.FindUserByID(r.Context(), ID)
 
-	respond(w, user, err)
+	respond(w, r, user, err)
 }
 
 func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 
-	respond(w, user, nil)
+	respond(w, r, user, nil)
 }
 
 // SaveUser is for admin management
 func SaveUser(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, nil, &ForbiddenError{})
+		respond(w, r, nil, &ForbiddenError{})
 		return
 	}
 
@@ -60,19 +60,19 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 	err := getJSON(r.Body, user)
 	if err != nil {
 		log.Println(err)
-		respond(w, nil, err)
+		respond(w, r, nil, err)
 		return
 	}
 
 	err = validateEmail(user.Email)
 	if err != nil {
-		respond(w, nil, err)
+		respond(w, r, nil, err)
 		return
 	}
 
 	err = validateRole(user.Role)
 	if err != nil {
-		respond(w, nil, err)
+		respond(w, r, nil, err)
 		return
 	}
 
@@ -90,9 +90,9 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 		// TODO: wrap all such db errors to return generic 500 to client but still log it
-		respond(w, nil, err)
+		respond(w, r, nil, err)
 		return
 	}
 
-	respond(w, user, nil)
+	respond(w, r, user, nil)
 }

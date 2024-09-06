@@ -19,7 +19,7 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 
 	fismasystems, err := model.FindFismaSystems(r.Context(), input)
 
-	respond(w, fismasystems, err)
+	respond(w, r, fismasystems, err)
 }
 
 func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
@@ -34,10 +34,10 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
-		respond(w, nil, &ForbiddenError{})
+		respond(w, r, nil, &ForbiddenError{})
 		return
 	}
 
 	fismasystem, err := model.FindFismaSystem(r.Context(), input)
-	respond(w, fismasystem, err)
+	respond(w, r, fismasystem, err)
 }

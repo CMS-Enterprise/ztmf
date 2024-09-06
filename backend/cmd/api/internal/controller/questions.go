@@ -19,5 +19,5 @@ func ListQuestions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	questions, err := model.FindQuestions(r.Context(), input)
-	respond(w, questions, err)
+	respond(w, r, questions, err)
 }

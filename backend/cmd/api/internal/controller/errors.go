@@ -22,3 +22,9 @@ type NotFoundError struct{}
 func (e *NotFoundError) Error() string {
 	return "not found"
 }
+
+type ServerError struct{}
+
+func (e *ServerError) Error() string {
+	return "server error"
+}
