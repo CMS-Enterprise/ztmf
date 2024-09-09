@@ -2,40 +2,71 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// TODO: refactor to provide way of sending 201 vs 200
-func respond(w http.ResponseWriter, data any, err error) {
+type response struct {
+	Data any    `json:"data,omitempty"`
+	Err  string `json:"error,omitempty"`
+}
+
+func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	w.Header().Set("Content-Type", "application/json")
-	status := 200
+
+	var status int
+
+	switch r.Method {
+	case "GET":
+		status = 200
+	case "POST":
+		status = 201
+	case "PUT", "DELETE":
+		status = 204
+	}
+
+	res := response{
+		Data: data,
+	}
 
 	if err == nil && data == nil {
 		err = &NotFoundError{}
 	}
 
 	if err != nil {
-		if err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			err = &NotFoundError{}
 		}
+
+		if errors.Is(err, pgx.ErrTooManyRows) || errors.Is(err, pgx.ErrTxClosed) || errors.Is(err, pgx.ErrTxCommitRollback) {
+			err = &ServerError{}
+		}
+
 		switch err.(type) {
+		case *pgconn.PgError:
+			status = 500
+			err = &ServerError{}
 		case *ForbiddenError:
 			status = 403
 		case *InvalidInputError:
 			status = 400
 		case *NotFoundError:
 			status = 404
+		case *ServerError:
+			status = 500
 		default:
 			status = 500
 		}
-		data = map[string]any{
-			"error": err.Error(),
-		}
+		res.Err = err.Error()
 	}
+
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
-	enc.Encode(data)
+	enc.Encode(res)
 }
 
 func getJSON(r io.Reader, dest any) error {

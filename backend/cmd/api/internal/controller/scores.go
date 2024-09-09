@@ -32,7 +32,7 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scores, err := model.FindScores(r.Context(), input)
-	respond(w, scores, err)
+	respond(w, r, scores, err)
 }
 
 func SaveScore(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(input.FismaSystemID) {
-		respond(w, nil, &ForbiddenError{})
+		respond(w, r, nil, &ForbiddenError{})
 		return
 	}
 
@@ -68,7 +68,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		score, err = model.CreateScore(r.Context(), input)
 	}
 
-	respond(w, score, err)
+	respond(w, r, score, err)
 }
 
 func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
@@ -88,5 +88,5 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 
 	aggregate, err := model.FindScoresAggregate(r.Context(), input)
 
-	respond(w, aggregate, err)
+	respond(w, r, aggregate, err)
 }
