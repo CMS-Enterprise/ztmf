@@ -6,6 +6,7 @@ services:
     ports:
       - 54321:5432
   api:
+    platform: "linux/amd64"
     depends_on:
       - postgre
     build: ./backend
