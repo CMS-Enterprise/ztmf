@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
 	"log"
 
 	"github.com/jackc/pgx/v5"
@@ -47,19 +46,21 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*FismaSystem, error) {
 		fismaSystem := FismaSystem{}
 		err := row.Scan(&fismaSystem.FismaSystemID, &fismaSystem.FismaUID, &fismaSystem.FismaAcronym, &fismaSystem.FismaName, &fismaSystem.FismaSubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.GroupName, &fismaSystem.DivisionName, &fismaSystem.DataCenterEnvironment, &fismaSystem.DataCallContact, &fismaSystem.ISSOEmail)
-		return &fismaSystem, err
+		return &fismaSystem, trapError(err)
 	})
 }
 
 func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSystem, error) {
 	if input.FismaSystemID == nil {
-		return nil, errors.New("fismasystemid cannot be null")
+		return nil, &InvalidInputError{
+			data: map[string]string{"fismasystemid": "null"},
+		}
 	}
 
 	sqlb := sqlBuilder.Select("fismasystems.fismasystemid as fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail").From("fismasystems")
@@ -69,14 +70,14 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	fismaSystem := FismaSystem{}
 	err = row.Scan(&fismaSystem.FismaSystemID, &fismaSystem.FismaUID, &fismaSystem.FismaAcronym, &fismaSystem.FismaName, &fismaSystem.FismaSubsystem, &fismaSystem.Component, &fismaSystem.Groupacronym, &fismaSystem.GroupName, &fismaSystem.DivisionName, &fismaSystem.DataCenterEnvironment, &fismaSystem.DataCallContact, &fismaSystem.ISSOEmail)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return &fismaSystem, nil

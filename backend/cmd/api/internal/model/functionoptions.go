@@ -30,12 +30,12 @@ func FindFunctionOptions(ctx context.Context, input FindFunctionOptionsInput) ([
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*FunctionOption, error) {
 		fo := FunctionOption{}
 		err := rows.Scan(&fo.FunctionOptionID, &fo.FunctionID, &fo.Score, &fo.OptionName, &fo.Description)
-		return &fo, err
+		return &fo, trapError(err)
 	})
 }

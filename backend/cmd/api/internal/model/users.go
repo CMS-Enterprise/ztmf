@@ -37,13 +37,13 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
 		user := User{}
 		err := rows.Scan(&user.UserID, &user.Email, &user.FullName, &user.Role)
-		return &user, err
+		return &user, trapError(err)
 	})
 }
 
@@ -62,17 +62,21 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 	sql, boundArgs, _ := sqlb.ToSql()
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	// Scan the query result into the User struct
 	u := User{}
 	err = row.Scan(&u.UserID, &u.Email, &u.FullName, &u.Role, &u.AssignedFismaSystems)
 
-	return &u, err
+	return &u, trapError(err)
 }
 
 func CreateUser(ctx context.Context, user User) (*User, error) {
+	if err := validateUser(user); err != nil {
+		return nil, err
+	}
+
 	sqlb := sqlBuilder.Insert("users").
 		Columns("email, fullname, role").
 		Values(user.Email, user.FullName, user.Role).
@@ -81,15 +85,19 @@ func CreateUser(ctx context.Context, user User) (*User, error) {
 	sql, boundArgs, _ := sqlb.ToSql()
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	err = row.Scan(&user.UserID)
 
-	return &user, err
+	return &user, trapError(err)
 }
 
 func UpdateUser(ctx context.Context, user User) (*User, error) {
+	if err := validateUser(user); err != nil {
+		return nil, err
+	}
+
 	sqlb := sqlBuilder.Update("users").
 		Set("email", user.Email).
 		Set("fullname", user.FullName).
@@ -100,12 +108,30 @@ func UpdateUser(ctx context.Context, user User) (*User, error) {
 	sql, boundArgs, _ := sqlb.ToSql()
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	err = row.Scan(&user.UserID, &user.Email, &user.FullName, &user.Role)
 
-	return &user, err
+	return &user, trapError(err)
+}
+
+func validateUser(user User) error {
+	err := InvalidInputError{data: map[string]string{}}
+
+	if !isValidEmail(user.Email) {
+		err.data["email"] = user.Email
+	}
+
+	if !isValidRole(user.Role) {
+		err.data["role"] = user.Role
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+
+	return nil
 }
 
 // func CreateUserFismaSystems(ctx context.Context, userid string, fismasystemids []int32) error {

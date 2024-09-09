@@ -59,13 +59,13 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
 		err := row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
-		return &score, err
+		return &score, trapError(err)
 	})
 }
 
@@ -78,13 +78,13 @@ func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
 	sql, boundArgs, _ := sqlb.ToSql()
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	score := Score{}
 	err = row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
 
-	return &score, err
+	return &score, trapError(err)
 }
 
 func UpdateScore(ctx context.Context, input SaveScoreInput) error {
@@ -126,12 +126,12 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*ScoreAggregate, error) {
 		sagg := ScoreAggregate{}
 		err := row.Scan(&sagg.DataCallID, &sagg.FismaSystemID, &sagg.SystemScore)
-		return &sagg, err
+		return &sagg, trapError(err)
 	})
 }

@@ -23,12 +23,12 @@ func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*DataCall, error) {
 		datacall := DataCall{}
 		err := rows.Scan(&datacall.DataCallID, &datacall.DataCall, &datacall.DateCreated, &datacall.Deadline)
-		return &datacall, err
+		return &datacall, trapError(err)
 	})
 }

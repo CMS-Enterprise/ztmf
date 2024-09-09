@@ -33,7 +33,7 @@ func FindQuestions(ctx context.Context, input FindQuestionInput) ([]*Question, e
 
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, trapError(err)
 	}
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Question, error) {
@@ -51,6 +51,6 @@ func FindQuestions(ctx context.Context, input FindQuestionInput) ([]*Question, e
 		}
 
 		err := rows.Scan(scanFields...)
-		return &question, err
+		return &question, trapError(err)
 	})
 }

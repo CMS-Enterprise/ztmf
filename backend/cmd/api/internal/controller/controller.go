@@ -6,8 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 )
 
 type response struct {
@@ -34,33 +33,28 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	}
 
 	if err == nil && data == nil {
-		err = &NotFoundError{}
+		err = ErrNotFound
 	}
 
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			err = &NotFoundError{}
-		}
-
-		if errors.Is(err, pgx.ErrTooManyRows) || errors.Is(err, pgx.ErrTxClosed) || errors.Is(err, pgx.ErrTxCommitRollback) {
-			err = &ServerError{}
-		}
-
-		switch err.(type) {
-		case *pgconn.PgError:
-			status = 500
-			err = &ServerError{}
-		case *ForbiddenError:
-			status = 403
-		case *InvalidInputError:
-			status = 400
-		case *NotFoundError:
+		switch {
+		case errors.Is(err, model.ErrNoData):
 			status = 404
-		case *ServerError:
-			status = 500
+			err = ErrNotFound
+		case errors.Is(err, ErrForbidden):
+			status = 403
+		case errors.Is(err, &model.InvalidInputError{}), errors.Is(err, model.ErrNotUnique):
+			status = 400
+		case errors.Is(err, model.ErrDbConnection):
+			err = ErrServiceUnavailable
+			status = 503
+		case errors.Is(err, model.ErrTooMuchData):
+			fallthrough
 		default:
 			status = 500
+			err = ErrServer
 		}
+
 		res.Err = err.Error()
 	}
 
