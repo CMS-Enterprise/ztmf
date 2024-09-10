@@ -16,10 +16,7 @@ var rgxUUID = regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}
 
 func isValidEmail(email string) bool {
 	_, err := mail.ParseAddress(email)
-	if err == nil {
-		return true
-	}
-	return false
+	return err == nil
 }
 
 func isValidRole(role string) bool {

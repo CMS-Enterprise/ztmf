@@ -38,9 +38,8 @@ func trapError(e error) error {
 	log.Print(e)
 
 	// switch is the only way to check against custom error types
-	switch e.(type) {
+	switch err := e.(type) {
 	case *pgconn.PgError:
-		err := e.(*pgconn.PgError)
 		switch err.Code {
 		case "23505":
 			return fmt.Errorf("%w : %s", ErrNotUnique, err.Detail)
