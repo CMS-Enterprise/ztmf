@@ -49,6 +49,9 @@ func FindUsers(ctx context.Context) ([]*User, error) {
 
 // FindUserByID queries the database for a User with the given ID and returns *User or error
 func FindUserByID(ctx context.Context, userid string) (*User, error) {
+	if !isValidUUID(userid) {
+		return nil, ErrNoData
+	}
 	return findUser(ctx, "users.userid=?", []any{userid})
 }
 
@@ -118,6 +121,12 @@ func UpdateUser(ctx context.Context, user User) (*User, error) {
 
 func validateUser(user User) error {
 	err := InvalidInputError{data: map[string]string{}}
+
+	if user.UserID != "" {
+		if !isValidUUID(user.UserID) {
+			err.data["userid"] = user.UserID
+		}
+	}
 
 	if !isValidEmail(user.Email) {
 		err.data["email"] = user.Email
