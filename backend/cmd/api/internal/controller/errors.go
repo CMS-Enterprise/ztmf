@@ -1,30 +1,12 @@
 package controller
 
-import "fmt"
+import (
+	"errors"
+)
 
-type ForbiddenError struct{}
-
-func (e *ForbiddenError) Error() string {
-	return "forbidden"
-}
-
-type InvalidInputError struct {
-	field string
-	value any
-}
-
-func (e *InvalidInputError) Error() string {
-	return fmt.Sprintf("invalid input for field `%s` with value `%s`", e.field, e.value)
-}
-
-type NotFoundError struct{}
-
-func (e *NotFoundError) Error() string {
-	return "not found"
-}
-
-type ServerError struct{}
-
-func (e *ServerError) Error() string {
-	return "server error"
-}
+var (
+	ErrForbidden          = errors.New("forbidden")
+	ErrNotFound           = errors.New("not found")
+	ErrServer             = errors.New("server error")
+	ErrServiceUnavailable = errors.New("service unavailable")
+)

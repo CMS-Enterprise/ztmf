@@ -50,7 +50,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(input.FismaSystemID) {
-		respond(w, r, nil, &ForbiddenError{})
+		respond(w, r, nil, ErrForbidden)
 		return
 	}
 

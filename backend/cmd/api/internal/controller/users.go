@@ -13,7 +13,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	// TODO: replace the repititious admin checks with ACL
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, r, nil, &ForbiddenError{})
+		respond(w, r, nil, ErrForbidden)
 		return
 	}
 
@@ -25,14 +25,14 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 func GetUserById(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, r, nil, &ForbiddenError{})
+		respond(w, r, nil, ErrForbidden)
 		return
 	}
 
 	vars := mux.Vars(r)
 	ID, ok := vars["userid"]
 	if !ok {
-		respond(w, r, nil, &InvalidInputError{"id", nil})
+		respond(w, r, nil, ErrNotFound)
 		return
 	}
 
@@ -51,7 +51,7 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 func SaveUser(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
-		respond(w, r, nil, &ForbiddenError{})
+		respond(w, r, nil, ErrForbidden)
 		return
 	}
 
@@ -60,18 +60,6 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 	err := getJSON(r.Body, user)
 	if err != nil {
 		log.Println(err)
-		respond(w, r, nil, err)
-		return
-	}
-
-	err = validateEmail(user.Email)
-	if err != nil {
-		respond(w, r, nil, err)
-		return
-	}
-
-	err = validateRole(user.Role)
-	if err != nil {
 		respond(w, r, nil, err)
 		return
 	}
