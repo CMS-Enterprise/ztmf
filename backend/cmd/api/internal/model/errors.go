@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,6 +16,7 @@ var (
 	ErrTooMuchData  = errors.New("more data than expected")
 	ErrDbConnection = errors.New("db connection error")
 	ErrNotUnique    = errors.New("not unique")
+	ErrNoReference  = errors.New("reference not found")
 )
 
 type InvalidInputError struct {
@@ -42,7 +44,14 @@ func trapError(e error) error {
 	case *pgconn.PgError:
 		switch err.Code {
 		case "23505":
-			return fmt.Errorf("%w : %s", ErrNotUnique, err.Detail)
+			// unique_violation encountered when a column is meant to contain unique values
+			// and a non-unique value is being added via insert or update
+			text := strings.Split(err.Detail, "=")
+			return fmt.Errorf("%w : %s", ErrNotUnique, text[1])
+		case "23503":
+			// foreign_key_violation encountered when adding a record to a table with a foreign key
+			// but no corresponding record exists in the referenced table
+			return ErrNoReference
 		}
 	}
 

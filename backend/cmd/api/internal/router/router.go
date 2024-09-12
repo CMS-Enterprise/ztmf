@@ -9,6 +9,7 @@ import (
 )
 
 func Handler() http.Handler {
+	var userIdPattern = "[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+"
 	router := mux.NewRouter()
 	router.Use(auth.Middleware)
 
@@ -23,8 +24,12 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users", controller.ListUsers).Methods("GET")
 	router.HandleFunc("/api/v1/users", controller.SaveUser).Methods("POST")
 	router.HandleFunc("/api/v1/users/current", controller.GetCurrentUser).Methods("GET")
-	router.HandleFunc("/api/v1/users/{userid:[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+}", controller.GetUserById).Methods("GET")
-	router.HandleFunc("/api/v1/users/{userid:[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+}", controller.SaveUser).Methods("PUT")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.GetUserById).Methods("GET")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.SaveUser).Methods("PUT")
+
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.ListUserFismaSystems).Methods("GET")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.CreateUserFismaSystem).Methods("POST")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems/{fismasystemid:[0-9]+}", controller.DeleteUserFismaSystem).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Methods("GET")
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun

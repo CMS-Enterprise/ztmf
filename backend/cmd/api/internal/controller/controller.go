@@ -39,11 +39,16 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrNoData):
-			status = 404
 			err = ErrNotFound
+			fallthrough
+		case errors.Is(err, ErrNotFound):
+			status = 404
 		case errors.Is(err, ErrForbidden):
 			status = 403
-		case errors.Is(err, &model.InvalidInputError{}), errors.Is(err, model.ErrNotUnique):
+		case errors.Is(err, &model.InvalidInputError{}),
+			errors.Is(err, model.ErrNotUnique),
+			errors.Is(err, ErrMalformed),
+			errors.Is(err, model.ErrNoReference):
 			status = 400
 		case errors.Is(err, model.ErrDbConnection):
 			err = ErrServiceUnavailable
@@ -66,16 +71,5 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 func getJSON(r io.Reader, dest any) error {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
-
-	err := d.Decode(dest)
-	if err != nil {
-		return err
-	}
-
-	// // optional extra check
-	// if d.More() {
-	// 	http.Error(rw, "extraneous data after JSON object", http.StatusBadRequest)
-	// 	return
-	// }
-	return nil
+	return d.Decode(dest)
 }
