@@ -60,7 +60,7 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 	err := getJSON(r.Body, user)
 	if err != nil {
 		log.Println(err)
-		respond(w, r, nil, err)
+		respond(w, r, nil, ErrMalformed)
 		return
 	}
 
@@ -77,7 +77,6 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Println(err)
-		// TODO: wrap all such db errors to return generic 500 to client but still log it
 		respond(w, r, nil, err)
 		return
 	}
