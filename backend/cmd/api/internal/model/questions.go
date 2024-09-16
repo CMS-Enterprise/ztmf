@@ -12,6 +12,7 @@ type Question struct {
 	Question    string    `json:"question"`
 	Notesprompt string    `json:"notesprompt"`
 	Pillar      string    `json:"pillar"`
+	Order       int       `json:"order"`
 	Function    *Function `json:"function"`
 }
 
@@ -20,13 +21,15 @@ type FindQuestionInput struct {
 }
 
 func FindQuestions(ctx context.Context, input FindQuestionInput) ([]*Question, error) {
-	sqlb := sqlBuilder.Select("questions.questionid, question, notesprompt, pillar").From("questions").InnerJoin("pillars ON pillars.pillarid=questions.pillarid")
+	sqlb := sqlBuilder.Select("questions.questionid, question, notesprompt, pillar, questions.ordr").From("questions").InnerJoin("pillars ON pillars.pillarid=questions.pillarid")
 
 	if input.FismaSystemID != nil {
-		sqlb = sqlb.Columns("functionid, function, description")
-		sqlb = sqlb.InnerJoin("functions ON functions.questionid=questions.questionid")
-		sqlb = sqlb.InnerJoin("fismasystems ON fismasystems.datacenterenvironment=functions.datacenterenvironment AND fismasystems.fismasystemid=?", *input.FismaSystemID)
+		sqlb = sqlb.Columns("functionid, function, description").
+			InnerJoin("functions ON functions.questionid=questions.questionid").
+			InnerJoin("fismasystems ON fismasystems.datacenterenvironment=functions.datacenterenvironment AND fismasystems.fismasystemid=?", *input.FismaSystemID)
 	}
+
+	sqlb = sqlb.OrderBy("questions.ordr ASC")
 
 	sql, boundArgs, _ := sqlb.ToSql()
 	rows, err := query(ctx, sql, boundArgs...)
@@ -43,6 +46,7 @@ func FindQuestions(ctx context.Context, input FindQuestionInput) ([]*Question, e
 			&question.Question,
 			&question.Notesprompt,
 			&question.Pillar,
+			&question.Order,
 		}
 
 		if input.FismaSystemID != nil {

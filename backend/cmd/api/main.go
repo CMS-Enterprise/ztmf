@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/migrations"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/router"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
@@ -12,6 +13,8 @@ import (
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()
+
+	migrations.Run()
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
