@@ -1,5 +1,6 @@
-// model serves as a lite wrapper around the postgre driver pgx and centralizes getting the db connection
-// to reduce repetitive code in table specific functions
+// Package model serves as a lite wrapper around the postgre driver pgx and centralizes
+// establishment and management of the lower level db connection. Model methods
+// should usually not need to reference the db connection or its methods directly.
 package model
 
 import (
@@ -10,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// sqlBuilder is a convenient way to reference a squirrel.StatementBuilder that
+// uses the PostgreSQL $1,$2,... format of placeholders
 var sqlBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 // query is a proxy to *pgx.Conn.Query
@@ -37,8 +40,8 @@ func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 func exec(ctx context.Context, sql string, args ...any) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return err
+		return trapError(err)
 	}
 	_, err = conn.Exec(ctx, sql, args...)
-	return err
+	return trapError(err)
 }

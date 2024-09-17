@@ -9,7 +9,7 @@ import (
 )
 
 func ListQuestions(w http.ResponseWriter, r *http.Request) {
-	input := model.FindQuestionInput{}
+	input := model.FindQuestionsInput{}
 
 	vars := mux.Vars(r)
 	if v, ok := vars["fismasystemid"]; ok {
