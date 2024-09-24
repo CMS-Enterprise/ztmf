@@ -57,3 +57,19 @@ jobs:
         with:
           command: test
           args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+      
+      - name: code test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+      
+      - name: iac test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: iac test
+          args: --severity-threshold=high --show-vulnerable-paths=all ./infrastructure
