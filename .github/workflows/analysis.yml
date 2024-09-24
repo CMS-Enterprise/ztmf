@@ -5,7 +5,22 @@ on:
 
         
 jobs:
-  Lint:
+  Lint Go:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: LINT backend/
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          working-directory: backend
+
+  Lint Terraform:
     name: Lint
     runs-on: ubuntu-latest
     permissions:
@@ -25,12 +40,6 @@ jobs:
 
       - name: TFLINT run
         run: tflint  --chdir=infrastructure/ -f compact
-
-      - name: LINT backend/
-        uses: dominikh/staticcheck-action@v1
-        with:
-          version: "latest"
-          working-directory: backend
 
   Snyk:
     name: Snyk
