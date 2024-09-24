@@ -40,15 +40,14 @@ jobs:
       - name: Docker - Build
         run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }} --load ./backend 
 
-      - name: snyk container test
-        uses: snyk/actions/golang@master
+      - name: Snyk - Test Image
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          command: container test
-          args: --severity-threshold=high ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
+          image: ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
+          args: --severity-threshold=high 
 
-              
       - name: Docker - Push
         run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
         
