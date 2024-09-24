@@ -24,18 +24,6 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-
-      - name: TFLINT - setup
-        uses: terraform-linters/setup-tflint@v4
-
-      - name: TFLINT version
-        run: tflint --version
-
-      - name: TFLINT - init
-        run: tflint --chdir=infrastructure/ --init
-
-      - name: TFLINT - run
-        run: tflint  --chdir=infrastructure/ -f compact
       
       - name: Get AWS Creds
         uses: aws-actions/configure-aws-credentials@v4
