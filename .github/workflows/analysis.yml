@@ -72,4 +72,4 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: iac test
-          args: --severity-threshold=high --show-vulnerable-paths=all ./infrastructure
+          args: --severity-threshold=high ./infrastructure
