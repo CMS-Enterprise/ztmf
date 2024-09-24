@@ -13,7 +13,7 @@ jobs:
   analysis:
     name: Analysis
     uses: ./.github/workflows/analysis.yml
-
+    secrets: inherit
 
   # diff:
   #   name: Check for Changes
