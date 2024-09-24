@@ -8,18 +8,27 @@ on:
       - closed
 
 jobs:   
-  backend:
+  analysis:
+    name: Analysis
     if: ${{ github.event.pull_request.merged }}
+    uses: ./.github/workflows/analysis.yml
+    secrets: inherit
+
+  backend:
     name: Backend
+    if: ${{ github.event.pull_request.merged }}
+    needs:
+      - analysis
     uses: ./.github/workflows/backend.yml
     with:
       environment: PROD
     secrets: inherit
       
-  # terraform apply should be run if there were changes to the backend that resulted in a new image
   infrastructure:
     name: Infrastructure
+    if: ${{ github.event.pull_request.merged }}
     needs: 
+      - analysis
       - backend
     uses: ./.github/workflows/infrastructure.yml
     with:
