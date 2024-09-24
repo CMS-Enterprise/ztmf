@@ -41,7 +41,7 @@ jobs:
         run: tflint  --chdir=infrastructure/ -f compact
 
   Snyk-Test:
-    name: Snyk
+    name: snyk test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,7 +58,7 @@ jobs:
           args: --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-Code-Test:
-    name: Snyk
+    name: snyk code test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,7 +75,7 @@ jobs:
           args: --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-IaC-Test:
-    name: Snyk
+    name: snyk iac test
     runs-on: ubuntu-latest
     permissions:
       contents: read
