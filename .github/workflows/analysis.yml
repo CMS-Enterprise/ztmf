@@ -5,7 +5,7 @@ on:
 
 jobs:
   Lint-Go:
-    name: Lint backend/ (Go)
+    name: lint go
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,7 +20,7 @@ jobs:
           working-directory: backend
 
   Lint-Terraform:
-    name: Lint infrastructure/ (Terraform)
+    name: lint terraform
     runs-on: ubuntu-latest
     permissions:
       contents: read
