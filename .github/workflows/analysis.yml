@@ -1,0 +1,50 @@
+name: Analysis
+
+on:
+  workflow_call:
+
+        
+jobs:
+  Lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: TFLINT setup
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: TFLINT version
+        run: tflint --version
+
+      - name: TFLINT init
+        run: tflint --chdir=infrastructure/ --init
+
+      - name: TFLINT run
+        run: tflint  --chdir=infrastructure/ -f compact
+
+      - name: LINT backend/
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          working-directory: backend
+
+  Snyk:
+    name: Snyk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      
+      - name: test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high --show-vulnerable-paths=all
