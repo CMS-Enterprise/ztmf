@@ -5,7 +5,7 @@ on:
 
         
 jobs:
-  Lint Go:
+  Lint-Go:
     name: Lint
     runs-on: ubuntu-latest
     permissions:
@@ -20,7 +20,7 @@ jobs:
           version: "latest"
           working-directory: backend
 
-  Lint Terraform:
+  Lint-Terraform:
     name: Lint
     runs-on: ubuntu-latest
     permissions:
