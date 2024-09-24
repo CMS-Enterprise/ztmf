@@ -1,6 +1,6 @@
 module github.com/CMS-Enterprise/ztmf/backend
 
-go 1.22.0
+go 1.23.1
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
