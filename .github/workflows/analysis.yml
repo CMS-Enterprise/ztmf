@@ -3,7 +3,6 @@ name: Analysis
 on:
   workflow_call:
 
-        
 jobs:
   Lint-Go:
     name: Lint backend/ (Go)
@@ -41,7 +40,7 @@ jobs:
       - name: TFLINT run
         run: tflint  --chdir=infrastructure/ -f compact
 
-  Snyk:
+  Snyk-Test:
     name: Snyk
     runs-on: ubuntu-latest
     permissions:
@@ -58,6 +57,15 @@ jobs:
           command: test
           args: --severity-threshold=high --show-vulnerable-paths=all ./backend
       
+  Snyk-Code-Test:
+    name: Snyk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      
       - name: code test
         uses: snyk/actions/golang@master
         env:
@@ -65,6 +73,15 @@ jobs:
         with:
           command: code test
           args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+      
+  Snyk-IaC-Test:
+    name: Snyk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
       
       - name: iac test
         uses: snyk/actions/golang@master
