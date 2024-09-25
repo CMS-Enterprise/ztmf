@@ -1,6 +1,6 @@
 # Backend
 
-The backend is comprised of a GraphQL API and an ETL process both written in Go.
+The backend is comprised of a REST API and an ETL process both written in Go.
 
 ## Developer Requirement and Config
 
@@ -10,7 +10,7 @@ The backend is comprised of a GraphQL API and an ETL process both written in Go.
 ## Application Architecture
 
 - `cmd/` contains code compiled as separate binaries
-  - `api/` the graphql API
+  - `api/` the REST API
   - `elt` the etl process to pull score from csv into postgre
 - `internal/` contains libraries common to both binaries
   - `config/` pulls api and db settings from environment variables
@@ -19,18 +19,20 @@ The backend is comprised of a GraphQL API and an ETL process both written in Go.
 
 ### REST API
 
-RESTful routing is provided by [https://github.com/gorilla/mux](https://github.com/gorilla/mux) with `main.go` providing intial bootstrapping of the `router` package, along with the necessary http listener and TLS config.
+RESTful routing is provided by [Gorilla Mux](https://github.com/gorilla/mux) with `main.go` providing intial bootstrapping of the `router` package, along with the necessary HTTP listener and TLS config.
 
 #### TLS
 The API is designed to serve with TLS when a certificate and key are provided, or serve unsecured http when not provided (useful for local development). The Dockerfile will generate a self-signed certificate which is fine since the containers are behind an AWS application load balancer which accepts untrusted certificates.
 
-
 #### Code Organization
+`backend/cmd/api/`
 - `main.go` bootstraps HTTP server
 - `internal/` keeps the following packages from being imported by other projects
   - `auth/` handles JWT token decoding/validation, user claims, and middleware
-  - `controller/` encapsulates business logic and authorization rules, bridges http request/response with data from `model` package
+  - `controller/` encapsulates business logic and authorization rules, acts as bridge between http request/response and `model` package
+  - `migrations/` performs automatic DB schema updates on deployment
   - `model/` handles data and DB calls
+  - `router/` defines URI paths and their respective handlers
 
 #### API Architecture & Request/Response Flow
 
@@ -41,12 +43,8 @@ box Transparent
   participant Client
 end
 box Gray HTTP
-  participant Handler
+  participant Router
   participant Auth Middleware
-end
-box Gray GraphQL
-  participant Relay
-  participant Resolver
 end
 box Gray Business Logic
   participant Controller
@@ -55,27 +53,22 @@ box Gray Data
   participant Model
   participant PGX
 end
-Client->>Handler: Request
-Handler->>Auth Middleware: Request
+Client->>Router: Request
+Router->>Auth Middleware: Request
 Note over Auth Middleware: Validates JWT
 break Invalid JWT
   Auth Middleware ->> Client: Response 401
 end
 destroy Auth Middleware
-Auth Middleware ->> Relay: Request
-Relay ->> Resolver: r w/ context
-Resolver ->> Controller: r w/ context
-Controller ->> Model: FindXyz()
+Auth Middleware ->> Controller: Request
+Controller ->> Model: CRUD
 note over PGX: Postgre driver
 Model ->> PGX: prepared statement
 PGX ->> Postgre: query
 Postgre ->> PGX: data
 PGX ->> Model: data
-Model ->> Controller: data structs
-Controller ->> Resolver: data structs
-Resolver ->> Relay: data structs
-Relay ->> Handler: response
-Handler ->> Client: json
+Model ->> Controller: structs
+Controller ->> Client: json
 ```
 
 

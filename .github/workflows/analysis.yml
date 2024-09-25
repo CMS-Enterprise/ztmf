@@ -1,0 +1,92 @@
+name: Analysis
+
+on:
+  workflow_call:
+
+jobs:
+  Lint-Go:
+    name: lint go
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: LINT backend/
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          working-directory: backend
+
+  Lint-Terraform:
+    name: lint terraform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: TFLINT setup
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: TFLINT version
+        run: tflint --version
+
+      - name: TFLINT init
+        run: tflint --chdir=infrastructure/ --init
+
+      - name: TFLINT run
+        run: tflint  --chdir=infrastructure/ -f compact
+
+  Snyk-Test:
+    name: snyk test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      
+      - name: test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+      
+  Snyk-Code-Test:
+    name: snyk code test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      
+      - name: code test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+      
+  Snyk-IaC-Test:
+    name: snyk iac test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      
+      - name: iac test
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: iac test
+          args: --severity-threshold=high ./infrastructure

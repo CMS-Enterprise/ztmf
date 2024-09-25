@@ -5,7 +5,7 @@
 The ZTMF Scoring Application allows ADOs to view their Zero Trust Maturity score online. An upcoming release will allow new ADOs to answer the questionnaire from scratch, and existing ADOs to update their answers, all within a web-based interface. The interface and the API are protected by AWS Verified Access which requires authentication via IDM (Okta).
 
 This monorepo contains the following major components:
-- `backend/` includes a GraphQL API and an ETL process both written in Go
+- `backend/` includes a REST API and an ETL process both written in Go
 - `infrastructure/` includes all AWS resources as IaC managed by Terraform
 - `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
 
