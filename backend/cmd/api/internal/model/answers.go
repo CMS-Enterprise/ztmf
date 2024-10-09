@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -39,14 +40,14 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		InnerJoin("functions ON functions.functionid=functionoptions.functionid").
 		InnerJoin("questions ON questions.questionid=functions.questionid").
 		InnerJoin("pillars ON pillars.pillarid=functions.pillarid").
-		OrderBy("pillars.pillar ASC")
+		OrderBy("fismasystems.fismasystemid, pillars.pillar ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)
 	}
 
 	if len(input.FismaSystemIDs) > 0 {
-		sqlb = sqlb.Where("fismasystems.fismasystemid IN (1)")
+		sqlb = sqlb.Where(squirrel.Eq{"fismasystems.fismasystemid": input.FismaSystemIDs})
 	}
 
 	sql, boundArgs, _ := sqlb.ToSql()
