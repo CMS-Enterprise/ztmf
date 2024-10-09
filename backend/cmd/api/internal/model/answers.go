@@ -10,6 +10,7 @@ import (
 
 type Answer struct {
 	DataCall              string
+	FismaSystemID         int32
 	FismaAcronym          string
 	DataCenterEnvironment string
 	Pillar                string
@@ -32,7 +33,7 @@ type FindAnswersInput struct {
 // if using lower-level methods such as FindFismaSystems, FindScores, FindQuestions, etc
 // this is primarily meant for use in exporting to spreadsheets
 func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error) {
-	sqlb := sqlBuilder.Select("datacalls.datacall, fismasystems.fismaacronym, fismasystems.datacenterenvironment, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.optionname, functionoptions.score, scores.notes").
+	sqlb := sqlBuilder.Select("datacalls.datacall, fismasystems.fismasystemid, fismasystems.fismaacronym, fismasystems.datacenterenvironment, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.optionname, functionoptions.score, scores.notes").
 		From("scores").
 		InnerJoin("datacalls ON datacalls.datacallid=scores.datacallid AND datacalls.datacallid=?", input.DataCallID).
 		InnerJoin("fismasystems ON fismasystems.fismasystemid=scores.fismasystemid").
@@ -40,7 +41,7 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		InnerJoin("functions ON functions.functionid=functionoptions.functionid").
 		InnerJoin("questions ON questions.questionid=functions.questionid").
 		InnerJoin("pillars ON pillars.pillarid=functions.pillarid").
-		OrderBy("fismasystems.fismasystemid, pillars.pillar ASC")
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)
@@ -60,7 +61,7 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Answer, error) {
 		answer := Answer{}
-		err := row.Scan(&answer.DataCall, &answer.FismaAcronym, &answer.DataCenterEnvironment, &answer.Pillar, &answer.Question, &answer.Function, &answer.Description, &answer.OptionName, &answer.Score, &answer.Notes)
+		err := row.Scan(&answer.DataCall, &answer.FismaSystemID, &answer.FismaAcronym, &answer.DataCenterEnvironment, &answer.Pillar, &answer.Question, &answer.Function, &answer.Description, &answer.OptionName, &answer.Score, &answer.Notes)
 		return &answer, trapError(err)
 	})
 }
