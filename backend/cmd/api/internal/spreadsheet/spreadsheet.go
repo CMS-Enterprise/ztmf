@@ -10,7 +10,7 @@ import (
 func Excel(answers []*model.Answer) (*excelize.File, error) {
 
 	var (
-		sheet   = "Scores"
+		sheet   = "Sheet1"
 		headers = []string{
 			"Data Call",
 			"Fisma Acronym",
@@ -26,13 +26,7 @@ func Excel(answers []*model.Answer) (*excelize.File, error) {
 	)
 
 	f := excelize.NewFile()
-	i, err := f.NewSheet(sheet)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
 
-	f.SetActiveSheet(i)
 	for i, v := range headers {
 		col := rune(int32('A') + int32(i))
 		f.SetCellValue(sheet, fmt.Sprintf("%s1", string(col)), v)

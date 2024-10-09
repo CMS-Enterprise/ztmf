@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
@@ -53,7 +54,7 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+answers[0].DataCall+".xslx")
-	w.Header().Set("Content-Type", "application/vnd.ms-excel")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.xlsx", strings.ReplaceAll(answers[0].DataCall, " ", "")))
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	file.Write(w)
 }
