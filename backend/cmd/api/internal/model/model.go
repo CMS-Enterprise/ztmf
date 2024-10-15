@@ -19,7 +19,7 @@ var sqlBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 func query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return nil, trapError(err)
+		return nil, err
 	}
 
 	return conn.Query(ctx, sql, args...)
@@ -29,7 +29,7 @@ func query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return nil, trapError(err)
+		return nil, err
 	}
 
 	row := conn.QueryRow(ctx, sql, args...)
@@ -40,8 +40,8 @@ func queryRow(ctx context.Context, sql string, args ...any) (pgx.Row, error) {
 func exec(ctx context.Context, sql string, args ...any) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return trapError(err)
+		return err
 	}
 	_, err = conn.Exec(ctx, sql, args...)
-	return trapError(err)
+	return err
 }
