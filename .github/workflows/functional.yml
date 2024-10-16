@@ -17,9 +17,8 @@ jobs:
       id-token: write
       contents: read
     services:
-      nginx:
-        image: nginx
-        # Map port 8080 on the Docker host to port 80 on the nginx container
+      api:
+        image: api
         ports:
           - 8080:80
     steps:

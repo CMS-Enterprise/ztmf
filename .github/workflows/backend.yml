@@ -38,7 +38,7 @@ jobs:
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
       
       - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }} --load ./backend 
+        run: docker buildx build --platform linux/amd64 --tag api --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }} --load ./backend 
 
       - name: Snyk - Test Image
         uses: snyk/actions/docker@master
