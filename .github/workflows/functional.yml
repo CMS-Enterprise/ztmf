@@ -40,4 +40,4 @@ jobs:
       # - name: Docker - Login
       #   run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
       - name: curl
-        run: curl -I http://127.0.0.1
+        run: curl -I http://127.0.0.1:8080
