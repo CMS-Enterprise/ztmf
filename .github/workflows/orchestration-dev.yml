@@ -59,6 +59,7 @@ jobs:
       - analysis
       - diff
       - backend
+      - functional
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml
     with:
