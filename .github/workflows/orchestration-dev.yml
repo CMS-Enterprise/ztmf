@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.backend.outputs.backend }}
-      infrastructure: ${{ steps.infrastructure.outputs.infrastructure }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -38,6 +37,18 @@ jobs:
       - diff
     if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/backend.yml
+    with:
+      environment: DEV
+    secrets: inherit
+       
+  functional:
+    name: Functional Testing
+    needs: 
+      - analysis
+      - diff
+      - backend
+    if: contains(needs.diff.outputs.backend, 'backend/')
+    uses: ./.github/workflows/functional.yml
     with:
       environment: DEV
     secrets: inherit
