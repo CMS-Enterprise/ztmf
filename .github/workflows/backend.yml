@@ -7,6 +7,9 @@ on:
         type: string
         description: environment to deploy to
         required: true
+    outputs:
+      imageUri: 
+        value: "${{ jobs.build.outputs.imageUri }}"
         
 jobs:
   build:
@@ -16,6 +19,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    outputs:
+      imageUri: ${{ steps.genImageUri.outputs.imageUri }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -25,7 +30,22 @@ jobs:
       
       - name: Get Commit SHA
         id: revparse
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Generate Image URI
+        id: genImageUri
+        run: echo "imageUri=${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.shaShort }}" >> $GITHUB_OUTPUT
+      
+      - name: Docker - Build
+        run: docker buildx build --platform linux/amd64 --tag ${{ steps.genImageUri.outputs.imageUri }} --load ./backend 
+
+      - name: Snyk - Test Image
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ steps.genImageUri.outputs.imageUri }}
+          args: --severity-threshold=high 
 
       - name: Get AWS Creds
         uses: aws-actions/configure-aws-credentials@v4
@@ -33,25 +53,30 @@ jobs:
           role-to-assume: ${{ secrets.ROLEARN }}
           role-duration-seconds: 900
           aws-region: us-east-1
-
-      - name: Docker - Login
-        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
       
-      - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }} --load ./backend 
-
-      - name: Snyk - Test Image
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Get ECR Token
+        id: getEcrToken
+        run: |
+          ecrToken=$(aws ecr get-login-password --region us-east-1)
+          echo "::add-mask::$ecrToken"
+          echo "ecrToken=$ecrToken" >> "$GITHUB_OUTPUT"
+      
+      # Here we update the secret so that it can be referenced in the functional testing workflow
+      - name: Update Secret
+        uses: hmanzur/actions-set-secret@v2.0.0
         with:
-          image: ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
-          args: --severity-threshold=high 
-
+          name: 'DEV_ECR_TOKEN'
+          value: ${{ steps.getEcrToken.outputs.ecrToken }}
+          repository: CMS-Enterprise/ztmf
+          token: ${{ secrets.PAT }}
+  
+      - name: Docker - Login
+        run: echo "${{ steps.getEcrToken.outputs.ecrToken }}" | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+  
       - name: Docker - Push
-        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.sha_short }}
+        run: docker push ${{ steps.genImageUri.outputs.imageUri }}
         
       - name: Update Parameter
-        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revparse.outputs.sha_short }} --overwrite
+        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revparse.outputs.shaShort }} --overwrite
 
       # Deployment of the latest image will happen with terraform during infrastructure deploy
