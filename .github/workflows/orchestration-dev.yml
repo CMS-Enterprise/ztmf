@@ -40,43 +40,13 @@ jobs:
     with:
       environment: DEV
     secrets: inherit
-  
-  ecrToken:
-    name: Retrieve and Set ECR Token
-    needs:
-      - analysis
-      - diff
-    if: contains(needs.diff.outputs.backend, 'backend/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Get AWS Creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.ROLEARN }}
-          role-duration-seconds: 900
-          aws-region: us-east-1
-      
-      - id: getEcrToken
-        run: |
-          ecrToken=$(aws ecr get-login-password --region us-east-1)
-          echo "::add-mask::$ecrToken"
-          echo "ecrToken=$ecrToken" >> "$GITHUB_OUTPUT"
-      
-      - name: Update Secret
-        uses: hmanzur/actions-set-secret@v2.0.0
-        with:
-          name: 'DEV_ECR_TOKEN'
-          value: ${{ steps.getEcrToken.outputs.ecrToken }}
-          repository: CMS-Enterprise/ztmf
-          token: ${{ secrets.PAT }}
-
+     
   functional:
     name: Functional Testing
     needs: 
       - analysis
       - diff
       - backend
-      - ecrToken
     if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/functional.yml
     with:

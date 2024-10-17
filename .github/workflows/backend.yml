@@ -53,9 +53,25 @@ jobs:
           role-to-assume: ${{ secrets.ROLEARN }}
           role-duration-seconds: 900
           aws-region: us-east-1
+      
+      - name: Get ECR Token
+        id: getEcrToken
+        run: |
+          ecrToken=$(aws ecr get-login-password --region us-east-1)
+          echo "::add-mask::$ecrToken"
+          echo "ecrToken=$ecrToken" >> "$GITHUB_OUTPUT"
+      
+      # Here we update the secret so that it can be referenced in the functional testing workflow
+      - name: Update Secret
+        uses: hmanzur/actions-set-secret@v2.0.0
+        with:
+          name: 'DEV_ECR_TOKEN'
+          value: ${{ steps.getEcrToken.outputs.ecrToken }}
+          repository: CMS-Enterprise/ztmf
+          token: ${{ secrets.PAT }}
   
       - name: Docker - Login
-        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+        run: echo "${{ steps.getEcrToken.outputs.ecrToken }}" | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
       - name: Docker - Push
         run: docker push ${{ steps.genImageUri.outputs.imageUri }}
