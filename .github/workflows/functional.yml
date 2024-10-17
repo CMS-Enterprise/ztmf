@@ -7,7 +7,7 @@ on:
         type: string
         required: true
     secrets:
-      ecrPass:
+      ecrToken:
         required: true
         
 jobs:
@@ -18,7 +18,7 @@ jobs:
       api:
         credentials:
           username: AWS
-          password: ${{ secrets.ecrPass }}
+          password: ${{ secrets.ecrToken }}
         image: ${{ inputs.imageUri }}
         ports:
           - 8080:80

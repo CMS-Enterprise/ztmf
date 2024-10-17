@@ -8,10 +8,8 @@ on:
         description: environment to deploy to
         required: true
     outputs:
-      ecrPass: 
-        value: ${{ jobs.build.outputs.ecrPass }}
-      imageUri:
-        value: ${{ jobs.build.outputs.imageUri }}
+      imageUri: 
+        value: "${{ jobs.build.outputs.imageUri }}"
         
 jobs:
   build:
@@ -22,7 +20,6 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      ecrPass:  ${{ steps.ecrGetLoginPassword.outputs.ecrPass }}
       imageUri: ${{ steps.genImageUri.outputs.imageUri }}
     steps:
       - name: Check out repo
@@ -35,29 +32,9 @@ jobs:
         id: revparse
         run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Get AWS Creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.ROLEARN }}
-          role-duration-seconds: 900
-          aws-region: us-east-1
-
-      - name: aws ecr get-login-password
-        id: ecrGetLoginPassword
-        run: |
-          ecrPass=$((RANDOM))
-          echo "::add-mask::$ecrPass"
-          echo "ecrPass=$ecrPass" >> "$GITHUB_OUTPUT"
-
-      - name: generate image uri
+      - name: Generate Image URI
         id: genImageUri
-        run: |
-          imageUri=${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.shaShort }}
-          echo "::add-mask::$imageUri"
-          echo "imageUri=$imageUri" >> "$GITHUB_OUTPUT"
-
-      - name: Docker - Login
-        run: docker login --username AWS --password ${{ steps.ecrGetLoginPassword.outputs.ecrPass }} ${{ secrets.ECR_REPO_URL }}
+        run: echo "imageUri=${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.shaShort }}" >> $GITHUB_OUTPUT
       
       - name: Docker - Build
         run: docker buildx build --platform linux/amd64 --tag ${{ steps.genImageUri.outputs.imageUri }} --load ./backend 
@@ -67,9 +44,19 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: ${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.shaShort }}
+          image: ${{ steps.genImageUri.outputs.imageUri }}
           args: --severity-threshold=high 
 
+      - name: Get AWS Creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLEARN }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+  
+      - name: Docker - Login
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+  
       - name: Docker - Push
         run: docker push ${{ steps.genImageUri.outputs.imageUri }}
         
