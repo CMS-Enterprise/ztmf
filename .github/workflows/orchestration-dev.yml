@@ -76,6 +76,7 @@ jobs:
       - analysis
       - diff
       - backend
+      - ecrToken
     if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/functional.yml
     with:
