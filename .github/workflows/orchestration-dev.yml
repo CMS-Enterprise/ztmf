@@ -43,6 +43,10 @@ jobs:
   
   ecrToken:
     name: Retrieve and Set ECR Token
+    needs:
+      - analysis
+      - diff
+    if: contains(needs.diff.outputs.backend, 'backend/')
     runs-on: ubuntu-latest
     steps:
       - name: Get AWS Creds
