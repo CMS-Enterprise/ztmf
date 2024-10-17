@@ -29,7 +29,7 @@ jobs:
       - name: Check for changes in backend/
         id: backend
         run: echo "backend=$(git --no-pager diff --name-only origin/main backend/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
-       
+        
   backend:
     name: Backend
     needs: 
@@ -51,7 +51,9 @@ jobs:
     uses: ./.github/workflows/functional.yml
     with:
       environment: DEV
-    secrets: inherit
+      imageUri: ${{ needs.backend.outputs.imageUri }}
+    secrets:
+      ecrPass: ${{ needs.backend.outputs.ecrPass }}
       
   infrastructure:
     name: Infrastructure

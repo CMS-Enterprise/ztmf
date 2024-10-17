@@ -3,40 +3,25 @@ name: Functional Testing
 on:
   workflow_call:
     inputs:
-      environment:
+      imageUri:
         type: string
-        description: environment to deploy to
+        required: true
+    secrets:
+      ecrPass:
         required: true
         
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    permissions:
-      id-token: write
-      contents: read
     services:
       api:
-        image: api
+        credentials:
+          username: AWS
+          password: ${{ secrets.ecrPass }}
+        image: ${{ inputs.imageUri }}
         ports:
           - 8080:80
     steps:
-      # - name: Check out repo
-      #   uses: actions/checkout@v4
-
-      # - name: Get Commit SHA
-      #   id: revparse
-      #   run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      # - name: Get AWS Creds
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.ROLEARN }}
-      #     role-duration-seconds: 900
-      #     aws-region: us-east-1
-
-      # - name: Docker - Login
-      #   run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
       - name: curl
         run: curl -I http://127.0.0.1:8080
