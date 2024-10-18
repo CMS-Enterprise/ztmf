@@ -2,12 +2,25 @@
 services:
   postgres:
     image: "postgres:16.2-alpine3.19"
+    environment:
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
     ports:
       - ${DB_PORT}:${DB_PORT}
     networks:
       - ztmf
   api:
-    image: ${IMAGE_URI}
+    image: ${API_IMAGE_URI}
+    environment:
+      - PORT
+      - DB_ENDPOINT
+      - DB_PORT
+      - DB_NAME
+      - DB_USER
+      - DB_PASS
+      - AUTH_HS256_SECRET
+      - AUTH_HEADER_FIELD
     depends_on:
       - postgres
     ports:

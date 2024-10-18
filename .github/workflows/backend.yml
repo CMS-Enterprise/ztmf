@@ -44,22 +44,24 @@ jobs:
         uses: ishworkh/container-image-artifact-upload@v2.0.0
         with:
           image: "api:${{ steps.revParse.outputs.shaShort }}"
-
-      - name: Get AWS Creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.ROLEARN }}
-          role-duration-seconds: 900
-          aws-region: us-east-1
       
-      - name: Docker - Login
-        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+      #  temporarily disabled to avoid pushing to ECR 
+      # these steps should be moved to happen after successful smoke test
+      # - name: Get AWS Creds
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.ROLEARN }}
+      #     role-duration-seconds: 900
+      #     aws-region: us-east-1
+      
+      # - name: Docker - Login
+      #   run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
-      - name: Docker - Push
-        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
+      # - name: Docker - Push
+      #   run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
         
-      - name: Update Parameter
-        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
+      # - name: Update Parameter
+      #   run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
 
       # Deployment of the latest image will happen with terraform apply during infrastructure deploy
   
@@ -88,6 +90,8 @@ jobs:
         with:
           compose-file: ./backend/actions-compose.yml
         env:
+          API_IMAGE_URI: "api:${{ needs.build.outputs.shaShort }}"
+          
           # for postgre container
           POSTGRES_DB: ztmf
           POSTGRES_USER: admin
@@ -100,12 +104,9 @@ jobs:
           DB_NAME: ztmf
           DB_USER: admin
           DB_PASS: localDev 
-
-          # for api auth handling
           AUTH_HS256_SECRET: "zeroTrust"
           AUTH_HEADER_FIELD: "Authorization"
 
-          IMAGE_URI: "api:${{ needs.build.outputs.shaShort }}"
       
       - name: Curl
         run: |
