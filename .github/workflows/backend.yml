@@ -7,9 +7,6 @@ on:
         type: string
         description: environment to deploy to
         required: true
-    outputs:
-      imageUri: 
-        value: "${{ jobs.build.outputs.imageUri }}"
         
 jobs:
   build:
@@ -20,7 +17,7 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      imageUri: ${{ steps.genImageUri.outputs.imageUri }}
+      shaShort: ${{ steps.revParse.outputs.shaShort }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -29,23 +26,24 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Get Commit SHA
-        id: revparse
+        id: revParse
         run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Generate Image URI
-        id: genImageUri
-        run: echo "imageUri=${{ secrets.ECR_REPO_URL }}:${{ steps.revparse.outputs.shaShort }}" >> $GITHUB_OUTPUT
       
       - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ steps.genImageUri.outputs.imageUri }} --load ./backend 
+        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --tag api:${{ steps.revParse.outputs.shaShort }} --load ./backend 
 
       - name: Snyk - Test Image
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: ${{ steps.genImageUri.outputs.imageUri }}
+          image: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
           args: --severity-threshold=high 
+
+      - name: Upload image
+        uses: ishworkh/container-image-artifact-upload@v2.0.0
+        with:
+          image: "api:${{ steps.revParse.outputs.shaShort }}"
 
       - name: Get AWS Creds
         uses: aws-actions/configure-aws-credentials@v4
@@ -54,29 +52,33 @@ jobs:
           role-duration-seconds: 900
           aws-region: us-east-1
       
-      - name: Get ECR Token
-        id: getEcrToken
-        run: |
-          ecrToken=$(aws ecr get-login-password --region us-east-1)
-          echo "::add-mask::$ecrToken"
-          echo "ecrToken=$ecrToken" >> "$GITHUB_OUTPUT"
-      
-      # Here we update the secret so that it can be referenced in the functional testing workflow
-      - name: Update Secret
-        uses: hmanzur/actions-set-secret@v2.0.0
-        with:
-          name: 'DEV_ECR_TOKEN'
-          value: ${{ steps.getEcrToken.outputs.ecrToken }}
-          repository: CMS-Enterprise/ztmf
-          token: ${{ secrets.PAT }}
-  
       - name: Docker - Login
-        run: echo "${{ steps.getEcrToken.outputs.ecrToken }}" | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
       - name: Docker - Push
-        run: docker push ${{ steps.genImageUri.outputs.imageUri }}
+        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
         
       - name: Update Parameter
-        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revparse.outputs.shaShort }} --overwrite
+        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
 
-      # Deployment of the latest image will happen with terraform during infrastructure deploy
+      # Deployment of the latest image will happen with terraform apply during infrastructure deploy
+  
+  test:
+    name: Smoke Test
+    needs: build
+    runs-on: ubuntu-latest
+    # environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download image
+        uses: ishworkh/container-image-artifact-download@v2.0.0
+        with:
+          image: "api:${{ needs.build.outputs.shaShort }}"
+      
+      - name: Start API
+        run: docker run api:${{ needs.build.outputs.shaShort }}

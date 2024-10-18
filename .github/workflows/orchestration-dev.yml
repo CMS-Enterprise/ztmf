@@ -41,26 +41,12 @@ jobs:
       environment: DEV
     secrets: inherit
      
-  functional:
-    name: Functional Testing
-    needs: 
-      - analysis
-      - diff
-      - backend
-    if: contains(needs.diff.outputs.backend, 'backend/')
-    uses: ./.github/workflows/functional.yml
-    with:
-      imageUri: ${{ needs.backend.outputs.imageUri }}
-    secrets:
-      ecrToken: ${{ secrets.DEV_ECR_TOKEN }}
-      
   infrastructure:
     name: Infrastructure
     needs: 
       - analysis
       - diff
       - backend
-      - functional
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml
     with:
