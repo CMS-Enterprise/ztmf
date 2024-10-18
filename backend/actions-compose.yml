@@ -1,0 +1,29 @@
+# this file is intended to run in github actions
+services:
+  postgres:
+    image: "postgres:16.2-alpine3.19"
+    environment:
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+    network_mode: host
+    ports:
+      - ${DB_PORT}:${DB_PORT}
+  api:
+    image: ${API_IMAGE_URI}
+    environment:
+      - PORT
+      - DB_ENDPOINT
+      - DB_PORT
+      - DB_NAME
+      - DB_USER
+      - DB_PASS
+      - AUTH_HS256_SECRET
+      - AUTH_HEADER_FIELD
+    depends_on:
+      - postgres
+    network_mode: host
+    ports:
+      - ${PORT}:${PORT}
+    command:
+      - "/usr/local/bin/ztmfapi"

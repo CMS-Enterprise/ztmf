@@ -43,5 +43,4 @@ func main() {
 	} else {
 		log.Fatal("Failed to start server:", server.ListenAndServe())
 	}
-
 }
