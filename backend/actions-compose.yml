@@ -1,0 +1,14 @@
+# this file is intended to run in github actions
+services:
+  postgres:
+    image: "postgres:16.2-alpine3.19"
+    ports:
+      - ${DB_PORT}:${DB_PORT}
+  api:
+    image: ${IMAGE_URI}
+    depends_on:
+      - postgres
+    ports:
+      - ${PORT}:${PORT}
+    command:
+      - "/usr/local/bin/ztmfapi"
