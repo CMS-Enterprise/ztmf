@@ -4,11 +4,17 @@ services:
     image: "postgres:16.2-alpine3.19"
     ports:
       - ${DB_PORT}:${DB_PORT}
+    networks:
+      - ztmf
   api:
     image: ${IMAGE_URI}
     depends_on:
       - postgres
     ports:
       - ${PORT}:${PORT}
+    networks:
+      - ztmf
     command:
       - "/usr/local/bin/ztmfapi"
+networks:
+  ztmf:
