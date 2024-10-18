@@ -7,6 +7,8 @@ services:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
     network_mode: host
+    ports:
+      - ${DB_PORT}:${DB_PORT}
   api:
     image: ${API_IMAGE_URI}
     environment:
@@ -21,5 +23,7 @@ services:
     depends_on:
       - postgres
     network_mode: host
+    ports:
+      - ${PORT}:${PORT}
     command:
       - "/usr/local/bin/ztmfapi"
