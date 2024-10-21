@@ -15,6 +15,7 @@ jobs:
     env:
       config: ${{ inputs.config }}
     steps:
+      - run: echo $config >> config.yml
       - uses: mikefarah/yq@master
         with:
-          cmd: echo $config | yq
+          cmd: yq '.' < config.yml
