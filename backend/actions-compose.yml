@@ -6,8 +6,7 @@ services:
       - POSTGRES_DB
       - POSTGRES_USER
       - POSTGRES_PASSWORD
-    ports:
-      - ${DB_PORT}:${DB_PORT}
+    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -27,7 +26,6 @@ services:
       - DB_PASS
       - AUTH_HS256_SECRET
       - AUTH_HEADER_FIELD
-    ports:
-      - ${PORT}:${PORT}
+    network_mode: host
     command:
       - "/usr/local/bin/ztmfapi"
