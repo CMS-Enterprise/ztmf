@@ -15,5 +15,6 @@ jobs:
     env:
       config: ${{ inputs.config }}
     steps:
-      - name: Check out repo
-        run: env
+      - uses: mikefarah/yq@master
+        with:
+          cmd: echo $config | yq
