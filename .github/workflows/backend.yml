@@ -10,7 +10,7 @@ on:
         
 jobs:
   build:
-    name: Build
+    name: Build and Smoke Test
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -30,7 +30,7 @@ jobs:
         run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
       - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --tag api:${{ steps.revParse.outputs.shaShort }} --load ./backend 
+        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
 
       - name: Snyk - Test Image
         uses: snyk/actions/docker@master
@@ -39,58 +39,13 @@ jobs:
         with:
           image: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
           args: --severity-threshold=high 
-
-      - name: Upload image
-        uses: ishworkh/container-image-artifact-upload@v2.0.0
-        with:
-          image: "api:${{ steps.revParse.outputs.shaShort }}"
       
-      #  temporarily disabled to avoid pushing to ECR 
-      # these steps should be moved to happen after successful smoke test
-      # - name: Get AWS Creds
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.ROLEARN }}
-      #     role-duration-seconds: 900
-      #     aws-region: us-east-1
-      
-      # - name: Docker - Login
-      #   run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
-  
-      # - name: Docker - Push
-      #   run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
-        
-      # - name: Update Parameter
-      #   run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
-
-      # Deployment of the latest image will happen with terraform apply during infrastructure deploy
-  
-  test:
-    name: Smoke Test
-    needs: build
-    runs-on: ubuntu-latest
-    # environment: ${{ inputs.environment }}
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Download image
-        uses: ishworkh/container-image-artifact-download@v2.0.0
-        with:
-          image: "api:${{ needs.build.outputs.shaShort }}"
-      
-      - name: Start API and Postgres
+      - name: Start API and Postgres Containers
         uses: hoverkraft-tech/compose-action@v2.0.2
         with:
           compose-file: ./backend/actions-compose.yml
         env:
-          API_IMAGE_URI: "api:${{ needs.build.outputs.shaShort }}"
+          API_IMAGE_URI: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
           
           # for postgre container
           POSTGRES_DB: ztmf
@@ -107,7 +62,26 @@ jobs:
           AUTH_HS256_SECRET: "zeroTrust"
           AUTH_HEADER_FIELD: "Authorization"
 
+      # TODO: convert this placeholder to a series of tests via BATS
       - name: Curl
         run: |
           auth="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InNvbWVAb25lLmNvbSJ9.IrtPdDCxmm9Jo6-860zvUeCZGKTTzZCCKx8lNNfymjs"
           curl -s -H "Authorization: ${auth}" http://localhost:8080/api/v1/users/current
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLEARN }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+      
+      - name: Docker - Login
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
+  
+      - name: Docker - Push
+        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
+        
+      - name: AWS - SSM Put Parameter
+        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
+
+      # Deployment of the latest image will happen with terraform apply during infrastructure deploy
