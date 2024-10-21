@@ -1,0 +1,17 @@
+name: Test With
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        type: string
+        description: embedded yaml
+        required: true
+        
+jobs:
+  build:
+    name: Test limits of with
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        run: env
