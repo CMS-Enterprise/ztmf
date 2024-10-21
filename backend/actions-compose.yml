@@ -8,7 +8,15 @@ services:
       - POSTGRES_PASSWORD
     ports:
       - ${DB_PORT}:${DB_PORT}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   api:
+    depends_on:
+      postgres:
+        condition: service_healthy
     image: ${API_IMAGE_URI}
     environment:
       - PORT
@@ -19,8 +27,6 @@ services:
       - DB_PASS
       - AUTH_HS256_SECRET
       - AUTH_HEADER_FIELD
-    depends_on:
-      - postgres
     ports:
       - ${PORT}:${PORT}
     command:
