@@ -12,6 +12,8 @@ jobs:
   build:
     name: Test limits of with
     runs-on: ubuntu-latest
+    env:
+      config: ${{ inputs.config }}
     steps:
       - name: Check out repo
         run: env
