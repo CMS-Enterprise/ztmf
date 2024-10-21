@@ -15,5 +15,6 @@ jobs:
     env:
       config: ${{ inputs.config }}
     steps:
-      - run: echo $config
-      
+      - uses: mikefarah/yq@master
+        with:
+          cmd: echo "$config" | yq
