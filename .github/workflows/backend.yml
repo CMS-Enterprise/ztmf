@@ -99,7 +99,7 @@ jobs:
 
           # for api container and debug launch config
           PORT: 8080
-          DB_ENDPOINT: 127.0.0.1
+          DB_ENDPOINT: postgres
           DB_PORT: 5432
           DB_NAME: ztmf
           DB_USER: admin
@@ -107,8 +107,7 @@ jobs:
           AUTH_HS256_SECRET: "zeroTrust"
           AUTH_HEADER_FIELD: "Authorization"
 
-      
       - name: Curl
         run: |
           auth="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InNvbWVAb25lLmNvbSJ9.IrtPdDCxmm9Jo6-860zvUeCZGKTTzZCCKx8lNNfymjs"
-          curl -s -H "Authorization: ${auth}" http://127.0.0.1:8080/api/v1/users/current
+          curl -s -H "Authorization: ${auth}" http://api:8080/api/v1/users/current

@@ -6,7 +6,6 @@ services:
       - POSTGRES_DB
       - POSTGRES_USER
       - POSTGRES_PASSWORD
-    network_mode: host
     ports:
       - ${DB_PORT}:${DB_PORT}
   api:
@@ -22,7 +21,6 @@ services:
       - AUTH_HEADER_FIELD
     depends_on:
       - postgres
-    network_mode: host
     ports:
       - ${PORT}:${PORT}
     command:
