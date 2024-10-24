@@ -6,10 +6,11 @@ import (
 )
 
 // use of map enables O(1) vs O(N) as would be the case with slices.Contains([]string)
+// it also avoids the complexity of using constants as enums
 var roles = map[string]interface{}{
-	"ISSO":  nil, // the value isn't used, only the ok check value is
+	"ADMIN": nil, // the value isn't used, only the ok check value is
+	"ISSO":  nil,
 	"ISSM":  nil,
-	"ADMIN": nil,
 }
 
 var rgxUUID = regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
