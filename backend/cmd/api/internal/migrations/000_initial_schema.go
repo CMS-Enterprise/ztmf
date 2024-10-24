@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS public.scores
     fismasystemid integer NOT NULL REFERENCES fismasystems (fismasystemid),
     datecalculated timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     notes character varying(1000),
-    functionoptionid integer NOT NULL REFERENCES functionaoptions (functionoptionid),
+    functionoptionid integer NOT NULL REFERENCES functionoptions (functionoptionid),
     datacallid integer NOT NULL REFERENCES datacalls (datacallid)
 );
 
