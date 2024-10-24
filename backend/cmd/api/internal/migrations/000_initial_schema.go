@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS public.pillars
 	pillar character varying(100)
 );
 
+CREATE TABLE IF NOT EXISTS public.questions
+(
+    questionid SERIAL PRIMARY KEY,
+    question varchar(1000) NOT NULL,
+    notesprompt varchar(1000) NOT NULL,
+    pillarid integer NOT NULL REFERENCES pillars (pillarid)
+);
+
 CREATE TABLE IF NOT EXISTS public.datacalls
 (
 		datacallid SERIAL PRIMARY KEY,
@@ -77,13 +85,6 @@ CREATE TABLE IF NOT EXISTS public.users_fismasystems (
   PRIMARY KEY (userid, fismasystemid)
 );
 
-CREATE TABLE IF NOT EXISTS public.questions
-(
-    questionid SERIAL PRIMARY KEY,
-    question varchar(1000) NOT NULL,
-    notesprompt varchar(1000) NOT NULL,
-    pillarid integer NOT NULL REFERENCES pillars (pillarid)
-);
 		`,
 		"")
 }
