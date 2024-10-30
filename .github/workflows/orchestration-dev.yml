@@ -35,7 +35,7 @@ jobs:
     needs: 
       - analysis
       - diff
-    if: contains(needs.diff.outputs.backend, 'backend/')
+    # if: contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV

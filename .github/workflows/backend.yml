@@ -65,11 +65,39 @@ jobs:
           WORKSPACE: ${{ github.workspace }}
 
 
-      # TODO: convert this placeholder to a series of tests via BATS
-      - name: Curl
-        run: |
-          auth="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
-          curl -s -H "Authorization: ${auth}" http://localhost:8080/api/v1/users/current
+      
+      - name: Smoke test
+        uses: aquia-inc/emberfall@main
+        with:
+          version: 0.1.0
+          config: | 
+            ---
+            commonHeaders: &commonHeaders
+              authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
+            tests:  
+              - url: http://localhost:8080/api/v1/users/current
+                method: GET
+                expect:
+                  status: 401
+                  body: "unauthorized"
+              
+              - url: http://localhost:8080/api/v1/users/current
+                method: GET
+                headers:
+                  <<: *commonHeaders
+                expect:
+                  status: 200
+                  headers:
+                    content-type: "application/json"
+              
+              - url: http://localhost:8080/api/v1/fismasystems
+                method: GET
+                headers:
+                  <<: *commonHeaders
+                expect:
+                  status: 200
+                  headers:
+                    content-type: "application/json"
 
       - name: AWS - Get Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -77,7 +105,7 @@ jobs:
           role-to-assume: ${{ secrets.ROLEARN }}
           role-duration-seconds: 900
           aws-region: us-east-1
-      
+              
       - name: Docker - Login
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
