@@ -20,12 +20,13 @@ type config struct {
 		HeaderField  string `env:"AUTH_HEADER_FIELD"`  // the header that includes encoded JWT from OIDC IDP
 	}
 	Db struct {
-		Host     string `env:"DB_ENDPOINT"`
-		Port     string `env:"DB_PORT" envDefault:"5432"`
-		Name     string `env:"DB_NAME"`
-		User     string `env:"DB_USER"`
-		Pass     string `env:"DB_PASS"`
-		SecretId string `env:"DB_SECRET_ID"`
+		Host        string  `env:"DB_ENDPOINT"`
+		Port        string  `env:"DB_PORT" envDefault:"5432"`
+		Name        string  `env:"DB_NAME"`
+		User        string  `env:"DB_USER"`
+		Pass        string  `env:"DB_PASS"`
+		SecretId    string  `env:"DB_SECRET_ID"`
+		PopulateSql *string `env:"DB_POPULATE"` // path to sql to populate test database
 	}
 }
 
@@ -49,5 +50,6 @@ func GetInstance() *config {
 			return nil
 		}
 	}
+
 	return cfg
 }

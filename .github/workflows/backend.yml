@@ -59,13 +59,16 @@ jobs:
           DB_NAME: ztmf
           DB_USER: admin
           DB_PASS: localDev 
+          DB_POPULATE: "/src/backend/_test_data.sql"
           AUTH_HS256_SECRET: "zeroTrust"
           AUTH_HEADER_FIELD: "Authorization"
+          WORKSPACE: ${{ github.workspace }}
+
 
       # TODO: convert this placeholder to a series of tests via BATS
       - name: Curl
         run: |
-          auth="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InNvbWVAb25lLmNvbSJ9.IrtPdDCxmm9Jo6-860zvUeCZGKTTzZCCKx8lNNfymjs"
+          auth="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
           curl -s -H "Authorization: ${auth}" http://localhost:8080/api/v1/users/current
 
       - name: AWS - Get Credentials

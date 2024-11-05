@@ -12,6 +12,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/jackc/tern/v2/migrate"
 )
@@ -29,6 +30,16 @@ func Run() {
 		return
 	}
 	migrator = nil
+
+	cfg := config.GetInstance()
+
+	// only populate local databases to prevent accidental overwrite of higher environments
+	if cfg.Db.PopulateSql != nil && cfg.Db.Host == "localhost" {
+		err := populate(*cfg.Db.PopulateSql)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func getMigrator() *migrate.Migrator {
