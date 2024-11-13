@@ -17,7 +17,10 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export", controller.GetDatacallExport).Methods("GET")
 
 	router.HandleFunc("/api/v1/fismasystems", controller.ListFismaSystems).Methods("GET")
+	router.HandleFunc("/api/v1/fismasystems", controller.SaveFismaSystem).Methods("POST")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.GetFismaSystem).Methods("GET")
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
+
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListQuestions).Methods("GET")
 
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")

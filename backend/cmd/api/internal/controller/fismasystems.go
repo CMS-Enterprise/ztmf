@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
@@ -40,4 +41,40 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	fismasystem, err := model.FindFismaSystem(r.Context(), input)
 	respond(w, r, fismasystem, err)
+}
+
+func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
+	authdUser := auth.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	fismasystem := &model.FismaSystem{}
+
+	err := getJSON(r.Body, fismasystem)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	if v, ok := vars["fismasystemid"]; ok {
+		fmt.Sscan(v, &fismasystem.FismaSystemID)
+	}
+
+	if fismasystem.FismaSystemID == 0 {
+		fismasystem, err = model.CreateFismaSystem(r.Context(), *fismasystem)
+	} else {
+		fismasystem, err = model.UpdateFismaSystem(r.Context(), *fismasystem)
+	}
+
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respond(w, r, fismasystem, nil)
 }
