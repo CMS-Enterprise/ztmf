@@ -41,9 +41,9 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 		log.Printf("%#v\n", err)
 
 		status, err = sanitizeErr(err)
-		switch err.(type) {
+		switch e := err.(type) {
 		case *model.InvalidInputError:
-			res.Data = err.(*model.InvalidInputError).Data()
+			res.Data = e.Data()
 		}
 		res.Err = err.Error()
 	}
