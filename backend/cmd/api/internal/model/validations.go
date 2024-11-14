@@ -13,6 +13,17 @@ var roles = map[string]interface{}{
 	"ISSM":  nil,
 }
 
+var datacenterenvironments = map[string]interface{}{
+	"Other":          nil,
+	"SaaS":           nil,
+	"CMS-Cloud-AWS":  nil,
+	"CMSDC":          nil,
+	"CMS-Cloud-MAG":  nil,
+	"AWS":            nil,
+	"OPDC":           nil,
+	"DECOMMISSIONED": nil,
+}
+
 var rgxUUID = regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 
 func isValidEmail(email string) bool {
@@ -27,4 +38,9 @@ func isValidRole(role string) bool {
 
 func isValidUUID(uuid string) bool {
 	return rgxUUID.MatchString(uuid)
+}
+
+func isValidDataCenterEnvironment(d string) bool {
+	_, ok := datacenterenvironments[d]
+	return ok
 }

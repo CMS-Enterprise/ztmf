@@ -3,9 +3,12 @@ package model
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
+
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail"}
 
 type FismaSystem struct {
 	FismaSystemID         int32   `json:"fismasystemid"`
@@ -30,7 +33,9 @@ type FindFismaSystemsInput struct {
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
 
-	sqlb := sqlBuilder.Select("fismasystems.fismasystemid as fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail").From("fismasystems")
+	c := []string{"fismasystems.fismasystemid as fismasystemid"}
+	c = append(c, fismaSystemColumns[1:]...)
+	sqlb := sqlBuilder.Select(c...).From("fismasystems")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -63,7 +68,7 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 		}
 	}
 
-	sqlb := sqlBuilder.Select("fismasystems.fismasystemid as fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail").From("fismasystems")
+	sqlb := sqlBuilder.Select(fismaSystemColumns...).From("fismasystems")
 
 	sqlb = sqlb.Where("fismasystems.fismasystemid=?", input.FismaSystemID)
 	sql, boundArgs, _ := sqlb.ToSql()
@@ -81,4 +86,87 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	}
 
 	return &fismaSystem, nil
+}
+
+func (f *FismaSystem) Save(ctx context.Context) error {
+
+	var (
+		sql       string
+		boundArgs []any
+		err       error
+	)
+
+	err = f.isValid()
+	if err != nil {
+		return err
+	}
+
+	if f.FismaSystemID == 0 {
+		sql, boundArgs, _ = f.insertSql()
+	} else {
+		sql, boundArgs, _ = f.updateSql()
+	}
+
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return trapError(err)
+	}
+
+	err = row.Scan(&f.FismaSystemID, &f.FismaUID, &f.FismaAcronym, &f.FismaName, &f.FismaSubsystem, &f.Component, &f.Groupacronym, &f.GroupName, &f.DivisionName, &f.DataCenterEnvironment, &f.DataCallContact, &f.ISSOEmail)
+
+	return trapError(err)
+}
+
+func (f *FismaSystem) isValid() error {
+	err := InvalidInputError{data: map[string]string{}}
+
+	if !isValidUUID(f.FismaUID) {
+		err.data["fismauid"] = f.FismaUID
+	}
+
+	if !isValidEmail(*f.DataCallContact) {
+		err.data["datacallcontact"] = *f.DataCallContact
+	}
+
+	if !isValidEmail(*f.ISSOEmail) {
+		err.data["issoemail"] = *f.ISSOEmail
+	}
+
+	if !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
+		err.data["datacenterenvironment"] = *f.DataCenterEnvironment
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+
+	return nil
+}
+
+func (f *FismaSystem) insertSql() (string, []any, error) {
+	return sqlBuilder.
+		Insert("fismasystems").
+		Columns(fismaSystemColumns[1:]...).
+		Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+		ToSql()
+}
+
+func (f *FismaSystem) updateSql() (string, []any, error) {
+	return sqlBuilder.Update("fismasystems").
+		Set("fismauid", f.FismaUID).
+		Set("fismaacronym", f.FismaAcronym).
+		Set("fismaname", f.FismaName).
+		Set("fismasubsystem", f.FismaSubsystem).
+		Set("component", f.Component).
+		Set("groupacronym", f.Groupacronym).
+		Set("groupname", f.GroupName).
+		Set("divisionname", f.DivisionName).
+		Set("datacenterenvironment", f.DataCenterEnvironment).
+		Set("datacallcontact", f.DataCallContact).
+		Set("issoemail", f.ISSOEmail).
+		Where("fismasystemid=?", f.FismaSystemID).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+		ToSql()
+
 }

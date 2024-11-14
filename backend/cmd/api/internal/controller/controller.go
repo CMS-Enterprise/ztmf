@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
@@ -37,29 +38,13 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	}
 
 	if err != nil {
-		switch {
-		case errors.Is(err, model.ErrNoData):
-			err = ErrNotFound
-			fallthrough
-		case errors.Is(err, ErrNotFound):
-			status = 404
-		case errors.Is(err, ErrForbidden):
-			status = 403
-		case errors.Is(err, &model.InvalidInputError{}),
-			errors.Is(err, model.ErrNotUnique),
-			errors.Is(err, ErrMalformed),
-			errors.Is(err, model.ErrNoReference):
-			status = 400
-		case errors.Is(err, model.ErrDbConnection):
-			err = ErrServiceUnavailable
-			status = 503
-		case errors.Is(err, model.ErrTooMuchData):
-			fallthrough
-		default:
-			status = 500
-			err = ErrServer
-		}
+		log.Printf("%#v\n", err)
 
+		status, err = sanitizeErr(err)
+		switch e := err.(type) {
+		case *model.InvalidInputError:
+			res.Data = e.Data()
+		}
 		res.Err = err.Error()
 	}
 
@@ -72,4 +57,37 @@ func getJSON(r io.Reader, dest any) error {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	return d.Decode(dest)
+}
+
+func sanitizeErr(err error) (int, error) {
+	switch err.(type) {
+	case *model.InvalidInputError:
+		return 400, err
+	}
+
+	var status int
+
+	switch {
+	case errors.Is(err, model.ErrNoData):
+		err = ErrNotFound
+		fallthrough
+	case errors.Is(err, ErrNotFound):
+		status = 404
+	case errors.Is(err, ErrForbidden):
+		status = 403
+	case errors.Is(err, model.ErrNotUnique),
+		errors.Is(err, ErrMalformed),
+		errors.Is(err, model.ErrNoReference):
+		status = 400
+	case errors.Is(err, model.ErrDbConnection):
+		err = ErrServiceUnavailable
+		status = 503
+	case errors.Is(err, model.ErrTooMuchData):
+		fallthrough
+	default:
+		status = 500
+		err = ErrServer
+	}
+
+	return status, err
 }
