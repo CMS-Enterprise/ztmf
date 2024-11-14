@@ -50,9 +50,9 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fismasystem := &model.FismaSystem{}
+	f := &model.FismaSystem{}
 
-	err := getJSON(r.Body, fismasystem)
+	err := getJSON(r.Body, f)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, ErrMalformed)
@@ -61,20 +61,15 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	if v, ok := vars["fismasystemid"]; ok {
-		fmt.Sscan(v, &fismasystem.FismaSystemID)
+		fmt.Sscan(v, &f.FismaSystemID)
 	}
 
-	if fismasystem.FismaSystemID == 0 {
-		fismasystem, err = model.CreateFismaSystem(r.Context(), *fismasystem)
-	} else {
-		fismasystem, err = model.UpdateFismaSystem(r.Context(), *fismasystem)
-	}
+	err = f.Save(r.Context())
 
 	if err != nil {
-		log.Println(err)
 		respond(w, r, nil, err)
 		return
 	}
 
-	respond(w, r, fismasystem, nil)
+	respond(w, r, f, nil)
 }

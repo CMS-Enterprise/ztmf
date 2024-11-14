@@ -23,12 +23,12 @@ type InvalidInputError struct {
 	data map[string]string
 }
 
+func (e *InvalidInputError) Data() map[string]string {
+	return e.data
+}
+
 func (e *InvalidInputError) Error() string {
-	str := "invalid input:\n"
-	for k, v := range e.data {
-		str += "  " + k + ":" + v + "\n"
-	}
-	return str
+	return "invalid input"
 }
 
 // trapError converts db driver errors into generic model errors

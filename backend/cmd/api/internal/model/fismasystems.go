@@ -88,25 +88,72 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	return &fismaSystem, nil
 }
 
-func CreateFismaSystem(ctx context.Context, f FismaSystem) (*FismaSystem, error) {
-	sqlb := sqlBuilder.
+func (f *FismaSystem) Save(ctx context.Context) error {
+
+	var (
+		sql       string
+		boundArgs []any
+		err       error
+	)
+
+	err = f.isValid()
+	if err != nil {
+		return err
+	}
+
+	if f.FismaSystemID == 0 {
+		sql, boundArgs, _ = f.insertSql()
+	} else {
+		sql, boundArgs, _ = f.updateSql()
+	}
+
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return trapError(err)
+	}
+
+	err = row.Scan(&f.FismaSystemID, &f.FismaUID, &f.FismaAcronym, &f.FismaName, &f.FismaSubsystem, &f.Component, &f.Groupacronym, &f.GroupName, &f.DivisionName, &f.DataCenterEnvironment, &f.DataCallContact, &f.ISSOEmail)
+
+	return trapError(err)
+}
+
+func (f *FismaSystem) isValid() error {
+	err := InvalidInputError{data: map[string]string{}}
+
+	if !isValidUUID(f.FismaUID) {
+		err.data["fismauid"] = f.FismaUID
+	}
+
+	if !isValidEmail(*f.DataCallContact) {
+		err.data["datacallcontact"] = *f.DataCallContact
+	}
+
+	if !isValidEmail(*f.ISSOEmail) {
+		err.data["issoemail"] = *f.ISSOEmail
+	}
+
+	if !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
+		err.data["datacenterenvironment"] = *f.DataCenterEnvironment
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+
+	return nil
+}
+
+func (f *FismaSystem) insertSql() (string, []any, error) {
+	return sqlBuilder.
 		Insert("fismasystems").
 		Columns(fismaSystemColumns[1:]...).
 		Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
-		Suffix("RETURNING fismasystemid")
-
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		return nil, trapError(err)
-	}
-	err = row.Scan(&f.FismaSystemID)
-
-	return &f, trapError(err)
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+		ToSql()
 }
 
-func UpdateFismaSystem(ctx context.Context, f FismaSystem) (*FismaSystem, error) {
-	sqlb := sqlBuilder.Update("fismasystems").
+func (f *FismaSystem) updateSql() (string, []any, error) {
+	return sqlBuilder.Update("fismasystems").
 		Set("fismauid", f.FismaUID).
 		Set("fismaacronym", f.FismaAcronym).
 		Set("fismaname", f.FismaName).
@@ -119,15 +166,7 @@ func UpdateFismaSystem(ctx context.Context, f FismaSystem) (*FismaSystem, error)
 		Set("datacallcontact", f.DataCallContact).
 		Set("issoemail", f.ISSOEmail).
 		Where("fismasystemid=?", f.FismaSystemID).
-		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+		ToSql()
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	err = row.Scan(&f.FismaSystemID, &f.FismaUID, &f.FismaAcronym, &f.FismaName, &f.FismaSubsystem, &f.Component, &f.Groupacronym, &f.GroupName, &f.DivisionName, &f.DataCenterEnvironment, &f.DataCallContact, &f.ISSOEmail)
-
-	return &f, trapError(err)
 }
