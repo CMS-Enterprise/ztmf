@@ -21,7 +21,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.GetFismaSystem).Methods("GET")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
 
-	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListQuestions).Methods("GET")
+	// TODO: deprecate this in favor of non-nested URIs
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListFismaSystemQuestions).Methods("GET")
 
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
 
@@ -39,6 +40,10 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun
 	router.HandleFunc("/api/v1/scores", controller.SaveScore).Methods("POST")
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}", controller.SaveScore).Methods("PUT")
+
+	router.HandleFunc("/api/v1/questions", controller.ListQuestions).Methods("GET")
+	router.HandleFunc("/api/v1/questions", controller.SaveQuestion).Methods("POST")
+	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
 
 	return router
 }
