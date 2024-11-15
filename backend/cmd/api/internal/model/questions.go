@@ -14,7 +14,7 @@ var questionsColumns = []string{"questionid", "question", "notesprompt", "ordr",
 type Question struct {
 	QuestionID  int32     `json:"questionid"`
 	Question    string    `json:"question"`
-	Notesprompt string    `json:"notesprompt"`
+	NotesPrompt string    `json:"notesprompt"`
 	Order       int       `json:"order"`
 	PillarID    int       `json:"pillarid"`
 	Pillar      *Pillar   `json:"pillar,omitempty"`
@@ -29,61 +29,39 @@ func (q *Question) Save(ctx context.Context) error {
 		err       error
 	)
 
-	err = q.isValid()
-	if err != nil {
-		return err
-	}
-
 	if q.QuestionID == 0 {
-		sql, boundArgs, _ = q.insertSql()
+		sql, boundArgs, _ = sqlBuilder.
+			Insert("questions").
+			Columns(questionsColumns[1:]...).
+			Values(q.Question, q.NotesPrompt, q.Order, q.PillarID).
+			Suffix("RETURNING " + strings.Join(questionsColumns, ", ")).
+			ToSql()
+	} else {
+		sql, boundArgs, _ = sqlBuilder.Update("questions").
+			Set("question", q.Question).
+			Set("notesprompt", q.NotesPrompt).
+			Set("ordr", q.Order).
+			Set("pillarid", q.PillarID).
+			Where("questionid=?", q.QuestionID).
+			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+			ToSql()
 	}
-	// else {
-	// 	sql, boundArgs, _ = q.updateSql()
-	// }
 
 	row, err := queryRow(ctx, sql, boundArgs...)
 	if err != nil {
 		return trapError(err)
 	}
 
-	err = row.Scan(&q.QuestionID, &q.Question, &q.Notesprompt, &q.Order, &q.Pillar.PillarID)
+	err = row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.PillarID)
 
 	return trapError(err)
 }
 
-func (q *Question) isValid() error {
-	return nil
-}
-
-func (q *Question) insertSql() (string, []any, error) {
-	return sqlBuilder.
-		Insert("questions").
-		Columns(questionsColumns[1:]...).
-		Values().
-		Suffix("RETURNING " + strings.Join(questionsColumns, ", ")).
-		ToSql()
-}
-
-// func (f *) updateSql() (string, []any, error) {
-// 	return sqlBuilder.Update("fismasystems").
-// 		Set("fismauid", f.FismaUID).
-// 		Set("fismaacronym", f.FismaAcronym).
-// 		Set("fismaname", f.FismaName).
-// 		Set("fismasubsystem", f.FismaSubsystem).
-// 		Set("component", f.Component).
-// 		Set("groupacronym", f.Groupacronym).
-// 		Set("groupname", f.GroupName).
-// 		Set("divisionname", f.DivisionName).
-// 		Set("datacenterenvironment", f.DataCenterEnvironment).
-// 		Set("datacallcontact", f.DataCallContact).
-// 		Set("issoemail", f.ISSOEmail).
-// 		Where("fismasystemid=?", f.FismaSystemID).
-// 		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
-// 		ToSql()
-
+// func (q *Question) isValid() (bool, error) {
+// 	return true, nil
 // }
 
-// FindQuestions returns questions
+// FindQuestions returns questions without joins, it is used by admins for management
 func FindQuestions(ctx context.Context) ([]*Question, error) {
 	sql, boundArgs, _ := sqlBuilder.
 		Select(questionsColumns...).
@@ -99,13 +77,14 @@ func FindQuestions(ctx context.Context) ([]*Question, error) {
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Question, error) {
 		q := Question{}
-		err := rows.Scan(&q.QuestionID, &q.Question, &q.Notesprompt, &q.Order, &q.PillarID)
+		err := rows.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.PillarID)
 		return &q, trapError(err)
 	})
 
 }
 
-// FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment
+// FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment.
+// It is used by all users to list questions relevant to the specified fisma system
 func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Question, error) {
 	sql, boundArgs, _ := sqlBuilder.
 		Select("questions.questionid, question, notesprompt, questions.ordr, pillars.pillarid, pillars.pillar, pillars.ordr, functionid, function, description").
@@ -128,7 +107,7 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Qu
 			Pillar:   &Pillar{},
 			Function: &Function{},
 		}
-		err := rows.Scan(&q.QuestionID, &q.Question, &q.Notesprompt, &q.Order, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description)
+		err := rows.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description)
 		return &q, trapError(err)
 	})
 }
