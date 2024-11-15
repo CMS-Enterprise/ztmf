@@ -29,6 +29,19 @@ func ListQuestions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, questions, err)
 }
 
+func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
+	var questionID int32
+	vars := mux.Vars(r)
+	if v, ok := vars["questionid"]; !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	} else {
+		fmt.Sscan(v, &questionID)
+	}
+	question, err := model.FindQuestionByID(r.Context(), questionID)
+	respond(w, r, question, err)
+}
+
 func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if !user.IsAdmin() {

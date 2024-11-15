@@ -43,7 +43,7 @@ func (q *Question) Save(ctx context.Context) error {
 			Set("ordr", q.Order).
 			Set("pillarid", q.PillarID).
 			Where("questionid=?", q.QuestionID).
-			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
+			Suffix("RETURNING " + strings.Join(questionsColumns, ", ")).
 			ToSql()
 	}
 
@@ -77,10 +77,28 @@ func FindQuestions(ctx context.Context) ([]*Question, error) {
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Question, error) {
 		q := Question{}
-		err := rows.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.PillarID)
+		err := row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.PillarID)
 		return &q, trapError(err)
 	})
+}
 
+func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) {
+	sql, boundArgs, _ := sqlBuilder.
+		Select(questionsColumns...).
+		From("questions").
+		Where("questionid=?", questionID).
+		ToSql()
+
+	row, err := queryRow(ctx, sql, boundArgs...)
+
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	q := Question{}
+	err = row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.PillarID)
+	return &q, err
 }
 
 // FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment.
@@ -107,7 +125,7 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Qu
 			Pillar:   &Pillar{},
 			Function: &Function{},
 		}
-		err := rows.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description)
+		err := row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Order, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description)
 		return &q, trapError(err)
 	})
 }

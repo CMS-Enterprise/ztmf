@@ -42,6 +42,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}", controller.SaveScore).Methods("PUT")
 
 	router.HandleFunc("/api/v1/questions", controller.ListQuestions).Methods("GET")
+	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.GetQuestionByID).Methods("GET")
 	router.HandleFunc("/api/v1/questions", controller.SaveQuestion).Methods("POST")
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
 
