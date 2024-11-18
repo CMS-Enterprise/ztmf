@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
@@ -38,7 +37,6 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	}
 
 	if err != nil {
-		log.Printf("%#v\n", err)
 
 		status, err = sanitizeErr(err)
 		switch e := err.(type) {
