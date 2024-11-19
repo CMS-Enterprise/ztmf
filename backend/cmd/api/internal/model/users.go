@@ -120,7 +120,7 @@ func UpdateUser(ctx context.Context, user User) (*User, error) {
 }
 
 func validateUser(user User) error {
-	err := InvalidInputError{data: map[string]string{}}
+	err := InvalidInputError{data: map[string]any{}}
 
 	if user.UserID != "" {
 		if !isValidUUID(user.UserID) {

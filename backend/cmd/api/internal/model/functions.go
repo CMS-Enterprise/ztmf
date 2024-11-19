@@ -2,14 +2,15 @@ package model
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
 
-var functionColumns = []string{"functionid", "function", "description", "datacenterenvironment", "questionid", "pillarid"}
+var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "questionid", "pillarid"}
 
 type Function struct {
-	FunctionID            int32  `json:"functionid"`
+	FunctionID            *int32 `json:"functionid"`
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
@@ -25,7 +26,7 @@ type FindFunctionsInput struct {
 
 func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, error) {
 	sqlb := sqlBuilder.
-		Select(functionColumns...).
+		Select(functionsColumns...).
 		From("functions")
 
 	if i.QuestionID != nil {
@@ -53,4 +54,76 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 		err := row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
 		return &f, trapError(err)
 	})
+}
+
+func (f *Function) Save(ctx context.Context) error {
+
+	var (
+		sql       string
+		boundArgs []any
+		err       error
+	)
+
+	if valid, err := f.isValid(); !valid {
+		return err
+	}
+
+	if f.FunctionID == nil {
+		sql, boundArgs, _ = sqlBuilder.
+			Insert("functions").
+			Columns(functionsColumns[1:]...).
+			Values(f.Function, f.Description, f.DataCenterEnvironment, f.QuestionID, f.PillarID).
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
+			ToSql()
+	} else {
+		sql, boundArgs, _ = sqlBuilder.Update("functions").
+			Set("function", f.Function).
+			Set("description", f.Description).
+			Set("datacenterenvironment", f.DataCenterEnvironment).
+			Set("questionid", f.QuestionID).
+			Where("pillarid=?", f.PillarID).
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
+			ToSql()
+	}
+
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return trapError(err)
+	}
+
+	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
+
+	return trapError(err)
+}
+
+func (f *Function) isValid() (isValid bool, e error) {
+	err := InvalidInputError{data: map[string]any{}}
+
+	if f.Function == "" {
+		err.data["function"] = ""
+	}
+
+	if f.Description == "" {
+		err.data["description"] = ""
+	}
+
+	if !isValidDataCenterEnvironment(f.DataCenterEnvironment) {
+		err.data["datacenterenvironment"] = f.DataCenterEnvironment
+	}
+
+	if !isValidIntID(f.QuestionID) {
+		err.data["questionid"] = f.QuestionID
+	}
+
+	if !isValidIntID(f.PillarID) {
+		err.data["pillarid"] = f.PillarID
+	}
+
+	if len(err.data) == 0 {
+		isValid = true
+	} else {
+		e = &err
+	}
+
+	return
 }

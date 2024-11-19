@@ -20,10 +20,10 @@ var (
 )
 
 type InvalidInputError struct {
-	data map[string]string
+	data map[string]any ``
 }
 
-func (e *InvalidInputError) Data() map[string]string {
+func (e *InvalidInputError) Data() map[string]any {
 	return e.data
 }
 

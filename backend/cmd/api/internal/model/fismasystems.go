@@ -64,7 +64,7 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSystem, error) {
 	if input.FismaSystemID == nil {
 		return nil, &InvalidInputError{
-			data: map[string]string{"fismasystemid": "null"},
+			data: map[string]any{"fismasystemid": nil},
 		}
 	}
 
@@ -118,7 +118,7 @@ func (f *FismaSystem) Save(ctx context.Context) error {
 }
 
 func (f *FismaSystem) isValid() error {
-	err := InvalidInputError{data: map[string]string{}}
+	err := InvalidInputError{data: map[string]any{}}
 
 	if !isValidUUID(f.FismaUID) {
 		err.data["fismauid"] = f.FismaUID
