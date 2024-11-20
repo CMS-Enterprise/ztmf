@@ -98,6 +98,24 @@ jobs:
                   status: 200
                   headers:
                     content-type: "application/json"
+              
+              - url: http://localhost:8080/api/v1/functions
+                method: GET
+                headers:
+                  <<: *commonHeaders
+                expect:
+                  status: 200
+                  headers:
+                    content-type: "application/json"
+              
+              - url: http://localhost:8080/api/v1/functions/1
+                method: GET
+                headers:
+                  <<: *commonHeaders
+                expect:
+                  status: 200
+                  headers:
+                    content-type: "application/json"
 
       - name: AWS - Get Credentials
         uses: aws-actions/configure-aws-credentials@v4
