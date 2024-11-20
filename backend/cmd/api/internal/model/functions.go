@@ -7,14 +7,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "questionid", "pillarid"}
+var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "ordr", "questionid", "pillarid"}
 
 type Function struct {
 	FunctionID            int32  `json:"functionid"`
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	QuestionID            *int32 `json:"questionid"`
+	Order                 int    `json:"order"`
+	QuestionID            *int32 `json:"questionid,omitempty"`
 	PillarID              int32  `json:"pillarid"`
 }
 
@@ -51,7 +52,7 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Function, error) {
 		f := Function{}
-		err := row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
+		err := row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
 		return &f, trapError(err)
 	})
 }
@@ -75,7 +76,7 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 
 	// Scan the query result into the User struct
 	f := Function{}
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
+	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
 
 	return &f, trapError(err)
 }
@@ -96,7 +97,7 @@ func (f *Function) Save(ctx context.Context) error {
 		sql, boundArgs, _ = sqlBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
-			Values(f.Function, f.Description, f.DataCenterEnvironment, f.QuestionID, f.PillarID).
+			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Order, f.QuestionID, f.PillarID).
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
 			ToSql()
 	} else {
@@ -104,6 +105,7 @@ func (f *Function) Save(ctx context.Context) error {
 			Set("function", f.Function).
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
+			Set("ordr", f.Order).
 			Set("questionid", f.QuestionID).
 			Set("pillarid", f.PillarID).
 			Where("functionid=?", f.FunctionID).
@@ -116,7 +118,7 @@ func (f *Function) Save(ctx context.Context) error {
 		return trapError(err)
 	}
 
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
+	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
 
 	return trapError(err)
 }
