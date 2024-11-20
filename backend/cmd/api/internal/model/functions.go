@@ -10,11 +10,11 @@ import (
 var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "questionid", "pillarid"}
 
 type Function struct {
-	FunctionID            *int32 `json:"functionid"`
+	FunctionID            int32  `json:"functionid"`
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	QuestionID            int32  `json:"questionid"`
+	QuestionID            *int32 `json:"questionid"`
 	PillarID              int32  `json:"pillarid"`
 }
 
@@ -56,6 +56,30 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 	})
 }
 
+// FindFunctionByID queries the database for a Function with the given ID
+func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) {
+	if !isValidIntID(functionID) {
+		return nil, ErrNoData
+	}
+
+	sql, boundArgs, _ := sqlBuilder.
+		Select(functionsColumns...).
+		From("functions").
+		Where("functionid=?", functionID).
+		ToSql()
+
+	row, err := queryRow(ctx, sql, boundArgs...)
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	// Scan the query result into the User struct
+	f := Function{}
+	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.QuestionID, &f.PillarID)
+
+	return &f, trapError(err)
+}
+
 func (f *Function) Save(ctx context.Context) error {
 
 	var (
@@ -68,7 +92,7 @@ func (f *Function) Save(ctx context.Context) error {
 		return err
 	}
 
-	if f.FunctionID == nil {
+	if f.FunctionID == 0 {
 		sql, boundArgs, _ = sqlBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
@@ -81,7 +105,8 @@ func (f *Function) Save(ctx context.Context) error {
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
 			Set("questionid", f.QuestionID).
-			Where("pillarid=?", f.PillarID).
+			Set("pillarid", f.PillarID).
+			Where("functionid=?", f.FunctionID).
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
 			ToSql()
 	}
@@ -111,7 +136,7 @@ func (f *Function) isValid() (isValid bool, e error) {
 		err.data["datacenterenvironment"] = f.DataCenterEnvironment
 	}
 
-	if !isValidIntID(f.QuestionID) {
+	if f.QuestionID != nil && !isValidIntID(f.QuestionID) {
 		err.data["questionid"] = f.QuestionID
 	}
 

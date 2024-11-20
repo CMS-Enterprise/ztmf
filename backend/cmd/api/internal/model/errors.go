@@ -20,7 +20,7 @@ var (
 )
 
 type InvalidInputError struct {
-	data map[string]any ``
+	data map[string]any
 }
 
 func (e *InvalidInputError) Data() map[string]any {

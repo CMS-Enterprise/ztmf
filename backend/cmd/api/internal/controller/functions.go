@@ -10,22 +10,34 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func ListQuestionFunctions(w http.ResponseWriter, r *http.Request) {
+func ListFunctions(w http.ResponseWriter, r *http.Request) {
 
 	input := model.FindFunctionsInput{}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["questionid"]; !ok {
-		respond(w, r, nil, ErrNotFound)
-		return
-	} else {
+	q := r.URL.Query()
+	if q.Has("questionid") {
 		var questionID int32
-		fmt.Sscan(v, &questionID)
+		fmt.Sscan(q.Get("questionid"), &questionID)
 		input.QuestionID = &questionID
 	}
 
 	functions, err := model.FindFunctions(r.Context(), input)
 	respond(w, r, functions, err)
+}
+
+func GetFunctionById(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	ID, ok := vars["functionid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+	var functionID int32
+	fmt.Sscan(ID, &functionID)
+
+	f, err := model.FindFunctionByID(r.Context(), functionID)
+
+	respond(w, r, f, err)
 }
 
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
@@ -37,14 +49,6 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 
 	f := &model.Function{}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["questionid"]; !ok {
-		respond(w, r, nil, ErrNotFound)
-		return
-	} else {
-		fmt.Sscan(v, &f.QuestionID)
-	}
-
 	err := getJSON(r.Body, f)
 	if err != nil {
 		log.Println(err)
@@ -52,10 +56,9 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vars := mux.Vars(r)
 	if v, ok := vars["functionid"]; ok {
-		var functionID int32
-		fmt.Sscan(v, &functionID)
-		f.FunctionID = &functionID
+		fmt.Sscan(v, &f.FunctionID)
 	}
 
 	err = f.Save(r.Context())
