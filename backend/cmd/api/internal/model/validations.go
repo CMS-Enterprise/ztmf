@@ -44,3 +44,16 @@ func isValidDataCenterEnvironment(d string) bool {
 	_, ok := datacenterenvironments[d]
 	return ok
 }
+
+func isValidIntID(ID any) bool {
+	var i int32
+	switch ID := ID.(type) {
+	case int32:
+		i = ID
+	case *int32:
+		if ID != nil {
+			i = *ID
+		}
+	}
+	return i > 0
+}

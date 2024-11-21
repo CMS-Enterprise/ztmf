@@ -81,7 +81,7 @@ func DeleteUserFismaSystem(ctx context.Context, uf UserFismaSystem) error {
 }
 
 func validateUserFismasystem(uf UserFismaSystem) error {
-	inputErr := InvalidInputError{data: map[string]string{}}
+	inputErr := InvalidInputError{data: map[string]any{}}
 
 	if !isValidUUID(uf.UserID) {
 		inputErr.data["userid"] = "uuid required"

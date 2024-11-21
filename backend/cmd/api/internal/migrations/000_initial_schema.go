@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.functions
     function varchar(255),
     description varchar(1024),
     datacenterenvironment varchar(255),
-    questionid integer NOT NULL REFERENCES questions (questionid),
+    questionid integer REFERENCES questions (questionid),
     pillarid integer NOT NULL REFERENCES pillars (pillarid)
 );
 

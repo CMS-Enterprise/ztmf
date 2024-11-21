@@ -46,5 +46,9 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/questions", controller.SaveQuestion).Methods("POST")
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
 
+	router.HandleFunc("/api/v1/functions", controller.ListFunctions).Methods("GET")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionById).Methods("GET")
+	router.HandleFunc("/api/v1/functions", controller.SaveFunction).Methods("POST")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
 	return router
 }
