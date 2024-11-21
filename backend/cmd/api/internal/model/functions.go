@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -42,8 +43,10 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 		sqlb = sqlb.Where("datacenterenvironment=?", i.DataCenterEnvironment)
 	}
 
-	sql, boundArgs, _ := sqlb.ToSql()
+	sqlb = sqlb.OrderBy("ordr ASC")
 
+	sql, boundArgs, _ := sqlb.ToSql()
+	log.Println(sql)
 	rows, err := query(ctx, sql, boundArgs...)
 
 	if err != nil {
