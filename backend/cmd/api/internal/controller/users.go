@@ -22,7 +22,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, users, err)
 }
 
-func GetUserById(w http.ResponseWriter, r *http.Request) {
+func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
