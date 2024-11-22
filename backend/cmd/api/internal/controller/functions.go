@@ -25,7 +25,7 @@ func ListFunctions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, functions, err)
 }
 
-func GetFunctionById(w http.ResponseWriter, r *http.Request) {
+func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	ID, ok := vars["functionid"]
 	if !ok {
