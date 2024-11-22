@@ -14,6 +14,10 @@ func Handler() http.Handler {
 	router.Use(auth.Middleware)
 
 	router.HandleFunc("/api/v1/datacalls", controller.ListDataCalls).Methods("GET")
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
+	router.HandleFunc("/api/v1/datacalls", controller.SaveDataCall).Methods("POST")
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.SaveDataCall).Methods("PUT")
+
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export", controller.GetDatacallExport).Methods("GET")
 
 	router.HandleFunc("/api/v1/fismasystems", controller.ListFismaSystems).Methods("GET")
@@ -29,7 +33,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users", controller.ListUsers).Methods("GET")
 	router.HandleFunc("/api/v1/users", controller.SaveUser).Methods("POST")
 	router.HandleFunc("/api/v1/users/current", controller.GetCurrentUser).Methods("GET")
-	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.GetUserById).Methods("GET")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.GetUserByID).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.SaveUser).Methods("PUT")
 
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.ListUserFismaSystems).Methods("GET")
@@ -47,7 +51,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
 
 	router.HandleFunc("/api/v1/functions", controller.ListFunctions).Methods("GET")
-	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionById).Methods("GET")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionByID).Methods("GET")
 	router.HandleFunc("/api/v1/functions", controller.SaveFunction).Methods("POST")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
 	return router
