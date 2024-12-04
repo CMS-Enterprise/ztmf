@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"log"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -27,7 +26,7 @@ type FindFunctionsInput struct {
 }
 
 func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, error) {
-	sqlb := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(functionsColumns...).
 		From("functions")
 
@@ -45,9 +44,7 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 
 	sqlb = sqlb.OrderBy("ordr ASC")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	log.Println(sql)
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
 		return nil, trapError(err)
@@ -66,13 +63,12 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 		return nil, ErrNoData
 	}
 
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(functionsColumns...).
 		From("functions").
-		Where("functionid=?", functionID).
-		ToSql()
+		Where("functionid=?", functionID)
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return nil, trapError(err)
 	}
@@ -87,9 +83,8 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 func (f *Function) Save(ctx context.Context) error {
 
 	var (
-		sql       string
-		boundArgs []any
-		err       error
+		sqlb sqlBuilder
+		err  error
 	)
 
 	if valid, err := f.isValid(); !valid {
@@ -97,14 +92,13 @@ func (f *Function) Save(ctx context.Context) error {
 	}
 
 	if f.FunctionID == 0 {
-		sql, boundArgs, _ = sqlBuilder.
+		sqlb = stmntBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
 			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Order, f.QuestionID, f.PillarID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	} else {
-		sql, boundArgs, _ = sqlBuilder.Update("functions").
+		sqlb = stmntBuilder.Update("functions").
 			Set("function", f.Function).
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
@@ -112,11 +106,10 @@ func (f *Function) Save(ctx context.Context) error {
 			Set("questionid", f.QuestionID).
 			Set("pillarid", f.PillarID).
 			Where("functionid=?", f.FunctionID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return trapError(err)
 	}

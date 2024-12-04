@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -20,16 +19,15 @@ type FindFunctionOptionsInput struct {
 }
 
 func FindFunctionOptions(ctx context.Context, input FindFunctionOptionsInput) ([]*FunctionOption, error) {
-	sqlb := sqlBuilder.Select("functionoptionid,functionid,score,optionname,description").From("functionoptions")
+	sqlb := stmntBuilder.Select("functionoptionid,functionid,score,optionname,description").From("functionoptions")
 
 	if input.FunctionID != nil {
 		sqlb = sqlb.Where("functionid=?", *input.FunctionID)
 	}
-	sql, boundArgs, _ := sqlb.ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
+
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
-		log.Println(err)
 		return nil, trapError(err)
 	}
 

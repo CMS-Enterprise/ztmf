@@ -16,12 +16,11 @@ func FindUserFismaSystemsByUserID(ctx context.Context, userid string) ([]int32, 
 		return nil, ErrNoData
 	}
 
-	sqlb := sqlBuilder.Select("ARRAY_AGG(fismasystemid) as fismasystemids").
+	sqlb := stmntBuilder.Select("ARRAY_AGG(fismasystemid) as fismasystemids").
 		From("users_fismasystems").
 		Where("userid=?", userid)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		log.Println(err)
 		return nil, trapError(err)
@@ -45,15 +44,13 @@ func AddUserFismaSystem(ctx context.Context, uf UserFismaSystem) error {
 		return err
 	}
 
-	sqlb := sqlBuilder.Insert("userid, fismasystemid").
+	sqlb := stmntBuilder.Insert("userid, fismasystemid").
 		Into("users_fismasystems").
 		Values(uf.UserID, uf.FismaSystemID).
 		Suffix("ON CONFLICT DO NOTHING")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err = exec(ctx, sql, boundArgs...)
+	err = exec(ctx, sqlb)
 	if err != nil {
-		log.Println(err)
 		return trapError(err)
 	}
 
@@ -67,11 +64,11 @@ func DeleteUserFismaSystem(ctx context.Context, uf UserFismaSystem) error {
 		return err
 	}
 
-	sqlb := sqlBuilder.Delete("users_fismasystems").
+	sqlb := stmntBuilder.
+		Delete("users_fismasystems").
 		Where("userid=? AND fismasystemid=?", uf.UserID, uf.FismaSystemID)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err = exec(ctx, sql, boundArgs...)
+	err = exec(ctx, sqlb)
 	if err != nil {
 		log.Println(err)
 		return trapError(err)

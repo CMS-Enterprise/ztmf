@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"log"
 	"strings"
 	"time"
 
@@ -28,9 +27,8 @@ func (d *DataCall) fields() []any {
 func (d *DataCall) Save(ctx context.Context) error {
 
 	var (
-		sql       string
-		boundArgs []any
-		err       error
+		sqlb sqlBuilder
+		err  error
 	)
 
 	// if valid, err := d.isValid(); !valid {
@@ -38,25 +36,23 @@ func (d *DataCall) Save(ctx context.Context) error {
 	// }
 
 	if d.DataCallID == 0 {
-		sql, boundArgs, _ = sqlBuilder.
+		sqlb = stmntBuilder.
 			Insert("datacalls").
 			Columns("datacall", "deadline", "emailsubject", "emailbody").
 			Values(d.DataCall, d.Deadline, d.EmailSubject, d.EmailBody).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	} else {
-		sql, boundArgs, _ = sqlBuilder.
+		sqlb = stmntBuilder.
 			Update("datacalls").
 			Set("datacall", d.DataCall).
 			Set("deadline", d.Deadline).
 			Set("emailsubject", d.EmailSubject).
 			Set("emailbody", d.EmailBody).
 			Where("datacallid=?", d.DataCallID).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return trapError(err)
 	}
@@ -67,15 +63,13 @@ func (d *DataCall) Save(ctx context.Context) error {
 }
 
 func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
-	sqlb := sqlBuilder.Select(dataCallColumns...).
+	sqlb := stmntBuilder.Select(dataCallColumns...).
 		From("datacalls").
 		OrderBy("datecreated DESC")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
-		log.Println(err)
 		return nil, trapError(err)
 	}
 
@@ -87,13 +81,12 @@ func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
 }
 
 func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) {
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(dataCallColumns...).
 		From("datacalls").
-		Where("datacallid=?", dataCallID).
-		ToSql()
+		Where("datacallid=?", dataCallID)
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return nil, trapError(err)
 	}

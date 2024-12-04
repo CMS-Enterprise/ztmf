@@ -24,30 +24,27 @@ type Question struct {
 func (q *Question) Save(ctx context.Context) error {
 
 	var (
-		sql       string
-		boundArgs []any
-		err       error
+		sqlb sqlBuilder
+		err  error
 	)
 
 	if q.QuestionID == 0 {
-		sql, boundArgs, _ = sqlBuilder.
+		sqlb = stmntBuilder.
 			Insert("questions").
 			Columns(questionsColumns[1:]...).
 			Values(q.Question, q.NotesPrompt, q.Order, q.PillarID).
-			Suffix("RETURNING " + strings.Join(questionsColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
 	} else {
-		sql, boundArgs, _ = sqlBuilder.Update("questions").
+		sqlb = stmntBuilder.Update("questions").
 			Set("question", q.Question).
 			Set("notesprompt", q.NotesPrompt).
 			Set("ordr", q.Order).
 			Set("pillarid", q.PillarID).
 			Where("questionid=?", q.QuestionID).
-			Suffix("RETURNING " + strings.Join(questionsColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return trapError(err)
 	}
@@ -63,15 +60,13 @@ func (q *Question) Save(ctx context.Context) error {
 
 // FindQuestions returns questions without joins, it is used by admins for management
 func FindQuestions(ctx context.Context) ([]*Question, error) {
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(questionsColumns...).
-		From("questions").
-		ToSql()
+		From("questions")
 
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 
@@ -83,13 +78,12 @@ func FindQuestions(ctx context.Context) ([]*Question, error) {
 }
 
 func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) {
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(questionsColumns...).
 		From("questions").
-		Where("questionid=?", questionID).
-		ToSql()
+		Where("questionid=?", questionID)
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 
 	if err != nil {
 		log.Println(err)
@@ -104,16 +98,15 @@ func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) 
 // FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment.
 // It is used by all users to list questions relevant to the specified fisma system
 func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Question, error) {
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select("questions.questionid, question, notesprompt, questions.ordr, pillars.pillarid, pillars.pillar, pillars.ordr, functionid, function, description").
 		From("questions").
 		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
 		InnerJoin("functions ON functions.questionid=questions.questionid").
 		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=functions.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
-		OrderBy("pillars.ordr, questions.ordr ASC").
-		ToSql()
+		OrderBy("pillars.ordr, questions.ordr ASC")
 
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
 		log.Println(err)

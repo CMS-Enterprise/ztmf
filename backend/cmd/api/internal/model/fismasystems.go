@@ -35,7 +35,7 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
-	sqlb := sqlBuilder.Select(c...).From("fismasystems")
+	sqlb := stmntBuilder.Select(c...).From("fismasystems")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -46,11 +46,10 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	}
 
 	sqlb = sqlb.OrderBy("fismasystems.fismasystemid ASC")
-	sql, boundArgs, _ := sqlb.ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
+
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
-		log.Println(err)
 		return nil, trapError(err)
 	}
 
@@ -68,11 +67,11 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 		}
 	}
 
-	sqlb := sqlBuilder.Select(fismaSystemColumns...).From("fismasystems")
+	sqlb := stmntBuilder.Select(fismaSystemColumns...).From("fismasystems")
 
 	sqlb = sqlb.Where("fismasystems.fismasystemid=?", input.FismaSystemID)
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
+
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		log.Println(err)
 		return nil, trapError(err)
@@ -91,9 +90,8 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 func (f *FismaSystem) Save(ctx context.Context) error {
 
 	var (
-		sql       string
-		boundArgs []any
-		err       error
+		sqlb sqlBuilder
+		err  error
 	)
 
 	err = f.isValid()
@@ -102,12 +100,12 @@ func (f *FismaSystem) Save(ctx context.Context) error {
 	}
 
 	if f.FismaSystemID == 0 {
-		sql, boundArgs, _ = f.insertSql()
+		sqlb = f.insertSql()
 	} else {
-		sql, boundArgs, _ = f.updateSql()
+		sqlb = f.updateSql()
 	}
 
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return trapError(err)
 	}
@@ -143,17 +141,16 @@ func (f *FismaSystem) isValid() error {
 	return nil
 }
 
-func (f *FismaSystem) insertSql() (string, []any, error) {
-	return sqlBuilder.
+func (f *FismaSystem) insertSql() sqlBuilder {
+	return stmntBuilder.
 		Insert("fismasystems").
 		Columns(fismaSystemColumns[1:]...).
 		Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
-		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
-		ToSql()
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 }
 
-func (f *FismaSystem) updateSql() (string, []any, error) {
-	return sqlBuilder.Update("fismasystems").
+func (f *FismaSystem) updateSql() sqlBuilder {
+	return stmntBuilder.Update("fismasystems").
 		Set("fismauid", f.FismaUID).
 		Set("fismaacronym", f.FismaAcronym).
 		Set("fismaname", f.FismaName).
@@ -166,7 +163,5 @@ func (f *FismaSystem) updateSql() (string, []any, error) {
 		Set("datacallcontact", f.DataCallContact).
 		Set("issoemail", f.ISSOEmail).
 		Where("fismasystemid=?", f.FismaSystemID).
-		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", ")).
-		ToSql()
-
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 }
