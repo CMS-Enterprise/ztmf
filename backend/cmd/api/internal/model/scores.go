@@ -40,7 +40,7 @@ type FindScoresInput struct {
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
-	sqlb := sqlBuilder.Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid").From("scores")
+	sqlb := stmntBuilder.Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid").From("scores")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid=scores.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -54,8 +54,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		sqlb = sqlb.Where("datacallid=?", *input.DataCallID)
 	}
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
 		log.Println(err)
@@ -70,13 +69,12 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 }
 
 func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
-	sqlb := sqlBuilder.Insert("public.scores").
+	sqlb := stmntBuilder.Insert("public.scores").
 		Columns("fismasystemid, notes, functionoptionid, datacallid").
 		Values(input.FismaSystemID, input.Notes, input.FunctionOptionID, input.DataCallID).
 		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
+	row, err := queryRow(ctx, sqlb)
 	if err != nil {
 		return nil, trapError(err)
 	}
@@ -92,15 +90,14 @@ func UpdateScore(ctx context.Context, input SaveScoreInput) error {
 		return errors.New("input.ScoreID must be provided")
 	}
 
-	sqlb := sqlBuilder.Update("public.scores").
+	sqlb := stmntBuilder.Update("public.scores").
 		Set("fismasystemid", &input.FismaSystemID).
 		Set("notes", &input.Notes).
 		Set("functionoptionid", &input.FunctionOptionID).
 		Set("datacallid", &input.DataCallID).
 		Where("scoreid=?", input.ScoreID)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err := exec(ctx, sql, boundArgs...)
+	err := exec(ctx, sqlb)
 	return err
 }
 
@@ -119,13 +116,12 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 
 	sqlb := squirrel.Select("*").
 		FromSelect(subSqlb, "avg_by_datacall_fismasystem").
-		GroupBy("datacallid, fismasystemid, systemscore")
+		GroupBy("datacallid, fismasystemid, systemscore").
+		PlaceholderFormat(squirrel.Dollar)
 
-	sql, boundArgs, _ := sqlb.PlaceholderFormat(squirrel.Dollar).ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
+	rows, err := query(ctx, sqlb)
 
 	if err != nil {
-		log.Println(err)
 		return nil, trapError(err)
 	}
 
