@@ -8,14 +8,17 @@ on:
       - opened
       - reopened
       - synchronize
+      - ready_for_review
 
 jobs:
   analysis:
+    if: github.event.pull_request.draft == false
     name: Analysis
     uses: ./.github/workflows/analysis.yml
     secrets: inherit
 
   diff:
+    if: github.event.pull_request.draft == false
     name: Check for Changes
     runs-on: ubuntu-latest
     outputs:
@@ -35,7 +38,7 @@ jobs:
     needs: 
       - analysis
       - diff
-    if: contains(needs.diff.outputs.backend, 'backend/')
+    if: github.event.pull_request.draft == false && contains(needs.diff.outputs.backend, 'backend/')
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV
@@ -47,7 +50,7 @@ jobs:
       - analysis
       - diff
       - backend
-    if: ${{ !failure() && !cancelled() }}
+    if: github.event.pull_request.draft == false && ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: DEV
