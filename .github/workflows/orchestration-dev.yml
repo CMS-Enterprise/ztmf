@@ -50,7 +50,7 @@ jobs:
       - analysis
       - diff
       - backend
-    if: github.event.pull_request.draft == false && ${{ !failure() && !cancelled() }}
+    if: ${{ github.event.pull_request.draft == false && !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: DEV
