@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"errors"
-	"log"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -40,7 +39,7 @@ type FindScoresInput struct {
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
-	sqlb := sqlBuilder.Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid").From("scores")
+	sqlb := stmntBuilder.Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid").From("scores")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid=scores.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -54,37 +53,16 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		sqlb = sqlb.Where("datacallid=?", *input.DataCallID)
 	}
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
-
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Score, error) {
-		score := Score{}
-		err := row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
-		return &score, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Score])
 }
 
 func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
-	sqlb := sqlBuilder.Insert("public.scores").
+	sqlb := stmntBuilder.Insert("public.scores").
 		Columns("fismasystemid, notes, functionoptionid, datacallid").
 		Values(input.FismaSystemID, input.Notes, input.FunctionOptionID, input.DataCallID).
 		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	score := Score{}
-	err = row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
-
-	return &score, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Score])
 }
 
 func UpdateScore(ctx context.Context, input SaveScoreInput) error {
@@ -92,15 +70,14 @@ func UpdateScore(ctx context.Context, input SaveScoreInput) error {
 		return errors.New("input.ScoreID must be provided")
 	}
 
-	sqlb := sqlBuilder.Update("public.scores").
+	sqlb := stmntBuilder.Update("public.scores").
 		Set("fismasystemid", &input.FismaSystemID).
 		Set("notes", &input.Notes).
 		Set("functionoptionid", &input.FunctionOptionID).
 		Set("datacallid", &input.DataCallID).
 		Where("scoreid=?", input.ScoreID)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err := exec(ctx, sql, boundArgs...)
+	err := exec(ctx, sqlb)
 	return err
 }
 
@@ -119,19 +96,8 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 
 	sqlb := squirrel.Select("*").
 		FromSelect(subSqlb, "avg_by_datacall_fismasystem").
-		GroupBy("datacallid, fismasystemid, systemscore")
+		GroupBy("datacallid, fismasystemid, systemscore").
+		PlaceholderFormat(squirrel.Dollar)
 
-	sql, boundArgs, _ := sqlb.PlaceholderFormat(squirrel.Dollar).ToSql()
-	rows, err := query(ctx, sql, boundArgs...)
-
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*ScoreAggregate, error) {
-		sagg := ScoreAggregate{}
-		err := row.Scan(&sagg.DataCallID, &sagg.FismaSystemID, &sagg.SystemScore)
-		return &sagg, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
 }

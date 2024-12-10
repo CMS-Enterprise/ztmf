@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"log"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type UserFismaSystem struct {
@@ -11,30 +13,16 @@ type UserFismaSystem struct {
 }
 
 // FindUserFismaSystemsByUserID queries the user_fismasystems table to return a list of fismasystemids associated with the userID
-func FindUserFismaSystemsByUserID(ctx context.Context, userid string) ([]int32, error) {
+func FindUserFismaSystemsByUserID(ctx context.Context, userid string) (*[]int32, error) {
 	if !isValidUUID(userid) {
 		return nil, ErrNoData
 	}
 
-	sqlb := sqlBuilder.Select("ARRAY_AGG(fismasystemid) as fismasystemids").
+	sqlb := stmntBuilder.Select("ARRAY_AGG(fismasystemid) as fismasystemids").
 		From("users_fismasystems").
 		Where("userid=?", userid)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	var fismasystemids []int32
-	err = row.Scan(&fismasystemids)
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return fismasystemids, nil
+	return queryRow(ctx, sqlb, pgx.RowTo[[]int32])
 }
 
 // AddUserFismaSystem inserts a record into the users_fismasystems table
@@ -45,15 +33,13 @@ func AddUserFismaSystem(ctx context.Context, uf UserFismaSystem) error {
 		return err
 	}
 
-	sqlb := sqlBuilder.Insert("userid, fismasystemid").
+	sqlb := stmntBuilder.Insert("userid, fismasystemid").
 		Into("users_fismasystems").
 		Values(uf.UserID, uf.FismaSystemID).
 		Suffix("ON CONFLICT DO NOTHING")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err = exec(ctx, sql, boundArgs...)
+	err = exec(ctx, sqlb)
 	if err != nil {
-		log.Println(err)
 		return trapError(err)
 	}
 
@@ -67,11 +53,11 @@ func DeleteUserFismaSystem(ctx context.Context, uf UserFismaSystem) error {
 		return err
 	}
 
-	sqlb := sqlBuilder.Delete("users_fismasystems").
+	sqlb := stmntBuilder.
+		Delete("users_fismasystems").
 		Where("userid=? AND fismasystemid=?", uf.UserID, uf.FismaSystemID)
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	err = exec(ctx, sql, boundArgs...)
+	err = exec(ctx, sqlb)
 	if err != nil {
 		log.Println(err)
 		return trapError(err)
