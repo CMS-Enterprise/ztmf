@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"errors"
-	"log"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -54,18 +53,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		sqlb = sqlb.Where("datacallid=?", *input.DataCallID)
 	}
 
-	rows, err := query(ctx, sqlb)
-
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Score, error) {
-		score := Score{}
-		err := row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
-		return &score, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Score])
 }
 
 func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
@@ -74,15 +62,7 @@ func CreateScore(ctx context.Context, input SaveScoreInput) (*Score, error) {
 		Values(input.FismaSystemID, input.Notes, input.FunctionOptionID, input.DataCallID).
 		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	score := Score{}
-	err = row.Scan(&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID)
-
-	return &score, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Score])
 }
 
 func UpdateScore(ctx context.Context, input SaveScoreInput) error {
@@ -119,15 +99,5 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 		GroupBy("datacallid, fismasystemid, systemscore").
 		PlaceholderFormat(squirrel.Dollar)
 
-	rows, err := query(ctx, sqlb)
-
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*ScoreAggregate, error) {
-		sagg := ScoreAggregate{}
-		err := row.Scan(&sagg.DataCallID, &sagg.FismaSystemID, &sagg.SystemScore)
-		return &sagg, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
 }

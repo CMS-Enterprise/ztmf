@@ -44,17 +44,7 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 
 	sqlb = sqlb.OrderBy("ordr ASC")
 
-	rows, err := query(ctx, sqlb)
-
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Function, error) {
-		f := Function{}
-		err := row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-		return &f, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Function])
 }
 
 // FindFunctionByID queries the database for a Function with the given ID
@@ -68,27 +58,17 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 		From("functions").
 		Where("functionid=?", functionID)
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	// Scan the query result into the User struct
-	f := Function{}
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-
-	return &f, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }
 
-func (f *Function) Save(ctx context.Context) error {
+func (f *Function) Save(ctx context.Context) (*Function, error) {
 
-	var (
-		sqlb sqlBuilder
-		err  error
-	)
+	var sqlb SqlBuilder
 
-	if valid, err := f.isValid(); !valid {
-		return err
+	err := f.isValid()
+
+	if err != nil {
+		return nil, err
 	}
 
 	if f.FunctionID == 0 {
@@ -109,17 +89,10 @@ func (f *Function) Save(ctx context.Context) error {
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return trapError(err)
-	}
-
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-
-	return trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }
 
-func (f *Function) isValid() (isValid bool, e error) {
+func (f *Function) isValid() error {
 	err := InvalidInputError{data: map[string]any{}}
 
 	if f.Function == "" {
@@ -142,11 +115,9 @@ func (f *Function) isValid() (isValid bool, e error) {
 		err.data["pillarid"] = f.PillarID
 	}
 
-	if len(err.data) == 0 {
-		isValid = true
-	} else {
-		e = &err
+	if len(err.data) > 0 {
+		return &err
 	}
 
-	return
+	return nil
 }
