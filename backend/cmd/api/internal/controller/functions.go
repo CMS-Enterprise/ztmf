@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
@@ -41,7 +40,7 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	if !user.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -61,7 +60,7 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscan(v, &f.FunctionID)
 	}
 
-	err = f.Save(r.Context())
+	f, err = f.Save(r.Context())
 
 	if err != nil {
 		respond(w, r, nil, err)

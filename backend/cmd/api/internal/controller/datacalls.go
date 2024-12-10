@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/spreadsheet"
 	"github.com/gorilla/mux"
@@ -33,7 +32,7 @@ func GetDataCallByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindAnswersInput{}
 
 	if !user.IsAdmin() {
@@ -76,7 +75,7 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveDataCall(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -96,7 +95,7 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscan(v, &d.DataCallID)
 	}
 
-	err = d.Save(r.Context())
+	d, err = d.Save(r.Context())
 
 	if err != nil {
 		respond(w, r, nil, err)

@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -30,20 +29,11 @@ func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
 
 // FindUsers queries the database for all users and return an array of *User
 func FindUsers(ctx context.Context) ([]*User, error) {
-	sqlb := stmntBuilder.Select("*").From("public.users")
+	sqlb := stmntBuilder.
+		Select("*").
+		From("public.users")
 
-	rows, err := query(ctx, sqlb)
-
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
-		user := User{}
-		err := rows.Scan(&user.UserID, &user.Email, &user.FullName, &user.Role)
-		return &user, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
 }
 
 // FindUserByID queries the database for a User with the given ID and returns *User or error
@@ -60,18 +50,14 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
-	sqlb := stmntBuilder.Select("users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS assignedfismasystems").From("users").LeftJoin("users_fismasystems on users_fismasystems.userid=users.userid").Where(where, args...).GroupBy("users.userid")
+	sqlb := stmntBuilder.
+		Select("users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS assignedfismasystems").
+		From("users").
+		LeftJoin("users_fismasystems on users_fismasystems.userid=users.userid").
+		Where(where, args...).
+		GroupBy("users.userid")
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	// Scan the query result into the User struct
-	u := User{}
-	err = row.Scan(&u.UserID, &u.Email, &u.FullName, &u.Role, &u.AssignedFismaSystems)
-
-	return &u, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[User])
 }
 
 func CreateUser(ctx context.Context, user User) (*User, error) {
@@ -82,16 +68,9 @@ func CreateUser(ctx context.Context, user User) (*User, error) {
 	sqlb := stmntBuilder.Insert("users").
 		Columns("email, fullname, role").
 		Values(user.Email, user.FullName, user.Role).
-		Suffix("RETURNING userid")
+		Suffix("RETURNING userid, email, fullname, role")
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	err = row.Scan(&user.UserID)
-
-	return &user, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
 }
 
 func UpdateUser(ctx context.Context, user User) (*User, error) {
@@ -106,14 +85,7 @@ func UpdateUser(ctx context.Context, user User) (*User, error) {
 		Where("userid=?", user.UserID).
 		Suffix("RETURNING userid, email, fullname, role")
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	err = row.Scan(&user.UserID, &user.Email, &user.FullName, &user.Role)
-
-	return &user, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
 }
 
 func validateUser(user User) error {

@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"log"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type UserFismaSystem struct {
@@ -11,7 +13,7 @@ type UserFismaSystem struct {
 }
 
 // FindUserFismaSystemsByUserID queries the user_fismasystems table to return a list of fismasystemids associated with the userID
-func FindUserFismaSystemsByUserID(ctx context.Context, userid string) ([]int32, error) {
+func FindUserFismaSystemsByUserID(ctx context.Context, userid string) (*[]int32, error) {
 	if !isValidUUID(userid) {
 		return nil, ErrNoData
 	}
@@ -20,20 +22,7 @@ func FindUserFismaSystemsByUserID(ctx context.Context, userid string) ([]int32, 
 		From("users_fismasystems").
 		Where("userid=?", userid)
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	var fismasystemids []int32
-	err = row.Scan(&fismasystemids)
-	if err != nil {
-		log.Println(err)
-		return nil, trapError(err)
-	}
-
-	return fismasystemids, nil
+	return queryRow(ctx, sqlb, pgx.RowTo[[]int32])
 }
 
 // AddUserFismaSystem inserts a record into the users_fismasystems table
