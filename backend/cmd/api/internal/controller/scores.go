@@ -5,13 +5,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListScores(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindScoresInput{}
 
 	if !user.IsAdmin() {
@@ -41,7 +40,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		score   *model.Score
 		err     error
 	)
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.SaveScoreInput{}
 
 	err = getJSON(r.Body, &input)
@@ -72,7 +71,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindScoresInput{}
 
 	if !user.IsAdmin() {

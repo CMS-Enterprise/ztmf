@@ -5,13 +5,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -30,7 +29,7 @@ func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -62,7 +61,7 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return

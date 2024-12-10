@@ -50,15 +50,6 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		sqlb = sqlb.Where(squirrel.Eq{"fismasystems.fismasystemid": input.FismaSystemIDs})
 	}
 
-	rows, err := query(ctx, sqlb)
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Answer])
 
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Answer, error) {
-		answer := Answer{}
-		err := row.Scan(&answer.DataCall, &answer.FismaSystemID, &answer.FismaAcronym, &answer.DataCenterEnvironment, &answer.Pillar, &answer.Question, &answer.Function, &answer.Description, &answer.OptionName, &answer.Score, &answer.Notes)
-		return &answer, trapError(err)
-	})
 }

@@ -20,16 +20,9 @@ type DataCall struct {
 	EmailSent    *string   `json:"emailsent"`
 }
 
-func (d *DataCall) fields() []any {
-	return []any{&d.DataCallID, &d.DataCall, &d.DateCreated, &d.Deadline, &d.EmailSubject, &d.EmailBody, &d.EmailSent}
-}
+func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 
-func (d *DataCall) Save(ctx context.Context) error {
-
-	var (
-		sqlb sqlBuilder
-		err  error
-	)
+	var sqlb SqlBuilder
 
 	// if valid, err := d.isValid(); !valid {
 	// 	return err
@@ -52,14 +45,7 @@ func (d *DataCall) Save(ctx context.Context) error {
 			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return trapError(err)
-	}
-
-	err = row.Scan(d.fields()...)
-
-	return trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 }
 
 func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
@@ -67,17 +53,7 @@ func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
 		From("datacalls").
 		OrderBy("datecreated DESC")
 
-	rows, err := query(ctx, sqlb)
-
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*DataCall, error) {
-		datacall := DataCall{}
-		err := row.Scan(datacall.fields()...)
-		return &datacall, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCall])
 }
 
 func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) {
@@ -86,13 +62,5 @@ func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) 
 		From("datacalls").
 		Where("datacallid=?", dataCallID)
 
-	row, err := queryRow(ctx, sqlb)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	datacall := DataCall{}
-	err = row.Scan(datacall.fields()...)
-
-	return &datacall, err
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 }

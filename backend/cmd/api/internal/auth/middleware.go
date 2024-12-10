@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -45,7 +44,7 @@ func Middleware(next http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userCtxKey, user)
+			ctx := model.UserToContext(r.Context(), user)
 			r = r.WithContext(ctx)
 		}
 
