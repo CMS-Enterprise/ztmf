@@ -21,9 +21,6 @@ type SqlBuilder interface {
 	ToSql() (string, []interface{}, error)
 }
 
-// func CollectRows[T any](rows Rows, fn RowToFunc[T]) ([]T, error)
-// type RowToFunc[T any] func(row CollectableRow) (T, error)
-
 // query is a proxy to *pgx.Conn.Query and wrapper around pgx.CollectRows, enabling the centralizing of event tracking
 func query[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) ([]T, error) {
 
