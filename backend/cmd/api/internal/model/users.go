@@ -65,8 +65,9 @@ func CreateUser(ctx context.Context, user User) (*User, error) {
 		return nil, err
 	}
 
-	sqlb := stmntBuilder.Insert("users").
-		Columns("email, fullname, role").
+	sqlb := stmntBuilder.
+		Insert("users").
+		Columns("email", "fullname", "role").
 		Values(user.Email, user.FullName, user.Role).
 		Suffix("RETURNING userid, email, fullname, role")
 
