@@ -69,6 +69,8 @@ func queryRow[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) 
 		return nil, trapError(err)
 	}
 
+	go recordEvent(ctx, sqlb)
+
 	return &res, nil
 }
 

@@ -1,7 +1,12 @@
 package model
 
 import (
+	"context"
+	"log"
 	"time"
+
+	"github.com/Masterminds/squirrel"
+	"github.com/lann/builder"
 )
 
 type Event struct {
@@ -12,25 +17,42 @@ type Event struct {
 	Payload   map[string]interface{} `json:"payload"`   // data
 }
 
-// func RecordEvent(ctx context.Context, sqlb SqlBuilder) {
-// 	var (
-// 		action, resource string
-// 	)
-// 	user := UserFromContext(ctx)
+func recordEvent(ctx context.Context, sqlb SqlBuilder) {
 
-// 	switch sqlb.(type) {
-// 	case squirrel.InsertBuilder:
-// 		action = "created"
-// 	case squirrel.UpdateBuilder:
-// 		action = "updated"
-// 	}
+	e := Event{
+		CreatedAt: time.Now(),
+		Payload:   map[string]interface{}{},
+	}
 
-// 	e := Event{
-// 		UserID:    user.UserID,
-// 		Action:    action,
-// 		Resource:  resource,
-// 		CreatedAt: time.Now(),
-// 	}
+	eventData := builder.GetMap(sqlb)
 
-// 	builder.GetMap(sqlb)
-// }
+	switch sqlb.(type) {
+	case squirrel.InsertBuilder:
+		e.Action = "created"
+		e.Resource = eventData["Into"].(string)
+		// builder map: map[Columns:[email, fullname, role] Into:users PlaceholderFormat:{} Suffixes:[{sql:RETURNING userid, email, fullname, role args:[]}] Values:[[richard.jones55555555555@cms.hhs.gov Richard Jones ISSM]]]
+		columns := eventData["Columns"].([]string)
+		values := eventData["Values"].([][]any)[0]
+		log.Printf("values: %#v\n", values)
+		log.Printf("columns: %#v\n", columns)
+		for i, col := range columns {
+			log.Println(col, values[i])
+			e.Payload[col] = values[i]
+		}
+	case squirrel.UpdateBuilder:
+		e.Action = "updated"
+		e.Resource = eventData["Table"].(string)
+		// builder map: map[PlaceholderFormat:{} SetClauses:[{column:email value:richard.jones3@cms.hhs.gov} {column:fullname value:Richard Jones} {column:role value:ISSM}] Suffixes:[{sql:RETURNING userid, email, fullname, role args:[]}] Table:users WhereParts:[0xc0004d8000]]
+	case squirrel.DeleteBuilder:
+		e.Action = "deleted"
+		e.Resource = eventData["Into"].(string)
+	default:
+		return
+	}
+
+	user := UserFromContext(ctx)
+
+	e.UserID = user.UserID
+
+	log.Printf("event: %+v\nbuilder map: %+v\n", e, eventData)
+}
