@@ -65,9 +65,7 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 
 	var sqlb SqlBuilder
 
-	err := f.isValid()
-
-	if err != nil {
+	if err := f.validate(); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +90,7 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }
 
-func (f *Function) isValid() error {
+func (f *Function) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
 	if f.Function == "" {

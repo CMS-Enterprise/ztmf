@@ -66,13 +66,9 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 
 func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 
-	var (
-		sqlb SqlBuilder
-		err  error
-	)
+	var sqlb SqlBuilder
 
-	err = f.isValid()
-	if err != nil {
+	if err := f.validate(); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +98,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
-func (f *FismaSystem) isValid() error {
+func (f *FismaSystem) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
 	if !isValidUUID(f.FismaUID) {
