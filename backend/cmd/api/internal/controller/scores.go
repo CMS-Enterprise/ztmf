@@ -60,12 +60,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		input.ScoreID = &scoreID
 	}
 
-	// TODO: distinguish between 200, 201, 204 and dont send body on update
-	if input.ScoreID != nil {
-		err = model.UpdateScore(r.Context(), input)
-	} else {
-		score, err = model.CreateScore(r.Context(), input)
-	}
+	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
 }

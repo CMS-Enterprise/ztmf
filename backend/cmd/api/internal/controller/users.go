@@ -68,11 +68,7 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 		user.UserID = v
 	}
 
-	if user.UserID != "" {
-		user, err = model.UpdateUser(r.Context(), *user)
-	} else {
-		user, err = model.CreateUser(r.Context(), *user)
-	}
+	user, err = user.Save(r.Context())
 
 	if err != nil {
 		log.Println(err)

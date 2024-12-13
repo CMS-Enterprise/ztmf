@@ -27,6 +27,56 @@ func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
 	return false
 }
 
+func (u *User) Save(ctx context.Context) (*User, error) {
+	if err := u.validate(); err != nil {
+		return nil, err
+	}
+
+	var sqlb SqlBuilder
+
+	if u.UserID == "" {
+		sqlb = stmntBuilder.
+			Insert("users").
+			Columns("email", "fullname", "role").
+			Values(u.Email, u.FullName, u.Role).
+			Suffix("RETURNING userid, email, fullname, role")
+	} else {
+		sqlb = stmntBuilder.
+			Update("users").
+			Set("email", u.Email).
+			Set("fullname", u.FullName).
+			Set("role", u.Role).
+			Where("userid=?", u.UserID).
+			Suffix("RETURNING userid, email, fullname, role")
+	}
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
+}
+
+func (u *User) validate() error {
+	err := InvalidInputError{data: map[string]any{}}
+
+	if u.UserID != "" {
+		if !isValidUUID(u.UserID) {
+			err.data["userid"] = u.UserID
+		}
+	}
+
+	if !isValidEmail(u.Email) {
+		err.data["email"] = u.Email
+	}
+
+	if !isValidRole(u.Role) {
+		err.data["role"] = u.Role
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+
+	return nil
+}
+
 // FindUsers queries the database for all users and return an array of *User
 func FindUsers(ctx context.Context) ([]*User, error) {
 	sqlb := stmntBuilder.
@@ -58,57 +108,4 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 		GroupBy("users.userid")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[User])
-}
-
-func CreateUser(ctx context.Context, user User) (*User, error) {
-	if err := validateUser(user); err != nil {
-		return nil, err
-	}
-
-	sqlb := stmntBuilder.
-		Insert("users").
-		Columns("email", "fullname", "role").
-		Values(user.Email, user.FullName, user.Role).
-		Suffix("RETURNING userid, email, fullname, role")
-
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
-}
-
-func UpdateUser(ctx context.Context, user User) (*User, error) {
-	if err := validateUser(user); err != nil {
-		return nil, err
-	}
-
-	sqlb := stmntBuilder.Update("users").
-		Set("email", user.Email).
-		Set("fullname", user.FullName).
-		Set("role", user.Role).
-		Where("userid=?", user.UserID).
-		Suffix("RETURNING userid, email, fullname, role")
-
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
-}
-
-func validateUser(user User) error {
-	err := InvalidInputError{data: map[string]any{}}
-
-	if user.UserID != "" {
-		if !isValidUUID(user.UserID) {
-			err.data["userid"] = user.UserID
-		}
-	}
-
-	if !isValidEmail(user.Email) {
-		err.data["email"] = user.Email
-	}
-
-	if !isValidRole(user.Role) {
-		err.data["role"] = user.Role
-	}
-
-	if len(err.data) > 0 {
-		return &err
-	}
-
-	return nil
 }
