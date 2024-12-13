@@ -44,7 +44,7 @@ func (q *Question) Save(ctx context.Context) (*Question, error) {
 
 }
 
-// func (q *Question) isValid() (bool, error) {
+// func (q *Question) validate() error {
 // 	return true, nil
 // }
 
