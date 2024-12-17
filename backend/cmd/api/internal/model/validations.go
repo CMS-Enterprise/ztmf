@@ -25,6 +25,8 @@ var datacenterenvironments = map[string]interface{}{
 }
 
 var rgxUUID = regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+var rgxUUIDNoDashes = regexp.MustCompile("^[a-fA-F0-9]{32}$")
+var rgxDash = regexp.MustCompile("-+")
 
 func isValidEmail(email string) bool {
 	_, err := mail.ParseAddress(email)
@@ -36,7 +38,12 @@ func isValidRole(role string) bool {
 	return ok
 }
 
+// for some reason HHS started removing the dashes from UUID, so some records in fismasystems have dashes and some dont
+// while all records in users table still have them
 func isValidUUID(uuid string) bool {
+	if !rgxDash.MatchString(uuid) {
+		return rgxUUIDNoDashes.MatchString(uuid)
+	}
 	return rgxUUID.MatchString(uuid)
 }
 
