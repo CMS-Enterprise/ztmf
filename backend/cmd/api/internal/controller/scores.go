@@ -37,18 +37,18 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 func SaveScore(w http.ResponseWriter, r *http.Request) {
 	var (
 		scoreID int32
-		score   *model.Score
 		err     error
 	)
-	user := model.UserFromContext(r.Context())
-	input := model.SaveScoreInput{}
 
-	err = getJSON(r.Body, &input)
+	user := model.UserFromContext(r.Context())
+	score := &model.Score{}
+
+	err = getJSON(r.Body, &score)
 	if err != nil {
 		log.Println(err)
 	}
 
-	if !user.IsAdmin() && !user.IsAssignedFismaSystem(input.FismaSystemID) {
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -57,7 +57,7 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 
 	if v, ok := vars["scoreid"]; ok {
 		fmt.Sscan(v, &scoreID)
-		input.ScoreID = &scoreID
+		score.ScoreID = scoreID
 	}
 
 	score, err = score.Save(r.Context())
