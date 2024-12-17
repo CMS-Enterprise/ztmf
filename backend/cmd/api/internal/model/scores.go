@@ -22,7 +22,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	if s.ScoreID == 0 {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
-			Columns("notes, functionoptionid, datacallid").
+			Columns("notes", "functionoptionid", "datacallid").
 			Values(s.Notes, s.FunctionOptionID, s.DataCallID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 	} else {
