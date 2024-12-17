@@ -5,13 +5,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindFismaSystemsInput{}
 
 	if !user.IsAdmin() {
@@ -24,7 +23,7 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	vars := mux.Vars(r)
 	input := model.FindFismaSystemsInput{}
 
@@ -44,7 +43,7 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -64,7 +63,7 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscan(v, &f.FismaSystemID)
 	}
 
-	err = f.Save(r.Context())
+	f, err = f.Save(r.Context())
 
 	if err != nil {
 		respond(w, r, nil, err)
