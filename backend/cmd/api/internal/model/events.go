@@ -2,26 +2,25 @@ package model
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v5"
 	"github.com/lann/builder"
 )
 
 type Event struct {
-	UserID    string                 `json:"userid"`    // who initiated the event
-	Action    string                 `json:"action"`    // the action they took
-	Resource  string                 `json:"type"`      // on what resource
-	CreatedAt time.Time              `json:"createdat"` // at what date and time
-	Payload   map[string]interface{} `json:"payload"`   // data
+	UserID    string      `json:"userid"`    // who initiated the event
+	Action    string      `json:"action"`    // the action they took
+	Resource  string      `json:"type"`      // on what resource
+	CreatedAt *time.Time  `json:"createdat"` // at what date and time
+	Payload   interface{} `json:"payload"`   // data
 }
 
-func recordEvent(ctx context.Context, sqlb SqlBuilder) {
+func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 
 	e := Event{
-		CreatedAt: time.Now(),
-		Payload:   map[string]interface{}{},
+		Payload: res,
 	}
 
 	eventData := builder.GetMap(sqlb)
@@ -30,23 +29,17 @@ func recordEvent(ctx context.Context, sqlb SqlBuilder) {
 	case squirrel.InsertBuilder:
 		e.Action = "created"
 		e.Resource = eventData["Into"].(string)
-		// builder map: map[Columns:[email, fullname, role] Into:users PlaceholderFormat:{} Suffixes:[{sql:RETURNING userid, email, fullname, role args:[]}] Values:[[richard.jones55555555555@cms.hhs.gov Richard Jones ISSM]]]
-		columns := eventData["Columns"].([]string)
-		values := eventData["Values"].([][]any)[0]
-		log.Printf("values: %#v\n", values)
-		log.Printf("columns: %#v\n", columns)
-		for i, col := range columns {
-			log.Println(col, values[i])
-			e.Payload[col] = values[i]
-		}
 	case squirrel.UpdateBuilder:
 		e.Action = "updated"
 		e.Resource = eventData["Table"].(string)
-		// builder map: map[PlaceholderFormat:{} SetClauses:[{column:email value:richard.jones3@cms.hhs.gov} {column:fullname value:Richard Jones} {column:role value:ISSM}] Suffixes:[{sql:RETURNING userid, email, fullname, role args:[]}] Table:users WhereParts:[0xc0004d8000]]
 	case squirrel.DeleteBuilder:
 		e.Action = "deleted"
-		e.Resource = eventData["Into"].(string)
+		e.Resource = eventData["From"].(string)
 	default:
+		return
+	}
+
+	if e.Resource == "events" {
 		return
 	}
 
@@ -54,5 +47,11 @@ func recordEvent(ctx context.Context, sqlb SqlBuilder) {
 
 	e.UserID = user.UserID
 
-	log.Printf("event: %+v\nbuilder map: %+v\n", e, eventData)
+	sqlb = stmntBuilder.
+		Insert("events").
+		Columns("userid", "action", "resource", "payload").
+		Values(e.UserID, e.Action, e.Resource, e.Payload).
+		Suffix("Returning *")
+
+	queryRow(ctx, sqlb, pgx.RowToStructByName[Event])
 }
