@@ -11,7 +11,7 @@ type User struct {
 	Email                string   `json:"email"`
 	FullName             string   `json:"fullname"`
 	Role                 string   `json:"role"`
-	AssignedFismaSystems []*int32 `json:"assignedfismasystems"`
+	AssignedFismaSystems []*int32 `json:"-"`
 }
 
 func (u *User) IsAdmin() bool {
