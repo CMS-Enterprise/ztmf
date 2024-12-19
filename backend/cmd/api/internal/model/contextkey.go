@@ -1,9 +1,7 @@
-package auth
+package model
 
 import (
 	"context"
-
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 )
 
 // A private key for context that only this package can access. This is important
@@ -15,7 +13,12 @@ type contextKey struct {
 }
 
 // UserFromContext returns the user as stored in the context under the userCtxKey
-func UserFromContext(ctx context.Context) *model.User {
-	u, _ := ctx.Value(userCtxKey).(*model.User)
+func UserFromContext(ctx context.Context) *User {
+	u, _ := ctx.Value(userCtxKey).(*User)
 	return u
+}
+
+// UserToContext stores the provided user in the provided context and returns a new context
+func UserToContext(ctx context.Context, user *User) context.Context {
+	return context.WithValue(ctx, userCtxKey, user)
 }
