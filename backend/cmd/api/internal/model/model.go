@@ -69,24 +69,7 @@ func queryRow[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) 
 		return nil, trapError(err)
 	}
 
-	go recordEvent(ctx, sqlb)
+	recordEvent(ctx, sqlb, res)
 
 	return &res, nil
-}
-
-// exec is a proxy to *pgx.Conn.Exec
-func exec(ctx context.Context, sqlb SqlBuilder) error {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-
-	sql, args, _ := sqlb.ToSql()
-
-	_, err = conn.Exec(ctx, sql, args...)
-	if err != nil {
-		log.Println(err, sql)
-	}
-
-	return err
 }
