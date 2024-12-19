@@ -42,22 +42,24 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userFismaSystem := &model.UserFismaSystem{
+	uf := &model.UserFismaSystem{
 		UserID: userID,
 	}
 
-	err := getJSON(r.Body, userFismaSystem)
+	err := getJSON(r.Body, uf)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, ErrMalformed)
 		return
 	}
 
-	err = model.AddUserFismaSystem(r.Context(), *userFismaSystem)
+	uf, err = uf.Save(r.Context())
 	if err != nil {
-		userFismaSystem = nil
+		respond(w, r, nil, err)
+
 	}
-	respond(w, r, userFismaSystem, err)
+
+	respond(w, r, uf, nil)
 }
 
 func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +69,7 @@ func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userFismaSystem := model.UserFismaSystem{}
+	uf := &model.UserFismaSystem{}
 
 	vars := mux.Vars(r)
 	userID, ok := vars["userid"]
@@ -82,10 +84,10 @@ func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userFismaSystem.UserID = userID
-	fmt.Sscan(fismaSystemID, &userFismaSystem.FismaSystemID)
+	uf.UserID = userID
+	fmt.Sscan(fismaSystemID, &uf.FismaSystemID)
 
-	err := model.DeleteUserFismaSystem(r.Context(), userFismaSystem)
+	err := uf.Delete(r.Context())
 
 	respond(w, r, "", err)
 }
