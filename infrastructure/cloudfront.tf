@@ -38,6 +38,14 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
       override = true
     }
 
+    custom_headers_config {
+      items {
+        header   = "Permissions-Policy"
+        override = true
+        value    = "microphone=(), geolocation=(), accelerometer=(), ambient-light-sensor=(), autoplay=(), camera=(), magnetometer=(), midi=(), serial=(), usb=(), bluetooth=(), display-capture=()"
+      }
+    }
+
   }
 }
 
