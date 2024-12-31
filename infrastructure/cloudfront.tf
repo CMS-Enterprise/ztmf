@@ -17,6 +17,27 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
       preload                    = true
       override                   = true
     }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    content_security_policy {
+      content_security_policy = "default-src 'self'; script-src 'self' https://${local.domain_name}; style-src 'self' https://${local.domain_name} 'unsafe-inline'; img-src 'self' https://${local.domain_name} data:; font-src 'self' https://${local.domain_name} data:; connect-src 'self' https://${local.domain_name}; media-src 'self' https://${local.domain_name}; object-src 'none'; base-uri 'self';"
+      override                = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    x_content_type_options {
+      nosniff  = true
+      override = true
+    }
+
   }
 }
 
