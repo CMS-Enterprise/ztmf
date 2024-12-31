@@ -14,7 +14,7 @@ type Function struct {
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	Order                 int    `json:"order"`
+	Ordr                  int    `json:"order"`
 	QuestionID            *int32 `json:"questionid,omitempty"`
 	PillarID              int32  `json:"pillarid"`
 }
@@ -73,14 +73,14 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 		sqlb = stmntBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
-			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Order, f.QuestionID, f.PillarID).
+			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Ordr, f.QuestionID, f.PillarID).
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	} else {
 		sqlb = stmntBuilder.Update("functions").
 			Set("function", f.Function).
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("ordr", f.Order).
+			Set("ordr", f.Ordr).
 			Set("questionid", f.QuestionID).
 			Set("pillarid", f.PillarID).
 			Where("functionid=?", f.FunctionID).
