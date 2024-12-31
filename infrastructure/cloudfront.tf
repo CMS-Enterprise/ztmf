@@ -33,8 +33,7 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
       override        = true
     }
 
-    x_content_type_options {
-      nosniff  = true
+    content_type_options {
       override = true
     }
 
