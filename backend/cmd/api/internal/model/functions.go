@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"log"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -15,7 +14,7 @@ type Function struct {
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	Order                 int    `json:"order"`
+	Ordr                  int    `json:"order"`
 	QuestionID            *int32 `json:"questionid,omitempty"`
 	PillarID              int32  `json:"pillarid"`
 }
@@ -27,7 +26,7 @@ type FindFunctionsInput struct {
 }
 
 func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, error) {
-	sqlb := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(functionsColumns...).
 		From("functions")
 
@@ -45,19 +44,7 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 
 	sqlb = sqlb.OrderBy("ordr ASC")
 
-	sql, boundArgs, _ := sqlb.ToSql()
-	log.Println(sql)
-	rows, err := query(ctx, sql, boundArgs...)
-
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*Function, error) {
-		f := Function{}
-		err := row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-		return &f, trapError(err)
-	})
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Function])
 }
 
 // FindFunctionByID queries the database for a Function with the given ID
@@ -66,67 +53,44 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 		return nil, ErrNoData
 	}
 
-	sql, boundArgs, _ := sqlBuilder.
+	sqlb := stmntBuilder.
 		Select(functionsColumns...).
 		From("functions").
-		Where("functionid=?", functionID).
-		ToSql()
+		Where("functionid=?", functionID)
 
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		return nil, trapError(err)
-	}
-
-	// Scan the query result into the User struct
-	f := Function{}
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-
-	return &f, trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }
 
-func (f *Function) Save(ctx context.Context) error {
+func (f *Function) Save(ctx context.Context) (*Function, error) {
 
-	var (
-		sql       string
-		boundArgs []any
-		err       error
-	)
+	var sqlb SqlBuilder
 
-	if valid, err := f.isValid(); !valid {
-		return err
+	if err := f.validate(); err != nil {
+		return nil, err
 	}
 
 	if f.FunctionID == 0 {
-		sql, boundArgs, _ = sqlBuilder.
+		sqlb = stmntBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
-			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Order, f.QuestionID, f.PillarID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
-			ToSql()
+			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Ordr, f.QuestionID, f.PillarID).
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	} else {
-		sql, boundArgs, _ = sqlBuilder.Update("functions").
+		sqlb = stmntBuilder.Update("functions").
 			Set("function", f.Function).
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("ordr", f.Order).
+			Set("ordr", f.Ordr).
 			Set("questionid", f.QuestionID).
 			Set("pillarid", f.PillarID).
 			Where("functionid=?", f.FunctionID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", ")).
-			ToSql()
+			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	}
 
-	row, err := queryRow(ctx, sql, boundArgs...)
-	if err != nil {
-		return trapError(err)
-	}
-
-	err = row.Scan(&f.FunctionID, &f.Function, &f.Description, &f.DataCenterEnvironment, &f.Order, &f.QuestionID, &f.PillarID)
-
-	return trapError(err)
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }
 
-func (f *Function) isValid() (isValid bool, e error) {
+func (f *Function) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
 	if f.Function == "" {
@@ -149,11 +113,9 @@ func (f *Function) isValid() (isValid bool, e error) {
 		err.data["pillarid"] = f.PillarID
 	}
 
-	if len(err.data) == 0 {
-		isValid = true
-	} else {
-		e = &err
+	if len(err.data) > 0 {
+		return &err
 	}
 
-	return
+	return nil
 }

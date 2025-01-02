@@ -4,14 +4,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListUsers(w http.ResponseWriter, r *http.Request) {
 	// TODO: replace the repititious admin checks with ACL
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -23,7 +22,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserByID(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -42,14 +41,14 @@ func GetUserByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 
 	respond(w, r, user, nil)
 }
 
 // SaveUser is for admin management
 func SaveUser(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -69,11 +68,7 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 		user.UserID = v
 	}
 
-	if user.UserID != "" {
-		user, err = model.UpdateUser(r.Context(), *user)
-	} else {
-		user, err = model.CreateUser(r.Context(), *user)
-	}
+	user, err = user.Save(r.Context())
 
 	if err != nil {
 		log.Println(err)
