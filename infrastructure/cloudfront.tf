@@ -24,7 +24,7 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
     }
 
     content_security_policy {
-      content_security_policy = "default-src 'self'; script-src 'self' https://${local.domain_name}; style-src 'self' https://${local.domain_name} 'unsafe-inline'; img-src 'self' https://${local.domain_name} data:; font-src 'self' https://${local.domain_name} data:; connect-src 'self' https://${local.domain_name}; media-src 'self' https://${local.domain_name}; object-src 'none'; base-uri 'self';"
+      content_security_policy = "default-src 'self'; script-src 'self' https://design.cms.gov; style-src 'self' https://design.cms.gov 'unsafe-inline'; img-src 'self' https://design.cms.gov data:; font-src 'self' https://design.cms.gov data:; connect-src 'self' https://${local.domain_name}; media-src 'self' https://design.cms.gov; object-src 'none'; base-uri 'self';"
       override                = true
     }
 
