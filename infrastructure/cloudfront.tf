@@ -6,13 +6,54 @@ resource "aws_cloudfront_origin_access_control" "cloudfront_s3_oac" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
+  name    = "ZTMF-HSTS-Policy"
+  comment = "HSTS policy for ZTMF"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 31536000 // 1 year
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    content_security_policy {
+      content_security_policy = "default-src 'self'; script-src 'self' https://${local.domain_name}; style-src 'self' https://${local.domain_name} 'unsafe-inline'; img-src 'self' https://${local.domain_name} data:; font-src 'self' https://${local.domain_name} data:; connect-src 'self' https://${local.domain_name}; media-src 'self' https://${local.domain_name}; object-src 'none'; base-uri 'self';"
+      override                = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    content_type_options {
+      override = true
+    }
+  }
+
+  custom_headers_config {
+    items {
+      header   = "Permissions-Policy"
+      override = true
+      value    = "microphone=(), geolocation=(), accelerometer=(), ambient-light-sensor=(), autoplay=(), camera=(), magnetometer=(), midi=(), serial=(), usb=(), bluetooth=(), display-capture=()"
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "ztmf" {
   aliases             = [local.domain_name]
   enabled             = true
   is_ipv6_enabled     = false
   comment             = "ZTMF Scoring"
   default_root_object = "index.html"
-  // CMS provides a pre configured web acl, but it cant be tagged thus it can 
+  // CMS provides a pre configured web acl, but it cant be tagged thus it can
   // only be found by looking to the stack outputs
   web_acl_id = data.aws_cloudformation_stack.web_acl.outputs["SamQuickACLEnforcingV2"]
   origin {
@@ -37,9 +78,10 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 
   default_cache_behavior {
-    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
-    cached_methods   = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id = "ztmf_web_assets"
+    allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods             = ["HEAD", "GET", "OPTIONS"]
+    target_origin_id           = "ztmf_web_assets"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
       query_string = false
@@ -56,10 +98,11 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 
   ordered_cache_behavior {
-    path_pattern     = "/api/*"
-    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
-    cached_methods   = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id = "ztmf_rest_api"
+    path_pattern               = "/api/*"
+    allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods             = ["HEAD", "GET", "OPTIONS"]
+    target_origin_id           = "ztmf_rest_api"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
       query_string = true
@@ -77,10 +120,11 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 
   ordered_cache_behavior {
-    path_pattern     = "/oauth2/*"
-    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
-    cached_methods   = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id = "ztmf_rest_api"
+    path_pattern               = "/oauth2/*"
+    allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods             = ["HEAD", "GET", "OPTIONS"]
+    target_origin_id           = "ztmf_rest_api"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
       query_string = true
@@ -98,10 +142,11 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 
   ordered_cache_behavior {
-    path_pattern     = "/login"
-    allowed_methods  = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
-    cached_methods   = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id = "ztmf_rest_api"
+    path_pattern               = "/login"
+    allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods             = ["HEAD", "GET", "OPTIONS"]
+    target_origin_id           = "ztmf_rest_api"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
       query_string = true

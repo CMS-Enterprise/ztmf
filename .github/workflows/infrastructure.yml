@@ -33,9 +33,9 @@ jobs:
           aws-region: us-east-1
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
-          terraform_version: "1.5.7"
+          terraform_version: "1.10.3"
       
       # these last 2 steps use some bash magic to convert to lowercase: ${ENV VAR,,}
       - name: Terraform init and validate
