@@ -37,8 +37,7 @@ func trapError(e error) error {
 	if e == nil {
 		return nil
 	}
-	log.Print(e)
-
+	e = errors.Unwrap(e)
 	// switch is the only way to check against custom error types
 	switch err := e.(type) {
 	case *pgconn.PgError:
@@ -48,10 +47,16 @@ func trapError(e error) error {
 			// and a non-unique value is being added via insert or update
 			text := strings.Split(err.Detail, "=")
 			return fmt.Errorf("%w : %s", ErrNotUnique, text[1])
+
 		case "23503":
 			// foreign_key_violation encountered when adding a record to a table with a foreign key
 			// but no corresponding record exists in the referenced table
 			return ErrNoReference
+
+		case "28P01":
+			// failed to connect, password authentication failed
+			// TODO refactor DB secret caching/refreshing to avoid needing this!
+			log.Fatal(err.Error())
 		}
 	}
 

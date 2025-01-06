@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -18,14 +19,17 @@ type Secret struct {
 }
 
 // Value returns secretsmanager.GetSecretValueOutput.SecretString
-func (s *Secret) Value() *string {
-	return s.secret.SecretString
-}
-
-// NextRotationDate returns secretsmanager.DescribeSecretOutput.NextRotationDate
-// this is useful for checking whether the secret needs to Refresh()
-func (s *Secret) NextRotationDate() *time.Time {
-	return s.metadata.NextRotationDate
+func (s *Secret) Value() (*string, error) {
+	// if the secret was rotated, refresh it
+	now := time.Now().UTC()
+	fmt.Printf(" NOW: %+v\nLAST: %+v\nNEXT: %+v\n", now, s.metadata.LastRotatedDate, s.metadata.NextRotationDate)
+	if now.After(*s.metadata.NextRotationDate) {
+		err := s.Refresh()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.secret.SecretString, nil
 }
 
 // Refresh updates the secret and metadata from Secret Manager

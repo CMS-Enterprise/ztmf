@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
@@ -64,15 +63,10 @@ func getDbCreds() (*dbCreds, error) {
 		}
 	}
 
-	// if the secret was rotated, refresh it
-	if time.Now().UTC().After(*dbSecret.NextRotationDate()) {
-		err = dbSecret.Refresh()
-		if err != nil {
-			return nil, err
-		}
+	secVal, err := dbSecret.Value()
+	if err != nil {
+		return nil, err
 	}
-
-	secVal := dbSecret.Value()
 	creds := &dbCreds{}
 	err = json.Unmarshal([]byte(*secVal), creds)
 	if err != nil {
