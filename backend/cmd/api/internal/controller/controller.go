@@ -37,7 +37,6 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	}
 
 	if err != nil {
-
 		status, err = sanitizeErr(err)
 		switch e := err.(type) {
 		case *model.InvalidInputError:

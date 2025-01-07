@@ -37,6 +37,7 @@ func (uf *UserFismaSystem) Save(ctx context.Context) (*UserFismaSystem, error) {
 		return nil, err
 	}
 
+	// TODO: fix issue where inserting the same (userid, fismasystemid) twice returns error. It should effectively upsert
 	sqlb := stmntBuilder.Insert("userid, fismasystemid").
 		Into("users_fismasystems").
 		Values(uf.UserID, uf.FismaSystemID).
