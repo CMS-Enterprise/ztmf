@@ -5,13 +5,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -30,7 +29,7 @@ func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
@@ -43,32 +42,34 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userFismaSystem := &model.UserFismaSystem{
+	uf := &model.UserFismaSystem{
 		UserID: userID,
 	}
 
-	err := getJSON(r.Body, userFismaSystem)
+	err := getJSON(r.Body, uf)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, ErrMalformed)
 		return
 	}
 
-	err = model.AddUserFismaSystem(r.Context(), *userFismaSystem)
+	uf, err = uf.Save(r.Context())
 	if err != nil {
-		userFismaSystem = nil
+		respond(w, r, nil, err)
+
 	}
-	respond(w, r, userFismaSystem, err)
+
+	respond(w, r, uf, nil)
 }
 
 func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
-	authdUser := auth.UserFromContext(r.Context())
+	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
 
-	userFismaSystem := model.UserFismaSystem{}
+	uf := &model.UserFismaSystem{}
 
 	vars := mux.Vars(r)
 	userID, ok := vars["userid"]
@@ -83,10 +84,10 @@ func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userFismaSystem.UserID = userID
-	fmt.Sscan(fismaSystemID, &userFismaSystem.FismaSystemID)
+	uf.UserID = userID
+	fmt.Sscan(fismaSystemID, &uf.FismaSystemID)
 
-	err := model.DeleteUserFismaSystem(r.Context(), userFismaSystem)
+	err := uf.Delete(r.Context())
 
 	respond(w, r, "", err)
 }

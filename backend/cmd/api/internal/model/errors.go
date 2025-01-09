@@ -37,6 +37,16 @@ func trapError(e error) error {
 	if e == nil {
 		return nil
 	}
+	log.Println(e)
+
+	if errors.Is(e, pgx.ErrNoRows) {
+		return ErrNoData
+	}
+
+	if errors.Is(e, pgx.ErrTooManyRows) {
+		return ErrTooMuchData
+	}
+
 	e = errors.Unwrap(e)
 	// switch is the only way to check against custom error types
 	switch err := e.(type) {
@@ -58,14 +68,6 @@ func trapError(e error) error {
 			// TODO refactor DB secret caching/refreshing to avoid needing this!
 			log.Fatal(err.Error())
 		}
-	}
-
-	if errors.Is(e, pgx.ErrNoRows) {
-		return ErrNoData
-	}
-
-	if errors.Is(e, pgx.ErrTooManyRows) {
-		return ErrTooMuchData
 	}
 
 	return errors.New("unknown error")

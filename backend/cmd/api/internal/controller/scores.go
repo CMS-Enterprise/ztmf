@@ -5,13 +5,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/gorilla/mux"
 )
 
 func ListScores(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindScoresInput{}
 
 	if !user.IsAdmin() {
@@ -38,18 +37,18 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 func SaveScore(w http.ResponseWriter, r *http.Request) {
 	var (
 		scoreID int32
-		score   *model.Score
 		err     error
 	)
-	user := auth.UserFromContext(r.Context())
-	input := model.SaveScoreInput{}
 
-	err = getJSON(r.Body, &input)
+	user := model.UserFromContext(r.Context())
+	score := &model.Score{}
+
+	err = getJSON(r.Body, &score)
 	if err != nil {
 		log.Println(err)
 	}
 
-	if !user.IsAdmin() && !user.IsAssignedFismaSystem(input.FismaSystemID) {
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -58,21 +57,16 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 
 	if v, ok := vars["scoreid"]; ok {
 		fmt.Sscan(v, &scoreID)
-		input.ScoreID = &scoreID
+		score.ScoreID = scoreID
 	}
 
-	// TODO: distinguish between 200, 201, 204 and dont send body on update
-	if input.ScoreID != nil {
-		err = model.UpdateScore(r.Context(), input)
-	} else {
-		score, err = model.CreateScore(r.Context(), input)
-	}
+	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
 }
 
 func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 	input := model.FindScoresInput{}
 
 	if !user.IsAdmin() {
