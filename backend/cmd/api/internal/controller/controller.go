@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/gorilla/schema"
 )
+
+// from gorilla/schema used to convert querystring params into structs.
+// placed here because it caches struct meta-data
+var decoder = schema.NewDecoder()
 
 type response struct {
 	Data any    `json:"data,omitempty"`
@@ -83,6 +89,7 @@ func sanitizeErr(err error) (int, error) {
 		fallthrough
 	default:
 		status = 500
+		log.Printf("unknown error %s\n", err)
 		err = ErrServer
 	}
 
