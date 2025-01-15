@@ -27,7 +27,6 @@ func query[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) ([]
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, trapError(err)
-		return nil, trapError(err)
 	}
 
 	sql, args, _ := sqlb.ToSql()
