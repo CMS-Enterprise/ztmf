@@ -2,7 +2,10 @@ package model
 
 import (
 	"context"
+	"fmt"
+	"log"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
@@ -88,4 +91,40 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 		PlaceholderFormat(squirrel.Dollar)
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
+}
+
+// dataCallID is meant to be passed the *latest* datacall most recently created so the previous can be selected
+func copyPreviousScores(dataCallID int32) {
+	prevDataCall, err := findPreviousDataCall(dataCallID)
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// select the previous scores but set the datacallid to be the latest
+	prevScoresSqlb := squirrel.
+		Select("fismasystemid", "datecalculated", "notes", "functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID)).
+		From("scores").
+		Where("datacallid=?", prevDataCall.DataCallID)
+
+	sqlb := squirrel.
+		Insert("scores").
+		Columns("fismasystemid", "datecalculated", "notes", "functionoptionid", "datacallid").
+		Select(prevScoresSqlb).
+		PlaceholderFormat(squirrel.Dollar)
+
+	// skip convenience methods to avoid recording events for this operation
+	conn, err := db.Conn(context.TODO())
+	if err != nil {
+		return
+	}
+
+	sql, args, _ := sqlb.ToSql()
+
+	_, err = conn.Exec(context.TODO(), sql, args...)
+
+	if err != nil {
+		log.Println(err)
+	}
 }
