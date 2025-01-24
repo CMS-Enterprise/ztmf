@@ -22,7 +22,7 @@ type Answer struct {
 }
 
 type FindAnswersInput struct {
-	FismaSystemIDs []*int32
+	FismaSystemIDs []*int32 `schema:"fsids"`
 	DataCallID     int32
 	UserID         *string
 }

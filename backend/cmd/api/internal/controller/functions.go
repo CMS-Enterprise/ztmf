@@ -11,16 +11,16 @@ import (
 
 func ListFunctions(w http.ResponseWriter, r *http.Request) {
 
-	input := model.FindFunctionsInput{}
+	var (
+		functions []*model.Function
+		err       error
+	)
 
-	q := r.URL.Query()
-	if q.Has("questionid") {
-		var questionID int32
-		fmt.Sscan(q.Get("questionid"), &questionID)
-		input.QuestionID = &questionID
+	findFunctionsInput := model.FindFunctionsInput{}
+	err = decoder.Decode(&findFunctionsInput, r.URL.Query())
+	if err == nil {
+		functions, err = model.FindFunctions(r.Context(), findFunctionsInput)
 	}
-
-	functions, err := model.FindFunctions(r.Context(), input)
 	respond(w, r, functions, err)
 }
 

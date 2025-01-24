@@ -48,9 +48,9 @@ type ScoreAggregate struct {
 }
 
 type FindScoresInput struct {
-	FismaSystemID  *int32
+	FismaSystemID  *int32 `schema:"fismasystemid"`
 	FismaSystemIDs []*int32
-	DataCallID     *int32
+	DataCallID     *int32 `schema:"datacallid"`
 	UserID         *string
 }
 

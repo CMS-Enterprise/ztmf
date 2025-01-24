@@ -10,27 +10,23 @@ import (
 )
 
 func ListScores(w http.ResponseWriter, r *http.Request) {
+
+	var (
+		scores []*model.Score
+		err    error
+	)
 	user := model.UserFromContext(r.Context())
-	input := model.FindScoresInput{}
+	findScoresInput := model.FindScoresInput{}
 
 	if !user.IsAdmin() {
-		input.UserID = &user.UserID
+		findScoresInput.UserID = &user.UserID
 	}
 
-	vars := r.URL.Query()
-	if vars.Has("datacallid") {
-		var dataCallID int32
-		fmt.Sscan(vars.Get("datacallid"), &dataCallID)
-		input.DataCallID = &dataCallID
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+	if err == nil {
+		scores, err = model.FindScores(r.Context(), findScoresInput)
 	}
 
-	if vars.Has("fismasystemid") {
-		var fismaSystemID int32
-		fmt.Sscan(vars.Get("fismasystemid"), &fismaSystemID)
-		input.FismaSystemID = &fismaSystemID
-	}
-
-	scores, err := model.FindScores(r.Context(), input)
 	respond(w, r, scores, err)
 }
 
@@ -66,21 +62,22 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
+	var (
+		aggregate []*model.ScoreAggregate
+		err       error
+	)
+
 	user := model.UserFromContext(r.Context())
-	input := model.FindScoresInput{}
+	findScoresInput := model.FindScoresInput{}
 
 	if !user.IsAdmin() {
-		input.FismaSystemIDs = user.AssignedFismaSystems
+		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 
-	vars := r.URL.Query()
-	if vars.Has("datacallid") {
-		var dataCallID int32
-		fmt.Sscan(vars.Get("datacallid"), &dataCallID)
-		input.DataCallID = &dataCallID
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+	if err == nil {
+		aggregate, err = model.FindScoresAggregate(r.Context(), findScoresInput)
 	}
-
-	aggregate, err := model.FindScoresAggregate(r.Context(), input)
 
 	respond(w, r, aggregate, err)
 }
