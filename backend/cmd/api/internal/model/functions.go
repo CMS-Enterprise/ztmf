@@ -20,7 +20,7 @@ type Function struct {
 }
 
 type FindFunctionsInput struct {
-	QuestionID            *int32
+	QuestionID            *int32 `schema:"questionid"`
 	PillarID              *int32
 	DataCenterEnvironment *string
 }

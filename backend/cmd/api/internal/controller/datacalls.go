@@ -33,31 +33,24 @@ func GetDataCallByID(w http.ResponseWriter, r *http.Request) {
 
 func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	input := model.FindAnswersInput{}
+	findAnswersInput := model.FindAnswersInput{}
 
 	if !user.IsAdmin() {
-		input.UserID = &user.UserID
+		findAnswersInput.UserID = &user.UserID
 	}
 
 	vars := mux.Vars(r)
 	if v, ok := vars["datacallid"]; ok {
-		fmt.Sscan(v, &input.DataCallID)
+		fmt.Sscan(v, &findAnswersInput.DataCallID)
 	}
 
-	qVars := r.URL.Query()
-	if qVars.Has("fsids") {
-		for _, v := range qVars["fsids"] {
-			var fismaSystemID int32
-			fmt.Sscan(v, &fismaSystemID)
-			if !user.IsAdmin() && !user.IsAssignedFismaSystem(fismaSystemID) {
-				respond(w, r, nil, ErrForbidden)
-				return
-			}
-			input.FismaSystemIDs = append(input.FismaSystemIDs, &fismaSystemID)
-		}
+	err := decoder.Decode(&findAnswersInput, r.URL.Query())
+	if err != nil {
+		respond(w, r, nil, err)
+		return
 	}
 
-	answers, err := model.FindAnswers(r.Context(), input)
+	answers, err := model.FindAnswers(r.Context(), findAnswersInput)
 	if err != nil {
 		respond(w, r, nil, err)
 		return

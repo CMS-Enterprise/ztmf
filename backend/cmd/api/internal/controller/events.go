@@ -8,9 +8,7 @@ import (
 
 func GetEvents(w http.ResponseWriter, r *http.Request) {
 	findEventsInput := &model.FindEventsInput{}
-
-	v := r.URL.Query()
-	err := decoder.Decode(findEventsInput, v)
+	err := decoder.Decode(findEventsInput, r.URL.Query())
 	if err != nil {
 		respond(w, r, nil, err)
 		return
