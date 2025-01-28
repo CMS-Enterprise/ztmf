@@ -172,7 +172,8 @@ resource "aws_cloudfront_distribution" "ztmf" {
 
   viewer_certificate {
     # cloudfront_default_certificate = true
-    acm_certificate_arn = data.aws_acm_certificate.ztmf.id
-    ssl_support_method  = "sni-only"
+    acm_certificate_arn      = data.aws_acm_certificate.ztmf.id
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 }
