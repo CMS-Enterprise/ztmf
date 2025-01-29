@@ -1,60 +1,38 @@
-# resource "aws_security_group" "ztmf_alb" {
-#   name        = "ztmf"
-#   description = "Allow TLS inbound traffic"
-#   vpc_id      = data.aws_vpc.ztmf.id
+resource "aws_security_group" "ztmf_alb" {
+  name        = "ztmf"
+  description = "Allow TLS inbound traffic"
+  vpc_id      = data.aws_vpc.ztmf.id
 
-#   ingress {
-#     description = "HTTPS from VPC CIDR"
-#     from_port   = 443
-#     to_port     = 443
-#     protocol    = "tcp"
-#     cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
-#   }
+  ingress {
+    description = "HTTPS from VPC CIDR"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
+  }
 
-#   // only initiate connections to IPs in private subnets
-#   egress {
-#     from_port   = 443
-#     to_port     = 443
-#     protocol    = "tcp"
-#     cidr_blocks = [for subnet in data.aws_subnet.private : subnet.cidr_block]
-#   }
-# }
+  // allow 443 egress to support OIDC integration with external vendor
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-# resource "aws_lb" "ztmf" {
-#   name               = "ztmf-alb"
-#   internal           = true
-#   load_balancer_type = "application"
-#   security_groups    = [aws_security_group.ztmf_alb.id]
-#   subnets            = data.aws_subnets.private.ids
+resource "aws_lb" "ztmf_api" {
+  name                       = "ztmf-api"
+  internal                   = true
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.ztmf_alb.id]
+  subnets                    = data.aws_subnets.private.ids
+  enable_deletion_protection = true
+}
 
-#   enable_deletion_protection = false
 
-#   # access_logs {
-#   #   bucket  = aws_s3_bucket.lb_logs.id
-#   #   prefix  = "test-lb"
-#   #   enabled = true
-#   # }
-# }
 
-# # TARGET GROUPS
-
-# resource "aws_lb_target_group" "ztmf_api" {
-#   name        = "ztmf-api"
-#   port        = 443
-#   protocol    = "HTTPS"
-#   target_type = "ip"
-#   vpc_id      = data.aws_vpc.ztmf.id
-
-#   health_check {
-#     protocol            = "HTTPS"
-#     port                = 443
-#     matcher             = "200-499"
-#     healthy_threshold   = 2
-#     unhealthy_threshold = 2
-#   }
-# }
-
-# # default rule will forward to s3 bucket
+# S3 related rules are for support the application behind Verified Access
+# default rule will forward to s3 bucket
 # resource "aws_lb_target_group" "s3" {
 #   name        = "s3"
 #   port        = 443
@@ -78,67 +56,91 @@
 #   port             = 443
 # }
 
-# # LISTENER
+# TARGET GROUPS
 
-# resource "aws_lb_listener" "ztmf_alb_https" {
-#   load_balancer_arn = aws_lb.ztmf.arn
-#   port              = "443"
-#   protocol          = "HTTPS"
-#   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-#   certificate_arn   = data.aws_acm_certificate.ztmf.id
+# LISTENER
+resource "aws_lb_listener" "ztmf_api_https" {
+  load_balancer_arn = aws_lb.ztmf_api.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = data.aws_acm_certificate.ztmf.id
 
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.s3.arn
-#     # fixed_response {
-#     #   content_type = "application/json"
-#     #   message_body = "{\"status\": \"ok\"}"
-#     #   status_code  = "200"
-#     # }
-#   }
-# }
-
-# resource "aws_lb_listener_rule" "graphql" {
-#   listener_arn = aws_lb_listener.ztmf_alb_https.arn
-#   priority     = 1
-
-#   action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.ztmf_api.arn
-#   }
-
-#   condition {
-#     path_pattern {
-#       values = [
-#         "/fismasystems*",
-#         "/functions*",
-#         "/users*",
-#         "/scores*",
-#         "/whoami",
-#       ]
-#     }
-#   }
-# }
-
-# # redirect trailing slashes to include /index.html to play nice with S3
-# resource "aws_lb_listener_rule" "index" {
-#   listener_arn = aws_lb_listener.ztmf_alb_https.arn
-#   priority     = 2
-
-#   action {
-#     type = "redirect"
-#     redirect {
-#       path        = "/#{path}index.html"
-#       status_code = "HTTP_301"
-#     }
-#   }
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.ztmf_rest_api.arn
+  }
+}
 
 
-#   condition {
-#     path_pattern {
-#       values = ["*/"]
-#     }
-#   }
-# }
+# RULES
+resource "aws_lb_listener_rule" "authz" {
+  listener_arn = aws_lb_listener.ztmf_api_https.arn
+  priority     = 1
 
-# # RULES
+  action {
+    type = "authenticate-oidc"
+
+    authenticate_oidc {
+      authorization_endpoint     = local.oidc_options["authorization_endpoint"]
+      client_id                  = local.oidc_options["client_id"]
+      client_secret              = local.oidc_options["client_secret"]
+      issuer                     = local.oidc_options["issuer"]
+      token_endpoint             = local.oidc_options["token_endpoint"]
+      user_info_endpoint         = local.oidc_options["user_info_endpoint"]
+      scope                      = "openid profile email groups"
+      session_timeout            = 10800
+      on_unauthenticated_request = "authenticate"
+    }
+  }
+
+  action {
+    type = "redirect"
+    redirect {
+      status_code = "HTTP_302"
+      path        = "/"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = [
+        "/login*",
+      ]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "ztmf_api" {
+  listener_arn = aws_lb_listener.ztmf_api_https.arn
+  priority     = 2
+
+  action {
+    type = "authenticate-oidc"
+
+    authenticate_oidc {
+      authorization_endpoint     = local.oidc_options["authorization_endpoint"]
+      client_id                  = local.oidc_options["client_id"]
+      client_secret              = local.oidc_options["client_secret"]
+      issuer                     = local.oidc_options["issuer"]
+      token_endpoint             = local.oidc_options["token_endpoint"]
+      user_info_endpoint         = local.oidc_options["user_info_endpoint"]
+      scope                      = "openid profile email groups"
+      session_timeout            = 3600
+      on_unauthenticated_request = "deny"
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.ztmf_rest_api.arn
+  }
+
+  condition {
+    path_pattern {
+      values = [
+        "/api/*",
+      ]
+    }
+  }
+}
