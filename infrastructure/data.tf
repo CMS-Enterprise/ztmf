@@ -24,17 +24,19 @@ data "aws_subnet" "private" {
   id       = each.value
 }
 
-data "aws_subnets" "public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.ztmf.id]
-  }
 
-  filter {
-    name   = "tag:use"
-    values = ["public"]
-  }
-}
+# Commented out for now since they are not currently needed
+# data "aws_subnets" "public" {
+#   filter {
+#     name   = "vpc-id"
+#     values = [data.aws_vpc.ztmf.id]
+#   }
+
+#   filter {
+#     name   = "tag:use"
+#     values = ["public"]
+#   }
+# }
 
 data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
