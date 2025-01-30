@@ -56,14 +56,6 @@ data "aws_secretsmanager_secret_version" "ztmf_db_user_current" {
   secret_id = data.aws_secretsmanager_secret.ztmf_db_user.id
 }
 
-data "aws_secretsmanager_secret" "ztmf_x_auth_token" {
-  arn = aws_secretsmanager_secret.ztmf_x_auth_token.arn
-}
-
-data "aws_secretsmanager_secret_version" "ztmf_x_auth_token_current" {
-  secret_id = data.aws_secretsmanager_secret.ztmf_x_auth_token.id
-}
-
 data "aws_secretsmanager_secrets" "rds" {
   filter {
     name   = "tag-key"
