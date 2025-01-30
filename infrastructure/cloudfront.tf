@@ -47,6 +47,21 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
   }
 }
 
+resource "aws_cloudfront_vpc_origin" "internal_alb" {
+  vpc_origin_endpoint_config {
+    name                   = "ZTMF_API"
+    arn                    = aws_lb.ztmf_api.arn
+    http_port              = 80
+    https_port             = 443
+    origin_protocol_policy = "https-only"
+
+    origin_ssl_protocols {
+      items    = ["TLSv1.2"]
+      quantity = 1
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "ztmf" {
   aliases             = [local.domain_name]
   enabled             = true
@@ -63,17 +78,10 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 
   origin {
-    origin_id   = "ztmf_rest_api"
-    domain_name = aws_lb.ztmf_rest_api.dns_name
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-    custom_header {
-      name  = "x-auth-token"
-      value = data.aws_secretsmanager_secret_version.ztmf_x_auth_token_current.secret_string
+    origin_id   = "ztmf_api"
+    domain_name = aws_lb.ztmf_api.dns_name
+    vpc_origin_config {
+      vpc_origin_id = aws_cloudfront_vpc_origin.internal_alb.id
     }
   }
 
@@ -101,7 +109,7 @@ resource "aws_cloudfront_distribution" "ztmf" {
     path_pattern               = "/api/*"
     allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
     cached_methods             = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id           = "ztmf_rest_api"
+    target_origin_id           = "ztmf_api"
     response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
@@ -123,7 +131,7 @@ resource "aws_cloudfront_distribution" "ztmf" {
     path_pattern               = "/oauth2/*"
     allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
     cached_methods             = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id           = "ztmf_rest_api"
+    target_origin_id           = "ztmf_api"
     response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {
@@ -145,7 +153,7 @@ resource "aws_cloudfront_distribution" "ztmf" {
     path_pattern               = "/login"
     allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
     cached_methods             = ["HEAD", "GET", "OPTIONS"]
-    target_origin_id           = "ztmf_rest_api"
+    target_origin_id           = "ztmf_api"
     response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
 
     forwarded_values {

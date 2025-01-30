@@ -4,11 +4,11 @@ resource "aws_security_group" "ztmf_alb" {
   vpc_id      = data.aws_vpc.ztmf.id
 
   ingress {
-    description = "HTTPS from VPC CIDR"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.ztmf.cidr_block]
+    description     = "HTTPS from VPC CIDR"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
   }
 
   // allow 443 egress to support OIDC integration with external vendor
@@ -57,6 +57,21 @@ resource "aws_lb" "ztmf_api" {
 # }
 
 # TARGET GROUPS
+resource "aws_lb_target_group" "ztmf_rest_api" {
+  name        = "ztmf-rest-api"
+  port        = 443
+  protocol    = "HTTPS"
+  target_type = "ip"
+  vpc_id      = data.aws_vpc.ztmf.id
+
+  health_check {
+    protocol            = "HTTPS"
+    port                = 443
+    matcher             = "200-499"
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
 
 # LISTENER
 resource "aws_lb_listener" "ztmf_api_https" {
