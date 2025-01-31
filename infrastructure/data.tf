@@ -24,16 +24,22 @@ data "aws_subnet" "private" {
   id       = each.value
 }
 
-data "aws_subnets" "public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.ztmf.id]
-  }
 
-  filter {
-    name   = "tag:use"
-    values = ["public"]
-  }
+# Commented out for now since they are not currently needed
+# data "aws_subnets" "public" {
+#   filter {
+#     name   = "vpc-id"
+#     values = [data.aws_vpc.ztmf.id]
+#   }
+
+#   filter {
+#     name   = "tag:use"
+#     values = ["public"]
+#   }
+# }
+
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
 data "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
@@ -50,14 +56,6 @@ data "aws_secretsmanager_secret" "ztmf_db_user" {
 
 data "aws_secretsmanager_secret_version" "ztmf_db_user_current" {
   secret_id = data.aws_secretsmanager_secret.ztmf_db_user.id
-}
-
-data "aws_secretsmanager_secret" "ztmf_x_auth_token" {
-  arn = aws_secretsmanager_secret.ztmf_x_auth_token.arn
-}
-
-data "aws_secretsmanager_secret_version" "ztmf_x_auth_token_current" {
-  secret_id = data.aws_secretsmanager_secret.ztmf_x_auth_token.id
 }
 
 data "aws_secretsmanager_secrets" "rds" {
