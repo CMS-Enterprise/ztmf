@@ -63,7 +63,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
 
       environment = [
         {
-          name  = "ENVIRONMENT"
+          name  = "ENVIRONMENT" // only for logging, application code should not depend on any particular value 
           value = var.environment
         },
         {
@@ -105,6 +105,10 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         {
           name  = "AUTH_HEADER_FIELD"
           value = "x-amzn-oidc-data"
+        },
+        {
+          name  = "SMTP_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp.arn
         }
       ]
       logConfiguration = {
