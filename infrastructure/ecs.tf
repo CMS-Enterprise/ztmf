@@ -33,7 +33,10 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
         ]
         Effect = "Allow"
         Resource = [
-          local.db_cred_secret
+          local.db_cred_secret,
+          aws_secretsmanager_secret.ztmf_smtp.arn,
+          aws_secretsmanager_secret.ztmf_smtp_ca_root.arn,
+          aws_secretsmanager_secret.ztmf_smtp_intermediate.arn,
         ]
       },
     ]
@@ -107,8 +110,16 @@ resource "aws_ecs_task_definition" "ztmf_api" {
           value = "x-amzn-oidc-data"
         },
         {
-          name  = "SMTP_SECRET_ID"
+          name  = "SMTP_CONFIG_SECRET_ID"
           value = aws_secretsmanager_secret.ztmf_smtp.arn
+        },
+        {
+          name  = "SMTP_CA_ROOT_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp_ca_root.arn
+        },
+        {
+          name  = "SMTP_CA_INT_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp_intermediate.arn
         }
       ]
       logConfiguration = {

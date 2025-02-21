@@ -42,6 +42,10 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
+data "aws_ec2_managed_prefix_list" "shared_services" {
+  name = "cmscloud-shared-services"
+}
+
 data "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
   arn = aws_secretsmanager_secret.ztmf_va_trust_provider.arn
 }

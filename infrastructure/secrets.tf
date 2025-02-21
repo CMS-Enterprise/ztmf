@@ -14,10 +14,21 @@ resource "aws_secretsmanager_secret" "ztmf_tls_key" {
   name = "ztmf_tls_key"
 }
 
+# DB user is only used to create the DB, its value is then copied into the RDS-managed auto-rotated secret
 resource "aws_secretsmanager_secret" "ztmf_db_user" {
   name = "ztmf_db_user"
 }
 
+# host, port, and credentials for logging in to CMS SMTP service
 resource "aws_secretsmanager_secret" "ztmf_smtp" {
   name = "ztmf_smtp"
+}
+
+# CA certs for validating TLS connection to SMTP service
+resource "aws_secretsmanager_secret" "ztmf_smtp_ca_root" {
+  name = "ztmf_smtp_ca_root"
+}
+
+resource "aws_secretsmanager_secret" "ztmf_smtp_intermediate" {
+  name = "ztmf_smtp_intermediate"
 }
