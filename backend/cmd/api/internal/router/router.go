@@ -14,8 +14,8 @@ func Handler() http.Handler {
 	router.Use(auth.Middleware)
 
 	router.HandleFunc("/api/v1/datacalls", controller.ListDataCalls).Methods("GET")
-	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls", controller.SaveDataCall).Methods("POST")
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.SaveDataCall).Methods("PUT")
 
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export", controller.GetDatacallExport).Methods("GET")
@@ -56,6 +56,9 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
+
+	// sending mass emails is always done as a PUT to a single row table, see controller/emails
+	router.HandleFunc("/api/v1/email", controller.SaveEmail).Methods("PUT")
 
 	return router
 }
