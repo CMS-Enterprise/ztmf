@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"sync"
 
@@ -63,12 +62,8 @@ func getDbCreds() (*dbCreds, error) {
 		}
 	}
 
-	secVal, err := dbSecret.Value()
-	if err != nil {
-		return nil, err
-	}
 	creds := &dbCreds{}
-	err = json.Unmarshal([]byte(*secVal), creds)
+	err = dbSecret.Unmarshal(creds)
 	if err != nil {
 		log.Println("could not unmarshal credentials", err)
 		return nil, err
