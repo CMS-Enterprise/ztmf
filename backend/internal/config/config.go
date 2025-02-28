@@ -7,6 +7,11 @@ import (
 	"github.com/caarlos0/env/v10"
 )
 
+var (
+	cfg  *config
+	once sync.Once
+)
+
 // config is shared by all binaries with values derived from environment variables
 type config struct {
 	Env      string `env:"ENVIRONMENT" envDefault:"local"`
@@ -28,12 +33,10 @@ type config struct {
 		SecretId    string  `env:"DB_SECRET_ID"`
 		PopulateSql *string `env:"DB_POPULATE"` // path to sql to populate test database
 	}
+	SmtpConfigSecretID           string `env:"SMTP_CONFIG_SECRET_ID"`
+	SmtpCertRootSecretID         string `env:"SMTP_CA_ROOT_SECRET_ID"`
+	SmtpCertIntermediateSecretID string `env:"SMTP_CA_INT_SECRET_ID"`
 }
-
-var (
-	cfg  *config
-	once sync.Once
-)
 
 // GetInstance returns a singleton of *config
 func GetInstance() *config {
