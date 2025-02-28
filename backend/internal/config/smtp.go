@@ -7,18 +7,20 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
 
-var (
-	smtpCfg *smtp
-)
+// singleton instance of smtp config
+var smtpCfg *smtp
 
 type smtp struct {
-	User  string `json:"user"`
-	Pass  string `json:"pass"`
-	Host  string `json:"host"`
-	Port  int16  `json:"port"`
+	User string `json:"user"`
+	Pass string `json:"pass"`
+	Host string `json:"host"`
+	Port int16  `json:"port"`
+	From string `json:"from"`
+	// certs is a chain comprised of root and intermediate certificates pulled from secrets manager
 	Certs *x509.CertPool
 }
 
+// SMTP function lazy loads smtp config and client certs from secrets
 func (c *config) SMTP() (*smtp, error) {
 	var err error
 
