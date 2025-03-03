@@ -21,7 +21,7 @@ type smtp struct {
 }
 
 // SMTP function lazy loads smtp config and client certs from secrets
-func (c *config) SMTP() (*smtp, error) {
+func SMTP(c *config) (*smtp, error) {
 	var err error
 
 	if smtpCfg == nil {

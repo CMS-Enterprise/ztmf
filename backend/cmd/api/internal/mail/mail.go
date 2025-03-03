@@ -14,7 +14,7 @@ import (
 )
 
 func Send(to []string, subject, body string) error {
-	smtpCfg, err := config.GetInstance().SMTP()
+	smtpCfg, err := config.SMTP(config.GetInstance())
 	if err != nil {
 		return err
 	}
