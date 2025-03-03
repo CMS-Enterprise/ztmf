@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/mail"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/spreadsheet"
 	"github.com/gorilla/mux"
@@ -94,6 +95,8 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, err)
 		return
 	}
+
+	go mail.Send(*d.EmailSubject, *d.EmailSent)
 
 	respond(w, r, d, nil)
 }
