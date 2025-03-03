@@ -123,7 +123,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         },
         {
           name  = "SMTP_TEST_MODE"
-          value = var.smtp_test_mode
+          value = tostring(var.smtp_test_mode)
         }
       ]
       logConfiguration = {
