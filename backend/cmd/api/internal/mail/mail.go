@@ -13,19 +13,23 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
-func Send(subject, body string) error {
+// Send looks up contacts and sends emails with the provided subject and body
+// it is meant to run as a background go routine and therefore logs errors rather than returning them
+func Send(subject, body string) {
 	var contacts []*model.DataCallContact
 
 	smtpCfg, err := config.SMTP(config.GetInstance())
 	if err != nil {
-		return err
+		log.Println("error getting smtp config: ", err)
+		return
 	}
 
 	c, err := smtp.DialStartTLS(fmt.Sprintf("%s:%d", smtpCfg.Host, smtpCfg.Port), &tls.Config{RootCAs: smtpCfg.Certs})
 	defer c.Quit()
 
 	if err != nil {
-		return err
+		log.Println("error dialing tls: ", err)
+		return
 	}
 
 	auth := sasl.NewPlainClient("ztmfapi", smtpCfg.User, smtpCfg.Pass)
@@ -33,7 +37,8 @@ func Send(subject, body string) error {
 	err = c.Auth(auth)
 
 	if err != nil {
-		return err
+		log.Println("error authenticating to smtp server: ", err)
+		return
 	}
 
 	if smtpCfg.TestMode {
@@ -43,7 +48,8 @@ func Send(subject, body string) error {
 	}
 
 	if err != nil {
-		return err
+		log.Println("error finding contacts: ", err)
+		return
 	}
 
 	msg := strings.NewReader("")
@@ -55,6 +61,4 @@ func Send(subject, body string) error {
 			log.Println("error sending email: ", err)
 		}
 	}
-
-	return nil
 }

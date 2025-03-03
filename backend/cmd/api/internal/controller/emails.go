@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/mail"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 )
 
@@ -31,6 +32,8 @@ func SaveEmail(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, err)
 		return
 	}
+
+	go mail.Send(m.Subject, m.Body)
 
 	respond(w, r, m, nil)
 }
