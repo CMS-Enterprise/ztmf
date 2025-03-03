@@ -120,6 +120,10 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         {
           name  = "SMTP_CA_INT_SECRET_ID"
           value = aws_secretsmanager_secret.ztmf_smtp_intermediate.arn
+        },
+        {
+          name  = "SMTP_TEST_MODE"
+          value = var.smtp_test_mode
         }
       ]
       logConfiguration = {

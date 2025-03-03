@@ -17,3 +17,12 @@ func FindDataCallContacts(ctx context.Context) ([]*DataCallContact, error) {
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCallContact])
 }
+
+func FindTestDataCallContacts(ctx context.Context) ([]*DataCallContact, error) {
+	sqlb := stmntBuilder.
+		Select("DISTINCT email").
+		From("users").
+		Where("ROLE=?", "ADMIN")
+
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCallContact])
+}

@@ -12,3 +12,7 @@ variable "ecs_service_task_count" {
   default = 1
 }
 
+variable "smtp_test_mode" {
+  type    = bool
+  default = false
+}

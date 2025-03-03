@@ -13,7 +13,9 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
-func Send(to []string, subject, body string) error {
+func Send(subject, body string) error {
+	var contacts []*model.DataCallContact
+
 	smtpCfg, err := config.SMTP(config.GetInstance())
 	if err != nil {
 		return err
@@ -34,7 +36,12 @@ func Send(to []string, subject, body string) error {
 		return err
 	}
 
-	contacts, err := model.FindDataCallContacts(context.Background())
+	if smtpCfg.TestMode {
+		contacts, err = model.FindTestDataCallContacts(context.Background())
+	} else {
+		contacts, err = model.FindDataCallContacts(context.Background())
+	}
+
 	if err != nil {
 		return err
 	}

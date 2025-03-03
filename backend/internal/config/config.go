@@ -36,6 +36,7 @@ type config struct {
 	SmtpConfigSecretID           string `env:"SMTP_CONFIG_SECRET_ID"`
 	SmtpCertRootSecretID         string `env:"SMTP_CA_ROOT_SECRET_ID"`
 	SmtpCertIntermediateSecretID string `env:"SMTP_CA_INT_SECRET_ID"`
+	SmtpTestMode                 bool   `env:"SMTP_TEST_MODE"`
 }
 
 // GetInstance returns a singleton of *config

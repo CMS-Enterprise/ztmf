@@ -11,11 +11,12 @@ import (
 var smtpCfg *smtp
 
 type smtp struct {
-	User string `json:"user"`
-	Pass string `json:"pass"`
-	Host string `json:"host"`
-	Port int16  `json:"port"`
-	From string `json:"from"`
+	User     string `json:"user"`
+	Pass     string `json:"pass"`
+	Host     string `json:"host"`
+	Port     int16  `json:"port"`
+	From     string `json:"from"`
+	TestMode bool
 	// certs is a chain comprised of root and intermediate certificates pulled from secrets manager
 	Certs *x509.CertPool
 }
@@ -32,7 +33,8 @@ func SMTP(c *config) (*smtp, error) {
 			)
 
 			smtpCfg = &smtp{
-				Certs: x509.NewCertPool(),
+				TestMode: c.SmtpTestMode,
+				Certs:    x509.NewCertPool(),
 			}
 
 			smtpCfgSecret, err = secrets.NewSecret(c.SmtpConfigSecretID)
