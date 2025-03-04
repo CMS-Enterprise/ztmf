@@ -7,10 +7,7 @@ import (
 	"github.com/caarlos0/env/v10"
 )
 
-var (
-	cfg  *config
-	once sync.Once
-)
+var cfg *config
 
 // config is shared by all binaries with values derived from environment variables
 type config struct {
@@ -42,10 +39,13 @@ type config struct {
 // GetInstance returns a singleton of *config
 func GetInstance() *config {
 	if cfg == nil {
-		var err error
-		log.Println("Initializing config...")
+		var (
+			err  error
+			once sync.Once
+		)
 
 		once.Do(func() {
+			log.Println("initializing config...")
 			cfg = &config{}
 			err = env.Parse(cfg)
 		})

@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
@@ -27,12 +28,15 @@ func SMTP(c *config) (*smtp, error) {
 	var err error
 
 	if smtpCfg == nil {
+		var once sync.Once
+
 		once.Do(func() {
-			log.Println("loading SMTP config...")
 			var (
 				smtpCfgSecret, SmtpCertRootSecret, SmtpCertIntermediateSecret *secrets.Secret
 				secretVal                                                     *string
 			)
+
+			log.Println("initializing SMTP config...")
 
 			smtpCfg = &smtp{
 				TestMode: c.SmtpTestMode,
