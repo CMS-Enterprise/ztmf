@@ -20,13 +20,15 @@ type Secret struct {
 
 // Value returns secretsmanager.GetSecretValueOutput.SecretString
 func (s *Secret) Value() (*string, error) {
-	// if the secret was rotated, refresh it
-	// TODO: change this to check if now is after NextRotationDate-23 hours
-	now := time.Now().UTC()
-	if now.After(*s.metadata.NextRotationDate) {
-		err := s.Refresh()
-		if err != nil {
-			return nil, err
+	if s.metadata.NextRotationDate != nil {
+		// if the secret was rotated, refresh it
+		// TODO: change this to check if now is after NextRotationDate-23 hours
+		now := time.Now().UTC()
+		if now.After(*s.metadata.NextRotationDate) {
+			err := s.Refresh()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return s.secret.SecretString, nil
