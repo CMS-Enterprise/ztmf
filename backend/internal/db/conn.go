@@ -46,6 +46,7 @@ func Conn(ctx context.Context) (*pgx.Conn, error) {
 func getDbCreds() (*dbCreds, error) {
 	cfg := config.GetInstance()
 
+	// TODO: move this secret handling to config.GetInstance()
 	// if no secret id specified, assume user/pass are provided in env vars
 	if cfg.Db.SecretId == "" {
 		return &dbCreds{cfg.Db.User, cfg.Db.Pass}, nil
