@@ -159,10 +159,19 @@ resource "aws_security_group" "ztmf_api_task" {
   }
 
   egress {
+    description = "Aurora Postgres"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = [for subnet in data.aws_subnet.private : subnet.cidr_block]
+  }
+
+  egress {
+    description     = "SMTP"
+    from_port       = 587
+    to_port         = 587
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.shared_services.id]
   }
 }
 

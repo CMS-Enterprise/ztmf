@@ -47,20 +47,4 @@ resource "aws_security_group" "ztmf_bastion" {
     protocol        = "tcp"
     security_groups = [aws_security_group.ztmf_db.id]
   }
-
-  egress {
-    description     = "SMTP"
-    from_port       = 465
-    to_port         = 465
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.shared_services.id]
-  }
-
-  egress {
-    description     = "SMTP"
-    from_port       = 587
-    to_port         = 587
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.shared_services.id]
-  }
 }
