@@ -34,7 +34,6 @@ func Send(subject, body string) {
 		log.Println("error dialing tls: ", err)
 		return
 	}
-	defer c.Quit()
 
 	auth := sasl.NewPlainClient("ztmfapi", cfg.SMTP.User, cfg.SMTP.Pass)
 
@@ -71,5 +70,8 @@ func Send(subject, body string) {
 			emailsSent++
 		}
 	}
+
 	log.Printf("sent %d emails", emailsSent)
+
+	c.Quit()
 }
