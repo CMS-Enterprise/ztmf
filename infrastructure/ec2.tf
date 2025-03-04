@@ -32,12 +32,11 @@ resource "aws_security_group" "ztmf_bastion" {
 
   // only initiate connections to IPs in private subnets
   egress {
-    description = "HTTPS to private subnets" // access to session manager
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    # security_groups = [aws_security_group.ztmf_vpc_endpoints.id]
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "HTTPS to private subnets" // access to session manager
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ztmf_vpc_endpoints.id]
   }
 
   egress {
