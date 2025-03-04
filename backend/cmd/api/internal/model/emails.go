@@ -25,7 +25,7 @@ func (e *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
 		Set("subject", e.Subject).
 		Set("body", e.Body).
 		Where("massemailid=?", 1).
-		Suffix("RETURNING *")
+		Suffix("RETURNING massemailid, datesent, subject, body")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[MassEmail])
 }
