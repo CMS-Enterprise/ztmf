@@ -35,7 +35,7 @@ func Send(subject, body string) {
 		return
 	}
 
-	log.Println("authenticating to SMTP server with user", cfg.SMTP.User, "and pass starting with", cfg.SMTP.Pass[0:3])
+	log.Println("authenticating to SMTP server...")
 
 	auth := sasl.NewPlainClient("", cfg.SMTP.User, cfg.SMTP.Pass)
 	err = c.Auth(auth)
