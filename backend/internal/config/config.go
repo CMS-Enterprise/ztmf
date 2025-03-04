@@ -129,8 +129,6 @@ func GetInstance() *config {
 			log.Fatal("failed to initialize config: ", err)
 			return nil
 		}
-
-		log.Printf("%+v\n", cfg)
 	}
 
 	return cfg
