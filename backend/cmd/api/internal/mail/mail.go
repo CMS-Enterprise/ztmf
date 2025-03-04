@@ -16,15 +16,18 @@ import (
 // Send looks up contacts and sends emails with the provided subject and body
 // it is meant to run as a background go routine and therefore logs errors rather than returning them
 func Send(subject, body string) {
-	var contacts []*model.DataCallContact
+	var (
+		contacts []*model.DataCallContact
+		tlsCfg   *tls.Config
+	)
 
-	smtpCfg, err := config.SMTP(config.GetInstance())
-	if err != nil {
-		log.Println("error getting smtp config: ", err)
-		return
+	cfg := config.GetInstance()
+
+	if cfg.SMTP.Certs != nil {
+		tlsCfg = &tls.Config{RootCAs: cfg.SMTP.Certs}
 	}
 
-	c, err := smtp.DialStartTLS(fmt.Sprintf("%s:%d", smtpCfg.Host, smtpCfg.Port), &tls.Config{RootCAs: smtpCfg.Certs})
+	c, err := smtp.DialStartTLS(fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port), tlsCfg)
 	defer c.Quit()
 
 	if err != nil {
@@ -32,7 +35,7 @@ func Send(subject, body string) {
 		return
 	}
 
-	auth := sasl.NewPlainClient("ztmfapi", smtpCfg.User, smtpCfg.Pass)
+	auth := sasl.NewPlainClient("ztmfapi", cfg.SMTP.User, cfg.SMTP.Pass)
 
 	err = c.Auth(auth)
 
@@ -41,7 +44,7 @@ func Send(subject, body string) {
 		return
 	}
 
-	if smtpCfg.TestMode {
+	if cfg.SMTP.TestMode {
 		contacts, err = model.FindTestDataCallContacts(context.Background())
 	} else {
 		contacts, err = model.FindDataCallContacts(context.Background())
@@ -56,7 +59,7 @@ func Send(subject, body string) {
 
 	for _, contact := range contacts {
 		msg.Reset("To: " + contact.Email + "\r\n" + "Subject: " + subject + "\r\n" + "\r\n" + body + "\r\n")
-		err = c.SendMail(smtpCfg.From, []string{contact.Email}, msg)
+		err = c.SendMail(cfg.SMTP.From, []string{contact.Email}, msg)
 		if err != nil {
 			log.Println("error sending email: ", err)
 		}

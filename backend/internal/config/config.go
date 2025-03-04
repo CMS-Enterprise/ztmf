@@ -1,13 +1,30 @@
 package config
 
 import (
+	"crypto/x509"
+	"errors"
 	"log"
 	"sync"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 	"github.com/caarlos0/env/v10"
 )
 
 var cfg *config
+
+type smtp struct {
+	User     string `json:"user" env:"SMTP_USER"`
+	Pass     string `json:"pass" env:"SMTP_PASS"`
+	Host     string `json:"host" env:"SMTP_HOST"`
+	Port     int16  `json:"port" env:"SMTP_PORT"`
+	From     string `json:"from" env:"SMTP_FROM"`
+	TestMode bool   `env:"SMTP_TEST_MODE"`
+	// certs is a chain comprised of root and intermediate certificates pulled from secrets manager
+	Certs                    *x509.CertPool
+	ConfigSecretID           *string `env:"SMTP_CONFIG_SECRET_ID"`
+	CertRootSecretID         *string `env:"SMTP_CA_ROOT_SECRET_ID"`
+	CertIntermediateSecretID *string `env:"SMTP_CA_INT_SECRET_ID"`
+}
 
 // config is shared by all binaries with values derived from environment variables
 type config struct {
@@ -30,10 +47,9 @@ type config struct {
 		SecretId    string  `env:"DB_SECRET_ID"`
 		PopulateSql *string `env:"DB_POPULATE"` // path to sql to populate test database
 	}
-	SmtpConfigSecretID           string `env:"SMTP_CONFIG_SECRET_ID"`
-	SmtpCertRootSecretID         string `env:"SMTP_CA_ROOT_SECRET_ID"`
-	SmtpCertIntermediateSecretID string `env:"SMTP_CA_INT_SECRET_ID"`
-	SmtpTestMode                 bool   `env:"SMTP_TEST_MODE"`
+	// SMTP config will be loaded from env vars if provided.
+	// If config secret is provided, struct field values will be overwritten by unmarshalling JSON from config secret value hence the pointer to struct
+	SMTP *smtp
 }
 
 // GetInstance returns a singleton of *config
@@ -45,14 +61,76 @@ func GetInstance() *config {
 		)
 
 		once.Do(func() {
+			var (
+				smtpCfgSecret, SmtpCertRootSecret, SmtpCertIntermediateSecret *secrets.Secret
+				secretVal                                                     *string
+			)
+
 			log.Println("initializing config...")
-			cfg = &config{}
+
+			cfg = &config{
+				SMTP: &smtp{},
+			}
 			err = env.Parse(cfg)
+			if err != nil {
+				log.Println("error parsing environment variables: ", err)
+				return
+			}
+
+			if cfg.SMTP.ConfigSecretID != nil {
+				smtpCfgSecret, err = secrets.NewSecret(*cfg.SMTP.ConfigSecretID)
+				if err != nil {
+					return
+				}
+
+				err = smtpCfgSecret.Unmarshal(cfg.SMTP)
+				if err != nil {
+					return
+				}
+			}
+
+			if cfg.SMTP.CertRootSecretID != nil && cfg.SMTP.CertIntermediateSecretID != nil {
+				cfg.SMTP.Certs = x509.NewCertPool()
+
+				SmtpCertRootSecret, err = secrets.NewSecret(*cfg.SMTP.CertRootSecretID)
+				if err != nil {
+					return
+				}
+
+				secretVal, err = SmtpCertRootSecret.Value()
+				if err != nil {
+					return
+				}
+
+				if !cfg.SMTP.Certs.AppendCertsFromPEM([]byte(*secretVal)) {
+					err = errors.New("failed to append root cert")
+					return
+				}
+
+				SmtpCertIntermediateSecret, err = secrets.NewSecret(*cfg.SMTP.CertIntermediateSecretID)
+				if err != nil {
+					return
+				}
+
+				secretVal, err = SmtpCertIntermediateSecret.Value()
+				if err != nil {
+					return
+				}
+
+				if !cfg.SMTP.Certs.AppendCertsFromPEM([]byte(*secretVal)) {
+					err = errors.New("failed to append intermediate cert")
+					return
+				}
+			}
 		})
+
 		if err != nil {
-			log.Fatal("could not parse environment variables", err)
+			// anything depending on the config instance can't possibly work if initialization failed, so exit
+			log.Fatal("failed to initialize config: ", err)
 			return nil
 		}
+
+		log.Printf("%+v\n", cfg)
 	}
 
 	return cfg
