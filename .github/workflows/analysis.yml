@@ -55,7 +55,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
+          args: --print-deps --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-Code-Test:
     name: snyk code test
