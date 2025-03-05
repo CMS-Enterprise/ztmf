@@ -38,7 +38,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
-          args: --severity-threshold=high --file=./backend/Dockerfile
+          args: --severity-threshold=high --file=./backend/Dockerfile --policy-path=./backend/.snyk
       
       - name: Start API and Postgres Containers
         uses: hoverkraft-tech/compose-action@v2.0.2
