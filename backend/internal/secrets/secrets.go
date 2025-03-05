@@ -2,7 +2,7 @@ package secrets
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"log"
 	"time"
 
@@ -20,13 +20,15 @@ type Secret struct {
 
 // Value returns secretsmanager.GetSecretValueOutput.SecretString
 func (s *Secret) Value() (*string, error) {
-	// if the secret was rotated, refresh it
-	now := time.Now().UTC()
-	fmt.Printf(" NOW: %+v\nLAST: %+v\nNEXT: %+v\n", now, s.metadata.LastRotatedDate, s.metadata.NextRotationDate)
-	if now.After(*s.metadata.NextRotationDate) {
-		err := s.Refresh()
-		if err != nil {
-			return nil, err
+	if s.metadata.NextRotationDate != nil {
+		// if the secret was rotated, refresh it
+		// TODO: change this to check if now is after NextRotationDate-23 hours
+		now := time.Now().UTC()
+		if now.After(*s.metadata.NextRotationDate) {
+			err := s.Refresh()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return s.secret.SecretString, nil
@@ -41,6 +43,16 @@ func (s *Secret) Refresh() error {
 	s.secret = getSecretValueOutput
 	s.metadata = describeSecretOutput
 	return nil
+}
+
+// Unmarshal unmarshals the secret string (as JSON) into the provided interface
+func (s *Secret) Unmarshal(v any) error {
+	sv, err := s.Value()
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal([]byte(*sv), v)
 }
 
 // Secret creates a new secret and caches it for later retrieval. Subsequest caand returns *Secret

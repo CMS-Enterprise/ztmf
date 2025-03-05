@@ -33,7 +33,10 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
         ]
         Effect = "Allow"
         Resource = [
-          local.db_cred_secret
+          local.db_cred_secret,
+          aws_secretsmanager_secret.ztmf_smtp.arn,
+          aws_secretsmanager_secret.ztmf_smtp_ca_root.arn,
+          aws_secretsmanager_secret.ztmf_smtp_intermediate.arn,
         ]
       },
     ]
@@ -63,7 +66,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
 
       environment = [
         {
-          name  = "ENVIRONMENT"
+          name  = "ENVIRONMENT" // only for logging, application code should not depend on any particular value 
           value = var.environment
         },
         {
@@ -105,6 +108,22 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         {
           name  = "AUTH_HEADER_FIELD"
           value = "x-amzn-oidc-data"
+        },
+        {
+          name  = "SMTP_CONFIG_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp.arn
+        },
+        {
+          name  = "SMTP_CA_ROOT_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp_ca_root.arn
+        },
+        {
+          name  = "SMTP_CA_INT_SECRET_ID"
+          value = aws_secretsmanager_secret.ztmf_smtp_intermediate.arn
+        },
+        {
+          name  = "SMTP_TEST_MODE"
+          value = tostring(var.smtp_test_mode)
         }
       ]
       logConfiguration = {
@@ -140,10 +159,19 @@ resource "aws_security_group" "ztmf_api_task" {
   }
 
   egress {
+    description = "Aurora Postgres"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = [for subnet in data.aws_subnet.private : subnet.cidr_block]
+  }
+
+  egress {
+    description     = "SMTP"
+    from_port       = 587
+    to_port         = 587
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.shared_services.id]
   }
 }
 

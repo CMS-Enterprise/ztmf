@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"sync"
 
@@ -47,6 +46,7 @@ func Conn(ctx context.Context) (*pgx.Conn, error) {
 func getDbCreds() (*dbCreds, error) {
 	cfg := config.GetInstance()
 
+	// TODO: move this secret handling to config.GetInstance()
 	// if no secret id specified, assume user/pass are provided in env vars
 	if cfg.Db.SecretId == "" {
 		return &dbCreds{cfg.Db.User, cfg.Db.Pass}, nil
@@ -63,12 +63,8 @@ func getDbCreds() (*dbCreds, error) {
 		}
 	}
 
-	secVal, err := dbSecret.Value()
-	if err != nil {
-		return nil, err
-	}
 	creds := &dbCreds{}
-	err = json.Unmarshal([]byte(*secVal), creds)
+	err = dbSecret.Unmarshal(creds)
 	if err != nil {
 		log.Println("could not unmarshal credentials", err)
 		return nil, err
