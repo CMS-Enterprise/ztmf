@@ -1,0 +1,499 @@
+---
+# Emberfall tests for ZTMF API endpoints
+# Based on router.go endpoints
+
+# Common headers with JWT for authentication
+commonHeaders: &commonHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
+
+# Data definitions using YAML anchors
+dataCallData: &dataCallData
+  datacall: "FY2025 Q1"
+  deadline: "2025-03-31T17:59:59-06:00"
+  emailsubject: "Q1 2025 Security Assessment Request"
+  emailbody: "Please complete the Q1 2025 security assessment by March 31st."
+
+updatedDataCallData: &updatedDataCallData
+  datacall: "FY2025 Q1"
+  deadline: "2025-03-31T17:59:59-06:00"
+  emailsubject: "Updated: Q1 2025 Security Assessment Request"
+  emailbody: "Please complete the Q1 2025 security assessment by the extended deadline of April 15th."
+
+fismaSystemData: &fismaSystemData
+  fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fismaacronym: "ZTMF"
+  fismaname: "Zero Trust Maturity Framework"
+  fismasubsystem: "Core System"
+  component: "Security"
+  groupacronym: "SEC"
+  groupname: "Security Group"
+  divisionname: "IT Division"
+  datacenterenvironment: "AWS"
+  datacallcontact: "contact@example.com"
+  issoemail: "isso@example.com"
+
+updatedFismaSystemData: &updatedFismaSystemData
+  fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fismaacronym: "ZTMF-UPD"
+  fismaname: "Updated Zero Trust Maturity Framework"
+  fismasubsystem: "Updated Core System"
+  component: "Updated Security"
+  groupacronym: "USEC"
+  groupname: "Updated Security Group"
+  divisionname: "Updated IT Division"
+  datacenterenvironment: "AWS"
+  datacallcontact: "updated-contact@example.com"
+  issoemail: "updated-isso@example.com"
+
+functionData: &functionData
+  function: "Identity Management"
+  description: "Manage user identities and access"
+  datacenterenvironment: "CLOUD"
+  order: 1
+  pillarid: 1
+
+updatedFunctionData: &updatedFunctionData
+  function: "Updated Identity Management"
+  description: "Updated identity and access management"
+  datacenterenvironment: "CLOUD"
+  order: 2
+  pillarid: 1
+
+userData: &userData
+  email: "new.user@example.com"
+  fullname: "New Test User"
+  role: "ISSO"
+
+updatedUserData: &updatedUserData
+  email: "updated.user@example.com"
+  fullname: "Updated Test User"
+  role: "ISSO"
+
+questionData: &questionData
+  question: "How do you manage user identities?"
+  notesprompt: "Provide details about your identity management approach"
+  order: 1
+  pillarid: 1
+
+updatedQuestionData: &updatedQuestionData
+  question: "Updated: How do you manage user identities?"
+  notesprompt: "Updated prompt for identity management details"
+  order: 2
+  pillarid: 1
+
+scoreData: &scoreData
+  functionoptionid: 1
+  notes: "Test score created by Emberfall"
+
+updatedScoreData: &updatedScoreData
+  functionoptionid: 1
+  notes: "Updated by Emberfall test"
+
+tests:
+  # Authentication Tests
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    expect:
+      status: 401
+      body: 
+        text: "unauthorized"
+  
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "test.user@nowhere.xyz"
+            role: "ADMIN"
+
+  # DataCalls Endpoints
+  - id: createDataCall
+    url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *dataCallData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *dataCallData
+  
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *dataCallData
+  
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedDataCallData
+    expect:
+      status: 204
+  
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+  
+  - url: http://localhost:8080/api/v1/datacalls
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # FISMA Systems Endpoints
+  - id: createFismaSystem
+    url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *fismaSystemData
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *fismaSystemData
+  
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+    expect:
+      status: 204
+  
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedFismaSystemData
+  
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+  
+  # - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/questions"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+
+  # # Functions Endpoints
+  # - id: createFunction
+  #   url: http://localhost:8080/api/v1/functions
+  #   method: POST
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *functionData
+  #   expect:
+  #     status: 201
+  #     headers:
+  #       content-type: "application/json"
+  
+  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         <<: *functionData
+  
+  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+  #   method: PUT
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *updatedFunctionData
+  #   expect:
+  #     status: 204
+  
+  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         data:
+  #           <<: *updatedFunctionData
+  
+  # - url: http://localhost:8080/api/v1/functions
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  
+  # # Function Options Endpoints
+  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+
+  # # Users Endpoints
+  # - id: createUser
+  #   url: http://localhost:8080/api/v1/users
+  #   method: POST
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *userData
+  #   expect:
+  #     status: 201
+  #     headers:
+  #       content-type: "application/json"
+  
+  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         <<: *userData
+  
+  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+  #   method: PUT
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *updatedUserData
+  #   expect:
+  #     status: 204
+  
+  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         data:
+  #           <<: *updatedUserData
+  
+  # - url: http://localhost:8080/api/v1/users
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+
+
+  # # Scores Endpoints
+  # - id: createScore
+  #   url: http://localhost:8080/api/v1/scores
+  #   method: POST
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *scoreData
+  #   expect:
+  #     status: 201
+  #     headers:
+  #       content-type: "application/json"
+  
+  # # Note: There's no GET by ID endpoint for scores in the router
+  
+  # - url: "http://localhost:8080/api/v1/scores/{{.createScore.Response.data.scoreid}}"
+  #   method: PUT
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *updatedScoreData
+  #   expect:
+  #     status: 204
+  
+  # - url: http://localhost:8080/api/v1/scores
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  
+  # - url: http://localhost:8080/api/v1/scores/aggregate
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+
+  # # Questions Endpoints
+  # - id: createQuestion
+  #   url: http://localhost:8080/api/v1/questions
+  #   method: POST
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *questionData
+  #   expect:
+  #     status: 201
+  #     headers:
+  #       content-type: "application/json"
+  
+  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         <<: *questionData
+  
+  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+  #   method: PUT
+  #   headers:
+  #     <<: *commonHeaders
+  #     content-type: "application/json"
+  #   body:
+  #     json:
+  #       <<: *updatedQuestionData
+  #   expect:
+  #     status: 204
+  
+  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+  #     body:
+  #       json:
+  #         data:
+  #           <<: *updatedQuestionData
+  
+  # - url: http://localhost:8080/api/v1/questions
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
+
+  # # Events Endpoints (GET only)
+  # - url: http://localhost:8080/api/v1/events
+  #   method: GET
+  #   headers:
+  #     <<: *commonHeaders
+  #   expect:
+  #     status: 200
+  #     headers:
+  #       content-type: "application/json"
