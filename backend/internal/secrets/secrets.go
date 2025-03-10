@@ -22,8 +22,12 @@ type Secret struct {
 func (s *Secret) Value() (*string, error) {
 	if s.metadata.NextRotationDate != nil {
 		// if the secret was rotated, refresh it
-		// TODO: change this to check if now is after NextRotationDate-23 hours
+		// secrets manager may actually rotate many hours before the NextRotationDate
+		// time.Sub returns a time.Duration, whereas time.Add can accept a negative number as input and return time.Time
 		now := time.Now().UTC()
+		log.Println("now", now)
+		now = now.Add(time.Duration(-23) * time.Hour).UTC()
+		log.Println("now -23h", now)
 		if now.After(*s.metadata.NextRotationDate) {
 			err := s.Refresh()
 			if err != nil {
