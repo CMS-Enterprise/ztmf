@@ -316,75 +316,80 @@ tests:
       headers:
         content-type: "application/json"
   
-  # # Function Options Endpoints
-  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  # Function Options Endpoints
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
 
-  # # Users Endpoints
-  # - id: createUser
-  #   url: http://localhost:8080/api/v1/users
-  #   method: POST
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *userData
-  #   expect:
-  #     status: 201
-  #     headers:
-  #       content-type: "application/json"
+  # Users Endpoints
+  - id: createUser
+    url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *userData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *userData
   
-  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         <<: *userData
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *userData
   
-  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
-  #   method: PUT
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *updatedUserData
-  #   expect:
-  #     status: 204
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedUserData
+    expect:
+      status: 204
   
-  # - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         data:
-  #           <<: *updatedUserData
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedUserData
   
-  # - url: http://localhost:8080/api/v1/users
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  - url: http://localhost:8080/api/v1/users
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
 
 
   # # Scores Endpoints
@@ -433,72 +438,77 @@ tests:
   #     headers:
   #       content-type: "application/json"
 
-  # # Questions Endpoints
-  # - id: createQuestion
-  #   url: http://localhost:8080/api/v1/questions
-  #   method: POST
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *questionData
-  #   expect:
-  #     status: 201
-  #     headers:
-  #       content-type: "application/json"
+  # Questions Endpoints
+  - id: createQuestion
+    url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *questionData
   
-  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         <<: *questionData
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *questionData
   
-  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-  #   method: PUT
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *updatedQuestionData
-  #   expect:
-  #     status: 204
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedQuestionData
+    expect:
+      status: 204
   
-  # - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         data:
-  #           <<: *updatedQuestionData
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedQuestionData
   
-  # - url: http://localhost:8080/api/v1/questions
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  - url: http://localhost:8080/api/v1/questions
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
 
-  # # Events Endpoints (GET only)
-  # - url: http://localhost:8080/api/v1/events
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  # Events Endpoints (GET only)
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
