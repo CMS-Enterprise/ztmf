@@ -64,58 +64,11 @@ jobs:
           AUTH_HEADER_FIELD: "Authorization"
           WORKSPACE: ${{ github.workspace }}
 
-
-      
-      - name: Smoke test
+      - name: Emberfall Smoke Tests
         uses: aquia-inc/emberfall@main
         with:
-          version: 0.2.0
-          config: | 
-            ---
-            commonHeaders: &commonHeaders
-              authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
-            tests:  
-              - url: http://localhost:8080/api/v1/users/current
-                method: GET
-                expect:
-                  status: 401
-                  body: "unauthorized"
-              
-              - url: http://localhost:8080/api/v1/users/current
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/fismasystems
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/functions
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/functions/1
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
+          version: 0.3.1
+          file: ./backend/emberfall_tests.yml
 
       - name: AWS - Get Credentials
         uses: aws-actions/configure-aws-credentials@v4
