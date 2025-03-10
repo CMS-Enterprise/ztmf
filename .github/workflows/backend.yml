@@ -66,56 +66,11 @@ jobs:
 
 
       
-      - name: Smoke test
-        uses: talentedmrjones/emberfall@288dff0373277d2d24f34ca2c54466edc9131478
+      - name: Emberfall Smoke Tests
+        uses: talentedmrjones/emberfall@7769ccaa80c8c1440a4f0f7342881bc9dd6613f5
         with:
           version: 0.3.1
-          config: | 
-            ---
-            commonHeaders: &commonHeaders
-              authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
-            tests:  
-              - url: http://localhost:8080/api/v1/users/current
-                method: GET
-                expect:
-                  status: 401
-                  body: "unauthorized"
-              
-              - url: http://localhost:8080/api/v1/users/current
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/fismasystems
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/functions
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
-              
-              - url: http://localhost:8080/api/v1/functions/1
-                method: GET
-                headers:
-                  <<: *commonHeaders
-                expect:
-                  status: 200
-                  headers:
-                    content-type: "application/json"
+          file: ./backend/emberfall_tests.yml
 
       - name: AWS - Get Credentials
         uses: aws-actions/configure-aws-credentials@v4

@@ -9,13 +9,13 @@ commonHeaders: &commonHeaders
 # Data definitions using YAML anchors
 dataCallData: &dataCallData
   datacall: "FY2025 Q1"
-  deadline: "2025-03-31T17:59:59-06:00"
+  deadline: "2025-03-31T17:59:59Z"
   emailsubject: "Q1 2025 Security Assessment Request"
   emailbody: "Please complete the Q1 2025 security assessment by March 31st."
 
 updatedDataCallData: &updatedDataCallData
   datacall: "FY2025 Q1"
-  deadline: "2025-03-31T17:59:59-06:00"
+  deadline: "2025-03-31T17:59:59Z"
   emailsubject: "Updated: Q1 2025 Security Assessment Request"
   emailbody: "Please complete the Q1 2025 security assessment by the extended deadline of April 15th."
 
@@ -48,14 +48,14 @@ updatedFismaSystemData: &updatedFismaSystemData
 functionData: &functionData
   function: "Identity Management"
   description: "Manage user identities and access"
-  datacenterenvironment: "CLOUD"
+  datacenterenvironment: "AWS"
   order: 1
   pillarid: 1
 
 updatedFunctionData: &updatedFunctionData
   function: "Updated Identity Management"
   description: "Updated identity and access management"
-  datacenterenvironment: "CLOUD"
+  datacenterenvironment: "AWS"
   order: 2
   pillarid: 1
 
@@ -251,65 +251,70 @@ tests:
   #     headers:
   #       content-type: "application/json"
 
-  # # Functions Endpoints
-  # - id: createFunction
-  #   url: http://localhost:8080/api/v1/functions
-  #   method: POST
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *functionData
-  #   expect:
-  #     status: 201
-  #     headers:
-  #       content-type: "application/json"
+  # Functions Endpoints
+  - id: createFunction
+    url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *functionData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *functionData
   
-  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         <<: *functionData
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *functionData
   
-  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-  #   method: PUT
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *updatedFunctionData
-  #   expect:
-  #     status: 204
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 204
   
-  # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  #     body:
-  #       json:
-  #         data:
-  #           <<: *updatedFunctionData
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedFunctionData
   
-  # - url: http://localhost:8080/api/v1/functions
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  - url: http://localhost:8080/api/v1/functions
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
   
   # # Function Options Endpoints
   # - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
