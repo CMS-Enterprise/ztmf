@@ -64,10 +64,8 @@ jobs:
           AUTH_HEADER_FIELD: "Authorization"
           WORKSPACE: ${{ github.workspace }}
 
-
-      
       - name: Emberfall Smoke Tests
-        uses: talentedmrjones/emberfall@7769ccaa80c8c1440a4f0f7342881bc9dd6613f5
+        uses: aquia-inc/emberfall@main
         with:
           version: 0.3.1
           file: ./backend/emberfall_tests.yml
