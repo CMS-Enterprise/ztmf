@@ -53,7 +53,6 @@ func (s *Score) validate(ctx context.Context) error {
 		return err
 	}
 
-	// Check if the current time is greater than the DataCall deadline
 	if time.Now().UTC().After(dataCall.Deadline) {
 		return fmt.Errorf("dataCall deadline has passed")
 	}
