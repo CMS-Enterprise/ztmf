@@ -54,7 +54,7 @@ func (s *Score) validate(ctx context.Context) error {
 	}
 
 	if time.Now().UTC().After(dataCall.Deadline) {
-		return fmt.Errorf("dataCall deadline has passed")
+		return ErrPastDeadline
 	}
 
 	return nil
