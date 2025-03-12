@@ -17,6 +17,7 @@ var (
 	ErrDbConnection = errors.New("db connection error")
 	ErrNotUnique    = errors.New("not unique")
 	ErrNoReference  = errors.New("reference not found")
+	ErrPastDeadline = errors.New("deadline has passed")
 )
 
 type InvalidInputError struct {

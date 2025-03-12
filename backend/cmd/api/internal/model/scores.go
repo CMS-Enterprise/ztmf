@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
@@ -22,6 +23,10 @@ type Score struct {
 func (s *Score) Save(ctx context.Context) (*Score, error) {
 	var sqlb SqlBuilder
 
+	if err := s.validate(ctx); err != nil {
+		return nil, err
+	}
+
 	if s.ScoreID == 0 {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
@@ -39,6 +44,20 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 	}
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[Score])
+}
+
+func (s *Score) validate(ctx context.Context) error {
+
+	dataCall, err := FindDataCallByID(ctx, s.DataCallID)
+	if err != nil {
+		return err
+	}
+
+	if time.Now().UTC().After(dataCall.Deadline) {
+		return ErrPastDeadline
+	}
+
+	return nil
 }
 
 type ScoreAggregate struct {

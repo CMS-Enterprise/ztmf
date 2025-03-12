@@ -76,10 +76,12 @@ func sanitizeErr(err error) (int, error) {
 		fallthrough
 	case errors.Is(err, ErrNotFound):
 		status = 404
-	case errors.Is(err, ErrForbidden):
+	case errors.Is(err, ErrForbidden),
+		errors.Is(err, model.ErrPastDeadline):
 		status = 403
 	case errors.Is(err, model.ErrNotUnique),
 		errors.Is(err, ErrMalformed),
+
 		errors.Is(err, model.ErrNoReference):
 		status = 400
 	case errors.Is(err, model.ErrDbConnection):
