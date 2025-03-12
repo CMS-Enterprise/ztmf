@@ -11,6 +11,7 @@ type User struct {
 	Email                string   `json:"email"`
 	FullName             string   `json:"fullname"`
 	Role                 string   `json:"role"`
+	Deleted              bool     `json:"deleted"`
 	AssignedFismaSystems []*int32 `json:"-"`
 }
 
@@ -37,17 +38,18 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	if u.UserID == "" {
 		sqlb = stmntBuilder.
 			Insert("users").
-			Columns("email", "fullname", "role").
+			Columns("email", "fullname", "role", "delete").
 			Values(u.Email, u.FullName, u.Role).
-			Suffix("RETURNING userid, email, fullname, role")
+			Suffix("RETURNING userid, email, fullname, role, deleted")
 	} else {
 		sqlb = stmntBuilder.
 			Update("users").
 			Set("email", u.Email).
 			Set("fullname", u.FullName).
 			Set("role", u.Role).
+			Set("deleted", u.Deleted).
 			Where("userid=?", u.UserID).
-			Suffix("RETURNING userid, email, fullname, role")
+			Suffix("RETURNING userid, email, fullname, role, deleted")
 	}
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
@@ -81,7 +83,8 @@ func (u *User) validate() error {
 func FindUsers(ctx context.Context) ([]*User, error) {
 	sqlb := stmntBuilder.
 		Select("*").
-		From("public.users")
+		From("public.users").
+		Where("deleted=false")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
 }
