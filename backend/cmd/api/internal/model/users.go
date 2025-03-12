@@ -35,10 +35,12 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 
 	var sqlb SqlBuilder
 
+	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
+	// it must be set via explicit delete. See DeleteUser below
 	if u.UserID == "" {
 		sqlb = stmntBuilder.
 			Insert("users").
-			Columns("email", "fullname", "role", "delete").
+			Columns("email", "fullname", "role").
 			Values(u.Email, u.FullName, u.Role).
 			Suffix("RETURNING userid, email, fullname, role, deleted")
 	} else {
@@ -47,7 +49,6 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 			Set("email", u.Email).
 			Set("fullname", u.FullName).
 			Set("role", u.Role).
-			Set("deleted", u.Deleted).
 			Where("userid=?", u.UserID).
 			Suffix("RETURNING userid, email, fullname, role, deleted")
 	}
