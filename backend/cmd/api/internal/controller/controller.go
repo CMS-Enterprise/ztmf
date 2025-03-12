@@ -38,7 +38,7 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 		Data: data,
 	}
 
-	if err == nil && data == nil {
+	if err == nil && (data == nil && status != 204) {
 		err = ErrNotFound
 	}
 
