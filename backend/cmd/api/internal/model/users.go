@@ -105,7 +105,7 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
 	sqlb := stmntBuilder.
-		Select("users.userid, email, fullname, role, ARRAY_AGG(fismasystemid) AS assignedfismasystems").
+		Select("users.userid, email, fullname, role, deleted, ARRAY_AGG(fismasystemid) AS assignedfismasystems").
 		From("users").
 		LeftJoin("users_fismasystems on users_fismasystems.userid=users.userid").
 		Where(where, args...).
@@ -124,8 +124,8 @@ func DeleteUser(ctx context.Context, userid string) error {
 		Update("users").
 		Set("deleted", true).
 		Where("userid=?", userid).
-		Suffix("RETURNING userid")
+		Suffix("RETURNING userid, email, fullname, role, deleted")
 
-	_, err := queryRow(ctx, sqlb, pgx.RowTo[string])
+	_, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
 	return err
 }
