@@ -69,6 +69,12 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
+deletedUserData: &deletedUserData
+  email: "updated.user@example.com"
+  fullname: "Updated Test User"
+  role: "ISSO"
+  deleted: true
+
 questionData: &questionData
   question: "How do you manage user identities?"
   notesprompt: "Provide details about your identity management approach"
@@ -397,7 +403,20 @@ tests:
       <<: *commonHeaders
     expect:
       status: 204
-  
+    
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *deletedUserData
+
   # # Scores Endpoints
   # - id: createScore
   #   url: http://localhost:8080/api/v1/scores
