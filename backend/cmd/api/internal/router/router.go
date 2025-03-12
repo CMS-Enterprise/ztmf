@@ -35,6 +35,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users/current", controller.GetCurrentUser).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.GetUserByID).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.SaveUser).Methods("PUT")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.DeleteUser).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.ListUserFismaSystems).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.CreateUserFismaSystem).Methods("POST")

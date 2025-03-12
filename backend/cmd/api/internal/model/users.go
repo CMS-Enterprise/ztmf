@@ -112,3 +112,19 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[User])
 }
+
+// DeleteUser marks a user as deleted in the database
+func DeleteUser(ctx context.Context, userid string) error {
+	if !isValidUUID(userid) {
+		return ErrNoData
+	}
+
+	sqlb := stmntBuilder.
+		Update("users").
+		Set("deleted", true).
+		Where("userid=?", userid).
+		Suffix("RETURNING userid")
+
+	_, err := queryRow(ctx, sqlb, pgx.RowTo[string])
+	return err
+}
