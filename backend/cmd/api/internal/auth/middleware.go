@@ -44,6 +44,12 @@ func Middleware(next http.Handler) http.Handler {
 				return
 			}
 
+			if user.Deleted {
+				log.Printf("user with email: %s was deleted but tried logging in\n", claims.Email)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
 			ctx := model.UserToContext(r.Context(), user)
 			r = r.WithContext(ctx)
 		}

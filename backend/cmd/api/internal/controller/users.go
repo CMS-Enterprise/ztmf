@@ -78,3 +78,28 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, r, user, nil)
 }
+
+// DeleteUser handles the deletion of a user
+func DeleteUser(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	userID, ok := vars["userid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	err := model.DeleteUser(r.Context(), userID)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respond(w, r, nil, nil)
+}
