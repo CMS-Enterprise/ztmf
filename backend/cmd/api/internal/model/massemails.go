@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -44,9 +45,9 @@ func (m *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
 		Set("datesent", time.Now()).
 		Set("subject", m.Subject).
 		Set("body", m.Body).
-		Set("group", m.Group).
+		Set(`"group"`, m.Group).
 		Where("massemailid=1").
-		Suffix("RETURNING massemailid, datesent, subject, body, group")
+		Suffix(`RETURNING massemailid, datesent, subject, body, "group"`)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[MassEmail])
 }
@@ -77,15 +78,11 @@ func (m *MassEmail) isValid() error {
 }
 
 func (m *MassEmail) Recipients(ctx context.Context) ([]string, error) {
-	var sqlFunc func() squirrel.SelectBuilder
-
 	if err := m.isValid(); err != nil {
 		return nil, err
 	}
 
-	sqlFunc = massEmailGroups[m.Group]
-
-	return query(ctx, sqlFunc(), pgx.RowTo[string])
+	return query(ctx, massEmailGroups[m.Group](), pgx.RowTo[string])
 }
 
 func sqlForISSO() squirrel.SelectBuilder {
@@ -129,9 +126,11 @@ func sqlForDCC() squirrel.SelectBuilder {
 }
 
 func sqlForALL() squirrel.SelectBuilder {
+	isso, _, _ := sqlForISSO().ToSql()
+	issm, _, _ := sqlForISSM().ToSql()
+	dcc, _, _ := sqlForDCC().ToSql()
+
 	return stmntBuilder.
-		Select("email").
-		FromSelect(sqlForDCC(), "dcc").
-		FromSelect(sqlForISSM(), "issm").
-		FromSelect(sqlForISSO(), "isso")
+		Select("DISTINCT email as email").
+		From(fmt.Sprintf("(%s UNION ALL %s UNION ALL %s)", isso, issm, dcc))
 }
