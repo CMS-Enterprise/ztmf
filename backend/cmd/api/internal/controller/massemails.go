@@ -42,5 +42,5 @@ func SaveMassEmail(w http.ResponseWriter, r *http.Request) {
 
 	go mail.Send(m.Subject, m.Body, recipients)
 
-	respond(w, r, m, nil)
+	respond(w, r, recipients, nil)
 }
