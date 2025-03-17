@@ -31,7 +31,7 @@ type MassEmail struct {
 	DateSent    *time.Time `json:"datesent"`
 	Subject     string     `json:"subject"`
 	Body        string     `json:"body"`
-	Group       string     `json:"group"` // see massEmailGroups in model/datacallcontacts
+	Group       string     `json:"group"`
 }
 
 func (m *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
