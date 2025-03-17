@@ -18,7 +18,7 @@ type smtp struct {
 	Host     string `json:"host" env:"SMTP_HOST"`
 	Port     int16  `json:"port" env:"SMTP_PORT"`
 	From     string `json:"from" env:"SMTP_FROM"`
-	TestMode bool   `env:"SMTP_TEST_MODE"`
+	TestMode bool   `json:"-" env:"SMTP_TEST_MODE"`
 	// certs is a chain comprised of root and intermediate certificates pulled from secrets manager
 	Certs                    *x509.CertPool
 	ConfigSecretID           *string `env:"SMTP_CONFIG_SECRET_ID"`
