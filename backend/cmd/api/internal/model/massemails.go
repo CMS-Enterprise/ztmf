@@ -33,22 +33,28 @@ type MassEmail struct {
 	Group       string     `json:"group"` // see massEmailGroups in model/datacallcontacts
 }
 
-func (e *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
+func (m *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
+
+	if err := m.isValid(); err != nil {
+		return nil, err
+	}
+
 	sqlb := stmntBuilder.
 		Update("massemails").
 		Set("datesent", time.Now()).
-		Set("subject", e.Subject).
-		Set("body", e.Body).
-		Where("massemailid=?", 1).
+		Set("subject", m.Subject).
+		Set("body", m.Body).
+		Set("group", m.Group).
+		Where("massemailid=1").
 		Suffix("RETURNING massemailid, datesent, subject, body, group")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[MassEmail])
 }
 
-func (me *MassEmail) isValid() error {
-	if _, ok := massEmailGroups[me.Group]; !ok {
+func (m *MassEmail) isValid() error {
+	if _, ok := massEmailGroups[m.Group]; !ok {
 		return &InvalidInputError{
-			data: map[string]any{"group": me.Group + " is invalid"},
+			data: map[string]any{"group": m.Group + " is invalid"},
 		}
 	}
 
