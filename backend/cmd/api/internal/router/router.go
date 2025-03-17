@@ -59,7 +59,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
 
 	// sending mass emails is always done as a PUT to a single row table, see controller/emails
-	router.HandleFunc("/api/v1/email", controller.SaveMassEmail).Methods("PUT")
+	router.HandleFunc("/api/v1/massemails", controller.SaveMassEmail).Methods("PUT")
 
 	return router
 }
