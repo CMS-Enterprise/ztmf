@@ -13,12 +13,11 @@ import (
 var cfg *config
 
 type smtp struct {
-	User     string `json:"user" env:"SMTP_USER"`
-	Pass     string `json:"pass" env:"SMTP_PASS"`
-	Host     string `json:"host" env:"SMTP_HOST"`
-	Port     int16  `json:"port" env:"SMTP_PORT"`
-	From     string `json:"from" env:"SMTP_FROM"`
-	TestMode bool   `json:"-" env:"SMTP_TEST_MODE"`
+	User string `json:"user" env:"SMTP_USER"`
+	Pass string `json:"pass" env:"SMTP_PASS"`
+	Host string `json:"host" env:"SMTP_HOST"`
+	Port int16  `json:"port" env:"SMTP_PORT"`
+	From string `json:"from" env:"SMTP_FROM"`
 	// certs is a chain comprised of root and intermediate certificates pulled from secrets manager
 	Certs                    *x509.CertPool
 	ConfigSecretID           *string `env:"SMTP_CONFIG_SECRET_ID"`
