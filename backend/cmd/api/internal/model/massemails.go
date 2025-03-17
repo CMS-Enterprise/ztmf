@@ -52,10 +52,25 @@ func (m *MassEmail) Save(ctx context.Context) (*MassEmail, error) {
 }
 
 func (m *MassEmail) isValid() error {
+
+	err := &InvalidInputError{
+		data: map[string]any{},
+	}
+
 	if _, ok := massEmailGroups[m.Group]; !ok {
-		return &InvalidInputError{
-			data: map[string]any{"group": m.Group + " is invalid"},
-		}
+		err.data["group"] = m.Group
+	}
+
+	if len(m.Subject) < 4 {
+		err.data["subject"] = nil
+	}
+
+	if len(m.Body) < 4 {
+		err.data["body"] = nil
+	}
+
+	if len(err.data) > 0 {
+		return err
 	}
 
 	return nil
