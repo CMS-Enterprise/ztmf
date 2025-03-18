@@ -82,14 +82,20 @@ func (m *MassEmail) Recipients(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	return query(ctx, massEmailGroups[m.Group](), pgx.RowTo[string])
+	sqlb := massEmailGroups[m.Group]()
+
+	// log.Println(sqlb.ToSql())
+
+	return query(ctx, sqlb, pgx.RowTo[string])
 }
 
 func sqlForISSO() squirrel.SelectBuilder {
+	iu, _, _ := sqlForISSOUsers().ToSql()
+	ifs, _, _ := sqlForISSOFismaSystems().ToSql()
+
 	return stmntBuilder.
 		Select("DISTINCT email AS email").
-		FromSelect(sqlForISSOUsers(), "users").
-		FromSelect(sqlForISSOFismaSystems(), "fismasystems")
+		From(fmt.Sprintf("(%s UNION ALL %s)", iu, ifs))
 }
 
 func sqlForISSOUsers() squirrel.SelectBuilder {
@@ -101,7 +107,7 @@ func sqlForISSOUsers() squirrel.SelectBuilder {
 
 func sqlForISSOFismaSystems() squirrel.SelectBuilder {
 	return stmntBuilder.
-		Select("DISTINCT issoemail AS email").
+		Select("issoemail AS email").
 		From("fismasystems")
 }
 
@@ -126,11 +132,12 @@ func sqlForDCC() squirrel.SelectBuilder {
 }
 
 func sqlForALL() squirrel.SelectBuilder {
-	isso, _, _ := sqlForISSO().ToSql()
 	issm, _, _ := sqlForISSM().ToSql()
 	dcc, _, _ := sqlForDCC().ToSql()
+	issoU, _, _ := sqlForISSOUsers().ToSql()
+	issoFs, _, _ := sqlForISSOFismaSystems().ToSql()
 
 	return stmntBuilder.
 		Select("DISTINCT email as email").
-		From(fmt.Sprintf("(%s UNION ALL %s UNION ALL %s)", isso, issm, dcc))
+		From(fmt.Sprintf("(%s UNION ALL %s UNION ALL %s UNION ALL %s)", issm, dcc, issoU, issoFs))
 }
