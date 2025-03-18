@@ -537,3 +537,23 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+  
+  # massemails only supports this one route
+  # test that it errors on invalid input
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *commonHeaders
+    body:
+      json:
+        group: "ADNIM"
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+          data:
+            subject: null
+            body: null
+            group: "ADNIM"
+
