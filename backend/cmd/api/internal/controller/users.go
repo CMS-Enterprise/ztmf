@@ -9,6 +9,10 @@ import (
 )
 
 func ListUsers(w http.ResponseWriter, r *http.Request) {
+	var (
+		users []*model.User
+		err   error
+	)
 	// TODO: replace the repititious admin checks with ACL
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -16,7 +20,11 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := model.FindUsers(r.Context())
+	findUsersInput := &model.FindUsersInput{}
+	err = decoder.Decode(findUsersInput, r.URL.Query())
+	if err == nil {
+		users, err = model.FindUsers(r.Context(), findUsersInput)
+	}
 
 	respond(w, r, users, err)
 }
