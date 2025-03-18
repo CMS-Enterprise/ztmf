@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net/mail"
 	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
@@ -46,6 +47,14 @@ func Send(subject, body string, recipients []string) {
 	log.Println("sending emails...")
 
 	for _, address := range recipients {
+		address = strings.TrimSpace(address)
+
+		_, err = mail.ParseAddress(address)
+		if err != nil {
+			log.Printf(`invalid email: "%s"`, address)
+			continue
+		}
+
 		msg.Reset("To: " + address + "\r\n" + "Subject: " + subject + "\r\n" + "\r\n" + body + "\r\n")
 		err = c.SendMail(cfg.SMTP.From, []string{address}, msg)
 		if err != nil {
