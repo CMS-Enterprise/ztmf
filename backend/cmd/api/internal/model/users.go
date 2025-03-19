@@ -80,12 +80,49 @@ func (u *User) validate() error {
 	return nil
 }
 
+type FindUsersInput struct {
+	Email    *string `schema:"email"`
+	FullName *string `schema:"fullname"`
+	Role     *string `schema:"role"`
+	Deleted  bool    `schema:"deleted"`
+}
+
+func (fui *FindUsersInput) validate() error {
+	err := &InvalidInputError{data: map[string]any{}}
+
+	if fui.Role != nil && !isValidRole(*fui.Role) {
+		err.data["role"] = fui.Role
+	}
+
+	if len(err.data) > 0 {
+		return err
+	}
+
+	return nil
+}
+
 // FindUsers queries the database for all users and return an array of *User
-func FindUsers(ctx context.Context) ([]*User, error) {
+func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
+	if err := fui.validate(); err != nil {
+		return nil, err
+	}
+
 	sqlb := stmntBuilder.
 		Select("*").
 		From("public.users").
-		Where("deleted=false")
+		Where("deleted=?", fui.Deleted)
+
+	if fui.Email != nil {
+		sqlb = sqlb.Where("email LIKE ?", "%"+*fui.Email+"%")
+	}
+
+	if fui.FullName != nil {
+		sqlb = sqlb.Where("UPPER(fullname) LIKE UPPER(?)", "%"+*fui.FullName+"%")
+	}
+
+	if fui.Role != nil {
+		sqlb = sqlb.Where("role=?", fui.Role)
+	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
 }

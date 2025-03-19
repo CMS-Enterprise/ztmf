@@ -396,6 +396,51 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+  
+  # list users with invalid input should return 400
+  - url: http://localhost:8080/api/v1/users?role=adnim
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          error: "invalid input"
+          data: 
+            role: "adnim"
+  
+  # list users with partial email should return a list of users
+  - url: http://localhost:8080/api/v1/users?email=example.com
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+  
+  # list users with correct role should return a list of users
+  - url: http://localhost:8080/api/v1/users?role=ADMIN
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+  
+  # list users with partial name should return a list of users
+  - url: http://localhost:8080/api/v1/users?fullname=Test+User
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: DELETE

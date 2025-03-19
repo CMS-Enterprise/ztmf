@@ -12,7 +12,6 @@ on:
 
 jobs:
   analysis:
-    if: github.event.pull_request.draft == false
     name: Analysis
     uses: ./.github/workflows/analysis.yml
     secrets: inherit
