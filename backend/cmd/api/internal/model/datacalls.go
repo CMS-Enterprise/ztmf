@@ -8,16 +8,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var dataCallColumns = []string{"datacallid", "datacall", "datecreated", "deadline", "emailsubject", "emailbody", "emailsent"}
+var dataCallColumns = []string{"datacallid", "datacall", "datecreated", "deadline"}
 
 type DataCall struct {
-	DataCallID   int32     `json:"datacallid"`
-	DataCall     string    `json:"datacall"`
-	DateCreated  time.Time `json:"datecreated"`
-	Deadline     time.Time `json:"deadline"`
-	EmailSubject *string   `json:"emailsubject"`
-	EmailBody    *string   `json:"emailbody"`
-	EmailSent    *string   `json:"emailsent"`
+	DataCallID  int32     `json:"datacallid"`
+	DataCall    string    `json:"datacall"`
+	DateCreated time.Time `json:"datecreated"`
+	Deadline    time.Time `json:"deadline"`
 }
 
 func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
@@ -31,16 +28,14 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	if d.DataCallID == 0 {
 		sqlb = stmntBuilder.
 			Insert("datacalls").
-			Columns("datacall", "deadline", "emailsubject", "emailbody").
-			Values(d.DataCall, d.Deadline, d.EmailSubject, d.EmailBody).
+			Columns("datacall", "deadline").
+			Values(d.DataCall, d.Deadline).
 			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	} else {
 		sqlb = stmntBuilder.
 			Update("datacalls").
 			Set("datacall", d.DataCall).
 			Set("deadline", d.Deadline).
-			Set("emailsubject", d.EmailSubject).
-			Set("emailbody", d.EmailBody).
 			Where("datacallid=?", d.DataCallID).
 			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	}

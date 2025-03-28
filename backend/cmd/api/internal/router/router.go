@@ -17,6 +17,10 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacalls", controller.SaveDataCall).Methods("POST")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.SaveDataCall).Methods("PUT")
+	// records that a fisma system has completed the data call
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/fismasystems/{fismasystemid:[0-9]+}", controller.SaveDataCallFismaSystem).Methods("PUT")
+	// returns a list of fisma systems that have marked this data call as complete
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/fismasystems", controller.ListDataCallFismaSystems).Methods("GET")
 
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export", controller.GetDatacallExport).Methods("GET")
 
@@ -24,6 +28,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/fismasystems", controller.SaveFismaSystem).Methods("POST")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.GetFismaSystem).Methods("GET")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
+	// returns a list of data calls that this fisma system has marked complete
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/datacalls", controller.ListFismaSystemDataCalls).Methods("GET")
 
 	// TODO: deprecate this in favor of non-nested URIs
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListFismaSystemQuestions).Methods("GET")
@@ -58,7 +64,7 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
 
-	// massemails resource only supports a single verb as there are no records to get list and details for
+	// massemails resource only supports a single verb as there are no records to get list and details for, but the operation is non-idempotent
 	router.HandleFunc("/api/v1/massemails", controller.SaveMassEmail).Methods("POST")
 
 	return router

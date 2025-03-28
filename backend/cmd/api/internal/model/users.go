@@ -20,6 +20,10 @@ func (u *User) IsAdmin() bool {
 }
 
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
+	if len(u.AssignedFismaSystems) < 1 {
+		return false
+	}
+
 	for _, fid := range u.AssignedFismaSystems {
 		if *fid == fismasystemid {
 			return true
