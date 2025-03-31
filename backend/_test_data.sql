@@ -1,3 +1,4 @@
 
-INSERT INTO public.users VALUES (DEFAULT, 'test.user@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+-- Use camel case in the email to test that findByEmail is case insensitive
+INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (DEFAULT, 'TEST pillar', 1);

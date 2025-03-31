@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -117,11 +118,11 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 		Where("deleted=?", fui.Deleted)
 
 	if fui.Email != nil {
-		sqlb = sqlb.Where("email LIKE ?", "%"+*fui.Email+"%")
+		sqlb = sqlb.Where("LOWER(email) LIKE ?", "%"+strings.ToLower(*fui.Email)+"%")
 	}
 
 	if fui.FullName != nil {
-		sqlb = sqlb.Where("UPPER(fullname) LIKE UPPER(?)", "%"+*fui.FullName+"%")
+		sqlb = sqlb.Where("UPPER(fullname) LIKE ?", "%"+strings.ToUpper(*fui.FullName)+"%")
 	}
 
 	if fui.Role != nil {
@@ -141,7 +142,7 @@ func FindUserByID(ctx context.Context, userid string) (*User, error) {
 
 // FindUserByEmail queries the database for a User with the given email address and returns *User or error
 func FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	return findUser(ctx, "users.email=?", []any{email})
+	return findUser(ctx, "LOWER(users.email)=?", []any{strings.ToLower(email)})
 }
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
