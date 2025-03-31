@@ -111,7 +111,7 @@ tests:
       body:
         json:
           data:
-            email: "test.user@nowhere.xyz"
+            email: "Test.User@nowhere.xyz"
             role: "ADMIN"
 
   # DataCalls Endpoints
