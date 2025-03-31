@@ -10,14 +10,10 @@ commonHeaders: &commonHeaders
 dataCallData: &dataCallData
   datacall: "FY2025 Q1"
   deadline: "2025-03-31T17:59:59Z"
-  emailsubject: "Q1 2025 Security Assessment Request"
-  emailbody: "Please complete the Q1 2025 security assessment by March 31st."
 
 updatedDataCallData: &updatedDataCallData
   datacall: "FY2025 Q1"
   deadline: "2025-03-31T17:59:59Z"
-  emailsubject: "Updated: Q1 2025 Security Assessment Request"
-  emailbody: "Please complete the Q1 2025 security assessment by the extended deadline of April 15th."
 
 fismaSystemData: &fismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
@@ -256,6 +252,38 @@ tests:
   #     status: 200
   #     headers:
   #       content-type: "application/json"
+
+  # Datacalls completed Fisma Systems endpoints
+  # mark a datacall as complete for a fismasystem
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 204
+      headers:
+        content-type: "application/json"
+
+  # get a list of fisma systems that marked a specific data call as complete
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/fismasystems"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # get a list of data calls that a specific fisma system marked as complete
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/datacalls"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
 
   # Functions Endpoints
   - id: createFunction
@@ -582,6 +610,7 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
   
   # massemails only supports this one route
   # test that it errors on invalid input

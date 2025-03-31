@@ -7,8 +7,8 @@ func init() {
 		ALTER TABLE IF EXISTS public.datacalls ADD COLUMN IF NOT EXISTS "emailbody" varchar(2000);
 		ALTER TABLE IF EXISTS public.datacalls ADD COLUMN IF NOT EXISTS "emailsent" timestamp with time zone[];
 		`,
-		`ALTER TABLE IF EXISTS public.functions DROP COLUMN IF EXISTS emailsubject;
-		ALTER TABLE IF EXISTS public.functions DROP COLUMN IF EXISTS emailbody;
-		ALTER TABLE IF EXISTS public.functions DROP COLUMN IF EXISTS emailsent;
+		`ALTER TABLE IF EXISTS public.datacalls DROP COLUMN IF EXISTS emailsubject;
+		ALTER TABLE IF EXISTS public.datacalls DROP COLUMN IF EXISTS emailbody;
+		ALTER TABLE IF EXISTS public.datacalls DROP COLUMN IF EXISTS emailsent;
 		`)
 }
