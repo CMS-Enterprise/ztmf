@@ -56,7 +56,7 @@ updatedFunctionData: &updatedFunctionData
   pillarid: 1
 
 userData: &userData
-  email: "new.user@example.com"
+  email: "New.User@example.com"
   fullname: "New Test User"
   role: "ISSO"
 
@@ -111,7 +111,7 @@ tests:
       body:
         json:
           data:
-            email: "test.user@nowhere.xyz"
+            email: "Test.User@nowhere.xyz"
             role: "ADMIN"
 
   # DataCalls Endpoints
