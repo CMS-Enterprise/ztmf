@@ -1,49 +1,12 @@
 # ZTMF Infrastructure
 
-This directory contains the Terraform configuration for the ZTMF (Zero Trust Maturity Framework) application infrastructure on AWS. The infrastructure is deployed in the `us-east-1` region with separate environments for `dev` and `prod`, each in its own AWS account.
+This directory contains the Terraform configuration for the ZTMF (Zero Trust Maturity Framework) application infrastructure on AWS. The infrastructure is deployed in the `us-east-1` region with separate environments for `dev` and `prod`, each in its own AWS account. 
 
-## Architecture Overview
+> **_NOTE:_** For now the assets and api are both behind CloudFront (protected with CMS Cloud-provided WAF), but should be migrated to AWS Verified Access once the service is approved and made available for use in the production account.
+
+![aws cloud architecture for ztmf](architecture.png)
 
 The ZTMF application follows a modern cloud-native architecture with the following key components:
-
-```mermaid
----
-title: ZTMF Architecture
----
-C4Context
-    Person(user, "User", "CMS employee accessing the ZTMF application")
-    
-    Boundary(aws, "AWS Cloud", "us-east-1 region") {
-        System(cloudfront, "CloudFront", "Content delivery network with WAF protection")
-        
-        Boundary(vpc, "VPC", "Private network") {
-            System_Ext(alb, "Internal ALB", "Application Load Balancer with OIDC authentication")
-            
-            Boundary(ecs, "ECS Cluster", "Container orchestration") {
-                Container(api, "API Container", "Go API running in Fargate")
-            }
-            
-            SystemDb(rds, "Aurora PostgreSQL", "Serverless v2 database")
-            
-            System(bastion, "Bastion Host", "EC2 instance for database access")
-            
-            System(endpoints, "VPC Endpoints", "Private access to AWS services")
-        }
-        
-        SystemQueue(s3, "S3 Buckets", "Static web assets and logs storage")
-        System(ecr, "ECR", "Container registry for API images")
-        System(secrets, "Secrets Manager", "Stores credentials and certificates")
-    }
-    
-    Rel(user, cloudfront, "HTTPS")
-    Rel(cloudfront, s3, "Fetch static assets")
-    Rel(cloudfront, alb, "API requests")
-    Rel(alb, api, "Forward authenticated requests")
-    Rel(api, rds, "Query database")
-    Rel(api, secrets, "Retrieve secrets")
-    Rel(bastion, rds, "Database administration")
-    Rel_Back(api, endpoints, "Access AWS services")
-```
 
 ## Key Components
 
