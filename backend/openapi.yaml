@@ -1,0 +1,1358 @@
+openapi: 3.0.0
+info:
+  title: ZTMF API
+  description: API for Zero Trust Maturity Framework
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Base API path
+paths:
+  /datacalls:
+    get:
+      summary: List all data calls
+      description: Returns a list of all data calls
+      operationId: listDataCalls
+      responses:
+        '200':
+          description: A list of data calls
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DataCall'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new data call
+      description: Creates a new data call (Admin only)
+      operationId: createDataCall
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataCall'
+      responses:
+        '201':
+          description: Data call created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataCall'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /datacalls/{datacallid}:
+    get:
+      summary: Get a data call by ID
+      description: Returns a specific data call by ID
+      operationId: getDataCallById
+      parameters:
+        - name: datacallid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A data call
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataCall'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Update a data call
+      description: Updates an existing data call (Admin only)
+      operationId: updateDataCall
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datacallid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataCall'
+      responses:
+        '204':
+          description: Data call updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /datacalls/{datacallid}/fismasystems/{fismasystemid}:
+    put:
+      summary: Complete a data call for a FISMA system
+      description: Marks a data call as completed for a specific FISMA system
+      operationId: completeDataCall
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datacallid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '204':
+          description: Data call completed for FISMA system
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /datacalls/{datacallid}/fismasystems:
+    get:
+      summary: List completed FISMA systems for a data call
+      description: Returns a list of FISMA systems that have completed a specific data call
+      operationId: listCompletedFismaSystems
+      parameters:
+        - name: datacallid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of completed FISMA systems
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FismaSystem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /datacalls/{datacallid}/export:
+    get:
+      summary: Export data call results
+      description: Exports data call results to Excel format
+      operationId: exportDataCall
+      parameters:
+        - name: datacallid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: fsids
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: integer
+              format: int32
+          description: Filter by FISMA system IDs
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /fismasystems:
+    get:
+      summary: List FISMA systems
+      description: Returns a list of FISMA systems (filtered by user access if not admin)
+      operationId: listFismaSystems
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: A list of FISMA systems
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FismaSystem'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new FISMA system
+      description: Creates a new FISMA system (Admin only)
+      operationId: createFismaSystem
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FismaSystem'
+      responses:
+        '201':
+          description: FISMA system created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FismaSystem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /fismasystems/{fismasystemid}:
+    get:
+      summary: Get a FISMA system by ID
+      description: Returns a specific FISMA system by ID
+      operationId: getFismaSystemById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A FISMA system
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FismaSystem'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Update a FISMA system
+      description: Updates an existing FISMA system (Admin only)
+      operationId: updateFismaSystem
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FismaSystem'
+      responses:
+        '204':
+          description: FISMA system updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /fismasystems/{fismasystemid}/datacalls:
+    get:
+      summary: List completed data calls for a FISMA system
+      description: Returns a list of data calls that have been completed by a specific FISMA system
+      operationId: listCompleteDataCalls
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of completed data calls
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DataCall'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /fismasystems/{fismasystemid}/questions:
+    get:
+      summary: List questions for a FISMA system
+      description: Returns a list of questions relevant to a specific FISMA system
+      operationId: listFismaSystemQuestions
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Question'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /functions/{functionid}/options:
+    get:
+      summary: List options for a function
+      description: Returns a list of options for a specific function
+      operationId: listFunctionOptions
+      parameters:
+        - name: functionid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of function options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FunctionOption'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users:
+    get:
+      summary: List users
+      description: Returns a list of users
+      operationId: listUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fullname
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: A list of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new user
+      description: Creates a new user
+      operationId: createUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/current:
+    get:
+      summary: Get current user
+      description: Returns the currently authenticated user
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/{userid}:
+    get:
+      summary: Get a user by ID
+      description: Returns a specific user by ID
+      operationId: getUserById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      responses:
+        '200':
+          description: A user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Update a user
+      description: Updates an existing user
+      operationId: updateUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '204':
+          description: User updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Delete a user
+      description: Marks a user as deleted
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      responses:
+        '204':
+          description: User deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/{userid}/assignedfismasystems:
+    get:
+      summary: List FISMA systems assigned to a user
+      description: Returns a list of FISMA systems assigned to a specific user
+      operationId: listUserFismaSystems
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      responses:
+        '200':
+          description: A list of FISMA system IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: integer
+                      format: int32
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Assign a FISMA system to a user
+      description: Assigns a FISMA system to a specific user
+      operationId: assignFismaSystemToUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserFismaSystem'
+      responses:
+        '201':
+          description: FISMA system assigned to user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserFismaSystem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/{userid}/assignedfismasystems/{fismasystemid}:
+    delete:
+      summary: Remove a FISMA system assignment from a user
+      description: Removes a FISMA system assignment from a specific user
+      operationId: removeFismaSystemFromUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '204':
+          description: FISMA system assignment removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /scores:
+    get:
+      summary: List scores
+      description: Returns a list of scores
+      operationId: listScores
+      parameters:
+        - name: fismasystemid
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: datacallid
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of scores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Score'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new score
+      description: Creates a new score
+      operationId: createScore
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Score'
+      responses:
+        '201':
+          description: Score created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Score'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /scores/aggregate:
+    get:
+      summary: Get aggregate scores
+      description: Returns aggregate scores
+      operationId: getScoresAggregate
+      parameters:
+        - name: fismasystemid
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: datacallid
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Aggregate scores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScoreAggregate'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /scores/{scoreid}:
+    put:
+      summary: Update a score
+      description: Updates an existing score
+      operationId: updateScore
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: scoreid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Score'
+      responses:
+        '204':
+          description: Score updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /questions:
+    get:
+      summary: List questions
+      description: Returns a list of questions
+      operationId: listQuestions
+      responses:
+        '200':
+          description: A list of questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Question'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new question
+      description: Creates a new question
+      operationId: createQuestion
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Question'
+      responses:
+        '201':
+          description: Question created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Question'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /questions/{questionid}:
+    get:
+      summary: Get a question by ID
+      description: Returns a specific question by ID
+      operationId: getQuestionById
+      parameters:
+        - name: questionid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A question
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Question'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Update a question
+      description: Updates an existing question
+      operationId: updateQuestion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: questionid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Question'
+      responses:
+        '204':
+          description: Question updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /functions:
+    get:
+      summary: List functions
+      description: Returns a list of functions
+      operationId: listFunctions
+      parameters:
+        - name: questionid
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of functions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Function'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create a new function
+      description: Creates a new function
+      operationId: createFunction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Function'
+      responses:
+        '201':
+          description: Function created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Function'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /functions/{functionid}:
+    get:
+      summary: Get a function by ID
+      description: Returns a specific function by ID
+      operationId: getFunctionById
+      parameters:
+        - name: functionid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A function
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Function'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Update a function
+      description: Updates an existing function
+      operationId: updateFunction
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: functionid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Function'
+      responses:
+        '204':
+          description: Function updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /events:
+    get:
+      summary: Get events
+      description: Returns a list of events
+      operationId: getEvents
+      parameters:
+        - name: userid
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resource
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: payload
+          in: query
+          required: false
+          schema:
+            type: object
+      responses:
+        '200':
+          description: A list of events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /massemails:
+    post:
+      summary: Send mass email
+      description: Sends a mass email
+      operationId: sendMassEmail
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MassEmail'
+      responses:
+        '201':
+          description: Mass email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MassEmail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    DataCall:
+      type: object
+      properties:
+        datacallid:
+          type: integer
+          format: int32
+        datacall:
+          type: string
+        datecreated:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+      required:
+        - datacall
+        - deadline
+    FismaSystem:
+      type: object
+      properties:
+        fismasystemid:
+          type: integer
+          format: int32
+        fismauid:
+          type: string
+        fismaacronym:
+          type: string
+        fismaname:
+          type: string
+        fismasubsystem:
+          type: string
+          nullable: true
+        component:
+          type: string
+          nullable: true
+        groupacronym:
+          type: string
+          nullable: true
+        groupname:
+          type: string
+          nullable: true
+        divisionname:
+          type: string
+          nullable: true
+        datacenterenvironment:
+          type: string
+          nullable: true
+        datacallcontact:
+          type: string
+          nullable: true
+        issoemail:
+          type: string
+          nullable: true
+      required:
+        - fismauid
+        - fismaacronym
+        - fismaname
+    User:
+      type: object
+      properties:
+        userid:
+          type: string
+        email:
+          type: string
+          format: email
+        fullname:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, ISSO, ISSM]
+        deleted:
+          type: boolean
+      required:
+        - email
+        - fullname
+        - role
+    UserFismaSystem:
+      type: object
+      properties:
+        userid:
+          type: string
+        fismasystemid:
+          type: integer
+          format: int32
+      required:
+        - userid
+        - fismasystemid
+    Score:
+      type: object
+      properties:
+        scoreid:
+          type: integer
+          format: int32
+        fismasystemid:
+          type: integer
+          format: int32
+        datecalculated:
+          type: number
+          format: double
+        notes:
+          type: string
+          nullable: true
+        functionoptionid:
+          type: integer
+          format: int32
+        datacallid:
+          type: integer
+          format: int32
+      required:
+        - fismasystemid
+        - functionoptionid
+        - datacallid
+    ScoreAggregate:
+      type: object
+      properties:
+        datacallid:
+          type: integer
+          format: int32
+        fismasystemid:
+          type: integer
+          format: int32
+        systemscore:
+          type: number
+          format: double
+    Question:
+      type: object
+      properties:
+        questionid:
+          type: integer
+          format: int32
+        question:
+          type: string
+        notesprompt:
+          type: string
+        order:
+          type: integer
+        pillarid:
+          type: integer
+          format: int32
+        pillar:
+          $ref: '#/components/schemas/Pillar'
+        function:
+          $ref: '#/components/schemas/Function'
+      required:
+        - question
+        - notesprompt
+        - order
+        - pillarid
+    Pillar:
+      type: object
+      properties:
+        pillarid:
+          type: integer
+          format: int32
+        pillar:
+          type: string
+        order:
+          type: integer
+    Function:
+      type: object
+      properties:
+        functionid:
+          type: integer
+          format: int32
+        function:
+          type: string
+        description:
+          type: string
+        datacenterenvironment:
+          type: string
+        order:
+          type: integer
+        questionid:
+          type: integer
+          format: int32
+          nullable: true
+        pillarid:
+          type: integer
+          format: int32
+      required:
+        - function
+        - description
+        - datacenterenvironment
+        - pillarid
+    FunctionOption:
+      type: object
+      properties:
+        functionoptionid:
+          type: integer
+          format: int32
+        functionid:
+          type: integer
+          format: int32
+        score:
+          type: integer
+          format: int32
+        optionname:
+          type: string
+        description:
+          type: string
+    Event:
+      type: object
+      properties:
+        userid:
+          type: string
+        action:
+          type: string
+        type:
+          type: string
+        createdat:
+          type: string
+          format: date-time
+        payload:
+          type: object
+    MassEmail:
+      type: object
+      properties:
+        massemailid:
+          type: integer
+        datesent:
+          type: string
+          format: date-time
+          nullable: true
+        subject:
+          type: string
+        body:
+          type: string
+        group:
+          type: string
+          enum: [ISSO, ISSM, DCC, ALL, ADMIN]
+      required:
+        - subject
+        - body
+        - group
+    Answer:
+      type: object
+      properties:
+        datacall:
+          type: string
+        fismasystemid:
+          type: integer
+          format: int32
+        fismaacronym:
+          type: string
+        datacenterenvironment:
+          type: string
+        pillar:
+          type: string
+        question:
+          type: string
+        function:
+          type: string
+        description:
+          type: string
+        optionname:
+          type: string
+        score:
+          type: integer
+        notes:
+          type: string
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
