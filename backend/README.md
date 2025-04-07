@@ -13,35 +13,41 @@ This document provides an overview of the backend API architecture for the Zero 
 
 ### Directory Structure
 
-The backend API is organized in a clean, modular structure:
+The backend is organized in a clean, modular structure that supports multiple binaries sharing common packages such as config and db abstractions:
 
+<!-- using shell syntax just for the colors -->
 ```sh
-backend/cmd/api/
-├── main.go                 # Application entry point
-└── internal/               # Internal packages not meant for external use
-    ├── auth/               # Authentication and authorization
-    │   ├── middleware.go   # JWT validation middleware
-    │   └── token.go        # JWT token handling
-    ├── controller/         # HTTP request handlers
-    │   ├── controller.go   # Common controller functionality
-    │   ├── errors.go       # Error definitions
-    │   └── [resource].go   # Resource-specific controllers
-    ├── mail/               # Email functionality
-    │   └── mail.go
-    ├── migrations/         # Database schema migrations
-    │   ├── migrations.go   # Migration runner
-    │   ├── populate.go     # Test data population
-    │   └── [####][name].go # Numbered migration files
-    ├── model/              # Data models and database operations
-    │   ├── model.go        # Common model functionality
-    │   └── [resource].go   # Resource-specific models
-    ├── router/             # API route definitions
-    │   └── router.go       # Route configuration
-    └── spreadsheet/        # Spreadsheet generation
-        └── spreadsheet.go
+backend/
+├─ cmd/                        # multiple binaries (api & etl)
+│  ├─ api/
+│  │  ├─ main.go               # Application entry point
+│  │  └─ internal/             # Internal packages not meant for external use
+│  │     ├─ auth/              # Authentication and authorization
+│  │     │  ├─ middleware.go   # JWT validation middleware
+│  │     │  └─ token.go        # JWT token handling
+│  │     ├─ controller/        # HTTP request handlers
+│  │     │  ├─ controller.go   # Common controller functionality
+│  │     │  ├─ errors.go       # Error definitions
+│  │     │  └─ [resource].go   # Resource-specific controllers
+│  │     ├─ mail/              # Email functionality
+│  │     │  └─ mail.go
+│  │     ├─ migrations/        # Database schema migrations
+│  │     │  ├─ migrations.go   # Migration runner
+│  │     │  ├─ populate.go     # Test data population
+│  │     │  └─ [####][name].go # Numbered migration files
+│  │     ├─ model/             # Data models and database operations
+│  │     │  ├─ model.go        # Common model functionality
+│  │     │  └─ [resource].go   # Resource-specific models
+│  │     ├─ router/            # API route configurations
+│  │     └─ spreadsheet/       # Spreadsheet generation (.xlsx files)
+│  └─ etl/                     # ETL process to import datacall answers from CSV
+└─ internal/                   # internal components shared between binaries
+   ├─ config/                  # common config, environment variable parsing
+   ├─ db/                      # wrapper around db connection handling via pgx (postgre adapter)
+   └─ secrets/                 # wrapper around AWS Secrets Manager SDK
 ```
 
-### Key Components
+### API Components
 
 #### Main Application (main.go)
 
