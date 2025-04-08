@@ -97,3 +97,8 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, r, d, nil)
 }
+
+func GetLatestDataCall(w http.ResponseWriter, r *http.Request) {
+	dc, err := model.FindLatestDataCall(r.Context())
+	respond(w, r, dc, err)
+}
