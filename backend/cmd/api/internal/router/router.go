@@ -15,6 +15,7 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/datacalls", controller.ListDataCalls).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls", controller.SaveDataCall).Methods("POST")
+	router.HandleFunc("/api/v1/datacalls/latest", controller.GetLatestDataCall).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.SaveDataCall).Methods("PUT")
 	// records that a fisma system has completed the data call

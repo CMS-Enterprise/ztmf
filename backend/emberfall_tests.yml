@@ -133,6 +133,19 @@ tests:
           data:
             <<: *dataCallData
   
+  - url: http://localhost:8080/api/v1/datacalls/latest
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *dataCallData
+  
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: GET
     headers:

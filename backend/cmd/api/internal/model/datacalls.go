@@ -79,3 +79,14 @@ func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
 
 	return queryRow(context.TODO(), prevDcSqlb, pgx.RowToStructByName[DataCall])
 }
+
+func FindLatestDataCall(ctx context.Context) (*DataCall, error) {
+	// Find the latest datacall by sorting on datacallid in descending order
+	sqlb := stmntBuilder.
+		Select(dataCallColumns...).
+		From("datacalls").
+		OrderBy("datacallid DESC"). // descending because the primary key is serial auto-incrementing
+		Limit(1)
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
+}
