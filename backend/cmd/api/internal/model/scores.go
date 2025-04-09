@@ -12,12 +12,13 @@ import (
 )
 
 type Score struct {
-	ScoreID          int32   `json:"scoreid"`
-	FismaSystemID    int32   `json:"fismasystemid"`
-	DateCalculated   float64 `json:"datecalculated"`
-	Notes            *string `json:"notes"`
-	FunctionOptionID int32   `json:"functionoptionid"`
-	DataCallID       int32   `json:"datacallid"`
+	ScoreID          int32           `json:"scoreid"`
+	FismaSystemID    int32           `json:"fismasystemid"`
+	DateCalculated   float64         `json:"datecalculated"`
+	Notes            *string         `json:"notes"`
+	FunctionOptionID int32           `json:"functionoptionid"`
+	DataCallID       int32           `json:"datacallid"`
+	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
 }
 
 func (s *Score) Save(ctx context.Context) (*Score, error) {
@@ -67,6 +68,7 @@ type ScoreAggregate struct {
 }
 
 type FindScoresInput struct {
+	input
 	FismaSystemID  *int32 `schema:"fismasystemid"`
 	FismaSystemIDs []*int32
 	DataCallID     *int32 `schema:"datacallid"`
@@ -74,7 +76,16 @@ type FindScoresInput struct {
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
-	sqlb := stmntBuilder.Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid").From("scores")
+
+	sqlb := stmntBuilder.
+		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.functionoptionid, scores.datacallid").
+		From("scores")
+
+	if input.includes("functionoption") {
+		sqlb = sqlb.
+			Columns(functionOptionColumns...).
+			InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid")
+	}
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid=scores.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -88,7 +99,16 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		sqlb = sqlb.Where("datacallid=?", *input.DataCallID)
 	}
 
-	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Score])
+	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
+		score := Score{}
+		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID}
+		if input.includes("functionoption") {
+			score.FunctionOption = &FunctionOption{}
+			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)
+		}
+		err := row.Scan(fields...)
+		return &score, err
+	})
 }
 
 func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {

@@ -6,6 +6,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var (
+	functionOptionColumns = []string{"functionoptions.functionoptionid", "functionid", "score", "optionname", "description"}
+)
+
 type FunctionOption struct {
 	FunctionOptionID int32  `json:"functionoptionid"`
 	FunctionID       int32  `json:"functionid"`
@@ -20,7 +24,7 @@ type FindFunctionOptionsInput struct {
 
 func FindFunctionOptions(ctx context.Context, input FindFunctionOptionsInput) ([]*FunctionOption, error) {
 	sqlb := stmntBuilder.
-		Select("functionoptionid,functionid,score,optionname,description").
+		Select(functionOptionColumns...).
 		From("functionoptions")
 
 	if input.FunctionID != nil {
