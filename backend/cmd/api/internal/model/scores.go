@@ -81,7 +81,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.functionoptionid, scores.datacallid").
 		From("scores")
 
-	if input.includes("functionoption") {
+	if input.contains("functionoption") {
 		sqlb = sqlb.
 			Columns(functionOptionColumns...).
 			InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid")
@@ -102,7 +102,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
 		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID}
-		if input.includes("functionoption") {
+		if input.contains("functionoption") {
 			score.FunctionOption = &FunctionOption{}
 			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)
 		}

@@ -21,7 +21,7 @@ type input struct {
 	m       map[string]any
 }
 
-func (i *input) includes(key string) bool {
+func (i *input) contains(key string) bool {
 	if i.m == nil {
 		i.m = map[string]any{}
 		for _, s := range i.Include {
