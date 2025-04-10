@@ -16,6 +16,23 @@ import (
 // uses the PostgreSQL $1,$2,... format of placeholders
 var stmntBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+type input struct {
+	Include []string `schema:"include"`
+	m       map[string]any
+}
+
+func (i *input) contains(key string) bool {
+	if i.m == nil {
+		i.m = map[string]any{}
+		for _, s := range i.Include {
+			i.m[s] = nil
+		}
+	}
+
+	_, ok := i.m[key]
+	return ok
+}
+
 // SqlBuilder allows methods to receive different types like squirrel.InsertBuilder, squirrel.UpdateBuilder, etc. that all implement the ToSql method
 type SqlBuilder interface {
 	ToSql() (string, []interface{}, error)
