@@ -44,7 +44,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Where("scoreid=?", s.ScoreID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 	}
-	return queryRow(ctx, sqlb, pgx.RowToStructByName[Score])
+	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
 }
 
 func (s *Score) validate(ctx context.Context) error {
