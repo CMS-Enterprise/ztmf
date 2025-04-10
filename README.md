@@ -1,13 +1,12 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/CMS-Enterprise/ztmf/backend)](https://goreportcard.com/report/github.com/CMS-Enterprise/ztmf/backend) [![Backend](https://github.com/CMS-Enterprise/ztmf/actions/workflows/backend.yml/badge.svg)](https://github.com/CMS-Enterprise/ztmf/actions/workflows/backend.yml) [![Infrastructure](https://github.com/CMS-Enterprise/ztmf/actions/workflows/infrastructure.yml/badge.svg)](https://github.com/CMS-Enterprise/ztmf/actions/workflows/infrastructure.yml)
 # Zero Trust Maturity Framework (ZTMF) Scoring
 
+The ZTMF Scoring Application allows ADOs to answer HHS Zero Trust data calls, and view their Zero Trust Maturity score online.
 
-The ZTMF Scoring Application allows ADOs to answer HHS Zero Trust data calls, and view their Zero Trust Maturity score online. The interface and the API are protected by AWS Verified Access which requires authentication via IDM (Okta).
-
-This monorepo contains the following major components:
+This repo contains the following major components:
+- `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
 - `backend/` includes a REST API and an ETL process both written in Go
 - `infrastructure/` includes all AWS resources as IaC managed by Terraform
-- `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
 
 ## Architecture
 
