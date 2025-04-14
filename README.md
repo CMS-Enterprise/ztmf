@@ -8,6 +8,15 @@ This repo contains the following major components:
 - `backend/` includes a REST API and an ETL process both written in Go
 - `infrastructure/` includes all AWS resources as IaC managed by Terraform
 
+## Required Tools
+
+1. [Go](https://go.dev/) at the required version specified in [backend/go.mod](backend/go.mod#L3)
+2. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/)
+3. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) for establishing SSM tunnels
+4. [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform) for deploying infrastructure changes manually if necessary (though CICD should handle most changes)
+5. [Docker](https://www.docker.com/) for building the container image (though CICD should handle most changes)
+6. [Emberfall](https://github.com/aquia-inc/emberfall) for running smoke tests locally (very helpful when adding new routes or parameters)
+
 ## Architecture
 
 The ZTMF Scoring Application is comprised of a React-based Single-Page Application (SPA) that retrieves data from a REST API. The web assets for the SPA are hosted in an S3 bucket, and the API is hosted as an ECS service with containers deployed via Fargate behind an application load balancer. CloudFront provides the entrypoint with caching enabled for static assets, and a WAF for geofencing and other security measures. The database is provided by AWS Aurora Serverless V2 PostgreSQL.
