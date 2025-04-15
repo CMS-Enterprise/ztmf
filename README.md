@@ -1,13 +1,21 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/CMS-Enterprise/ztmf/backend)](https://goreportcard.com/report/github.com/CMS-Enterprise/ztmf/backend) [![Backend](https://github.com/CMS-Enterprise/ztmf/actions/workflows/backend.yml/badge.svg)](https://github.com/CMS-Enterprise/ztmf/actions/workflows/backend.yml) [![Infrastructure](https://github.com/CMS-Enterprise/ztmf/actions/workflows/infrastructure.yml/badge.svg)](https://github.com/CMS-Enterprise/ztmf/actions/workflows/infrastructure.yml)
 # Zero Trust Maturity Framework (ZTMF) Scoring
 
+The ZTMF Scoring Application allows ADOs to answer HHS Zero Trust data calls, and view their Zero Trust Maturity score online.
 
-The ZTMF Scoring Application allows ADOs to answer HHS Zero Trust data calls, and view their Zero Trust Maturity score online. The interface and the API are protected by AWS Verified Access which requires authentication via IDM (Okta).
-
-This monorepo contains the following major components:
+This repo contains the following major components:
+- `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
 - `backend/` includes a REST API and an ETL process both written in Go
 - `infrastructure/` includes all AWS resources as IaC managed by Terraform
-- `.github/workflows` contains workflows for Github Actions to test, build, and deploy to AWS
+
+## Required Tools
+
+1. [Go](https://go.dev/) at the required version specified in [backend/go.mod](backend/go.mod#L3)
+2. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/)
+3. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) for establishing SSM tunnels
+4. [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform) for deploying infrastructure changes manually if necessary (though CICD should handle most changes)
+5. [Docker](https://www.docker.com/) for building the container image (though CICD should handle most changes)
+6. [Emberfall](https://github.com/aquia-inc/emberfall) for running smoke tests locally (very helpful when adding new routes or parameters)
 
 ## Architecture
 
