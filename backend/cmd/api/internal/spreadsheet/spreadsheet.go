@@ -3,7 +3,7 @@ package spreadsheet
 import (
 	"fmt"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/xuri/excelize/v2"
 )
 

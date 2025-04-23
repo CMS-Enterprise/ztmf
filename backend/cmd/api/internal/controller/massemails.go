@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/mail"
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
 
 // SaveMassEmail only responds to a PUT request so as to update a single item table
