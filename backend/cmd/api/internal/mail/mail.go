@@ -55,7 +55,7 @@ func Send(subject, body string, recipients []string) {
 			continue
 		}
 
-		msg.Reset("To: " + address + "\r\n" + "Subject: " + subject + "\r\n" + "\r\n" + body + "\r\n")
+		msg.Reset("To: " + address + "\r\n" + "From: " + cfg.SMTP.From + "\r\n" + "Subject: " + subject + "\r\n\r\n" + body + "\r\n")
 		err = c.SendMail(cfg.SMTP.From, []string{address}, msg)
 		if err != nil {
 			log.Println("error sending email: ", err)
