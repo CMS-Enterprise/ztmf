@@ -2,54 +2,167 @@
 
 The backend is comprised of a REST API and an ETL process both written in Go.
 
-## Developer Requirements and Config
+## Developer Requirements
 
-- Go ~>1.23.1
+- Go ~>1.24.1
 - Docker buildx
 
-## Application Architecture Overview
 
-This document provides an overview of the backend API architecture for the Zero Trust Maturity Framework (ZTMF) application. It's intended to help engineers new to the project understand the codebase structure and key components.
-
-### Directory Structure
+## Directory Structure
 
 The backend is organized in a clean, modular structure that supports multiple binaries sharing common packages such as config and db abstractions:
 
 <!-- using shell syntax just for the colors -->
 ```sh
 backend/
-├─ cmd/                        # multiple binaries (api & etl)
-│  ├─ api/
-│  │  ├─ main.go               # Application entry point
-│  │  └─ internal/             # Internal packages not meant for external use
-│  │     ├─ auth/              # Authentication and authorization
-│  │     │  ├─ middleware.go   # JWT validation middleware
-│  │     │  └─ token.go        # JWT token handling
-│  │     ├─ controller/        # HTTP request handlers
-│  │     │  ├─ controller.go   # Common controller functionality
-│  │     │  ├─ errors.go       # Error definitions
-│  │     │  └─ [resource].go   # Resource-specific controllers
-│  │     ├─ mail/              # Email functionality
-│  │     │  └─ mail.go
-│  │     ├─ migrations/        # Database schema migrations
-│  │     │  ├─ migrations.go   # Migration runner
-│  │     │  ├─ populate.go     # Test data population
-│  │     │  └─ [####][name].go # Numbered migration files
-│  │     ├─ model/             # Data models and database operations
-│  │     │  ├─ model.go        # Common model functionality
-│  │     │  └─ [resource].go   # Resource-specific models
-│  │     ├─ router/            # API route configurations
-│  │     └─ spreadsheet/       # Spreadsheet generation (.xlsx files)
-│  └─ etl/                     # ETL process to import datacall answers from CSV
+├─ cmd/                        # multiple binaries where each subfolder is a separately compiled binary
+│  └─ api/
+│     ├─ main.go               # entry point for API binary
+│     └─ internal/             # Packages internal to the api
+│        ├─ auth/              # Authentication and authorization
+│        │  ├─ middleware.go   # JWT validation middleware
+│        │  └─ token.go        # JWT token handling
+│        ├─ controller/        # HTTP request handlers
+│        │  ├─ controller.go   # Common controller functionality
+│        │  ├─ errors.go       # Error definitions
+│        │  └─ [resource].go   # Resource-specific controllers
+│        ├─ mail/              # Email sending functionality
+│        │  └─ mail.go
+│        ├─ migrations/        # Database schema migrations
+│        │  ├─ migrations.go   # Migration runner
+│        │  ├─ populate.go     # Test data population
+│        │  └─ [####][name].go # Numbered migration files
+│        ├─ router/            # API route configurations
+│        └─ spreadsheet/       # Spreadsheet generation (.xlsx files)
 └─ internal/                   # internal components shared between binaries
    ├─ config/                  # common config, environment variable parsing
    ├─ db/                      # wrapper around db connection handling via pgx (postgre adapter)
-   └─ secrets/                 # wrapper around AWS Secrets Manager SDK
+   ├─ model/                   # Data models and database operations
+   │  ├─ model.go              # Common model functionality
+   │  ├─ model.go              # Common model functionality
+   │  └─ [resource].go         # Resource-specific models
+   └─ secrets/                 # Utility wrapper around AWS Secrets Manager SDK
 ```
 
-### API Components
+## Shared Components
 
-#### Main Application (main.go)
+This codebase is organized to allow for multiple binaries to share the same common modules:
+
+- `config` which parses environment variables into a struct
+- `db` which provides access to the PostgreSQL driver `pgx`
+- `model` which provides abstracted utility methods for accessing resources in the database 
+- `secrets` which provides an abstracted high level utility for retriving the values from AWS Secrets Manager
+
+### Config (config/)
+
+The config package implements a singleton pattern for application configuration:
+
+- `config.go` - Provides environment variable parsing and configuration access
+- Uses the `github.com/caarlos0/env/v10` package to parse environment variables
+- Implements AWS Secrets Manager integration for sensitive configuration
+- Provides a thread-safe singleton instance via `GetInstance()`
+
+The application uses a singleton configuration pattern that loads settings from environment variables. Configuration is managed through the `config` package located at `backend/internal/config/config.go`.
+
+#### Configuration Loading
+
+Configuration is loaded once at application startup and made available through the `config.GetInstance()` function. The configuration is parsed from environment variables using the `github.com/caarlos0/env/v10` package.
+
+#### Available Configuration Options
+
+##### Core Settings
+- `ENVIRONMENT` - Application environment (default: "local")
+- `PORT` - HTTP server port (default: "3000")
+- `CERT_FILE` - Path to TLS certificate file
+- `KEY_FILE` - Path to TLS key file
+- `AWS_REGION` - AWS region for services (default: "us-east-1")
+
+##### Authentication Settings
+- `AUTH_HS256_SECRET` - Secret for HS256 JWT signing
+- `AUTH_TOKEN_KEY_URL` - URL to fetch the JWT validation key
+- `AUTH_HEADER_FIELD` - HTTP header field containing the JWT token
+
+##### Database Settings
+- `DB_ENDPOINT` - Database host
+- `DB_PORT` - Database port (default: "5432")
+- `DB_NAME` - Database name
+- `DB_USER` - Database username
+- `DB_PASS` - Database password
+- `DB_SECRET_ID` - AWS Secrets Manager ID for database credentials
+- `DB_POPULATE` - Path to SQL file for populating test data
+
+##### SMTP Settings
+SMTP configuration can be loaded either from environment variables or from AWS Secrets Manager:
+
+Environment variables:
+- `SMTP_USER` - SMTP username
+- `SMTP_PASS` - SMTP password
+- `SMTP_HOST` - SMTP server host
+- `SMTP_PORT` - SMTP server port
+- `SMTP_FROM` - Email sender address
+
+AWS Secrets Manager:
+- `SMTP_CONFIG_SECRET_ID` - Secret ID for SMTP configuration
+- `SMTP_CA_ROOT_SECRET_ID` - Secret ID for SMTP root certificate
+- `SMTP_CA_INT_SECRET_ID` - Secret ID for SMTP intermediate certificate
+
+#### Configuration Example
+
+For local development, you can create a `.env` file or use the provided `compose.env-example` as a template:
+
+```sh
+# Core settings
+ENVIRONMENT=local
+PORT=3000
+
+# Authentication
+AUTH_HEADER_FIELD=HS256
+AUTH_HS256_SECRET=your-secret-key
+
+# Database
+DB_ENDPOINT=localhost
+DB_PORT=5432
+DB_NAME=ztmf
+DB_USER=postgres
+DB_PASS=postgres
+DB_POPULATE=./_test_data.sql
+
+# SMTP (optional for local development)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user@example.com
+SMTP_PASS=password
+SMTP_FROM=noreply@example.com
+```
+
+#### AWS Secrets Integration
+
+The configuration system integrates with AWS Secrets Manager for sensitive information:
+
+1. Database credentials can be stored in a secret specified by `DB_SECRET_ID`
+2. SMTP configuration can be stored in a secret specified by `SMTP_CONFIG_SECRET_ID`
+3. SMTP certificates can be loaded from secrets specified by `SMTP_CA_ROOT_SECRET_ID` and `SMTP_CA_INT_SECRET_ID`
+
+This approach allows for secure management of credentials in non-local environments.
+
+### Model (model/)
+
+Model package represent database entities and data handling operations:
+
+- `model.go` - Provides database connection handling and query execution
+- Resource-specific models define entity structures and read/write operations
+- Uses the `squirrel` library for SQL query building
+- Implements a repository pattern for data access
+
+## Multiple Binaries
+
+To produce another binary separate from the api, create a new folder under `backend/cmd/` and add to it the requisite `main.go` . To execute binaries during local development, such as the api in this example, simply run (from `backend/`) `go run ./cmd/api/...`. 
+
+To compile binaries to be distributed to non-local environments, run `go build -o ./ ./cmd/api/...` (replacing _api_ with the target binary). This will save the final binary to the path specified with `-o`. See [Dockerfile](./Dockerfile) for an example of how the api binary is compiled and distributed.
+
+## API Components
+
+### Main Application (main.go)
 
 The entry point for the API server that:
 - Initializes configuration
@@ -57,9 +170,9 @@ The entry point for the API server that:
 - Sets up the HTTP server with TLS if configured
 - Registers the router
 
-#### Router (router.go)
+### Router (router.go)
 
-Defines all API endpoints using the Gorilla Mux router. The API follows RESTful conventions with endpoints organized by resource:
+Defines all API endpoints using the [Gorilla Mux](https://github.com/gorilla/mux) router. The API follows RESTful conventions with endpoints organized by resource:
 
 - `/api/v1/datacalls` - Data call management
 - `/api/v1/fismasystems` - FISMA system management
@@ -71,16 +184,16 @@ Defines all API endpoints using the Gorilla Mux router. The API follows RESTful 
 
 The router applies the authentication middleware to all routes.
 
-#### Authentication (auth/)
+### Authentication (auth/)
 
 Authentication is handled via JWT tokens:
 
 - `middleware.go` - Validates JWT tokens from request headers
 - `token.go` - Handles JWT token decoding and validation
 
-The system expects tokens to be provided by IDM via Okta.
+For non-local environments tokens will be provided by IDM via Okta via the OIDC integration with the AWS Application load balancer. For local development, the `Authorization` header will be the default, and `AUTH_HEADER_FIELD` should be set to `HS256`
 
-#### Controllers (controller/)
+### Controllers (controller/)
 
 Controllers handle HTTP requests and responses:
 
@@ -88,7 +201,7 @@ Controllers handle HTTP requests and responses:
 - Resource-specific controllers implement CRUD operations for each resource type
 - Controllers follow a consistent pattern of extracting parameters, calling model methods, and responding with data or errors
 
-##### Query Parameter Handling
+#### Query Parameter Handling
 
 Controllers use the Gorilla Schema package to decode URL query parameters into Go structs. The `decoder` variable is a shared instance of the schema decoder that's used across all controllers. It converts URL query parameters into structured input objects:
 
@@ -106,16 +219,7 @@ This approach provides several benefits:
 
 The decoder is initialized once and shared across all controllers because it caches struct metadata for performance.
 
-#### Models (model/)
-
-Models represent database entities and handle data operations:
-
-- `model.go` - Provides database connection handling and query execution
-- Resource-specific models define entity structures and database operations
-- Uses the `squirrel` library for SQL query building
-- Implements a repository pattern for data access
-
-#### Migrations (migrations/)
+### Migrations (migrations/)
 
 Database schema migrations are managed through numbered migration files:
 
@@ -124,7 +228,7 @@ Database schema migrations are managed through numbered migration files:
 - Migrations are executed in lexical filename order
 - Can populate test data in local development environments
 
-### Data Flow
+## Data Flow
 
 1. HTTP requests are received by the server
 2. Requests pass through the authentication middleware
@@ -134,9 +238,9 @@ Database schema migrations are managed through numbered migration files:
 6. Controllers format responses and handle errors
 7. HTTP responses are sent back to the client
 
-### Key Design Patterns
+## Key Design Patterns
 
-#### Middleware Pattern
+### Middleware Pattern
    - Intercepts HTTP requests before they reach the handler
    - Implements cross-cutting concerns like authentication, logging, and error handling
    - Uses Go's http.Handler interface for chaining middleware
@@ -146,7 +250,7 @@ Database schema migrations are managed through numbered migration files:
      - Allows for reusable components across different routes
      - Maintains clean controller code focused on business logic
 
-#### Repository Pattern
+### Repository Pattern
    - Separates data access logic from business logic
    - Each model file acts as a repository for a specific entity
    - Provides methods like `Find`, `Save`, etc. that abstract away SQL queries
@@ -155,7 +259,7 @@ Database schema migrations are managed through numbered migration files:
    - Centralizes data access code, reducing duplication
    - Example: `model/fismasystems.go` provides `FindFismaSystems()` and `FindFismaSystem()` methods that handle the SQL queries and return domain objects
 
-#### Dependency Injection
+### Dependency Injection
    - Provides components with their dependencies rather than having them create dependencies
    - Uses context.Context to pass dependencies like the authenticated user
    - Configuration is injected via the config package singleton
@@ -166,7 +270,7 @@ Database schema migrations are managed through numbered migration files:
      - Allows for easier mocking in tests
      - Example: `model.UserFromContext(r.Context())` extracts the authenticated user from the request context
 
-#### Error Handling Pattern
+### Error Handling Pattern
    - Centralizes error handling in the controller package
    - Maps domain/model errors to appropriate HTTP status codes
    - Uses custom error types for specific error conditions
@@ -178,7 +282,7 @@ Database schema migrations are managed through numbered migration files:
      - Controllers use early returns for error conditions
      - Example: When a model returns `model.ErrNoData`, it's translated to a 404 Not Found response
 
-### Database Schema
+## Database Schema
 
 The application uses a PostgreSQL database with tables for:
 
@@ -321,7 +425,7 @@ To work with this codebase:
 2. Familiarize yourself with the API endpoints in `router.go`
 3. Follow existing patterns when adding new features
 4. Add database changes through migrations
-5. Run tests to ensure your changes don't break existing functionality
+5. Run tests via Emberfall to ensure your changes don't break existing functionality
 
 ### Common Tasks
 
@@ -340,7 +444,7 @@ To work with this codebase:
 4. Test the migration and model changes
 
 ## TLS
-The API is designed to serve with TLS when a certificate and key are provided, or serve unsecured http when not provided (useful for local development). The Dockerfile will generate a self-signed certificate which is fine since the containers are behind an AWS application load balancer which accepts untrusted certificates. Certificates for dev and prod environments are acquired from DigiCert and manually imported int AWS ACM.
+The API is designed to serve with TLS when a certificate and key are provided, or serve unsecured http when not provided (useful for local development). The Dockerfile will generate a self-signed certificate which is fine since the containers are behind an AWS application load balancer which accepts untrusted certificates. Certificates for dev and prod environments are acquired from DigiCert and manually imported into AWS ACM.
 
 
 ## API Architecture & Request/Response Flow
@@ -381,7 +485,7 @@ Controller ->> Client: json
 ```
 
 
-### Docker
+## Docker
 
 `Dockerfile` is a multi-stage build written to begin with a Debian-based image with Go and Go tools installed, and the second stage is `FROM scratch` to reduce the final image size to absolute minimum. OpenSSL is used to generate self-signed certificates to be used to run the API with `HTTP.ListenAndServeTLS` to acheive end-to-end encryption.
 

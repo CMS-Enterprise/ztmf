@@ -3,7 +3,7 @@ package controller
 import (
 	"net/http"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
 
 func GetEvents(w http.ResponseWriter, r *http.Request) {

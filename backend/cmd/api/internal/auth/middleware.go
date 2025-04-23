@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/model"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
 
 // Middleware is used to validate the JWT forwarded by Verified Access and match it to a db record
