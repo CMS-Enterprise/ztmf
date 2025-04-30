@@ -154,6 +154,12 @@ Model package represent database entities and data handling operations:
 - Uses the `squirrel` library for SQL query building
 - Implements a repository pattern for data access
 
+#### Event Tracking
+
+The data model includes an `events` table and related Go structs in `model/events.go` for automatically recording all write operations to resources. All resource models (eg `model/users.go`) leverage the `queryRow` function for all write operations, namely `insert` and `update` since no true `delete` is ever performed. The `queryRow` function, upon successful insert or update, will then call `recordEvent` function which uses the provided `SqlBuilder` argument to determine what write operation was performed (create, update, delete), and records that along with current user ID, the resource being acted upon, and the payload for the event. The event payload is essentially the respective resource's row that was inserted or updated, stored in the events table payload column as JSONB. This processes enables automatic capture of all write operations without needing to explicitly record events or even pre-define resources.
+
+Furthermore, events has a read-only route in the API see `backend/cmd/api/internal/router/router.go` for listing events with filters if provided, see `backend/cmd/api/internal/controller/events.go`
+
 ## Multiple Binaries
 
 To produce another binary separate from the api, create a new folder under `backend/cmd/` and add to it the requisite `main.go` . To execute binaries during local development, such as the api in this example, simply run (from `backend/`) `go run ./cmd/api/...`. 

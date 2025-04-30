@@ -34,6 +34,9 @@ type FindEventsInput struct {
 	Payload  *payload `schema:"payload" json:"payload,omitempty"`
 }
 
+// recordEvent uses the provided SqlBuilder to determin what write operation was performed (create, update, delete), and
+// records that along with current user ID, the resource being acted upon, and the payload for the event.
+// The event payload is essentially the row that was inserted or updated, but in this case stored as JSONB
 func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 
 	e := Event{
