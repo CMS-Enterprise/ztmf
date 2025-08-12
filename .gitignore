@@ -3,3 +3,6 @@
 **/.DS_Store
 .vscode/**
 backend/.dccache
+*.sql
+!*_test_data.sql
+backend/compose-fixed.yml
