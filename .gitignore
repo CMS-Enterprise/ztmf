@@ -5,4 +5,7 @@
 backend/.dccache
 *.sql
 !*_test_data.sql
+!*_test_data_empire.sql
 backend/compose-fixed.yml
+backend/compose-dev.yml
+backend/dev.compose.env
