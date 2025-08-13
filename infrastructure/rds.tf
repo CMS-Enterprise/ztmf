@@ -21,7 +21,7 @@ resource "aws_rds_cluster" "ztmf" {
   cluster_identifier          = "ztmf"
   engine                      = "aurora-postgresql"
   engine_mode                 = "provisioned"
-  engine_version              = "16.1"
+  engine_version              = "16.6"
   database_name               = "ztmf"
   db_subnet_group_name        = aws_db_subnet_group.ztmf.name
   master_username             = data.aws_secretsmanager_secret_version.ztmf_db_user_current.secret_string
