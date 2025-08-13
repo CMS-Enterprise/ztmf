@@ -62,9 +62,16 @@ func (s *Score) validate(ctx context.Context) error {
 }
 
 type ScoreAggregate struct {
-	DataCallID    int32   `json:"datacallid"`
-	FismaSystemID int32   `json:"fismasystemid"`
-	SystemScore   float64 `json:"systemscore"`
+	DataCallID    int32          `json:"datacallid"`
+	FismaSystemID int32          `json:"fismasystemid"`
+	SystemScore   float64        `json:"systemscore"`
+	PillarScores  []*PillarScore `json:"pillarscores,omitempty" db:"-"`
+}
+
+type PillarScore struct {
+	PillarID int32   `json:"pillarid"`
+	Pillar   string  `json:"pillar"`
+	Score    float64 `json:"score"`
 }
 
 type FindScoresInput struct {
@@ -73,6 +80,7 @@ type FindScoresInput struct {
 	FismaSystemIDs []*int32
 	DataCallID     *int32 `schema:"datacallid"`
 	UserID         *string
+	IncludePillars *bool `schema:"include_pillars"`
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
@@ -112,6 +120,11 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 }
 
 func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {
+	// Convert single FismaSystemID to FismaSystemIDs array if needed
+	if input.FismaSystemID != nil && len(input.FismaSystemIDs) == 0 {
+		input.FismaSystemIDs = []*int32{input.FismaSystemID}
+	}
+
 	subSqlb := squirrel.Select("datacallid, fismasystemid, AVG(score) OVER (PARTITION BY datacallid, fismasystemid) as systemscore").
 		From("scores").
 		InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid")
@@ -129,7 +142,38 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 		GroupBy("datacallid, fismasystemid, systemscore").
 		PlaceholderFormat(squirrel.Dollar)
 
-	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
+	aggregates, err := query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
+	if err != nil {
+		return nil, err
+	}
+
+	// If pillar scores are requested, fetch and populate them
+	if input.IncludePillars != nil && *input.IncludePillars {
+		for _, aggregate := range aggregates {
+			pillarScores, err := findPillarScores(ctx, aggregate.DataCallID, aggregate.FismaSystemID)
+			if err != nil {
+				return nil, err
+			}
+			aggregate.PillarScores = pillarScores
+		}
+	}
+
+	return aggregates, nil
+}
+
+func findPillarScores(ctx context.Context, dataCallID, fismaSystemID int32) ([]*PillarScore, error) {
+	sqlb := squirrel.Select("pillars.pillarid", "pillars.pillar", "AVG(functionoptions.score) as score").
+		From("scores").
+		InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid").
+		InnerJoin("functions on functions.functionid=functionoptions.functionid").
+		InnerJoin("pillars on pillars.pillarid=functions.pillarid").
+		Where("scores.datacallid=?", dataCallID).
+		Where("scores.fismasystemid=?", fismaSystemID).
+		GroupBy("pillars.pillarid", "pillars.pillar").
+		OrderBy("pillars.pillarid").
+		PlaceholderFormat(squirrel.Dollar)
+
+	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[PillarScore])
 }
 
 // dataCallID is meant to be passed the *latest* datacall most recently created so the previous can be selected

@@ -11,11 +11,75 @@ This repo contains the following major components:
 ## Required Tools
 
 1. [Go](https://go.dev/) at the required version specified in [backend/go.mod](backend/go.mod#L3)
-2. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/)
-3. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) for establishing SSM tunnels
-4. [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform) for deploying infrastructure changes manually if necessary (though CICD should handle most changes)
-5. [Docker](https://www.docker.com/) for building the container image (though CICD should handle most changes)
-6. [Emberfall](https://github.com/aquia-inc/emberfall) for running smoke tests locally (very helpful when adding new routes or parameters)
+2. [Docker](https://www.docker.com/) for running the development environment
+3. [Make](https://www.gnu.org/software/make/) for development workflow automation
+4. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/) (optional for production database access)
+5. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) for establishing SSM tunnels (production only)
+6. [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform) for deploying infrastructure changes manually if necessary (though CICD should handle most changes)
+7. [Emberfall](https://github.com/aquia-inc/emberfall) for running smoke tests locally (very helpful when adding new routes or parameters)
+
+## Development Environment
+
+The ZTMF project includes a complete containerized development environment using Docker Compose and a Makefile for easy setup.
+
+### Quick Start
+
+```bash
+# Clone the repository and navigate to the project root
+git checkout feature/pillar-score-breakdown  # or your working branch
+make dev-setup
+```
+
+This single command will:
+- Generate a PostgreSQL database with random passwords
+- Create Docker Compose configuration for development
+- Start PostgreSQL (port 54321) and Go API (port 3000) containers
+- Populate the database with Star Wars-themed test data
+- Run database migrations automatically
+
+### Available Commands
+
+```bash
+make dev-setup         # Full development environment setup
+make dev-up            # Start development services  
+make dev-down          # Stop development services
+make dev-logs          # Show service logs
+make clean             # Clean up generated files
+
+# JWT Token Generation for Testing
+make generate-jwt EMAIL=your.email@example.com
+make test-empire-data  # Get tokens for all test users
+```
+
+### Test Data
+
+The development environment includes anonymized Star Wars Empire-themed test data with:
+- 4 test users (1 ADMIN, 3 ISSO roles)
+- 3 FISMA systems (Death Star, Executor, Shield Generator)
+- Complete Zero Trust questionnaire (18 questions across 6 pillars)
+- Sample scores demonstrating different maturity levels
+- 2 data calls for testing historical comparisons
+
+### Testing the API
+
+After running `make dev-setup`, test the pillar scores feature:
+
+```bash
+# Get test tokens
+make test-empire-data
+
+# Test pillar breakdown API (replace TOKEN with output from above)
+curl -H "Authorization: TOKEN" \
+     "http://localhost:3000/api/v1/scores/aggregate?include_pillars=true"
+```
+
+### Development Workflow
+
+1. **Start Environment**: `make dev-setup`
+2. **Code Changes**: Edit Go files - the container automatically rebuilds
+3. **Database Changes**: Modify migrations, restart with `make dev-down && make dev-up`
+4. **Run Tests**: `emberfall ./backend/emberfall_tests.yml`
+5. **Clean Up**: `make dev-down` or `make clean`
 
 ## Architecture
 
