@@ -720,7 +720,7 @@ paths:
   /scores/aggregate:
     get:
       summary: Get aggregate scores
-      description: Returns aggregate scores
+      description: Returns aggregate scores with optional pillar breakdown
       operationId: getScoresAggregate
       parameters:
         - name: fismasystemid
@@ -735,6 +735,12 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: include_pillars
+          in: query
+          required: false
+          description: Include breakdown by pillar
+          schema:
+            type: boolean
       responses:
         '200':
           description: Aggregate scores
@@ -1183,6 +1189,24 @@ components:
         systemscore:
           type: number
           format: double
+        pillarscores:
+          type: array
+          description: Optional pillar breakdown (only present when include_pillars=true)
+          items:
+            $ref: '#/components/schemas/PillarScore'
+    PillarScore:
+      type: object
+      properties:
+        pillarid:
+          type: integer
+          format: int32
+        pillar:
+          type: string
+          description: Name of the pillar
+        score:
+          type: number
+          format: double
+          description: Average score for this pillar
     Question:
       type: object
       properties:
