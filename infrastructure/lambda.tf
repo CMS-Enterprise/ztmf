@@ -183,6 +183,25 @@ resource "aws_iam_policy" "ztmf_sync_lambda_vpc" {
   })
 }
 
+# IAM policy for SQS Dead Letter Queue access
+resource "aws_iam_policy" "ztmf_sync_lambda_sqs" {
+  name        = "ztmf-data-sync-lambda-sqs-${var.environment}"
+  description = "IAM policy for SQS Dead Letter Queue access from ZTMF Data Sync Lambda"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage"
+        ]
+        Resource = aws_sqs_queue.ztmf_sync_dlq.arn
+      }
+    ]
+  })
+}
+
 # Attach logging policy to Lambda role
 resource "aws_iam_role_policy_attachment" "ztmf_sync_lambda_logging" {
   role       = aws_iam_role.ztmf_sync_lambda.name
@@ -199,6 +218,12 @@ resource "aws_iam_role_policy_attachment" "ztmf_sync_lambda_secrets" {
 resource "aws_iam_role_policy_attachment" "ztmf_sync_lambda_vpc" {
   role       = aws_iam_role.ztmf_sync_lambda.name
   policy_arn = aws_iam_policy.ztmf_sync_lambda_vpc.arn
+}
+
+# Attach SQS policy to Lambda role
+resource "aws_iam_role_policy_attachment" "ztmf_sync_lambda_sqs" {
+  role       = aws_iam_role.ztmf_sync_lambda.name
+  policy_arn = aws_iam_policy.ztmf_sync_lambda_sqs.arn
 }
 
 # Security group for Lambda function
@@ -279,6 +304,7 @@ resource "aws_lambda_function" "ztmf_sync" {
     aws_iam_role_policy_attachment.ztmf_sync_lambda_logging,
     aws_iam_role_policy_attachment.ztmf_sync_lambda_secrets,
     aws_iam_role_policy_attachment.ztmf_sync_lambda_vpc,
+    aws_iam_role_policy_attachment.ztmf_sync_lambda_sqs,
     aws_cloudwatch_log_group.ztmf_sync_lambda,
     aws_s3_object.lambda_deployment_placeholder
   ]
