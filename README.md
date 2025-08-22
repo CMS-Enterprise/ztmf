@@ -85,6 +85,54 @@ curl -H "Authorization: TOKEN" \
 
 The ZTMF Scoring Application is comprised of a React-based Single-Page Application (SPA) that retrieves data from a REST API. The web assets for the SPA are hosted in an S3 bucket, and the API is hosted as an ECS service with containers deployed via Fargate behind an application load balancer. CloudFront provides the entrypoint with caching enabled for static assets, and a WAF for geofencing and other security measures. The database is provided by AWS Aurora Serverless V2 PostgreSQL.
 
+### Data Synchronization to Snowflake
+
+An automated data synchronization process exports ZTMF data from PostgreSQL to Snowflake for business intelligence and reporting:
+
+```mermaid
+graph LR
+    subgraph "ZTMF Application"
+        A[React Frontend<br/>S3 + CloudFront]
+        B[Go API<br/>ECS Fargate]
+        C[PostgreSQL<br/>Aurora Serverless v2]
+        A --> B
+        B --> C
+    end
+    
+    subgraph "Data Pipeline"
+        D[EventBridge<br/>Quarterly Schedule]
+        E[Lambda Function<br/>Go Runtime]
+        F[Snowflake<br/>Data Warehouse]
+    end
+    
+    subgraph "Monitoring"
+        G[CloudWatch Logs]
+        H[CloudWatch Alarms]
+        I[Dead Letter Queue]
+    end
+    
+    D --> E
+    C --> E
+    E --> F
+    E --> G
+    E --> H
+    E --> I
+    
+    style A fill:#e1f5fe
+    style B fill:#e8f5e8
+    style C fill:#fff3e0
+    style E fill:#f3e5f5
+    style F fill:#e0f2f1
+```
+
+#### Sync Configuration
+
+- **Schedule**: Quarterly in production (1st of every 3rd month at 2 AM UTC)
+- **Development**: Weekly dry-runs on Mondays at 9 AM UTC
+- **Tables**: All 12 ZTMF tables synchronized with proper ordering
+- **Environment**: Dry-run mode in dev, real sync in production
+- **Security**: AWS Secrets Manager for Snowflake credentials
+
 ## Backend
 
 The backend is a REST API written in Go. See [backend/README](backend/README.md)
