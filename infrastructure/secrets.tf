@@ -32,3 +32,31 @@ resource "aws_secretsmanager_secret" "ztmf_smtp_ca_root" {
 resource "aws_secretsmanager_secret" "ztmf_smtp_intermediate" {
   name = "ztmf_smtp_intermediate"
 }
+
+# Snowflake credentials for data sync Lambda function (dev environment)
+resource "aws_secretsmanager_secret" "ztmf_snowflake_dev" {
+  count = var.environment == "dev" ? 1 : 0
+  name  = "ztmf_snowflake_dev"
+
+  description = "Snowflake credentials for ZTMF data sync in dev environment"
+
+  tags = {
+    Name        = "ZTMF Snowflake Dev Credentials"
+    Environment = "dev"
+    Purpose     = "Lambda data sync"
+  }
+}
+
+# Snowflake credentials for data sync Lambda function (prod environment)
+resource "aws_secretsmanager_secret" "ztmf_snowflake_prod" {
+  count = var.environment == "prod" ? 1 : 0
+  name  = "ztmf_snowflake_prod"
+
+  description = "Snowflake credentials for ZTMF data sync in prod environment"
+
+  tags = {
+    Name        = "ZTMF Snowflake Prod Credentials"
+    Environment = "prod"
+    Purpose     = "Lambda data sync"
+  }
+}
