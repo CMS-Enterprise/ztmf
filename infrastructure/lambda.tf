@@ -45,14 +45,28 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
   }
 }
 
+# Create a minimal placeholder Lambda deployment package
+data "archive_file" "lambda_placeholder" {
+  type        = "zip"
+  output_path = "/tmp/lambda-placeholder.zip"
+  
+  source {
+    content  = <<EOF
+#!/bin/bash
+echo "Placeholder Lambda function - will be replaced by CI/CD pipeline"
+echo "This is just to allow Terraform to create the Lambda resource"
+exit 0
+EOF
+    filename = "bootstrap"
+  }
+}
+
 # Placeholder S3 object for Lambda deployment package
 # This will be replaced by CI/CD pipeline
 resource "aws_s3_object" "lambda_deployment_placeholder" {
   bucket = aws_s3_bucket.lambda_deployments.bucket
   key    = "lambda-deployment-latest.zip"
-  
-  # Create a minimal placeholder ZIP file
-  content_base64 = "UEsDBBQAAAAIAAsAAQAoAAAAFQAAAAkAAABoZWxsby50eHRIZWxsbyBXb3JsZCEKUEsBAj8AFAAAAAgACwABACgAAAAVAAAACQAAAAAAAAAAAEAAAAAJAAAAaGVsbG8udHh0UEsFBgAAAAABAAEANwAAAEAAAAAAAA=="
+  source = data.archive_file.lambda_placeholder.output_path
   
   # Ensure bucket is ready
   depends_on = [
