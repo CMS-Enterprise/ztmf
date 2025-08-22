@@ -45,6 +45,28 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
   }
 }
 
+# Placeholder S3 object for Lambda deployment package
+# This will be replaced by CI/CD pipeline
+resource "aws_s3_object" "lambda_deployment_placeholder" {
+  bucket = aws_s3_bucket.lambda_deployments.bucket
+  key    = "lambda-deployment-latest.zip"
+  
+  # Create a minimal placeholder ZIP file
+  content_base64 = "UEsDBBQAAAAIAAsAAQAoAAAAFQAAAAkAAABoZWxsby50eHRIZWxsbyBXb3JsZCEKUEsBAj8AFAAAAAgACwABACgAAAAVAAAACQAAAAAAAAAAAEAAAAAJAAAAaGVsbG8udHh0UEsFBgAAAAABAAEANwAAAEAAAAAAAA=="
+  
+  # Ensure bucket is ready
+  depends_on = [
+    aws_s3_bucket.lambda_deployments,
+    aws_s3_bucket_server_side_encryption_configuration.lambda_deployments
+  ]
+  
+  tags = {
+    Name        = "ZTMF Lambda Deployment Placeholder"
+    Environment = var.environment
+    Purpose     = "Initial deployment package (replaced by CI/CD)"
+  }
+}
+
 # CloudWatch Log Group for Lambda function
 resource "aws_cloudwatch_log_group" "ztmf_sync_lambda" {
   name              = "/aws/lambda/ztmf-data-sync-${var.environment}"
@@ -210,7 +232,6 @@ resource "aws_lambda_function" "ztmf_sync" {
   environment {
     variables = {
       ENVIRONMENT  = var.environment
-      AWS_REGION   = data.aws_region.current.id
       DB_SECRET_ID = local.db_cred_secret
     }
   }
@@ -239,12 +260,13 @@ resource "aws_lambda_function" "ztmf_sync" {
     Purpose     = "PostgreSQL to Snowflake data synchronization"
   }
 
-  # Ensure IAM role and log group are ready
+  # Ensure IAM role, log group, and deployment package are ready
   depends_on = [
     aws_iam_role_policy_attachment.ztmf_sync_lambda_logging,
     aws_iam_role_policy_attachment.ztmf_sync_lambda_secrets,
     aws_iam_role_policy_attachment.ztmf_sync_lambda_vpc,
-    aws_cloudwatch_log_group.ztmf_sync_lambda
+    aws_cloudwatch_log_group.ztmf_sync_lambda,
+    aws_s3_object.lambda_deployment_placeholder
   ]
 }
 
@@ -274,7 +296,7 @@ resource "aws_cloudwatch_event_rule" "ztmf_sync_schedule" {
   description = "Schedule for ZTMF data synchronization to Snowflake"
 
   # Different schedules per environment
-  schedule_expression = var.environment == "prod" ? "cron(0 2 1 */3 * ?)" : "cron(0 9 * * MON ?)"
+  schedule_expression = var.environment == "prod" ? "cron(0 2 1 */3 * ? *)" : "cron(0 9 ? * MON *)"
 
   tags = {
     Name        = "ZTMF Data Sync Schedule"
