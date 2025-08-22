@@ -63,7 +63,7 @@ resource "aws_s3_object" "lambda_deployment_placeholder" {
   tags = {
     Name        = "ZTMF Lambda Deployment Placeholder"
     Environment = var.environment
-    Purpose     = "Initial deployment package (replaced by CI/CD)"
+    Purpose     = "Initial deployment package replaced by CI-CD"
   }
 }
 
