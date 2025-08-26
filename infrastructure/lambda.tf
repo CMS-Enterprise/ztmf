@@ -233,10 +233,18 @@ resource "aws_security_group" "ztmf_sync_lambda" {
   vpc_id      = data.aws_vpc.ztmf.id
 
   egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS outbound for Snowflake connectivity"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "DNS resolution"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 

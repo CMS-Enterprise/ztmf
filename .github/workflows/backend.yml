@@ -99,8 +99,9 @@ jobs:
 
       - name: Lambda - Upload to S3
         run: |
-          # Get the S3 bucket name from SSM parameter
-          LAMBDA_BUCKET=$(aws ssm get-parameter --name "/ztmf/${{ inputs.environment }}/lambda/data-sync/deployment-bucket" --query 'Parameter.Value' --output text)
+          # Use environment-aware bucket naming (matches Terraform)
+          ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
+          LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
           echo "Uploading Lambda package to bucket: $LAMBDA_BUCKET"
           
           # Upload with commit SHA tag
@@ -113,9 +114,10 @@ jobs:
 
       - name: Lambda - Update Function Code
         run: |
-          # Get the Lambda function name from SSM parameter
-          LAMBDA_FUNCTION=$(aws ssm get-parameter --name "/ztmf/${{ inputs.environment }}/lambda/data-sync/function-name" --query 'Parameter.Value' --output text)
-          LAMBDA_BUCKET=$(aws ssm get-parameter --name "/ztmf/${{ inputs.environment }}/lambda/data-sync/deployment-bucket" --query 'Parameter.Value' --output text)
+          # Use environment-aware function naming (matches Terraform)
+          ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
+          LAMBDA_FUNCTION="ztmf-data-sync-${ENV_LOWER}"
+          LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
           
           echo "Updating Lambda function: $LAMBDA_FUNCTION"
           echo "Using deployment package: s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip"
