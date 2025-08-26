@@ -49,7 +49,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
   output_path = "/tmp/lambda-placeholder.zip"
-  
+
   source {
     content  = <<EOF
 #!/bin/bash
@@ -67,13 +67,13 @@ resource "aws_s3_object" "lambda_deployment_placeholder" {
   bucket = aws_s3_bucket.lambda_deployments.bucket
   key    = "lambda-deployment-latest.zip"
   source = data.archive_file.lambda_placeholder.output_path
-  
+
   # Ensure bucket is ready
   depends_on = [
     aws_s3_bucket.lambda_deployments,
     aws_s3_bucket_server_side_encryption_configuration.lambda_deployments
   ]
-  
+
   tags = {
     Name        = "ZTMF Lambda Deployment Placeholder"
     Environment = var.environment

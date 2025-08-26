@@ -60,7 +60,7 @@ data "aws_subnets" "public" {
 # NAT Gateway for Lambda outbound connectivity
 resource "aws_nat_gateway" "lambda" {
   allocation_id = aws_eip.lambda_nat.id
-  subnet_id     = data.aws_subnets.public.ids[0]  # Use first public subnet
+  subnet_id     = data.aws_subnets.public.ids[0] # Use first public subnet
 
   tags = {
     Name        = "ZTMF Lambda NAT Gateway"
