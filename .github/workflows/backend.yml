@@ -90,6 +90,7 @@ jobs:
 
       - name: Lambda - Build
         run: |
+          set -e
           cd backend
           echo "Building Lambda function for Linux..."
           GOOS=linux GOARCH=amd64 go build -o bootstrap ./cmd/lambda/.
@@ -99,6 +100,7 @@ jobs:
 
       - name: Lambda - Upload to S3
         run: |
+          set -e
           # Use environment-aware bucket naming (matches Terraform)
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
           LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
@@ -114,6 +116,7 @@ jobs:
 
       - name: Lambda - Update Function Code
         run: |
+          set -e
           # Use environment-aware function naming (matches Terraform)
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
           LAMBDA_FUNCTION="ztmf-data-sync-${ENV_LOWER}"
