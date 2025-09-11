@@ -22,13 +22,14 @@ type SnowflakeClient struct {
 
 // SnowflakeConfig contains Snowflake connection parameters
 type SnowflakeConfig struct {
-	Account   string `json:"account"`
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	Warehouse string `json:"warehouse"`
-	Database  string `json:"database"`
-	Schema    string `json:"schema"`
-	Role      string `json:"role"`
+	Account    string `json:"account"`
+	Username   string `json:"username"`
+	Password   string `json:"password,omitempty"`    // Optional: for password auth
+	PrivateKey string `json:"private_key,omitempty"` // Optional: for RSA key auth (PEM format)
+	Warehouse  string `json:"warehouse"`
+	Database   string `json:"database"`
+	Schema     string `json:"schema"`
+	Role       string `json:"role"`
 }
 
 // LoadResult contains the results of a data load operation
@@ -281,8 +282,17 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 	}
 	
 	// Validate required fields
-	if snowflakeConfig.Account == "" || snowflakeConfig.Username == "" || snowflakeConfig.Password == "" {
-		return nil, "", fmt.Errorf("missing required Snowflake credentials (account, username, password)")
+	if snowflakeConfig.Account == "" || snowflakeConfig.Username == "" {
+		return nil, "", fmt.Errorf("missing required Snowflake credentials (account, username)")
+	}
+	
+	// Ensure either password or private key is provided
+	if snowflakeConfig.Password == "" && snowflakeConfig.PrivateKey == "" {
+		return nil, "", fmt.Errorf("either password or private_key must be provided for Snowflake authentication")
+	}
+	
+	if snowflakeConfig.Password != "" && snowflakeConfig.PrivateKey != "" {
+		return nil, "", fmt.Errorf("cannot specify both password and private_key - choose one authentication method")
 	}
 	
 	// Set defaults if not provided
@@ -299,15 +309,32 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		snowflakeConfig.Role = "ZTMF_LOADER"
 	}
 	
-	// Build connection string
-	connString := fmt.Sprintf("%s:%s@%s/%s/%s?warehouse=%s&role=%s",
-		snowflakeConfig.Username,
-		snowflakeConfig.Password,
-		snowflakeConfig.Account,
-		snowflakeConfig.Database,
-		snowflakeConfig.Schema,
-		snowflakeConfig.Warehouse,
-		snowflakeConfig.Role)
+	// Build connection string based on authentication type
+	var connString string
+	
+	if snowflakeConfig.PrivateKey != "" {
+		// RSA key authentication
+		log.Printf("Using RSA key authentication for Snowflake")
+		connString = fmt.Sprintf("%s@%s/%s/%s?warehouse=%s&role=%s&authenticator=snowflake_jwt&private_key=%s",
+			snowflakeConfig.Username,
+			snowflakeConfig.Account,
+			snowflakeConfig.Database,
+			snowflakeConfig.Schema,
+			snowflakeConfig.Warehouse,
+			snowflakeConfig.Role,
+			snowflakeConfig.PrivateKey)
+	} else {
+		// Password authentication (fallback)
+		log.Printf("Using password authentication for Snowflake")
+		connString = fmt.Sprintf("%s:%s@%s/%s/%s?warehouse=%s&role=%s",
+			snowflakeConfig.Username,
+			snowflakeConfig.Password,
+			snowflakeConfig.Account,
+			snowflakeConfig.Database,
+			snowflakeConfig.Schema,
+			snowflakeConfig.Warehouse,
+			snowflakeConfig.Role)
+	}
 	
 	return snowflakeConfig, connString, nil
 }
