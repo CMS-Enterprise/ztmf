@@ -421,22 +421,22 @@ func (c *SnowflakeClient) executeSessionCommand(ctx context.Context, command, id
 	var sql string
 	var args []interface{}
 	
+	// Use direct SQL commands like the working Python script (not IDENTIFIER function)
 	switch command {
 	case "USE WAREHOUSE":
-		sql = "USE WAREHOUSE IDENTIFIER(?)"
-		args = []interface{}{identifier}
+		sql = "USE WAREHOUSE " + identifier
 	case "USE DATABASE":
-		sql = "USE DATABASE IDENTIFIER(?)"
-		args = []interface{}{identifier}
+		sql = "USE DATABASE " + identifier  
 	case "USE SCHEMA":
-		sql = "USE SCHEMA IDENTIFIER(?)"
-		args = []interface{}{identifier}
+		sql = "USE SCHEMA " + identifier
 	case "USE ROLE":
-		sql = "USE ROLE IDENTIFIER(?)"
-		args = []interface{}{identifier}
+		sql = "USE ROLE " + identifier
 	default:
 		return fmt.Errorf("unsupported session command: %s", command)
 	}
+	
+	// No args needed for direct identifier usage
+	args = nil
 	
 	log.Printf("Executing Snowflake session command: %s with identifier: %s", sql, identifier)
 	if _, err := c.db.ExecContext(ctx, sql, args...); err != nil {
