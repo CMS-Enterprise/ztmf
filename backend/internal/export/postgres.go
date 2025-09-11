@@ -180,11 +180,8 @@ func buildConnectionString() (string, error) {
 			return "", fmt.Errorf("failed to load database secret: %w", err)
 		}
 		
-		// Define structure for database secret
+		// Use same structure as existing API (only username/password in secret)
 		type dbCreds struct {
-			Host     string `json:"host"`
-			Port     int    `json:"port"`
-			Database string `json:"database"`
 			Username string `json:"username"`
 			Password string `json:"password"`
 		}
@@ -194,11 +191,11 @@ func buildConnectionString() (string, error) {
 			return "", fmt.Errorf("failed to unmarshal database secret: %w", err)
 		}
 		
-		// URL encode credentials to handle special characters safely
-		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=prefer",
+		// Build connection string using config for host/port/database (like API does)
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=prefer",
 			url.QueryEscape(creds.Username), 
 			url.QueryEscape(creds.Password), 
-			creds.Host, creds.Port, creds.Database), nil
+			cfg.Db.Host, cfg.Db.Port, cfg.Db.Name), nil
 	}
 	
 	return "", fmt.Errorf("insufficient database configuration - need either direct config or secret ID")
