@@ -364,11 +364,22 @@ func (c *SnowflakeClient) TestConnection(ctx context.Context) error {
 
 // initializeSession sets up the Snowflake session with proper context
 func (c *SnowflakeClient) initializeSession(ctx context.Context) error {
-	sessionCommands := []string{
-		fmt.Sprintf("USE WAREHOUSE %s", c.cfg.Warehouse),
-		fmt.Sprintf("USE DATABASE %s", c.cfg.Database),
-		fmt.Sprintf("USE SCHEMA %s", c.cfg.Schema),
-		fmt.Sprintf("USE ROLE %s", c.cfg.Role),
+	var sessionCommands []string
+	
+	// Only set warehouse if one is provided (let service account use default if empty)
+	if c.cfg.Warehouse != "" {
+		sessionCommands = append(sessionCommands, fmt.Sprintf("USE WAREHOUSE %s", c.cfg.Warehouse))
+	}
+	
+	// Set database, schema, role if provided
+	if c.cfg.Database != "" {
+		sessionCommands = append(sessionCommands, fmt.Sprintf("USE DATABASE %s", c.cfg.Database))
+	}
+	if c.cfg.Schema != "" {
+		sessionCommands = append(sessionCommands, fmt.Sprintf("USE SCHEMA %s", c.cfg.Schema))
+	}
+	if c.cfg.Role != "" {
+		sessionCommands = append(sessionCommands, fmt.Sprintf("USE ROLE %s", c.cfg.Role))
 	}
 	
 	for _, cmd := range sessionCommands {
@@ -421,10 +432,7 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		return nil, "", fmt.Errorf("authentication required: provide either password OR private_key")
 	}
 	
-	// Set defaults if not provided
-	if snowflakeConfig.Warehouse == "" {
-		snowflakeConfig.Warehouse = "TEAM_ZERO_TRUST_WH"
-	}
+	// Set defaults if not provided (skip warehouse - let service account use default)
 	if snowflakeConfig.Database == "" {
 		snowflakeConfig.Database = "BUS_ZEROTRUST"
 	}
