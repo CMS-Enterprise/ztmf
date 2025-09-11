@@ -417,11 +417,29 @@ func (c *SnowflakeClient) validateSessionIdentifiers() error {
 
 // executeSessionCommand safely executes a session command with validated identifier
 func (c *SnowflakeClient) executeSessionCommand(ctx context.Context, command, identifier string) error {
-	// Use quoted identifier to prevent SQL injection
-	sql := fmt.Sprintf("%s \"%s\"", command, strings.ReplaceAll(identifier, "\"", "\"\""))
+	// Use prepared statements to prevent SQL injection
+	var sql string
+	var args []interface{}
 	
-	log.Printf("Executing Snowflake session command: %s", sql)
-	if _, err := c.db.ExecContext(ctx, sql); err != nil {
+	switch command {
+	case "USE WAREHOUSE":
+		sql = "USE WAREHOUSE IDENTIFIER(?)"
+		args = []interface{}{identifier}
+	case "USE DATABASE":
+		sql = "USE DATABASE IDENTIFIER(?)"
+		args = []interface{}{identifier}
+	case "USE SCHEMA":
+		sql = "USE SCHEMA IDENTIFIER(?)"
+		args = []interface{}{identifier}
+	case "USE ROLE":
+		sql = "USE ROLE IDENTIFIER(?)"
+		args = []interface{}{identifier}
+	default:
+		return fmt.Errorf("unsupported session command: %s", command)
+	}
+	
+	log.Printf("Executing Snowflake session command: %s with identifier: %s", sql, identifier)
+	if _, err := c.db.ExecContext(ctx, sql, args...); err != nil {
 		return fmt.Errorf("failed to execute session command '%s': %w", sql, err)
 	}
 	
