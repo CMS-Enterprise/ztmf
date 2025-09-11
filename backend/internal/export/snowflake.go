@@ -458,16 +458,16 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		
 		// Use gosnowflake config struct for RSA authentication
 		cfg := &gosnowflake.Config{
-			Account:       snowflakeConfig.Account,
-			User:          snowflakeConfig.Username,
-			Password:      "", // Required by driver even for RSA auth
-			PrivateKey:    rsaPrivateKey,
-			Authenticator: gosnowflake.AuthTypeJwt,
-			Database:      snowflakeConfig.Database,
-			Schema:        snowflakeConfig.Schema,
-			Warehouse:     snowflakeConfig.Warehouse,
-			Role:          snowflakeConfig.Role,
-			InsecureMode:  strings.Contains(snowflakeConfig.Account, "gov"), // Disable cert verification for GovCloud
+			Account:           snowflakeConfig.Account,
+			User:              snowflakeConfig.Username,
+			Password:          "", // Required by driver even for RSA auth
+			PrivateKey:        rsaPrivateKey,
+			Authenticator:     gosnowflake.AuthTypeJwt,
+			Database:          snowflakeConfig.Database,
+			Schema:            snowflakeConfig.Schema,
+			Warehouse:         snowflakeConfig.Warehouse,
+			Role:              snowflakeConfig.Role,
+			InsecureMode:      strings.Contains(snowflakeConfig.Account, "gov"), // Only for GovCloud cert issues
 		}
 		
 		connString, err := gosnowflake.DSN(cfg)
