@@ -48,15 +48,14 @@ func handler(ctx context.Context, event json.RawMessage) error {
 		log.Printf("Received CloudWatch scheduled event: %s", cwEvent.Source)
 	}
 	
-	// Apply environment-based defaults for empty or incomplete events
+	// Apply defaults for empty manual test events
 	if syncEvent.TriggerType == "" {
 		syncEvent.TriggerType = "manual"
-	}
-	
-	// Force dry-run mode in non-production environments
-	if cfg.Env != "prod" {
-		syncEvent.DryRun = true
-		log.Printf("Forcing dry-run mode in %s environment", cfg.Env)
+		// For manual test events in non-prod, default to dry-run
+		if cfg.Env != "prod" {
+			syncEvent.DryRun = true
+			log.Printf("Defaulting to dry-run mode for manual test in %s environment", cfg.Env)
+		}
 	}
 	
 	log.Printf("Sync configuration: TriggerType=%s, FullRefresh=%t, DryRun=%t, Tables=%v", 
