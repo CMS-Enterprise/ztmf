@@ -131,15 +131,13 @@ type TableConfig struct {
 
 // getTablesToSync returns the list of tables to synchronize
 func (s *Synchronizer) getTablesToSync(requestedTables []string) ([]TableConfig, error) {
-	// Define all available tables (matches the Python script)
+	// Define all available tables (core ZTMF business tables only)
 	allTables := []TableConfig{
 		{PostgresTable: "datacalls", SnowflakeTable: "ZTMF_DATACALLS", OrderBy: "datacallid"},
 		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: "ZTMF_DATACALLS_FISMASYSTEMS", OrderBy: "datacallid, fismasystemid"},
-		{PostgresTable: "events", SnowflakeTable: "ZTMF_EVENTS", OrderBy: "createdat"},
 		{PostgresTable: "fismasystems", SnowflakeTable: "ZTMF_FISMASYSTEMS", OrderBy: "fismasystemid"},
 		{PostgresTable: "functionoptions", SnowflakeTable: "ZTMF_FUNCTIONOPTIONS", OrderBy: "functionoptionid"},
 		{PostgresTable: "functions", SnowflakeTable: "ZTMF_FUNCTIONS", OrderBy: "functionid"},
-		{PostgresTable: "massemails", SnowflakeTable: "ZTMF_MASSEMAILS", OrderBy: "massemailid"},
 		{PostgresTable: "pillars", SnowflakeTable: "ZTMF_PILLARS", OrderBy: "pillarid"},
 		{PostgresTable: "questions", SnowflakeTable: "ZTMF_QUESTIONS", OrderBy: "questionid"},
 		{PostgresTable: "scores", SnowflakeTable: "ZTMF_SCORES", OrderBy: "scoreid"},
