@@ -448,13 +448,14 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		
 		// Use gosnowflake config struct for RSA authentication
 		cfg := &gosnowflake.Config{
-			Account:    snowflakeConfig.Account,
-			User:       snowflakeConfig.Username,
-			PrivateKey: rsaPrivateKey,
-			Database:   snowflakeConfig.Database,
-			Schema:     snowflakeConfig.Schema,
-			Warehouse:  snowflakeConfig.Warehouse,
-			Role:       snowflakeConfig.Role,
+			Account:       snowflakeConfig.Account,
+			User:          snowflakeConfig.Username,
+			PrivateKey:    rsaPrivateKey,
+			Authenticator: gosnowflake.AuthTypeJwt, // Explicitly set RSA auth type
+			Database:      snowflakeConfig.Database,
+			Schema:        snowflakeConfig.Schema,
+			Warehouse:     snowflakeConfig.Warehouse,
+			Role:          snowflakeConfig.Role,
 		}
 		
 		connString, err := gosnowflake.DSN(cfg)
