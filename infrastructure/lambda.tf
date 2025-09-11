@@ -233,6 +233,14 @@ resource "aws_security_group" "ztmf_sync_lambda" {
   vpc_id      = data.aws_vpc.ztmf.id
 
   egress {
+    description = "PostgreSQL to RDS"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [for subnet in data.aws_subnet.private : subnet.cidr_block]
+  }
+
+  egress {
     description = "HTTPS outbound for Snowflake connectivity"
     from_port   = 443
     to_port     = 443
