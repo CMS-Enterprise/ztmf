@@ -52,8 +52,6 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	}
 	
 	log.Printf("Connecting to Snowflake account: %s", snowflakeConfig.Account)
-	log.Printf("Snowflake connection details - User: %s, Warehouse: %s, Database: %s, Schema: %s, Role: %s", 
-		snowflakeConfig.Username, snowflakeConfig.Warehouse, snowflakeConfig.Database, snowflakeConfig.Schema, snowflakeConfig.Role)
 	
 	// Open connection
 	db, err := sql.Open("snowflake", connString)
@@ -62,16 +60,8 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	}
 	
 	// Test the connection
-	log.Printf("Testing Snowflake connection...")
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		
-		// Try connection without warehouse if initial connection fails
-		log.Printf("Initial connection failed, trying without warehouse: %v", err)
-		if strings.Contains(snowflakeConfig.Account, "gov") {
-			log.Printf("GovCloud detected, trying alternative connection approach")
-		}
-		
 		return nil, fmt.Errorf("failed to ping Snowflake: %w", err)
 	}
 	
@@ -80,8 +70,8 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 		cfg: snowflakeConfig,
 	}
 	
-	// Discover and set Snowflake session parameters
-	if err := client.discoverAndSetSession(ctx); err != nil {
+	// Set Snowflake session parameters
+	if err := client.initializeSession(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize Snowflake session: %w", err)
 	}
@@ -438,7 +428,6 @@ func (c *SnowflakeClient) executeSessionCommand(ctx context.Context, command, id
 	// No args needed for direct identifier usage
 	args = nil
 	
-	log.Printf("Executing Snowflake session command: %s with identifier: %s", sql, identifier)
 	if _, err := c.db.ExecContext(ctx, sql, args...); err != nil {
 		return fmt.Errorf("failed to execute session command '%s': %w", sql, err)
 	}
@@ -465,68 +454,6 @@ func isValidSnowflakeIdentifier(identifier string) bool {
 	return true
 }
 
-// discoverAndSetSession discovers available resources and sets up session
-func (c *SnowflakeClient) discoverAndSetSession(ctx context.Context) error {
-	// First, discover available warehouses if none specified
-	if c.cfg.Warehouse == "" {
-		log.Printf("No warehouse specified, discovering available warehouses...")
-		
-		// Use a simpler query to get just warehouse names and states
-		rows, err := c.db.QueryContext(ctx, "SELECT warehouse_name, state FROM INFORMATION_SCHEMA.WAREHOUSES")
-		if err != nil {
-			log.Printf("Could not list warehouses from INFORMATION_SCHEMA: %v, trying SHOW command", err)
-			
-			// Fallback: try SHOW WAREHOUSES and get just the first column (name)
-			rows2, err2 := c.db.QueryContext(ctx, "SHOW WAREHOUSES")
-			if err2 != nil {
-				log.Printf("Could not list warehouses with SHOW command: %v", err2)
-			} else {
-				defer rows2.Close()
-				for rows2.Next() {
-					// Create a slice to hold all 36 columns but only read the first one (name)
-					columns := make([]interface{}, 36)
-					columnPtrs := make([]interface{}, 36)
-					for i := range columns {
-						columnPtrs[i] = &columns[i]
-					}
-					
-					if err := rows2.Scan(columnPtrs...); err != nil {
-						log.Printf("Error reading warehouse row: %v", err)
-						continue
-					}
-					
-					// First column is warehouse name
-					if name, ok := columns[0].(string); ok && c.cfg.Warehouse == "" {
-						c.cfg.Warehouse = name
-						log.Printf("Auto-selected first available warehouse: %s", name)
-						break
-					}
-				}
-			}
-		} else {
-			defer rows.Close()
-			for rows.Next() {
-				var name, state string
-				if err := rows.Scan(&name, &state); err != nil {
-					log.Printf("Error reading warehouse row: %v", err)
-					continue
-				}
-				
-				log.Printf("Available warehouse: %s (state: %s)", name, state)
-				
-				// Use the first available warehouse
-				if c.cfg.Warehouse == "" {
-					c.cfg.Warehouse = name
-					log.Printf("Auto-selected warehouse: %s", name)
-					break
-				}
-			}
-		}
-	}
-	
-	// Now initialize session with discovered or configured parameters
-	return c.initializeSession(ctx)
-}
 
 // buildSnowflakeConnectionString creates a Snowflake connection string from config or secrets
 func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {

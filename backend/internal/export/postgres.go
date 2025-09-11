@@ -81,8 +81,6 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 		query += fmt.Sprintf(" ORDER BY %s", orderBy)
 	}
 	
-	log.Printf("Executing query: %s", query)
-	
 	// Execute query
 	rows, err := c.pool.Query(ctx, query)
 	if err != nil {
@@ -99,7 +97,6 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 		columnNames[i] = fd.Name
 	}
 	
-	log.Printf("Found %d columns: %v", len(columnNames), columnNames)
 	
 	// Extract all rows
 	var data []map[string]interface{}
