@@ -471,25 +471,54 @@ func (c *SnowflakeClient) discoverAndSetSession(ctx context.Context) error {
 	if c.cfg.Warehouse == "" {
 		log.Printf("No warehouse specified, discovering available warehouses...")
 		
-		rows, err := c.db.QueryContext(ctx, "SHOW WAREHOUSES")
+		// Use a simpler query to get just warehouse names and states
+		rows, err := c.db.QueryContext(ctx, "SELECT warehouse_name, state FROM INFORMATION_SCHEMA.WAREHOUSES")
 		if err != nil {
-			log.Printf("Could not list warehouses: %v", err)
+			log.Printf("Could not list warehouses from INFORMATION_SCHEMA: %v, trying SHOW command", err)
+			
+			// Fallback: try SHOW WAREHOUSES and get just the first column (name)
+			rows2, err2 := c.db.QueryContext(ctx, "SHOW WAREHOUSES")
+			if err2 != nil {
+				log.Printf("Could not list warehouses with SHOW command: %v", err2)
+			} else {
+				defer rows2.Close()
+				for rows2.Next() {
+					// Create a slice to hold all 36 columns but only read the first one (name)
+					columns := make([]interface{}, 36)
+					columnPtrs := make([]interface{}, 36)
+					for i := range columns {
+						columnPtrs[i] = &columns[i]
+					}
+					
+					if err := rows2.Scan(columnPtrs...); err != nil {
+						log.Printf("Error reading warehouse row: %v", err)
+						continue
+					}
+					
+					// First column is warehouse name
+					if name, ok := columns[0].(string); ok && c.cfg.Warehouse == "" {
+						c.cfg.Warehouse = name
+						log.Printf("Auto-selected first available warehouse: %s", name)
+						break
+					}
+				}
+			}
 		} else {
 			defer rows.Close()
-			
 			for rows.Next() {
-				var name, state, type_, size, minCluster, maxCluster, startedClusters, running, queued, isDefault, isCurrent string
-				if err := rows.Scan(&name, &state, &type_, &size, &minCluster, &maxCluster, &startedClusters, &running, &queued, &isDefault, &isCurrent); err != nil {
+				var name, state string
+				if err := rows.Scan(&name, &state); err != nil {
 					log.Printf("Error reading warehouse row: %v", err)
 					continue
 				}
 				
-				log.Printf("Available warehouse: %s (state: %s, default: %s, current: %s)", name, state, isDefault, isCurrent)
+				log.Printf("Available warehouse: %s (state: %s)", name, state)
 				
-				// Use the first available warehouse or default warehouse
-				if c.cfg.Warehouse == "" && (isDefault == "Y" || isCurrent == "Y" || state == "STARTED") {
+				// Use the first available warehouse
+				if c.cfg.Warehouse == "" {
 					c.cfg.Warehouse = name
 					log.Printf("Auto-selected warehouse: %s", name)
+					break
 				}
 			}
 		}
