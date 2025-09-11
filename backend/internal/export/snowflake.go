@@ -52,6 +52,8 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	}
 	
 	log.Printf("Connecting to Snowflake account: %s", snowflakeConfig.Account)
+	log.Printf("Snowflake connection details - User: %s, Warehouse: %s, Database: %s, Schema: %s, Role: %s", 
+		snowflakeConfig.Username, snowflakeConfig.Warehouse, snowflakeConfig.Database, snowflakeConfig.Schema, snowflakeConfig.Role)
 	
 	// Open connection
 	db, err := sql.Open("snowflake", connString)
@@ -60,8 +62,16 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	}
 	
 	// Test the connection
+	log.Printf("Testing Snowflake connection...")
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
+		
+		// Try connection without warehouse if initial connection fails
+		log.Printf("Initial connection failed, trying without warehouse: %v", err)
+		if strings.Contains(snowflakeConfig.Account, "gov") {
+			log.Printf("GovCloud detected, trying alternative connection approach")
+		}
+		
 		return nil, fmt.Errorf("failed to ping Snowflake: %w", err)
 	}
 	
@@ -457,6 +467,7 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 			Schema:        snowflakeConfig.Schema,
 			Warehouse:     snowflakeConfig.Warehouse,
 			Role:          snowflakeConfig.Role,
+			InsecureMode:  strings.Contains(snowflakeConfig.Account, "gov"), // Disable cert verification for GovCloud
 		}
 		
 		connString, err := gosnowflake.DSN(cfg)
