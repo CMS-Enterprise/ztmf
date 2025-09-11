@@ -257,14 +257,6 @@ resource "aws_security_group" "ztmf_sync_lambda" {
   }
 
   egress {
-    description = "HTTP outbound for Snowflake OCSP cache server"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
     description = "DNS resolution"
     from_port   = 53
     to_port     = 53
