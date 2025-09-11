@@ -2,12 +2,16 @@ package export
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"database/sql"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/snowflakedb/gosnowflake"
 	_ "github.com/snowflakedb/gosnowflake"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
@@ -25,7 +29,7 @@ type SnowflakeConfig struct {
 	Account    string `json:"account"`
 	Username   string `json:"username"`
 	Password   string `json:"password,omitempty"`    // Optional: for password auth
-	PrivateKey string `json:"private_key,omitempty"` // Optional: for RSA key auth (PEM format)
+	PrivateKey string `json:"private_key,omitempty"` // Optional: unencrypted PEM private key
 	Warehouse  string `json:"warehouse"`
 	Database   string `json:"database"`
 	Schema     string `json:"schema"`
@@ -286,13 +290,12 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		return nil, "", fmt.Errorf("missing required Snowflake credentials (account, username)")
 	}
 	
-	// Ensure either password or private key is provided
-	if snowflakeConfig.Password == "" && snowflakeConfig.PrivateKey == "" {
-		return nil, "", fmt.Errorf("either password or private_key must be provided for Snowflake authentication")
-	}
+	// Ensure at least one authentication method is provided
+	hasPassword := snowflakeConfig.Password != ""
+	hasRSAKey := snowflakeConfig.PrivateKey != ""
 	
-	if snowflakeConfig.Password != "" && snowflakeConfig.PrivateKey != "" {
-		return nil, "", fmt.Errorf("cannot specify both password and private_key - choose one authentication method")
+	if !hasPassword && !hasRSAKey {
+		return nil, "", fmt.Errorf("authentication required: provide either password OR private_key")
 	}
 	
 	// Set defaults if not provided
@@ -309,24 +312,48 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		snowflakeConfig.Role = "ZTMF_LOADER"
 	}
 	
-	// Build connection string based on authentication type
-	var connString string
-	
+	// Build connection configuration based on authentication type  
 	if snowflakeConfig.PrivateKey != "" {
-		// RSA key authentication
+		// RSA key authentication (using unencrypted PEM)
 		log.Printf("Using RSA key authentication for Snowflake")
-		connString = fmt.Sprintf("%s@%s/%s/%s?warehouse=%s&role=%s&authenticator=snowflake_jwt&private_key=%s",
-			snowflakeConfig.Username,
-			snowflakeConfig.Account,
-			snowflakeConfig.Database,
-			snowflakeConfig.Schema,
-			snowflakeConfig.Warehouse,
-			snowflakeConfig.Role,
-			snowflakeConfig.PrivateKey)
+		
+		// Parse PEM private key
+		block, _ := pem.Decode([]byte(snowflakeConfig.PrivateKey))
+		if block == nil {
+			return nil, "", fmt.Errorf("failed to parse PEM block from private key")
+		}
+		
+		privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to parse PKCS8 private key: %w", err)
+		}
+		
+		rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
+		if !ok {
+			return nil, "", fmt.Errorf("private key is not an RSA key")
+		}
+		
+		// Use gosnowflake config struct for RSA authentication
+		cfg := &gosnowflake.Config{
+			Account:    snowflakeConfig.Account,
+			User:       snowflakeConfig.Username,
+			PrivateKey: rsaPrivateKey,
+			Database:   snowflakeConfig.Database,
+			Schema:     snowflakeConfig.Schema,
+			Warehouse:  snowflakeConfig.Warehouse,
+			Role:       snowflakeConfig.Role,
+		}
+		
+		connString, err := gosnowflake.DSN(cfg)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to build RSA connection string: %w", err)
+		}
+		
+		return snowflakeConfig, connString, nil
 	} else {
 		// Password authentication (fallback)
 		log.Printf("Using password authentication for Snowflake")
-		connString = fmt.Sprintf("%s:%s@%s/%s/%s?warehouse=%s&role=%s",
+		connString := fmt.Sprintf("%s:%s@%s/%s/%s?warehouse=%s&role=%s",
 			snowflakeConfig.Username,
 			snowflakeConfig.Password,
 			snowflakeConfig.Account,
@@ -334,7 +361,8 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 			snowflakeConfig.Schema,
 			snowflakeConfig.Warehouse,
 			snowflakeConfig.Role)
+		
+		return snowflakeConfig, connString, nil
 	}
-	
-	return snowflakeConfig, connString, nil
 }
+
