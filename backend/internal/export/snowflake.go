@@ -80,8 +80,8 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 		cfg: snowflakeConfig,
 	}
 	
-	// Set Snowflake session parameters
-	if err := client.initializeSession(ctx); err != nil {
+	// Discover and set Snowflake session parameters
+	if err := client.discoverAndSetSession(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize Snowflake session: %w", err)
 	}
@@ -390,6 +390,40 @@ func (c *SnowflakeClient) initializeSession(ctx context.Context) error {
 	}
 	
 	return nil
+}
+
+// discoverAndSetSession discovers available resources and sets up session
+func (c *SnowflakeClient) discoverAndSetSession(ctx context.Context) error {
+	// First, discover available warehouses if none specified
+	if c.cfg.Warehouse == "" {
+		log.Printf("No warehouse specified, discovering available warehouses...")
+		
+		rows, err := c.db.QueryContext(ctx, "SHOW WAREHOUSES")
+		if err != nil {
+			log.Printf("Could not list warehouses: %v", err)
+		} else {
+			defer rows.Close()
+			
+			for rows.Next() {
+				var name, state, type_, size, minCluster, maxCluster, startedClusters, running, queued, isDefault, isCurrent string
+				if err := rows.Scan(&name, &state, &type_, &size, &minCluster, &maxCluster, &startedClusters, &running, &queued, &isDefault, &isCurrent); err != nil {
+					log.Printf("Error reading warehouse row: %v", err)
+					continue
+				}
+				
+				log.Printf("Available warehouse: %s (state: %s, default: %s, current: %s)", name, state, isDefault, isCurrent)
+				
+				// Use the first available warehouse or default warehouse
+				if c.cfg.Warehouse == "" && (isDefault == "Y" || isCurrent == "Y" || state == "STARTED") {
+					c.cfg.Warehouse = name
+					log.Printf("Auto-selected warehouse: %s", name)
+				}
+			}
+		}
+	}
+	
+	// Now initialize session with discovered or configured parameters
+	return c.initializeSession(ctx)
 }
 
 // buildSnowflakeConnectionString creates a Snowflake connection string from config or secrets
