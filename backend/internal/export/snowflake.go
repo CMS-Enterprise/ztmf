@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/snowflakedb/gosnowflake"
-	_ "github.com/snowflakedb/gosnowflake"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
