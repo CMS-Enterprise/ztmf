@@ -50,22 +50,20 @@ func NewSynchronizer(ctx context.Context, dryRun bool) (*Synchronizer, error) {
 		dryRun: dryRun,
 	}
 	
-	// Initialize PostgreSQL connection
-	if !dryRun {
-		pgClient, err := export.NewPostgresClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize PostgreSQL client: %w", err)
-		}
-		sync.pgClient = pgClient
-		
-		// Initialize Snowflake connection
-		snowClient, err := export.NewSnowflakeClient(ctx)
-		if err != nil {
-			pgClient.Close() // Clean up PG connection on failure
-			return nil, fmt.Errorf("failed to initialize Snowflake client: %w", err)
-		}
-		sync.snowClient = snowClient
+	// Initialize PostgreSQL connection (needed for both real sync and dry-run validation)
+	pgClient, err := export.NewPostgresClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize PostgreSQL client: %w", err)
 	}
+	sync.pgClient = pgClient
+	
+	// Initialize Snowflake connection (needed for both real sync and dry-run validation)
+	snowClient, err := export.NewSnowflakeClient(ctx)
+	if err != nil {
+		pgClient.Close() // Clean up PG connection on failure
+		return nil, fmt.Errorf("failed to initialize Snowflake client: %w", err)
+	}
+	sync.snowClient = snowClient
 	
 	return sync, nil
 }
