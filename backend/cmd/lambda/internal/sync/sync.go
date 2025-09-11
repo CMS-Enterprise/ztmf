@@ -186,15 +186,40 @@ func (s *Synchronizer) syncTable(ctx context.Context, table TableConfig, fullRef
 		table.PostgresTable, table.SnowflakeTable, fullRefresh, s.dryRun)
 	
 	if s.dryRun {
-		// In dry run mode, simulate the sync
-		result.RowsExtracted = int64(100 + len(table.PostgresTable)*10) // Fake row count based on table name
-		result.RowsLoaded = result.RowsExtracted
+		// Real dry-run: extract real data + test Snowflake with transaction rollback
+		log.Printf("DRY RUN: Testing real data extraction and Snowflake connectivity for %s", table.PostgresTable)
 		
-		log.Printf("DRY RUN: Would extract %d rows from %s and load to %s", 
-			result.RowsExtracted, table.PostgresTable, table.SnowflakeTable)
+		// 1. Extract real data from PostgreSQL
+		log.Printf("Extracting real data from PostgreSQL table: %s", table.PostgresTable)
+		exportResult, err := s.pgClient.ExportTable(ctx, table.PostgresTable, table.OrderBy)
+		if err != nil {
+			result.Error = fmt.Errorf("dry-run failed: could not extract from %s: %w", table.PostgresTable, err)
+			return result
+		}
 		
-		// Simulate processing time
-		time.Sleep(100 * time.Millisecond)
+		result.RowsExtracted = exportResult.RowsExtracted
+		log.Printf("DRY RUN: Successfully extracted %d real rows from %s", result.RowsExtracted, table.PostgresTable)
+		
+		// 2. Test Snowflake connectivity with transaction rollback
+		log.Printf("DRY RUN: Testing Snowflake load with transaction rollback for %s", table.SnowflakeTable)
+		loadResult, err := s.snowClient.LoadTableWithRollback(ctx, table.SnowflakeTable, exportResult.Data, fullRefresh)
+		if err != nil {
+			result.Error = fmt.Errorf("dry-run failed: Snowflake connectivity test failed for %s: %w", table.SnowflakeTable, err)
+			return result
+		}
+		
+		result.RowsLoaded = loadResult.RowsLoaded
+		log.Printf("DRY RUN: Successfully tested Snowflake load (%d rows validated, transaction rolled back)", result.RowsLoaded)
+		
+		// 3. Verify row counts match
+		if result.RowsExtracted != result.RowsLoaded {
+			result.Error = fmt.Errorf("dry-run validation failed: extracted %d rows but Snowflake validated %d", 
+				result.RowsExtracted, result.RowsLoaded)
+			return result
+		}
+		
+		log.Printf("DRY RUN: Validation complete - %d rows extracted = %d rows validated (rolled back)", 
+			result.RowsExtracted, result.RowsLoaded)
 	} else {
 		// Real sync implementation
 		

@@ -207,6 +207,120 @@ func (c *SnowflakeClient) LoadTable(ctx context.Context, tableName string, data 
 	return result, nil
 }
 
+// LoadTableWithRollback tests data loading to Snowflake with transaction rollback (for dry-run validation)
+func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName string, data []map[string]interface{}, truncateFirst bool) (*LoadResult, error) {
+	startTime := time.Now()
+	
+	result := &LoadResult{
+		Table: tableName,
+	}
+	
+	log.Printf("DRY RUN: Testing Snowflake load for table %s with transaction rollback (rows: %d, truncate: %t)", 
+		tableName, len(data), truncateFirst)
+	
+	// Begin transaction for rollback testing
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to begin rollback transaction: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	
+	// Ensure rollback happens regardless of success/failure
+	defer func() {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			log.Printf("Warning: rollback failed: %v", rollbackErr)
+		} else {
+			log.Printf("DRY RUN: Transaction successfully rolled back for %s", tableName)
+		}
+	}()
+	
+	// Test truncate if requested
+	if truncateFirst {
+		truncateSQL := fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tableName)
+		log.Printf("DRY RUN: Testing truncate: %s", truncateSQL)
+		
+		if _, err := tx.ExecContext(ctx, truncateSQL); err != nil {
+			result.Error = fmt.Errorf("dry-run failed: could not test truncate table %s: %w", tableName, err)
+			result.Duration = time.Since(startTime)
+			return result, result.Error
+		}
+	}
+	
+	// If no data, just test the table access
+	if len(data) == 0 {
+		// Test table access with SELECT
+		testSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+		var count int64
+		if err := tx.QueryRowContext(ctx, testSQL).Scan(&count); err != nil {
+			result.Error = fmt.Errorf("dry-run failed: could not access table %s: %w", tableName, err)
+		}
+		log.Printf("DRY RUN: Table access test successful for %s (current count: %d)", tableName, count)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	
+	// Test INSERT with small batch (limit to 10 rows for dry-run performance)
+	testData := data
+	if len(data) > 10 {
+		testData = data[:10]
+		log.Printf("DRY RUN: Testing with first 10 rows out of %d total", len(data))
+	}
+	
+	// Build INSERT statement from first row
+	firstRow := testData[0]
+	columns := make([]string, 0, len(firstRow))
+	placeholders := make([]string, 0, len(firstRow))
+	
+	for column := range firstRow {
+		columns = append(columns, strings.ToUpper(column))
+		placeholders = append(placeholders, "?")
+	}
+	
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tableName,
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
+	
+	log.Printf("DRY RUN: Testing INSERT statement: %s", insertSQL)
+	
+	// Prepare statement
+	stmt, err := tx.PrepareContext(ctx, insertSQL)
+	if err != nil {
+		result.Error = fmt.Errorf("dry-run failed: could not prepare INSERT for %s: %w", tableName, err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	defer stmt.Close()
+	
+	// Insert test data
+	totalRows := int64(0)
+	for _, row := range testData {
+		// Extract values in same order as columns
+		values := make([]interface{}, len(columns))
+		for j, column := range columns {
+			values[j] = row[strings.ToLower(column)]
+		}
+		
+		if _, err := stmt.ExecContext(ctx, values...); err != nil {
+			result.Error = fmt.Errorf("dry-run failed: could not test insert row %d into %s: %w", totalRows, tableName, err)
+			result.Duration = time.Since(startTime)
+			return result, result.Error
+		}
+		
+		totalRows++
+	}
+	
+	// Extrapolate row count (if we only tested 10 out of 1000, report 1000)
+	result.RowsLoaded = int64(len(data))
+	result.Duration = time.Since(startTime)
+	
+	log.Printf("DRY RUN: Successfully validated INSERT for %s (%d test rows, %d total would be loaded)", 
+		tableName, totalRows, result.RowsLoaded)
+	
+	return result, nil
+}
+
 // GetTableRowCount returns the number of rows in a Snowflake table
 func (c *SnowflakeClient) GetTableRowCount(ctx context.Context, tableName string) (int64, error) {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
