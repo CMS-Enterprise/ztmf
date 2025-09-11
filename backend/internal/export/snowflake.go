@@ -364,32 +364,87 @@ func (c *SnowflakeClient) TestConnection(ctx context.Context) error {
 
 // initializeSession sets up the Snowflake session with proper context
 func (c *SnowflakeClient) initializeSession(ctx context.Context) error {
-	var sessionCommands []string
+	// Validate and sanitize inputs to prevent SQL injection
+	if err := c.validateSessionIdentifiers(); err != nil {
+		return fmt.Errorf("invalid session parameters: %w", err)
+	}
 	
-	// Only set warehouse if one is provided (let service account use default if empty)
+	// Execute session commands with validated inputs
 	if c.cfg.Warehouse != "" {
-		sessionCommands = append(sessionCommands, fmt.Sprintf("USE WAREHOUSE %s", c.cfg.Warehouse))
+		if err := c.executeSessionCommand(ctx, "USE WAREHOUSE", c.cfg.Warehouse); err != nil {
+			return err
+		}
 	}
 	
-	// Set database, schema, role if provided
 	if c.cfg.Database != "" {
-		sessionCommands = append(sessionCommands, fmt.Sprintf("USE DATABASE %s", c.cfg.Database))
-	}
-	if c.cfg.Schema != "" {
-		sessionCommands = append(sessionCommands, fmt.Sprintf("USE SCHEMA %s", c.cfg.Schema))
-	}
-	if c.cfg.Role != "" {
-		sessionCommands = append(sessionCommands, fmt.Sprintf("USE ROLE %s", c.cfg.Role))
+		if err := c.executeSessionCommand(ctx, "USE DATABASE", c.cfg.Database); err != nil {
+			return err
+		}
 	}
 	
-	for _, cmd := range sessionCommands {
-		log.Printf("Executing Snowflake session command: %s", cmd)
-		if _, err := c.db.ExecContext(ctx, cmd); err != nil {
-			return fmt.Errorf("failed to execute session command '%s': %w", cmd, err)
+	if c.cfg.Schema != "" {
+		if err := c.executeSessionCommand(ctx, "USE SCHEMA", c.cfg.Schema); err != nil {
+			return err
+		}
+	}
+	
+	if c.cfg.Role != "" {
+		if err := c.executeSessionCommand(ctx, "USE ROLE", c.cfg.Role); err != nil {
+			return err
 		}
 	}
 	
 	return nil
+}
+
+// validateSessionIdentifiers ensures identifiers are safe for SQL execution
+func (c *SnowflakeClient) validateSessionIdentifiers() error {
+	identifiers := map[string]string{
+		"warehouse": c.cfg.Warehouse,
+		"database":  c.cfg.Database,
+		"schema":    c.cfg.Schema,
+		"role":      c.cfg.Role,
+	}
+	
+	for name, value := range identifiers {
+		if value != "" && !isValidSnowflakeIdentifier(value) {
+			return fmt.Errorf("invalid %s identifier: %s", name, value)
+		}
+	}
+	
+	return nil
+}
+
+// executeSessionCommand safely executes a session command with validated identifier
+func (c *SnowflakeClient) executeSessionCommand(ctx context.Context, command, identifier string) error {
+	// Use quoted identifier to prevent SQL injection
+	sql := fmt.Sprintf("%s \"%s\"", command, strings.ReplaceAll(identifier, "\"", "\"\""))
+	
+	log.Printf("Executing Snowflake session command: %s", sql)
+	if _, err := c.db.ExecContext(ctx, sql); err != nil {
+		return fmt.Errorf("failed to execute session command '%s': %w", sql, err)
+	}
+	
+	return nil
+}
+
+// isValidSnowflakeIdentifier checks if an identifier is safe (alphanumeric, underscore, dash)
+func isValidSnowflakeIdentifier(identifier string) bool {
+	if len(identifier) == 0 || len(identifier) > 255 {
+		return false
+	}
+	
+	// Allow alphanumeric, underscore, dash (standard Snowflake identifiers)
+	for _, char := range identifier {
+		if !((char >= 'A' && char <= 'Z') || 
+			 (char >= 'a' && char <= 'z') || 
+			 (char >= '0' && char <= '9') || 
+			 char == '_' || char == '-') {
+			return false
+		}
+	}
+	
+	return true
 }
 
 // discoverAndSetSession discovers available resources and sets up session
