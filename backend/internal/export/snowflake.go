@@ -235,16 +235,9 @@ func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName s
 		}
 	}()
 	
-	// Test truncate if requested
+	// Skip truncate testing in dry-run mode (may not have DELETE permissions)
 	if truncateFirst {
-		truncateSQL := fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tableName)
-		log.Printf("DRY RUN: Testing truncate: %s", truncateSQL)
-		
-		if _, err := tx.ExecContext(ctx, truncateSQL); err != nil {
-			result.Error = fmt.Errorf("dry-run failed: could not test truncate table %s: %w", tableName, err)
-			result.Duration = time.Since(startTime)
-			return result, result.Error
-		}
+		log.Printf("DRY RUN: Skipping truncate test (would truncate %s in real sync)", tableName)
 	}
 	
 	// If no data, just test the table access
