@@ -16,7 +16,7 @@ require (
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/jackc/tern/v2 v2.2.1
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0
-	github.com/snowflakedb/gosnowflake v1.16.0
+	github.com/snowflakedb/gosnowflake v1.15.0
 	github.com/xuri/excelize/v2 v2.9.0
 )
 
