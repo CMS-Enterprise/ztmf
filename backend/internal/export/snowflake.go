@@ -450,8 +450,9 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		cfg := &gosnowflake.Config{
 			Account:       snowflakeConfig.Account,
 			User:          snowflakeConfig.Username,
+			Password:      "", // Required by driver even for RSA auth
 			PrivateKey:    rsaPrivateKey,
-			Authenticator: gosnowflake.AuthTypeJwt, // Explicitly set RSA auth type
+			Authenticator: gosnowflake.AuthTypeJwt,
 			Database:      snowflakeConfig.Database,
 			Schema:        snowflakeConfig.Schema,
 			Warehouse:     snowflakeConfig.Warehouse,
