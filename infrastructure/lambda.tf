@@ -45,41 +45,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
   }
 }
 
-# Create a minimal placeholder Lambda deployment package
-data "archive_file" "lambda_placeholder" {
-  type        = "zip"
-  output_path = "/tmp/lambda-placeholder.zip"
-
-  source {
-    content  = <<EOF
-#!/bin/bash
-echo "Placeholder Lambda function - will be replaced by CI/CD pipeline"
-echo "This is just to allow Terraform to create the Lambda resource"
-exit 0
-EOF
-    filename = "bootstrap"
-  }
-}
-
-# Placeholder S3 object for Lambda deployment package
-# This will be replaced by CI/CD pipeline
-resource "aws_s3_object" "lambda_deployment_placeholder" {
-  bucket = aws_s3_bucket.lambda_deployments.bucket
-  key    = "lambda-deployment-latest.zip"
-  source = data.archive_file.lambda_placeholder.output_path
-
-  # Ensure bucket is ready
-  depends_on = [
-    aws_s3_bucket.lambda_deployments,
-    aws_s3_bucket_server_side_encryption_configuration.lambda_deployments
-  ]
-
-  tags = {
-    Name        = "ZTMF Lambda Deployment Placeholder"
-    Environment = var.environment
-    Purpose     = "Initial deployment package replaced by CI-CD"
-  }
-}
 
 # CloudWatch Log Group for Lambda function
 resource "aws_cloudwatch_log_group" "ztmf_sync_lambda" {
@@ -333,7 +298,6 @@ resource "aws_lambda_function" "ztmf_sync" {
     aws_iam_role_policy_attachment.ztmf_sync_lambda_vpc,
     aws_iam_role_policy_attachment.ztmf_sync_lambda_sqs,
     aws_cloudwatch_log_group.ztmf_sync_lambda,
-    aws_s3_object.lambda_deployment_placeholder
   ]
 }
 
