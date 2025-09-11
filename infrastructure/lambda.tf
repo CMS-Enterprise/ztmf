@@ -280,6 +280,9 @@ resource "aws_lambda_function" "ztmf_sync" {
     variables = {
       ENVIRONMENT  = var.environment
       DB_SECRET_ID = local.db_cred_secret
+      DB_ENDPOINT  = aws_rds_cluster.ztmf.endpoint
+      DB_PORT      = "5432"
+      DB_NAME      = "ztmf"
     }
   }
 
