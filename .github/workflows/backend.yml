@@ -92,8 +92,8 @@ jobs:
         run: |
           set -e
           cd backend
-          echo "Building Lambda function for Linux..."
-          GOOS=linux GOARCH=amd64 go build -o bootstrap ./cmd/lambda/.
+          echo "Building Lambda function for Linux with static linking..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda/.
           echo "Creating Lambda deployment package..."
           zip lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
           ls -la lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
