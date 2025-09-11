@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,7 +40,8 @@ func NewPostgresClient(ctx context.Context) (*PostgresClient, error) {
 	// Create connection pool
 	pool, err := pgxpool.New(ctx, connString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+		// Sanitize error to prevent credential exposure in logs
+		return nil, fmt.Errorf("failed to create PostgreSQL connection pool - check database credentials and connectivity")
 	}
 	
 	// Test the connection
@@ -162,8 +164,11 @@ func buildConnectionString() (string, error) {
 	cfg := config.GetInstance()
 	// If we have all direct config values, use them
 	if cfg.Db.Host != "" && cfg.Db.User != "" && cfg.Db.Pass != "" {
+		// URL encode credentials to handle special characters safely
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=prefer",
-			cfg.Db.User, cfg.Db.Pass, cfg.Db.Host, cfg.Db.Port, cfg.Db.Name), nil
+			url.QueryEscape(cfg.Db.User), 
+			url.QueryEscape(cfg.Db.Pass), 
+			cfg.Db.Host, cfg.Db.Port, cfg.Db.Name), nil
 	}
 	
 	// If we have a secret ID, use that
@@ -189,8 +194,11 @@ func buildConnectionString() (string, error) {
 			return "", fmt.Errorf("failed to unmarshal database secret: %w", err)
 		}
 		
+		// URL encode credentials to handle special characters safely
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=prefer",
-			creds.Username, creds.Password, creds.Host, creds.Port, creds.Database), nil
+			url.QueryEscape(creds.Username), 
+			url.QueryEscape(creds.Password), 
+			creds.Host, creds.Port, creds.Database), nil
 	}
 	
 	return "", fmt.Errorf("insufficient database configuration - need either direct config or secret ID")
