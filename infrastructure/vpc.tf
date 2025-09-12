@@ -48,3 +48,47 @@ data "aws_eip" "nat_gateway" {
   count = length(data.aws_nat_gateways.existing.ids) > 0 ? 1 : 0
   id    = data.aws_nat_gateway.existing[0].allocation_id
 }
+
+# Security group for Lambda function
+resource "aws_security_group" "ztmf_sync_lambda" {
+  name        = "ztmf-data-sync-lambda-${var.environment}"
+  description = "Security group for ZTMF Data Sync Lambda function"
+  vpc_id      = data.aws_vpc.ztmf.id
+
+  egress {
+    description = "PostgreSQL to RDS"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [for subnet in data.aws_subnet.private : subnet.cidr_block]
+  }
+
+  egress {
+    description = "HTTPS outbound for Snowflake connectivity"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "HTTP outbound for Snowflake OCSP certificate validation"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "DNS resolution"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "ZTMF Data Sync Lambda SG"
+    Environment = var.environment
+  }
+}

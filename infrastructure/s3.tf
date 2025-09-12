@@ -118,3 +118,43 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
     }
   }
 }
+
+# S3 bucket for Lambda deployment packages
+resource "aws_s3_bucket" "lambda_deployments" {
+  bucket = "ztmf-lambda-deployments-${var.environment}"
+
+  tags = {
+    Name        = "ZTMF Lambda Deployments"
+    Environment = var.environment
+    Purpose     = "Lambda deployment packages"
+  }
+}
+
+# Block all public access to the Lambda deployment bucket
+resource "aws_s3_bucket_public_access_block" "lambda_deployments" {
+  bucket = aws_s3_bucket.lambda_deployments.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# S3 bucket versioning for Lambda deployments
+resource "aws_s3_bucket_versioning" "lambda_deployments" {
+  bucket = aws_s3_bucket.lambda_deployments.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# S3 bucket server-side encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployments" {
+  bucket = aws_s3_bucket.lambda_deployments.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
