@@ -98,7 +98,7 @@ resource "aws_cloudwatch_event_target" "ztmf_sync_lambda" {
   input = jsonencode({
     trigger_type = "scheduled"
     tables       = [] # Empty means sync all tables
-    full_refresh = true
+    full_refresh = false # Use MERGE/upsert for better performance
     dry_run      = var.environment != "prod"
   })
 }
