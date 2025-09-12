@@ -26,3 +26,52 @@ output "lambda_function_arn" {
   value       = aws_lambda_function.ztmf_sync.arn
   sensitive   = false
 }
+
+# Store test events as SSM parameters for team reference
+resource "aws_ssm_parameter" "lambda_test_events" {
+  for_each = var.environment == "dev" ? {
+    "dry-run-single-table" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = true
+      tables       = ["users"]
+      full_refresh = false
+    })
+    "dry-run-all-tables" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = true
+      tables       = []
+      full_refresh = true
+    })
+    "real-test-single" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = false
+      tables       = ["users"]
+      full_refresh = false
+    })
+  } : {
+    "prod-dry-run-validation" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = true
+      tables       = ["users", "scores"]
+      full_refresh = false
+    })
+    "prod-manual-full-sync" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = false
+      tables       = []
+      full_refresh = true
+    })
+  }
+
+  name  = "/ztmf/${var.environment}/lambda/test-events/${each.key}"
+  type  = "String"
+  value = each.value
+
+  description = "Test event template for ZTMF Lambda data sync function"
+
+  tags = {
+    Name        = "ZTMF Lambda Test Event"
+    Environment = var.environment
+    TestEvent   = each.key
+  }
+}
