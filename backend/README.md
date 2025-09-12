@@ -162,9 +162,38 @@ Furthermore, events has a read-only route in the API see `backend/cmd/api/intern
 
 ## Multiple Binaries
 
-To produce another binary separate from the api, create a new folder under `backend/cmd/` and add to it the requisite `main.go` . To execute binaries during local development, such as the api in this example, simply run (from `backend/`) `go run ./cmd/api/...`. 
+The backend supports multiple compiled binaries sharing common packages:
 
-To compile binaries to be distributed to non-local environments, run `go build -o ./ ./cmd/api/...` (replacing _api_ with the target binary). This will save the final binary to the path specified with `-o`. See [Dockerfile](./Dockerfile) for an example of how the api binary is compiled and distributed.
+### API Binary (`cmd/api/`)
+The REST API server for the ZTMF web application.
+
+### Lambda Binary (`cmd/lambda/`)
+Automated data synchronization from PostgreSQL to Snowflake:
+- **Runtime**: AWS Lambda with Go (`provided.al2` runtime)
+- **Function**: Quarterly data sync to Snowflake for business intelligence
+- **Environment**: Dry-run in dev, real sync in production
+- **Tables**: 10 core ZTMF business tables synchronized
+
+#### Lambda Development
+```bash
+# Build Lambda locally
+go build -o bootstrap ./cmd/lambda/.
+
+# Build for AWS Lambda (static linking)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda/.
+
+# Test locally (dry-run mode)
+ENVIRONMENT=local go run ./cmd/lambda/...
+```
+
+#### Lambda Architecture
+- **Handler**: Event-driven execution (manual, scheduled)
+- **PostgreSQL Export**: Real data extraction using pgx driver
+- **Snowflake Loading**: RSA authentication with transaction rollback
+- **Shared Packages**: Reuses `internal/config`, `internal/secrets`
+
+### Compilation
+To compile binaries for distribution, run `go build -o ./ ./cmd/{binary}/...`. The API binary is containerized via [Dockerfile](./Dockerfile), while the Lambda binary is deployed as a ZIP package via CI/CD.
 
 ## API Components
 

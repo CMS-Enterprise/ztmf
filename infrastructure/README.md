@@ -22,6 +22,12 @@ The ZTMF application follows a modern cloud-native architecture with the followi
 - **Aurora PostgreSQL**: Serverless v2 database for application data
 - **Secrets Manager**: Stores credentials, certificates, and other sensitive information
 
+### Data Synchronization
+- **Lambda Function**: Automated data sync from PostgreSQL to Snowflake
+- **EventBridge**: Scheduled execution (quarterly prod, weekly dev)
+- **S3 Bucket**: Lambda deployment package storage
+- **CloudWatch**: Monitoring, logging, and alerting for sync operations
+
 ### Networking
 - **VPC**: Provided by CMS Cloud
 - **Private Subnets**: Host all application components
@@ -81,6 +87,70 @@ module <identifier> {
 ## Deployment
 
 The infrastructure is deployed using Terraform and GitHub Actions. The GitHub Actions workflow is configured to use OIDC for authentication with AWS.
+
+## Data Synchronization
+
+### Lambda Function for Snowflake Sync
+
+The ZTMF application includes automated data synchronization from PostgreSQL to Snowflake using AWS Lambda:
+
+#### Architecture
+- **Function**: `ztmf-data-sync-${environment}` 
+- **Runtime**: Go (`provided.al2`) with 1GB memory, 15-minute timeout
+- **VPC**: Deployed in private subnets with access to Aurora PostgreSQL
+- **Scheduling**: EventBridge rules for automated execution
+- **Monitoring**: CloudWatch logs, metrics, and alarms
+
+#### Execution Schedule
+- **Production**: Quarterly on 1st of every 3rd month at 2 AM UTC
+- **Development**: Weekly on Mondays at 9 AM UTC (dry-run mode only)
+
+#### Data Flow
+```mermaid
+graph TD
+    A[EventBridge Schedule] --> B[Lambda Function]
+    B --> C[Aurora PostgreSQL]
+    B --> D[Snowflake]
+    C --> E[Extract 12 ZTMF Tables]
+    E --> F[Transform & Load to Snowflake]
+    F --> D
+    B --> G[CloudWatch Logs]
+    B --> H[Dead Letter Queue]
+```
+
+#### Tables Synchronized
+The Lambda synchronizes 10 core ZTMF business tables:
+- `datacalls` → `ZTMF_DATACALLS`
+- `fismasystems` → `ZTMF_FISMASYSTEMS` 
+- `users` → `ZTMF_USERS`
+- `scores` → `ZTMF_SCORES`
+- `questions` → `ZTMF_QUESTIONS`
+- `functions` → `ZTMF_FUNCTIONS`
+- `functionoptions` → `ZTMF_FUNCTIONOPTIONS`
+- `pillars` → `ZTMF_PILLARS`
+- `datacalls_fismasystems` → `ZTMF_DATACALLS_FISMASYSTEMS`
+- `users_fismasystems` → `ZTMF_USERS_FISMASYSTEMS`
+
+*Note: events and massemails tables excluded (not required for ZTMF business operations)*
+
+#### Security & Configuration
+- **Secrets Manager**: Environment-specific Snowflake credentials with RSA authentication
+- **IAM Roles**: Least privilege access to database, secrets, and VPC
+- **Error Handling**: Dead letter queue and CloudWatch alarms
+- **Environment Isolation**: Dry-run in dev, real sync in production
+- **Test Events**: Standardized test events stored as SSM parameters
+
+## Infrastructure Organization
+
+The Terraform configuration follows a logical service-based organization:
+
+- **`lambda.tf`**: Core Lambda function and EventBridge scheduling
+- **`iam.tf`**: IAM roles and policies for Lambda execution
+- **`monitoring.tf`**: CloudWatch logs, alarms, and SQS dead letter queue
+- **`s3.tf`**: S3 buckets including Lambda deployment packages
+- **`vpc.tf`**: Network resources including Lambda security group
+- **`secrets.tf`**: Secrets Manager resources for credentials
+- **`outputs.tf`**: Terraform outputs and SSM test event parameters
 
 ## Database Access
 

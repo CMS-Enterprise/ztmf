@@ -82,6 +82,56 @@ jobs:
   
       - name: Docker - Push
         run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+
+      - name: Lambda - Build
+        run: |
+          set -e
+          cd backend
+          echo "Building Lambda function for Linux with static linking..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda/.
+          echo "Creating Lambda deployment package..."
+          zip lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          ls -la lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+
+      - name: Lambda - Upload to S3
+        run: |
+          set -e
+          # Use environment-aware bucket naming (matches Terraform)
+          ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
+          LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
+          echo "Uploading Lambda package to bucket: $LAMBDA_BUCKET"
+          
+          # Upload with commit SHA tag
+          aws s3 cp backend/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+          
+          # Update the latest symlink
+          aws s3 cp backend/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip s3://$LAMBDA_BUCKET/lambda-deployment-latest.zip
+          
+          echo "Lambda deployment package uploaded successfully"
+
+      - name: Lambda - Update Function Code
+        run: |
+          set -e
+          # Use environment-aware function naming (matches Terraform)
+          ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
+          LAMBDA_FUNCTION="ztmf-data-sync-${ENV_LOWER}"
+          LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
+          
+          echo "Updating Lambda function: $LAMBDA_FUNCTION"
+          echo "Using deployment package: s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip"
+          
+          # Update Lambda function code
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION \
+            --s3-bucket $LAMBDA_BUCKET \
+            --s3-key lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+          
+          echo "Lambda function updated successfully"
         
       - name: AWS - SSM Put Parameter
         run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
