@@ -286,10 +286,8 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 			if value == nil {
 				values[j] = "NULL"
 			} else {
-				// Simple string escaping (basic SQL injection prevention)
-				valueStr := fmt.Sprintf("%v", value)
-				valueStr = strings.ReplaceAll(valueStr, "'", "''") // Escape single quotes
-				values[j] = fmt.Sprintf("'%s'", valueStr)
+				// Handle different data types properly for Snowflake
+				values[j] = c.formatValueForSnowflake(value)
 			}
 		}
 		valuesList[i] = fmt.Sprintf("(%s)", strings.Join(values, ", "))
@@ -344,6 +342,38 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 		strings.Join(insertValues, ", "))
 	
 	return mergeSQL
+}
+
+// formatValueForSnowflake formats Go values for Snowflake SQL statements
+func (c *SnowflakeClient) formatValueForSnowflake(value interface{}) string {
+	switch v := value.(type) {
+	case time.Time:
+		// Format timestamps for Snowflake (YYYY-MM-DD HH:MI:SS)
+		return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+	case *time.Time:
+		if v != nil {
+			return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+		}
+		return "NULL"
+	case string:
+		// Escape single quotes in strings
+		escaped := strings.ReplaceAll(v, "'", "''")
+		return fmt.Sprintf("'%s'", escaped)
+	case int, int32, int64, float32, float64:
+		// Numbers don't need quotes
+		return fmt.Sprintf("%v", v)
+	case bool:
+		// Booleans for Snowflake
+		if v {
+			return "TRUE"
+		}
+		return "FALSE"
+	default:
+		// Default string conversion with escaping
+		valueStr := fmt.Sprintf("%v", v)
+		valueStr = strings.ReplaceAll(valueStr, "'", "''")
+		return fmt.Sprintf("'%s'", valueStr)
+	}
 }
 
 // LoadTableWithRollback tests data loading to Snowflake with transaction rollback (for dry-run validation)
