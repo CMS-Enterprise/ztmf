@@ -316,6 +316,12 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 		}
 	}
 	
+	// If no columns to update (all columns are primary keys), use a dummy update
+	if len(updateSets) == 0 {
+		// For tables with only primary keys, use the first column as dummy update
+		updateSets = append(updateSets, fmt.Sprintf("%s = source.%s", columns[0], columns[0]))
+	}
+	
 	// Build INSERT clause
 	insertColumns := strings.Join(columns, ", ")
 	insertValues := make([]string, len(columns))
