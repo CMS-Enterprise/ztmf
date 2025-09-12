@@ -207,6 +207,176 @@ func (c *SnowflakeClient) LoadTable(ctx context.Context, tableName string, data 
 	return result, nil
 }
 
+// MergeTable performs MERGE/upsert operation on Snowflake table (faster than TRUNCATE + INSERT)
+func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data []map[string]interface{}, primaryKeys []string) (*LoadResult, error) {
+	startTime := time.Now()
+	
+	result := &LoadResult{
+		Table: tableName,
+	}
+	
+	log.Printf("Merging data to Snowflake table: %s (rows: %d, keys: %v)", tableName, len(data), primaryKeys)
+	
+	// If no data, just return success
+	if len(data) == 0 {
+		result.Duration = time.Since(startTime)
+		log.Printf("No data to merge for table %s", tableName)
+		return result, nil
+	}
+	
+	// Create temporary table for staging data
+	tempTableName := fmt.Sprintf("%s_TEMP_%d", tableName, time.Now().Unix())
+	
+	// Begin transaction
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to begin merge transaction: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	defer tx.Rollback() // Will be no-op if transaction is committed
+	
+	// Get column information from first row
+	firstRow := data[0]
+	columns := make([]string, 0, len(firstRow))
+	placeholders := make([]string, 0, len(firstRow))
+	
+	for column := range firstRow {
+		columns = append(columns, strings.ToUpper(column))
+		placeholders = append(placeholders, "?")
+	}
+	
+	// Create temporary table with same structure
+	createTempSQL := fmt.Sprintf("CREATE TEMPORARY TABLE %s AS SELECT * FROM %s WHERE 1=0", tempTableName, tableName)
+	log.Printf("Creating temporary table for staging")
+	
+	if _, err := tx.ExecContext(ctx, createTempSQL); err != nil {
+		result.Error = fmt.Errorf("failed to create temporary table: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	
+	// Insert data into temporary table
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tempTableName,
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
+	
+	log.Printf("Staging %d rows for MERGE operation", len(data))
+	
+	stmt, err := tx.PrepareContext(ctx, insertSQL)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to prepare INSERT for temp table: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	defer stmt.Close()
+	
+	// Insert data in batches
+	batchSize := 1000
+	totalRows := int64(0)
+	
+	for i := 0; i < len(data); i += batchSize {
+		end := i + batchSize
+		if end > len(data) {
+			end = len(data)
+		}
+		
+		batch := data[i:end]
+		
+		for _, row := range batch {
+			// Extract values in same order as columns
+			values := make([]interface{}, len(columns))
+			for j, column := range columns {
+				values[j] = row[strings.ToLower(column)]
+			}
+			
+			if _, err := stmt.ExecContext(ctx, values...); err != nil {
+				result.Error = fmt.Errorf("failed to stage row %d: %w", totalRows, err)
+				result.Duration = time.Since(startTime)
+				return result, result.Error
+			}
+			
+			totalRows++
+		}
+	}
+	
+	// Build and execute MERGE statement
+	mergeSQL := c.buildMergeStatement(tableName, tempTableName, columns, primaryKeys)
+	log.Printf("Executing MERGE operation for %s", tableName)
+	
+	if _, err := tx.ExecContext(ctx, mergeSQL); err != nil {
+		result.Error = fmt.Errorf("failed to execute MERGE: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		result.Error = fmt.Errorf("failed to commit merge transaction: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	
+	result.RowsLoaded = totalRows
+	result.Duration = time.Since(startTime)
+	
+	log.Printf("Successfully merged %d rows to %s (Duration: %v)", 
+		totalRows, tableName, result.Duration)
+	
+	return result, nil
+}
+
+// buildMergeStatement creates a MERGE SQL statement for upsert operations
+func (c *SnowflakeClient) buildMergeStatement(targetTable, sourceTable string, columns, primaryKeys []string) string {
+	// Build join condition for primary keys
+	joinConditions := make([]string, len(primaryKeys))
+	for i, key := range primaryKeys {
+		keyUpper := strings.ToUpper(key)
+		joinConditions[i] = fmt.Sprintf("target.%s = source.%s", keyUpper, keyUpper)
+	}
+	
+	// Build UPDATE SET clause (all columns except primary keys)
+	updateSets := make([]string, 0)
+	for _, column := range columns {
+		isPrimaryKey := false
+		for _, key := range primaryKeys {
+			if strings.ToUpper(key) == column {
+				isPrimaryKey = true
+				break
+			}
+		}
+		if !isPrimaryKey {
+			updateSets = append(updateSets, fmt.Sprintf("%s = source.%s", column, column))
+		}
+	}
+	
+	// Build INSERT clause
+	insertColumns := strings.Join(columns, ", ")
+	insertValues := make([]string, len(columns))
+	for i, column := range columns {
+		insertValues[i] = fmt.Sprintf("source.%s", column)
+	}
+	
+	// Construct MERGE statement
+	mergeSQL := fmt.Sprintf(`
+		MERGE INTO %s AS target
+		USING %s AS source
+		ON %s
+		WHEN MATCHED THEN 
+			UPDATE SET %s
+		WHEN NOT MATCHED THEN
+			INSERT (%s) VALUES (%s)`,
+		targetTable,
+		sourceTable,
+		strings.Join(joinConditions, " AND "),
+		strings.Join(updateSets, ", "),
+		insertColumns,
+		strings.Join(insertValues, ", "))
+	
+	return mergeSQL
+}
+
 // LoadTableWithRollback tests data loading to Snowflake with transaction rollback (for dry-run validation)
 func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName string, data []map[string]interface{}, truncateFirst bool) (*LoadResult, error) {
 	startTime := time.Now()

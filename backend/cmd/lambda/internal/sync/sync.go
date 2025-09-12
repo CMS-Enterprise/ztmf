@@ -127,22 +127,23 @@ type TableConfig struct {
 	PostgresTable  string
 	SnowflakeTable string
 	OrderBy        string
+	PrimaryKeys    []string // Primary key columns for MERGE operations
 }
 
 // getTablesToSync returns the list of tables to synchronize
 func (s *Synchronizer) getTablesToSync(requestedTables []string) ([]TableConfig, error) {
-	// Define all available tables (core ZTMF business tables only)
+	// Define all available tables with primary keys for MERGE operations
 	allTables := []TableConfig{
-		{PostgresTable: "datacalls", SnowflakeTable: "ZTMF_DATACALLS", OrderBy: "datacallid"},
-		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: "ZTMF_DATACALLS_FISMASYSTEMS", OrderBy: "datacallid, fismasystemid"},
-		{PostgresTable: "fismasystems", SnowflakeTable: "ZTMF_FISMASYSTEMS", OrderBy: "fismasystemid"},
-		{PostgresTable: "functionoptions", SnowflakeTable: "ZTMF_FUNCTIONOPTIONS", OrderBy: "functionoptionid"},
-		{PostgresTable: "functions", SnowflakeTable: "ZTMF_FUNCTIONS", OrderBy: "functionid"},
-		{PostgresTable: "pillars", SnowflakeTable: "ZTMF_PILLARS", OrderBy: "pillarid"},
-		{PostgresTable: "questions", SnowflakeTable: "ZTMF_QUESTIONS", OrderBy: "questionid"},
-		{PostgresTable: "scores", SnowflakeTable: "ZTMF_SCORES", OrderBy: "scoreid"},
-		{PostgresTable: "users", SnowflakeTable: "ZTMF_USERS", OrderBy: "userid"},
-		{PostgresTable: "users_fismasystems", SnowflakeTable: "ZTMF_USERS_FISMASYSTEMS", OrderBy: "userid, fismasystemid"},
+		{PostgresTable: "datacalls", SnowflakeTable: "ZTMF_DATACALLS", OrderBy: "datacallid", PrimaryKeys: []string{"datacallid"}},
+		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: "ZTMF_DATACALLS_FISMASYSTEMS", OrderBy: "datacallid, fismasystemid", PrimaryKeys: []string{"datacallid", "fismasystemid"}},
+		{PostgresTable: "fismasystems", SnowflakeTable: "ZTMF_FISMASYSTEMS", OrderBy: "fismasystemid", PrimaryKeys: []string{"fismasystemid"}},
+		{PostgresTable: "functionoptions", SnowflakeTable: "ZTMF_FUNCTIONOPTIONS", OrderBy: "functionoptionid", PrimaryKeys: []string{"functionoptionid"}},
+		{PostgresTable: "functions", SnowflakeTable: "ZTMF_FUNCTIONS", OrderBy: "functionid", PrimaryKeys: []string{"functionid"}},
+		{PostgresTable: "pillars", SnowflakeTable: "ZTMF_PILLARS", OrderBy: "pillarid", PrimaryKeys: []string{"pillarid"}},
+		{PostgresTable: "questions", SnowflakeTable: "ZTMF_QUESTIONS", OrderBy: "questionid", PrimaryKeys: []string{"questionid"}},
+		{PostgresTable: "scores", SnowflakeTable: "ZTMF_SCORES", OrderBy: "scoreid", PrimaryKeys: []string{"scoreid"}},
+		{PostgresTable: "users", SnowflakeTable: "ZTMF_USERS", OrderBy: "userid", PrimaryKeys: []string{"userid"}},
+		{PostgresTable: "users_fismasystems", SnowflakeTable: "ZTMF_USERS_FISMASYSTEMS", OrderBy: "userid, fismasystemid", PrimaryKeys: []string{"userid", "fismasystemid"}},
 	}
 	
 	// If no specific tables requested, return all
@@ -229,11 +230,25 @@ func (s *Synchronizer) syncTable(ctx context.Context, table TableConfig, fullRef
 		
 		result.RowsExtracted = exportResult.RowsExtracted
 		
-		// 2. Load data to Snowflake
-		log.Printf("Loading %d rows to Snowflake table: %s", result.RowsExtracted, table.SnowflakeTable)
-		loadResult, err := s.snowClient.LoadTable(ctx, table.SnowflakeTable, exportResult.Data, fullRefresh)
+		// 2. Load data to Snowflake using MERGE/upsert (faster and more reliable than TRUNCATE)
+		log.Printf("Merging %d rows to Snowflake table: %s", result.RowsExtracted, table.SnowflakeTable)
+		
+		var loadResult *export.LoadResult
+		
+		if fullRefresh {
+			// For full refresh, still use TRUNCATE + INSERT (if needed)
+			loadResult, err = s.snowClient.LoadTable(ctx, table.SnowflakeTable, exportResult.Data, true)
+		} else {
+			// For incremental sync, use MERGE/upsert (recommended)
+			loadResult, err = s.snowClient.MergeTable(ctx, table.SnowflakeTable, exportResult.Data, table.PrimaryKeys)
+		}
+		
 		if err != nil {
-			result.Error = fmt.Errorf("failed to load to %s: %w", table.SnowflakeTable, err)
+			syncType := "merge"
+			if fullRefresh {
+				syncType = "full refresh"
+			}
+			result.Error = fmt.Errorf("failed to %s %s: %w", syncType, table.SnowflakeTable, err)
 			return result
 		}
 		
