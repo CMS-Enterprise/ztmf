@@ -4,7 +4,6 @@
 resource "aws_cloudwatch_log_group" "ztmf_sync_lambda" {
   name              = "/aws/lambda/ztmf-data-sync-${var.environment}"
   retention_in_days = 14
-  kms_key_id        = "alias/aws/logs" # Encrypt with AWS managed key
 
   tags = {
     Name        = "ZTMF Data Sync Lambda Logs"
@@ -63,7 +62,6 @@ resource "aws_cloudwatch_metric_alarm" "ztmf_sync_duration" {
 resource "aws_sqs_queue" "ztmf_sync_dlq" {
   name                      = "ztmf-data-sync-dlq-${var.environment}"
   message_retention_seconds = 1209600         # 14 days
-  kms_master_key_id         = "alias/aws/sqs" # Encrypt with AWS managed key
 
   tags = {
     Name        = "ZTMF Data Sync DLQ"
