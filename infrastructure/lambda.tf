@@ -79,8 +79,8 @@ resource "aws_cloudwatch_event_rule" "ztmf_sync_schedule" {
   name        = "ztmf-data-sync-schedule-${var.environment}"
   description = "Schedule for ZTMF data synchronization to Snowflake"
 
-  # Different schedules per environment
-  schedule_expression = var.environment == "prod" ? "cron(0 2 1 */3 * ? *)" : "cron(0 9 ? * MON *)"
+  # Different schedules per environment  
+  schedule_expression = var.environment == "prod" ? "cron(0 2 1 */3 * ?)" : "cron(0 9 ? * MON *)"
 
   tags = {
     Name        = "ZTMF Data Sync Schedule"
