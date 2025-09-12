@@ -60,3 +60,16 @@ resource "aws_secretsmanager_secret" "ztmf_snowflake_prod" {
     Purpose     = "Lambda data sync"
   }
 }
+
+# Slack webhook URL for data sync alerts (shared across environments)
+resource "aws_secretsmanager_secret" "ztmf_slack_webhook" {
+  name = "ztmf_slack_webhook"
+
+  description = "Slack webhook URL for ZTMF data sync alerts and notifications"
+
+  tags = {
+    Name        = "ZTMF Slack Webhook"
+    Environment = "shared"
+    Purpose     = "Data sync notifications"
+  }
+}
