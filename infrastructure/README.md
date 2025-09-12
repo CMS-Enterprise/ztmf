@@ -119,19 +119,38 @@ graph TD
 ```
 
 #### Tables Synchronized
-The Lambda synchronizes all core ZTMF tables:
+The Lambda synchronizes 10 core ZTMF business tables:
 - `datacalls` → `ZTMF_DATACALLS`
-- `fismasystems` → `ZTMF_FISMASYSTEMS`
+- `fismasystems` → `ZTMF_FISMASYSTEMS` 
 - `users` → `ZTMF_USERS`
 - `scores` → `ZTMF_SCORES`
-- `events` → `ZTMF_EVENTS`
-- And 7 additional junction and reference tables
+- `questions` → `ZTMF_QUESTIONS`
+- `functions` → `ZTMF_FUNCTIONS`
+- `functionoptions` → `ZTMF_FUNCTIONOPTIONS`
+- `pillars` → `ZTMF_PILLARS`
+- `datacalls_fismasystems` → `ZTMF_DATACALLS_FISMASYSTEMS`
+- `users_fismasystems` → `ZTMF_USERS_FISMASYSTEMS`
+
+*Note: events and massemails tables excluded (not required for ZTMF business operations)*
 
 #### Security & Configuration
-- **Secrets Manager**: Environment-specific Snowflake credentials
+- **Secrets Manager**: Environment-specific Snowflake credentials with RSA authentication
 - **IAM Roles**: Least privilege access to database, secrets, and VPC
 - **Error Handling**: Dead letter queue and CloudWatch alarms
 - **Environment Isolation**: Dry-run in dev, real sync in production
+- **Test Events**: Standardized test events stored as SSM parameters
+
+## Infrastructure Organization
+
+The Terraform configuration follows a logical service-based organization:
+
+- **`lambda.tf`**: Core Lambda function and EventBridge scheduling
+- **`iam.tf`**: IAM roles and policies for Lambda execution
+- **`monitoring.tf`**: CloudWatch logs, alarms, and SQS dead letter queue
+- **`s3.tf`**: S3 buckets including Lambda deployment packages
+- **`vpc.tf`**: Network resources including Lambda security group
+- **`secrets.tf`**: Secrets Manager resources for credentials
+- **`outputs.tf`**: Terraform outputs and SSM test event parameters
 
 ## Database Access
 
