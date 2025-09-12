@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -286,10 +287,8 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 			if value == nil {
 				values[j] = "NULL"
 			} else {
-				// Simple string escaping (basic SQL injection prevention)
-				valueStr := fmt.Sprintf("%v", value)
-				valueStr = strings.ReplaceAll(valueStr, "'", "''") // Escape single quotes
-				values[j] = fmt.Sprintf("'%s'", valueStr)
+				// Handle different data types properly for Snowflake
+				values[j] = c.formatValueForSnowflake(value)
 			}
 		}
 		valuesList[i] = fmt.Sprintf("(%s)", strings.Join(values, ", "))
@@ -344,6 +343,74 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 		strings.Join(insertValues, ", "))
 	
 	return mergeSQL
+}
+
+// formatValueForSnowflake formats Go values for Snowflake SQL statements based on ZTMF model types
+func (c *SnowflakeClient) formatValueForSnowflake(value interface{}) string {
+	switch v := value.(type) {
+	case time.Time:
+		// Format timestamps for Snowflake (YYYY-MM-DD HH:MI:SS)
+		return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+	case *time.Time:
+		if v != nil {
+			return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
+		}
+		return "NULL"
+	case string:
+		// Escape single quotes in strings
+		escaped := strings.ReplaceAll(v, "'", "''")
+		return fmt.Sprintf("'%s'", escaped)
+	case int, int8, int16, int32, int64:
+		// Integer types (common in ZTMF models)
+		return fmt.Sprintf("%d", v)
+	case *int32:
+		// Nullable int32 (like QuestionID in functions model)
+		if v != nil {
+			return fmt.Sprintf("%d", *v)
+		}
+		return "NULL"
+	case *string:
+		// Nullable string (like UserID in events model)
+		if v != nil {
+			escaped := strings.ReplaceAll(*v, "'", "''")
+			return fmt.Sprintf("'%s'", escaped)
+		}
+		return "NULL"
+	case float32, float64:
+		// Float types
+		return fmt.Sprintf("%f", v)
+	case bool:
+		// Booleans for Snowflake
+		if v {
+			return "TRUE"
+		}
+		return "FALSE"
+	case *bool:
+		// Nullable boolean
+		if v != nil {
+			if *v {
+				return "TRUE"
+			}
+			return "FALSE"
+		}
+		return "NULL"
+	case map[string]interface{}:
+		// JSONB fields (like events.payload) - convert to JSON string
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			// Fallback to string representation if JSON marshal fails
+			valueStr := fmt.Sprintf("%v", v)
+			valueStr = strings.ReplaceAll(valueStr, "'", "''")
+			return fmt.Sprintf("'%s'", valueStr)
+		}
+		jsonStr := strings.ReplaceAll(string(jsonBytes), "'", "''")
+		return fmt.Sprintf("'%s'", jsonStr)
+	default:
+		// Default string conversion with escaping for unknown types
+		valueStr := fmt.Sprintf("%v", v)
+		valueStr = strings.ReplaceAll(valueStr, "'", "''")
+		return fmt.Sprintf("'%s'", valueStr)
+	}
 }
 
 // LoadTableWithRollback tests data loading to Snowflake with transaction rollback (for dry-run validation)
