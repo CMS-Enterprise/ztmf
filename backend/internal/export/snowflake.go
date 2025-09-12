@@ -207,7 +207,7 @@ func (c *SnowflakeClient) LoadTable(ctx context.Context, tableName string, data 
 	return result, nil
 }
 
-// MergeTable performs MERGE/upsert operation on Snowflake table (faster than TRUNCATE + INSERT)
+// MergeTable performs MERGE/upsert operation on Snowflake table using direct VALUES (much faster)
 func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data []map[string]interface{}, primaryKeys []string) (*LoadResult, error) {
 	startTime := time.Now()
 	
@@ -224,57 +224,19 @@ func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data
 		return result, nil
 	}
 	
-	// Create temporary table for staging data
-	tempTableName := fmt.Sprintf("%s_TEMP_%d", tableName, time.Now().Unix())
-	
-	// Begin transaction
-	tx, err := c.db.BeginTx(ctx, nil)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to begin merge transaction: %w", err)
-		result.Duration = time.Since(startTime)
-		return result, result.Error
-	}
-	defer tx.Rollback() // Will be no-op if transaction is committed
-	
 	// Get column information from first row
 	firstRow := data[0]
 	columns := make([]string, 0, len(firstRow))
-	placeholders := make([]string, 0, len(firstRow))
 	
 	for column := range firstRow {
 		columns = append(columns, strings.ToUpper(column))
-		placeholders = append(placeholders, "?")
 	}
 	
-	// Create temporary table with same structure
-	createTempSQL := fmt.Sprintf("CREATE TEMPORARY TABLE %s AS SELECT * FROM %s WHERE 1=0", tempTableName, tableName)
-	log.Printf("Creating temporary table for staging")
-	
-	if _, err := tx.ExecContext(ctx, createTempSQL); err != nil {
-		result.Error = fmt.Errorf("failed to create temporary table: %w", err)
-		result.Duration = time.Since(startTime)
-		return result, result.Error
-	}
-	
-	// Insert data into temporary table
-	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-		tempTableName,
-		strings.Join(columns, ", "),
-		strings.Join(placeholders, ", "))
-	
-	log.Printf("Staging %d rows for MERGE operation", len(data))
-	
-	stmt, err := tx.PrepareContext(ctx, insertSQL)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to prepare INSERT for temp table: %w", err)
-		result.Duration = time.Since(startTime)
-		return result, result.Error
-	}
-	defer stmt.Close()
-	
-	// Insert data in batches
-	batchSize := 1000
+	// Process data in batches to avoid SQL statement size limits
+	batchSize := 100 // Smaller batches for direct VALUES approach
 	totalRows := int64(0)
+	
+	log.Printf("Processing %d rows in batches of %d", len(data), batchSize)
 	
 	for i := 0; i < len(data); i += batchSize {
 		end := i + batchSize
@@ -284,38 +246,23 @@ func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data
 		
 		batch := data[i:end]
 		
-		for _, row := range batch {
-			// Extract values in same order as columns
-			values := make([]interface{}, len(columns))
-			for j, column := range columns {
-				values[j] = row[strings.ToLower(column)]
-			}
-			
-			if _, err := stmt.ExecContext(ctx, values...); err != nil {
-				result.Error = fmt.Errorf("failed to stage row %d: %w", totalRows, err)
-				result.Duration = time.Since(startTime)
-				return result, result.Error
-			}
-			
-			totalRows++
+		// Build MERGE statement with direct VALUES for this batch
+		mergeSQL := c.buildDirectMergeStatement(tableName, batch, columns, primaryKeys)
+		
+		log.Printf("Executing MERGE batch %d-%d (%d rows)", i+1, end, len(batch))
+		
+		if _, err := c.db.ExecContext(ctx, mergeSQL); err != nil {
+			result.Error = fmt.Errorf("failed to execute MERGE batch %d-%d: %w", i+1, end, err)
+			result.Duration = time.Since(startTime)
+			return result, result.Error
 		}
-	}
-	
-	// Build and execute MERGE statement
-	mergeSQL := c.buildMergeStatement(tableName, tempTableName, columns, primaryKeys)
-	log.Printf("Executing MERGE operation for %s", tableName)
-	
-	if _, err := tx.ExecContext(ctx, mergeSQL); err != nil {
-		result.Error = fmt.Errorf("failed to execute MERGE: %w", err)
-		result.Duration = time.Since(startTime)
-		return result, result.Error
-	}
-	
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		result.Error = fmt.Errorf("failed to commit merge transaction: %w", err)
-		result.Duration = time.Since(startTime)
-		return result, result.Error
+		
+		totalRows += int64(len(batch))
+		
+		// Log progress
+		if end%500 == 0 || end == len(data) {
+			log.Printf("Merged %d/%d rows...", end, len(data))
+		}
 	}
 	
 	result.RowsLoaded = totalRows
@@ -327,8 +274,27 @@ func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data
 	return result, nil
 }
 
-// buildMergeStatement creates a MERGE SQL statement for upsert operations
-func (c *SnowflakeClient) buildMergeStatement(targetTable, sourceTable string, columns, primaryKeys []string) string {
+
+// buildDirectMergeStatement creates a MERGE statement with direct VALUES (no temp table)
+func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []map[string]interface{}, columns, primaryKeys []string) string {
+	// Build VALUES clause from data
+	valuesList := make([]string, len(data))
+	for i, row := range data {
+		values := make([]string, len(columns))
+		for j, column := range columns {
+			value := row[strings.ToLower(column)]
+			if value == nil {
+				values[j] = "NULL"
+			} else {
+				// Simple string escaping (basic SQL injection prevention)
+				valueStr := fmt.Sprintf("%v", value)
+				valueStr = strings.ReplaceAll(valueStr, "'", "''") // Escape single quotes
+				values[j] = fmt.Sprintf("'%s'", valueStr)
+			}
+		}
+		valuesList[i] = fmt.Sprintf("(%s)", strings.Join(values, ", "))
+	}
+	
 	// Build join condition for primary keys
 	joinConditions := make([]string, len(primaryKeys))
 	for i, key := range primaryKeys {
@@ -358,17 +324,20 @@ func (c *SnowflakeClient) buildMergeStatement(targetTable, sourceTable string, c
 		insertValues[i] = fmt.Sprintf("source.%s", column)
 	}
 	
-	// Construct MERGE statement
+	// Construct MERGE statement with direct VALUES
 	mergeSQL := fmt.Sprintf(`
 		MERGE INTO %s AS target
-		USING %s AS source
+		USING (
+			VALUES %s
+		) AS source (%s)
 		ON %s
 		WHEN MATCHED THEN 
 			UPDATE SET %s
 		WHEN NOT MATCHED THEN
 			INSERT (%s) VALUES (%s)`,
 		targetTable,
-		sourceTable,
+		strings.Join(valuesList, ", "),
+		strings.Join(columns, ", "),
 		strings.Join(joinConditions, " AND "),
 		strings.Join(updateSets, ", "),
 		insertColumns,
