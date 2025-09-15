@@ -136,7 +136,7 @@ func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]inte
 	defer resp.Body.Close()
 	
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Slack webhook returned status %d", resp.StatusCode)
+		return fmt.Errorf("slack webhook returned status %d", resp.StatusCode)
 	}
 	
 	return nil
