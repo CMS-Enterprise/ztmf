@@ -77,17 +77,24 @@ func (s *SlackNotifier) buildSyncMessage(result SyncResult) string {
 	envUpper := strings.ToUpper(result.Environment)
 	
 	if result.FailureCount == 0 {
-		// Success message
+		// Success message with environment-specific context
+		var dataMessage string
+		if result.Environment == "prod" {
+			dataMessage = fmt.Sprintf("📅 %s data now available in Snowflake", quarter)
+		} else {
+			dataMessage = fmt.Sprintf("🧪 %s dry-run validation completed successfully", quarter)
+		}
+
 		return fmt.Sprintf(`✅ ZTMF Data Sync SUCCESS (%s - %s)
 📊 %d tables synced: %s rows
 ⏱️ Duration: %s
-📅 %s data now available in Snowflake`,
+%s`,
 			envUpper,
 			scheduleType,
 			result.SuccessCount,
 			formatNumber(result.TotalRows),
 			formatDuration(result.Duration),
-			quarter)
+			dataMessage)
 	} else {
 		// Failure message
 		failedTablesStr := strings.Join(result.FailedTables, ", ")
