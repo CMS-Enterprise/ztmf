@@ -4,12 +4,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/notifications"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda/internal/sync"
 )
 
@@ -81,7 +83,48 @@ func handler(ctx context.Context, event json.RawMessage) error {
 	}
 	
 	log.Printf("Sync completed successfully: %s", result.Summary())
+	
+	// Send notification with sync results
+	if err := sendSlackNotification(ctx, syncEvent, result); err != nil {
+		log.Printf("Failed to send notification: %v", err)
+	}
+	
 	return nil
+}
+
+// sendSlackNotification sends sync results to Slack webhook
+func sendSlackNotification(ctx context.Context, event SyncEvent, result *sync.SyncResult) error {
+	notifier, err := notifications.NewSlackNotifier(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Slack notifier: %w", err)
+	}
+	
+	// Convert sync result to notification format
+	failedTables := make([]string, 0)
+	errorMessages := make([]string, 0)
+	successCount := 0
+	
+	for _, tableResult := range result.TablesSync {
+		if tableResult.Error != nil {
+			failedTables = append(failedTables, tableResult.PostgresTable)
+			errorMessages = append(errorMessages, tableResult.Error.Error())
+		} else {
+			successCount++
+		}
+	}
+	
+	notifyResult := notifications.SyncResult{
+		Environment:   config.GetInstance().Env,
+		TriggerType:   event.TriggerType,
+		SuccessCount:  successCount,
+		FailureCount:  len(failedTables),
+		TotalRows:     result.TotalRows,
+		Duration:      result.EndTime.Sub(result.StartTime),
+		FailedTables:  failedTables,
+		ErrorMessages: errorMessages,
+	}
+	
+	return notifier.SendSyncNotification(ctx, notifyResult)
 }
 
 func main() {
