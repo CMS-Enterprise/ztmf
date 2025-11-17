@@ -11,3 +11,9 @@ backend/compose-dev.yml
 backend/dev.compose.env
 tmp/
 backend/lambda
+
+# IDE and development files
+.vscode/
+CLAUDE.md
+AGENTS.md
+.claude/
