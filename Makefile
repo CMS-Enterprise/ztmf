@@ -50,7 +50,7 @@ backend/compose-dev.yml:
 	@echo "" >> backend/compose-dev.yml
 	@echo "services:" >> backend/compose-dev.yml
 	@echo "  postgre:" >> backend/compose-dev.yml
-	@echo "    image: postgres:16.2-alpine3.19" >> backend/compose-dev.yml
+	@echo "    image: postgres:16.8" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
 	@echo "    ports:" >> backend/compose-dev.yml
