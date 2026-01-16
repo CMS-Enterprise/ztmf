@@ -33,6 +33,24 @@ This project is adopting a "new code first" testing strategy:
 - **go-sqlmock** - For mocking database interactions
 - **httptest** - For testing HTTP handlers (built into stdlib)
 
+## Git Hooks (Recommended)
+
+Install pre-push hooks to run tests automatically before pushing:
+
+```bash
+make setup-hooks
+```
+
+This installs a pre-push hook that:
+- Runs unit tests (`go test -short ./...`)
+- Runs Emberfall E2E tests (if installed)
+- Prevents pushing if tests fail
+
+To bypass the hook temporarily:
+```bash
+git push --no-verify
+```
+
 ## Running Tests
 
 ```bash

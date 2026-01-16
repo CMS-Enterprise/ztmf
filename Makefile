@@ -1,6 +1,6 @@
 # ZTMF Development Environment Makefile
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e setup-hooks
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make dev-up       Start development services"
 	@echo "  make dev-down     Stop development services"
 	@echo "  make dev-logs     Show service logs"
+	@echo "  make setup-hooks  Install git hooks for pre-push testing"
 	@echo "  make clean        Clean up generated files"
 	@echo ""
 	@echo "Testing:"
@@ -262,3 +263,7 @@ test-e2e:
 	@make dev-up
 	@sleep 2
 	emberfall ./backend/emberfall_tests.yml
+
+setup-hooks:
+	@echo "Installing git hooks..."
+	@./scripts/setup-git-hooks.sh
