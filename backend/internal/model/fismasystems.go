@@ -3,11 +3,12 @@ package model
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "decommissioned", "decommissioned_date"}
 
 type FismaSystem struct {
 	FismaSystemID         int32   `json:"fismasystemid"`
@@ -21,13 +22,16 @@ type FismaSystem struct {
 	DivisionName          *string `json:"divisionname"`
 	DataCenterEnvironment *string `json:"datacenterenvironment"`
 	DataCallContact       *string `json:"datacallcontact"`
-	ISSOEmail             *string `json:"issoemail"`
+	ISSOEmail             *string    `json:"issoemail"`
+	Decommissioned        bool       `json:"decommissioned"`
+	DecommissionedDate    *time.Time `json:"decommissioned_date"`
 }
 
 type FindFismaSystemsInput struct {
-	FismaSystemID *int32
-	FismaAcronym  *string
-	UserID        *string
+	FismaSystemID  *int32
+	FismaAcronym   *string
+	UserID         *string
+	Decommissioned bool `schema:"decommissioned"`
 }
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
@@ -35,6 +39,9 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
 	sqlb := stmntBuilder.Select(c...).From("fismasystems")
+
+	// Filter decommissioned systems
+	sqlb = sqlb.Where("decommissioned=?", input.Decommissioned)
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
@@ -73,12 +80,14 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	}
 
 	if f.FismaSystemID == 0 {
+		// INSERT - exclude decommissioned fields
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
-			Columns(fismaSystemColumns[1:]...).
+			Columns(fismaSystemColumns[1:13]...).
 			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
+		// UPDATE - exclude decommissioned fields
 		sqlb = stmntBuilder.Update("fismasystems").
 			Set("fismauid", f.FismaUID).
 			Set("fismaacronym", f.FismaAcronym).
@@ -96,6 +105,23 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	}
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
+}
+
+// DeleteFismaSystem marks a fismasystem as decommissioned in the database
+func DeleteFismaSystem(ctx context.Context, fismasystemid int32) error {
+	if !isValidIntID(fismasystemid) {
+		return ErrNoData
+	}
+
+	sqlb := stmntBuilder.
+		Update("fismasystems").
+		Set("decommissioned", true).
+		Set("decommissioned_date", "NOW()").
+		Where("fismasystemid=?", fismasystemid).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+
+	_, err := queryRow(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
+	return err
 }
 
 func (f *FismaSystem) validate() error {

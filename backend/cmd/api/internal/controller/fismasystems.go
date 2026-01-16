@@ -13,6 +13,14 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	input := model.FindFismaSystemsInput{}
 
+	// Decode query parameters (e.g., ?decommissioned=true)
+	err := decoder.Decode(&input, r.URL.Query())
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+
 	if !user.IsAdmin() {
 		input.UserID = &user.UserID
 	}
@@ -71,4 +79,32 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, r, f, nil)
+}
+
+// DeleteFismaSystem handles the decommissioning of a fismasystem
+func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	fismaSystemIDStr, ok := vars["fismasystemid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	var fismaSystemID int32
+	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
+
+	err := model.DeleteFismaSystem(r.Context(), fismaSystemID)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respond(w, r, nil, nil)
 }
