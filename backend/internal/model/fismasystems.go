@@ -131,15 +131,15 @@ func (f *FismaSystem) validate() error {
 		err.data["fismauid"] = f.FismaUID
 	}
 
-	if !isValidEmail(*f.DataCallContact) {
+	if f.DataCallContact != nil && !isValidEmail(*f.DataCallContact) {
 		err.data["datacallcontact"] = *f.DataCallContact
 	}
 
-	if !isValidEmail(*f.ISSOEmail) {
+	if f.ISSOEmail != nil && !isValidEmail(*f.ISSOEmail) {
 		err.data["issoemail"] = *f.ISSOEmail
 	}
 
-	if !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
+	if f.DataCenterEnvironment != nil && !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
 		err.data["datacenterenvironment"] = *f.DataCenterEnvironment
 	}
 
