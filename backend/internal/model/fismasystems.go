@@ -83,7 +83,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		// INSERT - exclude decommissioned fields
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
-			Columns(fismaSystemColumns[1:13]...).
+			Columns(fismaSystemColumns[1:12]...).
 			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
