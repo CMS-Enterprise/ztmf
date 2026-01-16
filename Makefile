@@ -1,6 +1,6 @@
 # ZTMF Development Environment Makefile
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e setup-hooks
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e test-full
 
 # Default target
 help:
@@ -11,7 +11,6 @@ help:
 	@echo "  make dev-up       Start development services"
 	@echo "  make dev-down     Stop development services"
 	@echo "  make dev-logs     Show service logs"
-	@echo "  make setup-hooks  Install git hooks for pre-push testing"
 	@echo "  make clean        Clean up generated files"
 	@echo ""
 	@echo "Testing:"
@@ -22,6 +21,7 @@ help:
 	@echo "  make test-coverage-view  Open HTML coverage report in browser"
 	@echo "  make test-coverage-text  Show coverage summary in terminal"
 	@echo "  make test-e2e            Run Emberfall E2E tests"
+	@echo "  make test-full           Run all tests including E2E (comprehensive)"
 	@echo ""
 	@echo "Authentication:"
 	@echo "  make generate-jwt     Generate JWT token for testing (requires EMAIL variable)"
@@ -264,6 +264,26 @@ test-e2e:
 	@sleep 2
 	emberfall ./backend/emberfall_tests.yml
 
-setup-hooks:
-	@echo "Installing git hooks..."
-	@./scripts/setup-git-hooks.sh
+test-full:
+	@echo "Running comprehensive test suite..."
+	@echo ""
+	@echo "1/3 Running unit tests..."
+	@cd backend && go test -short ./...
+	@echo ""
+	@echo "2/3 Generating coverage report..."
+	@cd backend && go test -cover ./...
+	@echo ""
+	@echo "3/3 Running Emberfall E2E tests..."
+	@if ! command -v emberfall >/dev/null 2>&1; then \
+		echo "⚠️  Emberfall not installed, skipping E2E tests"; \
+		echo "   Install with: curl -sSL https://raw.githubusercontent.com/aquia-inc/emberfall/main/install.sh | bash"; \
+	else \
+		if ! docker ps | grep -q backend-api-1; then \
+			echo "Starting dev environment..."; \
+			make dev-up >/dev/null 2>&1; \
+			sleep 5; \
+		fi; \
+		emberfall ./backend/emberfall_tests.yml; \
+	fi
+	@echo ""
+	@echo "✅ All tests complete"
