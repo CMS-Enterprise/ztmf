@@ -1,21 +1,35 @@
 # ZTMF Development Environment Makefile
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e test-full
 
 # Default target
 help:
 	@echo "ZTMF Development Environment"
-	@echo "Usage:"
+	@echo ""
+	@echo "Development:"
 	@echo "  make dev-setup    Create development docker-compose file and start services"
 	@echo "  make dev-up       Start development services"
 	@echo "  make dev-down     Stop development services"
 	@echo "  make dev-logs     Show service logs"
-	@echo "  make generate-jwt Generate JWT token for testing (requires EMAIL variable)"
-	@echo "  make test-empire-data Generate JWT tokens for Empire test users"
 	@echo "  make clean        Clean up generated files"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test                Run all tests"
+	@echo "  make test-unit           Run unit tests only (fast)"
+	@echo "  make test-integration    Run integration tests"
+	@echo "  make test-coverage       Run tests and generate HTML coverage report"
+	@echo "  make test-coverage-view  Open HTML coverage report in browser"
+	@echo "  make test-coverage-text  Show coverage summary in terminal"
+	@echo "  make test-e2e            Run Emberfall E2E tests"
+	@echo "  make test-full           Run all tests including E2E (comprehensive)"
+	@echo ""
+	@echo "Authentication:"
+	@echo "  make generate-jwt     Generate JWT token for testing (requires EMAIL variable)"
+	@echo "  make test-empire-data Generate JWT tokens for Empire test users"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev-setup                           # Full dev environment setup"
+	@echo "  make test                                 # Run all tests"
 	@echo "  make generate-jwt EMAIL=test@example.com # Generate JWT for specific user"
 	@echo "  make test-empire-data                    # Get tokens for Star Wars test users"
 
@@ -200,3 +214,76 @@ clean:
 	@echo "🧹 Cleaning up generated files..."
 	@rm -f backend/compose-dev.yml backend/dev.compose.env
 	@echo "✅ Clean complete"
+
+# Test targets
+test:
+	@echo "🧪 Running all tests..."
+	cd backend && go test ./...
+
+test-unit:
+	@echo "🧪 Running unit tests (fast)..."
+	cd backend && go test -short ./...
+
+test-integration:
+	@echo "🧪 Running integration tests..."
+	cd backend && go test -run Integration ./...
+
+test-coverage:
+	@echo "Running tests with coverage..."
+	cd backend && go test -coverprofile=coverage.out ./...
+	cd backend && go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: backend/coverage.html"
+
+test-coverage-view:
+	@if [ ! -f backend/coverage.html ]; then \
+		echo "Coverage report not found. Run 'make test-coverage' first."; \
+		exit 1; \
+	fi
+	@echo "Opening coverage report..."
+	@if command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open backend/coverage.html; \
+	elif command -v open >/dev/null 2>&1; then \
+		open backend/coverage.html; \
+	else \
+		echo "Coverage report location: backend/coverage.html"; \
+	fi
+
+test-coverage-text:
+	@echo "Running tests with coverage..."
+	@cd backend && go test -cover ./...
+
+test-e2e:
+	@echo "🧪 Running Emberfall E2E tests..."
+	@if ! command -v emberfall >/dev/null 2>&1; then \
+		echo "❌ Emberfall not installed"; \
+		echo "Install with: curl -sSL https://raw.githubusercontent.com/aquia-inc/emberfall/main/install.sh | bash"; \
+		exit 1; \
+	fi
+	@echo "Ensuring dev environment is running..."
+	@make dev-up
+	@sleep 2
+	emberfall ./backend/emberfall_tests.yml
+
+test-full:
+	@echo "Running comprehensive test suite..."
+	@echo ""
+	@echo "1/3 Running unit tests..."
+	@cd backend && go test -short ./...
+	@echo ""
+	@echo "2/3 Generating coverage report..."
+	@cd backend && go test -cover ./...
+	@echo ""
+	@echo "3/3 Running Emberfall E2E tests..."
+	@if ! command -v emberfall >/dev/null 2>&1; then \
+		echo "⚠️  Emberfall not installed, skipping E2E tests"; \
+		echo "   Install with: curl -sSL https://raw.githubusercontent.com/aquia-inc/emberfall/main/install.sh | bash"; \
+	else \
+		if ! docker ps | grep -q backend-api-1; then \
+			echo "Starting dev environment..."; \
+			make dev-up >/dev/null 2>&1; \
+			sleep 5; \
+		fi; \
+		emberfall ./backend/emberfall_tests.yml; \
+	fi
+	@echo ""
+	@echo "✅ All tests complete"

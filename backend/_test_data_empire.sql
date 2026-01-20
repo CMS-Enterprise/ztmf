@@ -139,48 +139,54 @@ INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01
 
 -- Test FISMA Systems (Imperial Systems)
 INSERT INTO public.fismasystems VALUES (
-    1001, 
-    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404', 
-    'DS-1', 
-    'Death Star Orbital Battle Station', 
-    'Fully Operational Battle Station', 
-    'ISB-(INTEL)', 
-    'IMPENG', 
-    'Imperial Engineering Corps', 
-    'Advanced Weapons Research Division', 
-    'Space-Station', 
-    'galen.erso@scarif.empire', 
-    'grand.moff@deathstar.empire'
+    1001,
+    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
+    'DS-1',
+    'Death Star Orbital Battle Station',
+    'Fully Operational Battle Station',
+    'ISB-(INTEL)',
+    'IMPENG',
+    'Imperial Engineering Corps',
+    'Advanced Weapons Research Division',
+    'Space-Station',
+    'galen.erso@scarif.empire',
+    'grand.moff@deathstar.empire',
+    TRUE,
+    '1977-05-25 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.fismasystems VALUES (
     1002,
-    'EXECUTOR-1980-5C3D-9A7B-HOTH2024', 
-    'SSD-EX', 
-    'Super Star Destroyer Executor Command Systems', 
-    'Flagship Communication Hub', 
-    'IMPNAVY-(FLEET)', 
-    'STARCOM', 
-    'Imperial Starfleet Command', 
-    'Naval Operations Division', 
-    'Imperial-Fleet', 
-    'captain.needa@executor.empire', 
-    'admiral.piett@executor.empire'
+    'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
+    'SSD-EX',
+    'Super Star Destroyer Executor Command Systems',
+    'Flagship Communication Hub',
+    'IMPNAVY-(FLEET)',
+    'STARCOM',
+    'Imperial Starfleet Command',
+    'Naval Operations Division',
+    'Imperial-Fleet',
+    'captain.needa@executor.empire',
+    'admiral.piett@executor.empire',
+    FALSE,
+    NULL
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.fismasystems VALUES (
     1003,
-    'ENDOR-1983-6D4E-AB8C-SHIELD999', 
-    'SLD-GEN', 
-    'Shield Generator Control Network', 
-    'Planetary Defense Shield System', 
-    'IMPENG-(DEF)', 
-    'BUNKER', 
-    'Imperial Bunker Operations', 
-    'Planetary Defense Division', 
-    'Forest-Moon', 
-    'major.hewex@endor.empire', 
-    'commander.jerjerrod@deathstar2.empire'
+    'ENDOR-1983-6D4E-AB8C-SHIELD999',
+    'SLD-GEN',
+    'Shield Generator Control Network',
+    'Planetary Defense Shield System',
+    'IMPENG-(DEF)',
+    'BUNKER',
+    'Imperial Bunker Operations',
+    'Planetary Defense Division',
+    'Forest-Moon',
+    'major.hewex@endor.empire',
+    'commander.jerjerrod@deathstar2.empire',
+    FALSE,
+    NULL
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)

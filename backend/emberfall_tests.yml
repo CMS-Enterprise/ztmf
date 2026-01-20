@@ -27,6 +27,7 @@ fismaSystemData: &fismaSystemData
   datacenterenvironment: "AWS"
   datacallcontact: "contact@example.com"
   issoemail: "isso@example.com"
+  decommissioned: false
 
 updatedFismaSystemData: &updatedFismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
@@ -40,6 +41,7 @@ updatedFismaSystemData: &updatedFismaSystemData
   datacenterenvironment: "AWS"
   datacallcontact: "updated-contact@example.com"
   issoemail: "updated-isso@example.com"
+  decommissioned: false
 
 functionData: &functionData
   function: "Identity Management"
