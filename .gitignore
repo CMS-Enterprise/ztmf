@@ -18,3 +18,8 @@ backend/lambda
 CLAUDE.md
 AGENTS.md
 .claude/
+
+# Test coverage files
+coverage.out
+coverage.html
+*.coverprofile

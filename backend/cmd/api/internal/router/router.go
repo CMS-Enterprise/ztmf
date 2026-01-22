@@ -29,6 +29,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/fismasystems", controller.SaveFismaSystem).Methods("POST")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.GetFismaSystem).Methods("GET")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.DeleteFismaSystem).Methods("DELETE")
 	// returns a list of data calls that this fisma system has marked complete
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/datacalls", controller.ListFismaSystemDataCalls).Methods("GET")
 

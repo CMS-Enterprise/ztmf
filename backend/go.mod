@@ -17,6 +17,7 @@ require (
 	github.com/jackc/tern/v2 v2.2.1
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0
 	github.com/snowflakedb/gosnowflake v1.17.1
+	github.com/stretchr/testify v1.11.1
 	github.com/xuri/excelize/v2 v2.9.0
 )
 
@@ -52,6 +53,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.7 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
@@ -77,6 +79,7 @@ require (
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
@@ -99,4 +102,5 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
