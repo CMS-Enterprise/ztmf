@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "decommissioned", "decommissioned_date"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes"}
 
 type FismaSystem struct {
 	FismaSystemID         int32   `json:"fismasystemid"`
@@ -25,6 +25,8 @@ type FismaSystem struct {
 	ISSOEmail             *string    `json:"issoemail"`
 	Decommissioned        bool       `json:"decommissioned"`
 	DecommissionedDate    *time.Time `json:"decommissioned_date"`
+	DecommissionedBy      *string    `json:"decommissioned_by"`
+	DecommissionedNotes   *string    `json:"decommissioned_notes"`
 }
 
 type FindFismaSystemsInput struct {
@@ -107,18 +109,84 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
+// DecommissionInput contains optional parameters for decommissioning a system
+type DecommissionInput struct {
+	FismaSystemID      int32
+	UserID             string
+	DecommissionedDate *time.Time
+	Notes              *string
+}
+
 // DeleteFismaSystem marks a fismasystem as decommissioned in the database
-func DeleteFismaSystem(ctx context.Context, fismasystemid int32) error {
-	if !isValidIntID(fismasystemid) {
+func DeleteFismaSystem(ctx context.Context, input DecommissionInput) error {
+	if !isValidIntID(input.FismaSystemID) {
 		return ErrNoData
+	}
+
+	// Validate decommission date is not in future
+	if input.DecommissionedDate != nil && input.DecommissionedDate.After(time.Now()) {
+		return &InvalidInputError{
+			data: map[string]any{"decommissioned_date": "cannot be in the future"},
+		}
 	}
 
 	sqlb := stmntBuilder.
 		Update("fismasystems").
 		Set("decommissioned", true).
-		Set("decommissioned_date", "NOW()").
-		Where("fismasystemid=?", fismasystemid).
+		Set("decommissioned_by", input.UserID)
+
+	// Use custom date if provided, otherwise NOW()
+	if input.DecommissionedDate != nil {
+		sqlb = sqlb.Set("decommissioned_date", input.DecommissionedDate)
+	} else {
+		sqlb = sqlb.Set("decommissioned_date", "NOW()")
+	}
+
+	// Add notes if provided
+	if input.Notes != nil {
+		sqlb = sqlb.Set("decommissioned_notes", *input.Notes)
+	}
+
+	sqlb = sqlb.Where("fismasystemid=?", input.FismaSystemID).
 		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+
+	_, err := queryRow(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
+	return err
+}
+
+// UpdateDecommissionMetadata allows updating decommission metadata for already-decommissioned systems
+func UpdateDecommissionMetadata(ctx context.Context, input DecommissionInput) error {
+	if !isValidIntID(input.FismaSystemID) {
+		return ErrNoData
+	}
+
+	// Validate decommission date is not in future
+	if input.DecommissionedDate != nil && input.DecommissionedDate.After(time.Now()) {
+		return &InvalidInputError{
+			data: map[string]any{"decommissioned_date": "cannot be in the future"},
+		}
+	}
+
+	sqlb := stmntBuilder.
+		Update("fismasystems").
+		Where("fismasystemid=? AND decommissioned=?", input.FismaSystemID, true)
+
+	// Update date if provided
+	if input.DecommissionedDate != nil {
+		sqlb = sqlb.Set("decommissioned_date", input.DecommissionedDate)
+	}
+
+	// Update notes if provided
+	if input.Notes != nil {
+		sqlb = sqlb.Set("decommissioned_notes", *input.Notes)
+	}
+
+	// Update user if provided
+	if input.UserID != "" {
+		sqlb = sqlb.Set("decommissioned_by", input.UserID)
+	}
+
+	sqlb = sqlb.Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 
 	_, err := queryRow(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
 	return err

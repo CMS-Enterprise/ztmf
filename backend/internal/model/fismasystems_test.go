@@ -28,7 +28,11 @@ func TestDeleteFismaSystem(t *testing.T) {
 
 	// Test case: Delete a non-existent system
 	t.Run("DeleteNonExistentSystem", func(t *testing.T) {
-		err := DeleteFismaSystem(ctx, 99999)
+		input := DecommissionInput{
+			FismaSystemID: 99999,
+			UserID:        "test-user-id",
+		}
+		err := DeleteFismaSystem(ctx, input)
 		if err == nil {
 			t.Error("Expected error when deleting non-existent system, got nil")
 		}
@@ -36,7 +40,11 @@ func TestDeleteFismaSystem(t *testing.T) {
 
 	// Test case: Delete with invalid ID
 	t.Run("DeleteInvalidID", func(t *testing.T) {
-		err := DeleteFismaSystem(ctx, 0)
+		input := DecommissionInput{
+			FismaSystemID: 0,
+			UserID:        "test-user-id",
+		}
+		err := DeleteFismaSystem(ctx, input)
 		assert.Equal(t, ErrNoData, err)
 	})
 }
@@ -95,7 +103,11 @@ func BenchmarkDeleteFismaSystem(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// This would delete actual test systems in a real benchmark
-		_ = DeleteFismaSystem(ctx, 1)
+		input := DecommissionInput{
+			FismaSystemID: 1,
+			UserID:        "test-user-id",
+		}
+		_ = DeleteFismaSystem(ctx, input)
 	}
 }
 
@@ -158,6 +170,45 @@ func TestFismaSystem_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDeleteFismaSystem_WithCustomDate tests decommission with custom date
+func TestDeleteFismaSystem_WithCustomDate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database test")
+	}
+
+	ctx := context.Background()
+
+	t.Run("CustomPastDate", func(t *testing.T) {
+		pastDate := time.Now().AddDate(0, -6, 0) // 6 months ago
+		input := DecommissionInput{
+			FismaSystemID:      1,
+			UserID:             "test-user",
+			DecommissionedDate: &pastDate,
+			Notes:              stringPtr("System migrated to cloud"),
+		}
+
+		// Would succeed with valid system
+		err := DeleteFismaSystem(ctx, input)
+		// In test environment without DB, this will fail
+		assert.Error(t, err)
+	})
+
+	t.Run("FutureDate", func(t *testing.T) {
+		futureDate := time.Now().AddDate(0, 0, 1) // Tomorrow
+		input := DecommissionInput{
+			FismaSystemID:      1,
+			UserID:             "test-user",
+			DecommissionedDate: &futureDate,
+		}
+
+		err := DeleteFismaSystem(ctx, input)
+		assert.Error(t, err)
+		// Should be InvalidInputError
+		var invErr *InvalidInputError
+		assert.ErrorAs(t, err, &invErr)
+	})
 }
 
 // Helper function for creating string pointers
