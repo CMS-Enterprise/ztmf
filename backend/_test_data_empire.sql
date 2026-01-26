@@ -152,7 +152,9 @@ INSERT INTO public.fismasystems VALUES (
     'galen.erso@scarif.empire',
     'grand.moff@deathstar.empire',
     TRUE,
-    '1977-05-25 00:00:00+00'
+    '1977-05-25 00:00:00+00',
+    '11111111-1111-1111-1111-111111111111',
+    'Destroyed by Rebel Alliance at Battle of Yavin'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.fismasystems VALUES (
@@ -169,6 +171,8 @@ INSERT INTO public.fismasystems VALUES (
     'captain.needa@executor.empire',
     'admiral.piett@executor.empire',
     FALSE,
+    NULL,
+    NULL,
     NULL
 ) ON CONFLICT DO NOTHING;
 
@@ -186,6 +190,8 @@ INSERT INTO public.fismasystems VALUES (
     'major.hewex@endor.empire',
     'commander.jerjerrod@deathstar2.empire',
     FALSE,
+    NULL,
+    NULL,
     NULL
 ) ON CONFLICT DO NOTHING;
 

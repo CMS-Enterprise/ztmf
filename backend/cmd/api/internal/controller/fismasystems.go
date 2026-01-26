@@ -81,6 +81,12 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, f, nil)
 }
 
+// DecommissionRequest contains optional parameters for decommissioning
+type DecommissionRequest struct {
+	DecommissionedDate *string `json:"decommissioned_date,omitempty"`
+	Notes              *string `json:"notes,omitempty"`
+}
+
 // DeleteFismaSystem handles the decommissioning of a fismasystem
 func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
@@ -99,7 +105,35 @@ func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 	var fismaSystemID int32
 	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
 
-	err := model.DeleteFismaSystem(r.Context(), fismaSystemID)
+	// Parse optional request body
+	var req DecommissionRequest
+	if r.ContentLength > 0 {
+		if err := getJSON(r.Body, &req); err != nil {
+			log.Println(err)
+			respond(w, r, nil, ErrMalformed)
+			return
+		}
+	}
+
+	// Build decommission input
+	input := model.DecommissionInput{
+		FismaSystemID: fismaSystemID,
+		UserID:        authdUser.UserID,
+		Notes:         req.Notes,
+	}
+
+	// Parse date if provided
+	if req.DecommissionedDate != nil {
+		parsedDate, err := parseRFC3339(*req.DecommissionedDate)
+		if err != nil {
+			log.Println(err)
+			respond(w, r, nil, ErrMalformed)
+			return
+		}
+		input.DecommissionedDate = &parsedDate
+	}
+
+	err := model.DeleteFismaSystem(r.Context(), input)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, err)

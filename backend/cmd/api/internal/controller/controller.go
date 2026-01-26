@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/schema"
@@ -60,6 +61,10 @@ func getJSON(r io.Reader, dest any) error {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	return d.Decode(dest)
+}
+
+func parseRFC3339(dateStr string) (time.Time, error) {
+	return time.Parse(time.RFC3339, dateStr)
 }
 
 func sanitizeErr(err error) (int, error) {
