@@ -138,7 +138,8 @@ INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024
 INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
-INSERT INTO public.fismasystems VALUES (
+-- Use explicit column names to work with initial schema
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
     1001,
     'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
     'DS-1',
@@ -150,12 +151,10 @@ INSERT INTO public.fismasystems VALUES (
     'Advanced Weapons Research Division',
     'Space-Station',
     'galen.erso@scarif.empire',
-    'grand.moff@deathstar.empire',
-    TRUE,
-    '1977-05-25 00:00:00+00'
+    'grand.moff@deathstar.empire'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
     1002,
     'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
     'SSD-EX',
@@ -167,12 +166,10 @@ INSERT INTO public.fismasystems VALUES (
     'Naval Operations Division',
     'Imperial-Fleet',
     'captain.needa@executor.empire',
-    'admiral.piett@executor.empire',
-    FALSE,
-    NULL
+    'admiral.piett@executor.empire'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
     1003,
     'ENDOR-1983-6D4E-AB8C-SHIELD999',
     'SLD-GEN',
@@ -184,9 +181,7 @@ INSERT INTO public.fismasystems VALUES (
     'Planetary Defense Division',
     'Forest-Moon',
     'major.hewex@endor.empire',
-    'commander.jerjerrod@deathstar2.empire',
-    FALSE,
-    NULL
+    'commander.jerjerrod@deathstar2.empire'
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)

@@ -1,17 +1,19 @@
 # ZTMF Development Environment Makefile
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e test-full
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e test-full full-stack-up full-stack-down
 
 # Default target
 help:
 	@echo "ZTMF Development Environment"
 	@echo ""
 	@echo "Development:"
-	@echo "  make dev-setup    Create development docker-compose file and start services"
-	@echo "  make dev-up       Start development services"
-	@echo "  make dev-down     Stop development services"
-	@echo "  make dev-logs     Show service logs"
-	@echo "  make clean        Clean up generated files"
+	@echo "  make dev-setup       Create development docker-compose file and start services"
+	@echo "  make dev-up          Start backend services only"
+	@echo "  make dev-down        Stop backend services only"
+	@echo "  make dev-logs        Show backend service logs"
+	@echo "  make full-stack-up   Start both backend and frontend"
+	@echo "  make full-stack-down Stop both backend and frontend"
+	@echo "  make clean           Clean up generated files"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test                Run all tests"
@@ -285,3 +287,35 @@ test-full:
 	fi
 	@echo ""
 	@echo "✅ All tests complete"
+
+# Full stack development (backend + frontend)
+full-stack-up:
+	@echo "Starting ZTMF full stack development environment..."
+	@if [ ! -d "../ztmf-ui" ]; then \
+		echo "❌ Frontend not found at ../ztmf-ui"; \
+		echo "   Clone ztmf-ui repo at same level as ztmf"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "Starting backend..."
+	@make dev-up
+	@sleep 3
+	@echo ""
+	@echo "Starting frontend..."
+	@cd ../ztmf-ui && npm run dev &
+	@sleep 2
+	@echo ""
+	@echo "✅ Full stack started!"
+	@echo ""
+	@echo "Services:"
+	@echo "  Backend API:  http://localhost:3000"
+	@echo "  Frontend UI:  http://localhost:5173"
+	@echo "  Database:     localhost:54321"
+	@echo ""
+	@echo "Stop with: make full-stack-down"
+
+full-stack-down:
+	@echo "Stopping ZTMF full stack..."
+	@make dev-down
+	@pkill -f "vite" || true
+	@echo "✅ Full stack stopped"
