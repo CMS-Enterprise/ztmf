@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -139,7 +140,7 @@ func DeleteFismaSystem(ctx context.Context, input DecommissionInput) error {
 	if input.DecommissionedDate != nil {
 		sqlb = sqlb.Set("decommissioned_date", input.DecommissionedDate)
 	} else {
-		sqlb = sqlb.Set("decommissioned_date", "NOW()")
+		sqlb = sqlb.Set("decommissioned_date", squirrel.Expr("NOW()"))
 	}
 
 	// Add notes if provided
@@ -164,6 +165,13 @@ func UpdateDecommissionMetadata(ctx context.Context, input DecommissionInput) er
 	if input.DecommissionedDate != nil && input.DecommissionedDate.After(time.Now()) {
 		return &InvalidInputError{
 			data: map[string]any{"decommissioned_date": "cannot be in the future"},
+		}
+	}
+
+	// Check if at least one field is provided to update
+	if input.DecommissionedDate == nil && input.Notes == nil && input.UserID == "" {
+		return &InvalidInputError{
+			data: map[string]any{"update": "at least one field must be provided"},
 		}
 	}
 
