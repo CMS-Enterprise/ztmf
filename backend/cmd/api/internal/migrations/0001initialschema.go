@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.questions
 CREATE TABLE IF NOT EXISTS public.datacalls
 (
 		datacallid SERIAL PRIMARY KEY,
-		datacall varchar(200) NOT NULL,
+		datacall character(9) NOT NULL,
 		datecreated timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		deadline timestamp with time zone NOT NULL
 );
