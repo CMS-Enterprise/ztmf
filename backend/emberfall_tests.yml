@@ -49,6 +49,22 @@ updatedFismaSystemData: &updatedFismaSystemData
   decommissioned_by: null
   decommissioned_notes: null
 
+decommissionedFismaSystemData: &decommissionedFismaSystemData
+  fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fismaacronym: "ZTMF-UPD"
+  fismaname: "Updated Zero Trust Maturity Framework"
+  fismasubsystem: "Updated Core System"
+  component: "Updated Security"
+  groupacronym: "USEC"
+  groupname: "Updated Security Group"
+  divisionname: "Updated IT Division"
+  datacenterenvironment: "AWS"
+  datacallcontact: "updated-contact@example.com"
+  issoemail: "updated-isso@example.com"
+  decommissioned: true
+  decommissioned_date: "2025-01-15T00:00:00Z"
+  decommissioned_notes: "System migrated to cloud infrastructure"
+
 functionData: &functionData
   function: "Identity Management"
   description: "Manage user identities and access"
@@ -322,10 +338,8 @@ tests:
         content-type: "application/json"
       body:
         json:
-          fismasystemid: "{{.createFismaSystem.Response.data.fismasystemid}}"
-          decommissioned: true
-          decommissioned_date: "2025-01-15T00:00:00Z"
-          decommissioned_notes: "System migrated to cloud infrastructure"
+          data:
+            <<: *decommissionedFismaSystemData
 
   # Verify decommissioned system can still be retrieved
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
@@ -338,8 +352,8 @@ tests:
         content-type: "application/json"
       body:
         json:
-          fismasystemid: "{{.createFismaSystem.Response.data.fismasystemid}}"
-          decommissioned: true
+          data:
+            <<: *decommissionedFismaSystemData
 
 
   # Functions Endpoints

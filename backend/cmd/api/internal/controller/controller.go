@@ -31,8 +31,15 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 		status = 200
 	case "POST":
 		status = 201
-	case "PUT", "DELETE":
+	case "PUT":
 		status = 204
+	case "DELETE":
+		// Return 200 with data if provided, otherwise 204
+		if data != nil {
+			status = 200
+		} else {
+			status = 204
+		}
 	}
 
 	res := response{

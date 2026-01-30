@@ -115,6 +115,7 @@ backend/dev.compose.env:
 	@echo "DB_USER=admin" >> backend/dev.compose.env
 	@echo "DB_PASS=localdevpassword" >> backend/dev.compose.env
 	@echo "DB_POPULATE=/app/_test_data_empire.sql" >> backend/dev.compose.env
+	@echo "DB_POPULATE=/app/_test_data_empire.sql" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# for api auth handling" >> backend/dev.compose.env
 	@echo "AUTH_HS256_SECRET=zeroTrust" >> backend/dev.compose.env
@@ -127,8 +128,12 @@ backend/dev.compose.env:
 
 # Start development services
 dev-up: backend/compose-dev.yml backend/dev.compose.env
-	@echo "🚀 Starting development services..."
-	cd backend && docker compose -f compose-dev.yml up -d
+	@if docker ps | grep -q backend-api-1; then \
+		echo "✅ Development services already running"; \
+	else \
+		echo "🚀 Starting development services..."; \
+		cd backend && docker compose -f compose-dev.yml up -d; \
+	fi
 
 # Stop development services
 dev-down:
@@ -253,16 +258,25 @@ test-coverage-text:
 	@cd backend && go test -cover ./...
 
 test-e2e:
-	@echo "🧪 Running Emberfall E2E tests..."
+	@echo "🧪 Running Emberfall E2E tests (isolated environment)..."
 	@if ! command -v emberfall >/dev/null 2>&1; then \
 		echo "❌ Emberfall not installed"; \
-		echo "Install with: curl -sSL https://raw.githubusercontent.com/aquia-inc/emberfall/main/install.sh | bash"; \
+		echo "   Install: curl -L https://github.com/aquia-inc/emberfall/releases/download/v0.3.1/emberfall_Linux_x86_64.tar.gz | tar -xz && mv emberfall ~/.local/bin/"; \
 		exit 1; \
 	fi
-	@echo "Ensuring dev environment is running..."
-	@make dev-up
-	@sleep 2
-	emberfall ./backend/emberfall_tests.yml
+	@echo "🧹 Cleaning up any existing test containers..."
+	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
+	@echo "🚀 Starting fresh test environment (port 8090)..."
+	@cd backend && docker compose -f compose-test.yml up -d --build
+	@echo "⏳ Waiting for API to be ready..."
+	@sleep 15
+	@echo "🔥 Running Emberfall tests..."
+	@sed 's/localhost:8080/localhost:8090/g' backend/emberfall_tests.yml > /tmp/emberfall_test_isolated.yml
+	@emberfall --config /tmp/emberfall_test_isolated.yml || (echo "❌ Emberfall tests failed"; cd backend && docker compose -f compose-test.yml down -v; exit 1)
+	@echo "🧹 Cleaning up test environment..."
+	@cd backend && docker compose -f compose-test.yml down -v
+	@rm /tmp/emberfall_test_isolated.yml
+	@echo "✅ E2E tests passed!"
 
 test-full:
 	@echo "Running comprehensive test suite..."
