@@ -133,12 +133,12 @@ func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 		input.DecommissionedDate = &parsedDate
 	}
 
-	err := model.DeleteFismaSystem(r.Context(), input)
+	system, err := model.DeleteFismaSystem(r.Context(), input)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, err)
 		return
 	}
 
-	respond(w, r, nil, nil)
+	respond(w, r, system, nil)
 }

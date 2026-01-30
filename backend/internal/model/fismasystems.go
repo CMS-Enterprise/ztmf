@@ -119,14 +119,14 @@ type DecommissionInput struct {
 }
 
 // DeleteFismaSystem marks a fismasystem as decommissioned in the database
-func DeleteFismaSystem(ctx context.Context, input DecommissionInput) error {
+func DeleteFismaSystem(ctx context.Context, input DecommissionInput) (*FismaSystem, error) {
 	if !isValidIntID(input.FismaSystemID) {
-		return ErrNoData
+		return nil, ErrNoData
 	}
 
 	// Validate decommission date is not in future
 	if input.DecommissionedDate != nil && input.DecommissionedDate.After(time.Now()) {
-		return &InvalidInputError{
+		return nil, &InvalidInputError{
 			data: map[string]any{"decommissioned_date": "cannot be in the future"},
 		}
 	}
@@ -151,8 +151,7 @@ func DeleteFismaSystem(ctx context.Context, input DecommissionInput) error {
 	sqlb = sqlb.Where("fismasystemid=?", input.FismaSystemID).
 		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 
-	_, err := queryRow(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
-	return err
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
 // UpdateDecommissionMetadata allows updating decommission metadata for already-decommissioned systems

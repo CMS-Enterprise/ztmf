@@ -32,7 +32,7 @@ func TestDeleteFismaSystem(t *testing.T) {
 			FismaSystemID: 99999,
 			UserID:        "test-user-id",
 		}
-		err := DeleteFismaSystem(ctx, input)
+		_, err := DeleteFismaSystem(ctx, input)
 		if err == nil {
 			t.Error("Expected error when deleting non-existent system, got nil")
 		}
@@ -44,7 +44,7 @@ func TestDeleteFismaSystem(t *testing.T) {
 			FismaSystemID: 0,
 			UserID:        "test-user-id",
 		}
-		err := DeleteFismaSystem(ctx, input)
+		_, err := DeleteFismaSystem(ctx, input)
 		assert.Equal(t, ErrNoData, err)
 	})
 }
@@ -107,7 +107,7 @@ func BenchmarkDeleteFismaSystem(b *testing.B) {
 			FismaSystemID: 1,
 			UserID:        "test-user-id",
 		}
-		_ = DeleteFismaSystem(ctx, input)
+		_, _ = DeleteFismaSystem(ctx, input)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestDeleteFismaSystem_WithCustomDate(t *testing.T) {
 		}
 
 		// Would succeed with valid system
-		err := DeleteFismaSystem(ctx, input)
+		_, err := DeleteFismaSystem(ctx, input)
 		// In test environment without DB, this will fail
 		assert.Error(t, err)
 	})
@@ -203,7 +203,7 @@ func TestDeleteFismaSystem_WithCustomDate(t *testing.T) {
 			DecommissionedDate: &futureDate,
 		}
 
-		err := DeleteFismaSystem(ctx, input)
+		_, err := DeleteFismaSystem(ctx, input)
 		assert.Error(t, err)
 		// Should be InvalidInputError
 		var invErr *InvalidInputError
