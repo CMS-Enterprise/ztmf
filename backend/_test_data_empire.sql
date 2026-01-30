@@ -2,120 +2,23 @@
 -- Anonymized data based on production structure but with Empire theme
 -- Use camel case in the email to test that findByEmail is case insensitive
 
--- Schema Creation (from migrations)
-CREATE TABLE IF NOT EXISTS public.pillars
-(
-	pillarid SERIAL PRIMARY KEY,
-	pillar character varying(100),
-	ordr integer DEFAULT 0
-);
+-- NOTE: Schema is created by migrations - this file only contains test data INSERTs
+-- Migrations run first, then this file populates data via DB_POPULATE
 
-CREATE TABLE IF NOT EXISTS public.questions
-(
-    questionid SERIAL PRIMARY KEY,
-    question varchar(1000) NOT NULL,
-    notesprompt varchar(1000) NOT NULL,
-    pillarid integer NOT NULL REFERENCES pillars (pillarid),
-    ordr integer DEFAULT 0
-);
 
-CREATE TABLE IF NOT EXISTS public.datacalls
-(
-	datacallid SERIAL PRIMARY KEY,
-	datacall character varying(200) NOT NULL,
-	datecreated timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	deadline timestamp with time zone NOT NULL,
-	UNIQUE(datacall)
-);
 
-CREATE TABLE IF NOT EXISTS public.fismasystems
-(
-	fismasystemid SERIAL PRIMARY KEY,
-	fismauid varchar(255) NOT NULL,
-	fismaacronym varchar(255) NOT NULL,
-	fismaname varchar(255) NOT NULL,
-	fismasubsystem varchar(255),
-	component varchar(255),
-	groupacronym varchar(255),
-	groupname varchar(255),
-	divisionname varchar(255),
-	datacenterenvironment varchar(255),
-	datacallcontact varchar(255),
-	issoemail varchar(255)
-);
 
-CREATE TABLE IF NOT EXISTS public.functions
-(
-    functionid SERIAL PRIMARY KEY,
-    function varchar(255),
-    description varchar(1024),
-    datacenterenvironment varchar(255),
-    questionid integer REFERENCES questions (questionid),
-    pillarid integer NOT NULL REFERENCES pillars (pillarid),
-    ordr integer DEFAULT 0
-);
 
-CREATE TABLE IF NOT EXISTS public.functionoptions
-(
-    functionoptionid SERIAL PRIMARY KEY,
-    functionid integer NOT NULL REFERENCES functions (functionid) ON UPDATE NO ACTION ON DELETE CASCADE,
-    score integer NOT NULL,
-    optionname character varying(30) NOT NULL,
-    description character varying(1024)
-);
 
-CREATE TABLE IF NOT EXISTS public.scores
-(
-    scoreid SERIAL PRIMARY KEY,
-    fismasystemid integer NOT NULL REFERENCES fismasystems (fismasystemid),
-    datecalculated timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    notes character varying(1000),
-    functionoptionid integer NOT NULL REFERENCES functionoptions (functionoptionid),
-    datacallid integer NOT NULL REFERENCES datacalls (datacallid)
-);
 
-CREATE TABLE IF NOT EXISTS public.users (
-  userid uuid DEFAULT gen_random_uuid(),
-  email varchar(255) NOT NULL,
-  fullname varchar(255) NOT NULL,
-  role char(5) NOT NULL,
-  softdeleted boolean DEFAULT false,
-  PRIMARY KEY (userid)
-);
 
-CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_index ON public.users (email) WHERE softdeleted = false;
 
-CREATE TABLE IF NOT EXISTS public.users_fismasystems (
-  userid uuid REFERENCES users (userid) ON DELETE CASCADE,
-  fismasystemid INT REFERENCES fismasystems (fismasystemid) ON DELETE CASCADE,
-  PRIMARY KEY (userid, fismasystemid)
-);
 
-CREATE TABLE IF NOT EXISTS public.datacalls_fismasystems
-(
-	datacallid integer NOT NULL REFERENCES datacalls (datacallid) ON DELETE CASCADE,
-	fismasystemid integer NOT NULL REFERENCES fismasystems (fismasystemid) ON DELETE CASCADE,
-	PRIMARY KEY (datacallid, fismasystemid)
-);
 
-CREATE TABLE IF NOT EXISTS public.events
-(
-    eventid uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    userid uuid REFERENCES users (userid),
-    fismasystemid integer REFERENCES fismasystems (fismasystemid),
-    eventtype varchar(50) NOT NULL,
-    eventtable varchar(50) NOT NULL,
-    eventtime timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    eventdata jsonb
-);
 
-CREATE TABLE IF NOT EXISTS public.massemails
-(
-	massemailid SMALLINT PRIMARY KEY DEFAULT 1 CHECK (massemailid=1),
-	datesent TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	subject varchar(100),
-	body varchar(2000)
-);
+
+-- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
+INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', false) ON CONFLICT DO NOTHING;
 
 -- Test Admin User (Death Star Commander)
 INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', false) ON CONFLICT DO NOTHING;
@@ -139,7 +42,7 @@ INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1001,
     'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
     'DS-1',
@@ -151,10 +54,14 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     'Advanced Weapons Research Division',
     'Space-Station',
     'galen.erso@scarif.empire',
-    'grand.moff@deathstar.empire'
+    'grand.moff@deathstar.empire',
+    TRUE,
+    '1977-05-25 00:00:00+00',
+    '11111111-1111-1111-1111-111111111111',
+    'Destroyed by Rebel Alliance at Battle of Yavin'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1002,
     'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
     'SSD-EX',
@@ -166,10 +73,14 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     'Naval Operations Division',
     'Imperial-Fleet',
     'captain.needa@executor.empire',
-    'admiral.piett@executor.empire'
+    'admiral.piett@executor.empire',
+    FALSE,
+    NULL,
+    NULL,
+    NULL
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1003,
     'ENDOR-1983-6D4E-AB8C-SHIELD999',
     'SLD-GEN',
@@ -181,7 +92,11 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     'Planetary Defense Division',
     'Forest-Moon',
     'major.hewex@endor.empire',
-    'commander.jerjerrod@deathstar2.empire'
+    'commander.jerjerrod@deathstar2.empire',
+    FALSE,
+    NULL,
+    NULL,
+    NULL
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)

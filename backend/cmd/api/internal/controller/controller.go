@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/schema"
@@ -30,8 +31,15 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 		status = 200
 	case "POST":
 		status = 201
-	case "PUT", "DELETE":
+	case "PUT":
 		status = 204
+	case "DELETE":
+		// Return 200 with data if provided, otherwise 204
+		if data != nil {
+			status = 200
+		} else {
+			status = 204
+		}
 	}
 
 	res := response{
@@ -60,6 +68,10 @@ func getJSON(r io.Reader, dest any) error {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	return d.Decode(dest)
+}
+
+func parseRFC3339(dateStr string) (time.Time, error) {
+	return time.Parse(time.RFC3339, dateStr)
 }
 
 func sanitizeErr(err error) (int, error) {

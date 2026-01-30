@@ -1,0 +1,41 @@
+# Isolated test environment - matches GitHub Actions behavior
+# Uses host networking like CI, fresh database each run, no volumes
+
+services:
+  test-db:
+    image: postgres:16.8
+    environment:
+      POSTGRES_DB: ztmf
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: testpass
+    network_mode: host  # Use host network like CI
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d ztmf -p 54399"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    command: -p 54399  # Run on different port from dev (54321)
+    # NO VOLUMES - fresh database every time
+
+  test-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8090
+      DB_ENDPOINT: localhost
+      DB_PORT: 54399
+      DB_NAME: ztmf
+      DB_USER: admin
+      DB_PASS: testpass
+      DB_POPULATE: /app/_test_data.sql
+      AUTH_HS256_SECRET: zeroTrust
+      AUTH_HEADER_FIELD: Authorization
+      ENVIRONMENT: test
+    network_mode: host  # Use host network like CI
+    volumes:
+      - ./_test_data.sql:/app/_test_data.sql:ro
+    depends_on:
+      test-db:
+        condition: service_healthy
+    command: ["/usr/local/bin/ztmfapi"]
