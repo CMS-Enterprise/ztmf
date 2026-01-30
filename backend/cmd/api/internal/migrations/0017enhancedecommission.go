@@ -32,7 +32,8 @@ COMMENT ON COLUMN public.fismasystems.decommissioned_notes IS 'Reason or notes f
         `
 ALTER TABLE IF EXISTS public.fismasystems
     DROP CONSTRAINT IF EXISTS fk_decommissioned_by,
-    DROP COLUMN IF EXISTS decommissioned_by;
+    DROP COLUMN IF EXISTS decommissioned_by,
+    DROP COLUMN IF EXISTS decommissioned_notes;
 
 DROP INDEX IF EXISTS idx_fismasystems_decommissioned_by;
         `)
