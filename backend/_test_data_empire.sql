@@ -138,7 +138,8 @@ INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024
 INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
-INSERT INTO public.fismasystems VALUES (
+-- Use explicit column names to work with initial schema
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1001,
     'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
     'DS-1',
@@ -157,7 +158,7 @@ INSERT INTO public.fismasystems VALUES (
     'Destroyed by Rebel Alliance at Battle of Yavin'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1002,
     'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
     'SSD-EX',
@@ -176,7 +177,7 @@ INSERT INTO public.fismasystems VALUES (
     NULL
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1003,
     'ENDOR-1983-6D4E-AB8C-SHIELD999',
     'SLD-GEN',
