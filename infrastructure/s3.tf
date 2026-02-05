@@ -158,3 +158,61 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
     }
   }
 }
+
+# S3 bucket for CFACTS CSV sync (incoming/ and processed/)
+resource "aws_s3_bucket" "cfacts_sync" {
+  bucket = "ztmf-cfacts-sync-${var.environment}"
+
+  tags = {
+    Name        = "ZTMF CFACTS Sync"
+    Environment = var.environment
+    Purpose     = "CFACTS CSV file uploads and archives"
+  }
+}
+
+# Block all public access to CFACTS sync bucket
+resource "aws_s3_bucket_public_access_block" "cfacts_sync" {
+  bucket = aws_s3_bucket.cfacts_sync.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Enable versioning for CFACTS sync bucket
+resource "aws_s3_bucket_versioning" "cfacts_sync" {
+  bucket = aws_s3_bucket.cfacts_sync.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Server-side encryption for CFACTS sync bucket
+resource "aws_s3_bucket_server_side_encryption_configuration" "cfacts_sync" {
+  bucket = aws_s3_bucket.cfacts_sync.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Lifecycle rule: expire processed files after 90 days
+resource "aws_s3_bucket_lifecycle_configuration" "cfacts_sync" {
+  bucket = aws_s3_bucket.cfacts_sync.id
+
+  rule {
+    id     = "expire-processed-files"
+    status = "Enabled"
+
+    filter {
+      prefix = "processed/"
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+}

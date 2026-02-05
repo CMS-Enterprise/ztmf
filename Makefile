@@ -69,13 +69,12 @@ backend/compose-dev.yml:
 	@echo "    image: postgres:16.8" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    ports:" >> backend/compose-dev.yml
-	@echo "      - \"54321:5432\"" >> backend/compose-dev.yml
+	@echo "    network_mode: host" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
-	@echo "      - ./_test_data_empire.sql:/docker-entrypoint-initdb.d/init.sql:ro" >> backend/compose-dev.yml
+	@echo "    command: -p 54321" >> backend/compose-dev.yml
 	@echo "    healthcheck:" >> backend/compose-dev.yml
-	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf\"]" >> backend/compose-dev.yml
+	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf -p 54321\"]" >> backend/compose-dev.yml
 	@echo "      interval: 5s" >> backend/compose-dev.yml
 	@echo "      timeout: 5s" >> backend/compose-dev.yml
 	@echo "      retries: 5" >> backend/compose-dev.yml
@@ -87,8 +86,9 @@ backend/compose-dev.yml:
 	@echo "    command: [\"/usr/local/bin/ztmfapi\"]" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    ports:" >> backend/compose-dev.yml
-	@echo "      - \"3000:3000\"" >> backend/compose-dev.yml
+	@echo "    network_mode: host" >> backend/compose-dev.yml
+	@echo "    volumes:" >> backend/compose-dev.yml
+	@echo "      - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro" >> backend/compose-dev.yml
 	@echo "    depends_on:" >> backend/compose-dev.yml
 	@echo "      postgre:" >> backend/compose-dev.yml
 	@echo "        condition: service_healthy" >> backend/compose-dev.yml
@@ -109,12 +109,11 @@ backend/dev.compose.env:
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# for api container" >> backend/dev.compose.env
-	@echo "DB_ENDPOINT=postgre" >> backend/dev.compose.env
-	@echo "DB_PORT=5432" >> backend/dev.compose.env
+	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
+	@echo "DB_PORT=54321" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
 	@echo "DB_USER=admin" >> backend/dev.compose.env
 	@echo "DB_PASS=localdevpassword" >> backend/dev.compose.env
-	@echo "DB_POPULATE=/app/_test_data_empire.sql" >> backend/dev.compose.env
 	@echo "DB_POPULATE=/app/_test_data_empire.sql" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# for api auth handling" >> backend/dev.compose.env
@@ -323,7 +322,7 @@ full-stack-up:
 	@echo ""
 	@echo "Services:"
 	@echo "  Backend API:  http://localhost:3000"
-	@echo "  Frontend UI:  http://localhost:5173"
+	@echo "  Frontend UI:  http://localhost:5174"
 	@echo "  Database:     localhost:54321"
 	@echo ""
 	@echo "Stop with: make full-stack-down"

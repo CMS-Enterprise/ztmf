@@ -32,12 +32,13 @@ resource "aws_lambda_function" "ztmf_sync" {
   # Environment variables
   environment {
     variables = {
-      ENVIRONMENT        = var.environment
-      DB_SECRET_ID       = local.db_cred_secret
-      DB_ENDPOINT        = aws_rds_cluster.ztmf.endpoint
-      DB_PORT            = "5432"
-      DB_NAME            = "ztmf"
-      SLACK_SECRET_ID    = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      ENVIRONMENT            = var.environment
+      DB_SECRET_ID           = local.db_cred_secret
+      DB_ENDPOINT            = aws_rds_cluster.ztmf.endpoint
+      DB_PORT                = "5432"
+      DB_NAME                = "ztmf"
+      SLACK_SECRET_ID        = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SNOWFLAKE_TABLE_PREFIX = var.snowflake_table_prefix
     }
   }
 

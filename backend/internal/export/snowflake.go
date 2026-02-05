@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -82,6 +81,11 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	return client, nil
 }
 
+// DB returns the underlying database connection for direct query access.
+func (c *SnowflakeClient) DB() *sql.DB {
+	return c.db
+}
+
 // Close closes the Snowflake connection
 func (c *SnowflakeClient) Close() {
 	if c.db != nil {
@@ -93,12 +97,18 @@ func (c *SnowflakeClient) Close() {
 // LoadTable loads data into a Snowflake table
 func (c *SnowflakeClient) LoadTable(ctx context.Context, tableName string, data []map[string]interface{}, truncateFirst bool) (*LoadResult, error) {
 	startTime := time.Now()
-	
+
 	result := &LoadResult{
 		Table: tableName,
 	}
-	
-	log.Printf("Loading data to Snowflake table: %s (rows: %d, truncate: %t)", 
+
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		result.Error = fmt.Errorf("invalid table name: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+
+	log.Printf("Loading data to Snowflake table: %s (rows: %d, truncate: %t)",
 		tableName, len(data), truncateFirst)
 	
 	// Begin transaction
@@ -208,100 +218,45 @@ func (c *SnowflakeClient) LoadTable(ctx context.Context, tableName string, data 
 	return result, nil
 }
 
-// MergeTable performs MERGE/upsert operation on Snowflake table using direct VALUES (much faster)
+// MergeTable performs MERGE/upsert operation on a Snowflake table using parameterized bind variables.
+// Data values are passed as bind parameters via SELECT ? UNION ALL SELECT ? in the USING clause,
+// so no user data is ever concatenated into the SQL string.
 func (c *SnowflakeClient) MergeTable(ctx context.Context, tableName string, data []map[string]interface{}, primaryKeys []string) (*LoadResult, error) {
 	startTime := time.Now()
-	
+
 	result := &LoadResult{
 		Table: tableName,
 	}
-	
+
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		result.Error = fmt.Errorf("invalid table name: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+
 	log.Printf("Merging data to Snowflake table: %s (rows: %d, keys: %v)", tableName, len(data), primaryKeys)
-	
+
 	// If no data, just return success
 	if len(data) == 0 {
 		result.Duration = time.Since(startTime)
 		log.Printf("No data to merge for table %s", tableName)
 		return result, nil
 	}
-	
+
 	// Get column information from first row
 	firstRow := data[0]
 	columns := make([]string, 0, len(firstRow))
-	
 	for column := range firstRow {
 		columns = append(columns, strings.ToUpper(column))
 	}
-	
-	// Process data in batches to avoid SQL statement size limits
-	batchSize := 100 // Smaller batches for direct VALUES approach
-	totalRows := int64(0)
-	
-	log.Printf("Processing %d rows in batches of %d", len(data), batchSize)
-	
-	for i := 0; i < len(data); i += batchSize {
-		end := i + batchSize
-		if end > len(data) {
-			end = len(data)
-		}
-		
-		batch := data[i:end]
-		
-		// Build MERGE statement with direct VALUES for this batch
-		mergeSQL := c.buildDirectMergeStatement(tableName, batch, columns, primaryKeys)
-		
-		log.Printf("Executing MERGE batch %d-%d (%d rows)", i+1, end, len(batch))
-		
-		if _, err := c.db.ExecContext(ctx, mergeSQL); err != nil {
-			result.Error = fmt.Errorf("failed to execute MERGE batch %d-%d: %w", i+1, end, err)
-			result.Duration = time.Since(startTime)
-			return result, result.Error
-		}
-		
-		totalRows += int64(len(batch))
-		
-		// Log progress
-		if end%500 == 0 || end == len(data) {
-			log.Printf("Merged %d/%d rows...", end, len(data))
-		}
-	}
-	
-	result.RowsLoaded = totalRows
-	result.Duration = time.Since(startTime)
-	
-	log.Printf("Successfully merged %d rows to %s (Duration: %v)", 
-		totalRows, tableName, result.Duration)
-	
-	return result, nil
-}
 
-
-// buildDirectMergeStatement creates a MERGE statement with direct VALUES (no temp table)
-func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []map[string]interface{}, columns, primaryKeys []string) string {
-	// Build VALUES clause from data
-	valuesList := make([]string, len(data))
-	for i, row := range data {
-		values := make([]string, len(columns))
-		for j, column := range columns {
-			value := row[strings.ToLower(column)]
-			if value == nil {
-				values[j] = "NULL"
-			} else {
-				// Handle different data types properly for Snowflake
-				values[j] = c.formatValueForSnowflake(value)
-			}
-		}
-		valuesList[i] = fmt.Sprintf("(%s)", strings.Join(values, ", "))
-	}
-	
-	// Build join condition for primary keys
+	// Build the static parts of the MERGE statement (these don't change per batch)
 	joinConditions := make([]string, len(primaryKeys))
 	for i, key := range primaryKeys {
 		keyUpper := strings.ToUpper(key)
 		joinConditions[i] = fmt.Sprintf("target.%s = source.%s", keyUpper, keyUpper)
 	}
-	
-	// Build UPDATE SET clause (all columns except primary keys)
+
 	updateSets := make([]string, 0)
 	for _, column := range columns {
 		isPrimaryKey := false
@@ -315,119 +270,121 @@ func (c *SnowflakeClient) buildDirectMergeStatement(targetTable string, data []m
 			updateSets = append(updateSets, fmt.Sprintf("%s = source.%s", column, column))
 		}
 	}
-	
-	// If no columns to update (all columns are primary keys), use a dummy update
 	if len(updateSets) == 0 {
-		// For tables with only primary keys, use the first column as dummy update
 		updateSets = append(updateSets, fmt.Sprintf("%s = source.%s", columns[0], columns[0]))
 	}
-	
-	// Build INSERT clause
-	insertColumns := strings.Join(columns, ", ")
-	insertValues := make([]string, len(columns))
-	for i, column := range columns {
-		insertValues[i] = fmt.Sprintf("source.%s", column)
-	}
-	
-	// Construct MERGE statement with direct VALUES
-	mergeSQL := fmt.Sprintf(`
-		MERGE INTO %s AS target
-		USING (
-			VALUES %s
-		) AS source (%s)
-		ON %s
-		WHEN MATCHED THEN 
-			UPDATE SET %s
-		WHEN NOT MATCHED THEN
-			INSERT (%s) VALUES (%s)`,
-		targetTable,
-		strings.Join(valuesList, ", "),
-		strings.Join(columns, ", "),
-		strings.Join(joinConditions, " AND "),
-		strings.Join(updateSets, ", "),
-		insertColumns,
-		strings.Join(insertValues, ", "))
-	
-	return mergeSQL
-}
 
-// formatValueForSnowflake formats Go values for Snowflake SQL statements based on ZTMF model types
-func (c *SnowflakeClient) formatValueForSnowflake(value interface{}) string {
-	switch v := value.(type) {
-	case time.Time:
-		// Format timestamps for Snowflake (YYYY-MM-DD HH:MI:SS)
-		return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
-	case *time.Time:
-		if v != nil {
-			return fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05"))
-		}
-		return "NULL"
-	case string:
-		// Escape single quotes in strings
-		escaped := strings.ReplaceAll(v, "'", "''")
-		return fmt.Sprintf("'%s'", escaped)
-	case int, int8, int16, int32, int64:
-		// Integer types (common in ZTMF models)
-		return fmt.Sprintf("%d", v)
-	case *int32:
-		// Nullable int32 (like QuestionID in functions model)
-		if v != nil {
-			return fmt.Sprintf("%d", *v)
-		}
-		return "NULL"
-	case *string:
-		// Nullable string (like UserID in events model)
-		if v != nil {
-			escaped := strings.ReplaceAll(*v, "'", "''")
-			return fmt.Sprintf("'%s'", escaped)
-		}
-		return "NULL"
-	case float32, float64:
-		// Float types
-		return fmt.Sprintf("%f", v)
-	case bool:
-		// Booleans for Snowflake
-		if v {
-			return "TRUE"
-		}
-		return "FALSE"
-	case *bool:
-		// Nullable boolean
-		if v != nil {
-			if *v {
-				return "TRUE"
-			}
-			return "FALSE"
-		}
-		return "NULL"
-	case map[string]interface{}:
-		// JSONB fields (like events.payload) - convert to JSON string
-		jsonBytes, err := json.Marshal(v)
-		if err != nil {
-			// Fallback to string representation if JSON marshal fails
-			valueStr := fmt.Sprintf("%v", v)
-			valueStr = strings.ReplaceAll(valueStr, "'", "''")
-			return fmt.Sprintf("'%s'", valueStr)
-		}
-		jsonStr := strings.ReplaceAll(string(jsonBytes), "'", "''")
-		return fmt.Sprintf("'%s'", jsonStr)
-	default:
-		// Default string conversion with escaping for unknown types
-		valueStr := fmt.Sprintf("%v", v)
-		valueStr = strings.ReplaceAll(valueStr, "'", "''")
-		return fmt.Sprintf("'%s'", valueStr)
+	insertColumns := strings.Join(columns, ", ")
+	sourceInsertValues := make([]string, len(columns))
+	for i, column := range columns {
+		sourceInsertValues[i] = fmt.Sprintf("source.%s", column)
 	}
+
+	joinClause := strings.Join(joinConditions, " AND ")
+	updateClause := strings.Join(updateSets, ", ")
+	insertValuesClause := strings.Join(sourceInsertValues, ", ")
+
+	// Build a single-row SELECT with ? placeholders for each column
+	// e.g. "SELECT ? AS COL1, ? AS COL2"
+	selectParts := make([]string, len(columns))
+	for i, col := range columns {
+		selectParts[i] = fmt.Sprintf("? AS %s", col)
+	}
+	firstRowSelect := "SELECT " + strings.Join(selectParts, ", ")
+
+	// Subsequent rows use plain "SELECT ?, ?, ?" (no aliases needed in UNION ALL)
+	plainPlaceholders := make([]string, len(columns))
+	for i := range plainPlaceholders {
+		plainPlaceholders[i] = "?"
+	}
+	subsequentRowSelect := "SELECT " + strings.Join(plainPlaceholders, ", ")
+
+	// Process data in batches to keep SQL statement size reasonable
+	batchSize := 100
+	totalRows := int64(0)
+
+	log.Printf("Processing %d rows in batches of %d", len(data), batchSize)
+
+	for i := 0; i < len(data); i += batchSize {
+		end := i + batchSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		batch := data[i:end]
+
+		// Build the USING subquery: SELECT ? AS COL1, ? AS COL2 UNION ALL SELECT ?, ? ...
+		// Collect all bind parameter values in order
+		bindArgs := make([]interface{}, 0, len(batch)*len(columns))
+		rowSelects := make([]string, len(batch))
+
+		for r, row := range batch {
+			for _, column := range columns {
+				bindArgs = append(bindArgs, row[strings.ToLower(column)])
+			}
+			if r == 0 {
+				rowSelects[r] = firstRowSelect
+			} else {
+				rowSelects[r] = subsequentRowSelect
+			}
+		}
+
+		usingSubquery := strings.Join(rowSelects, " UNION ALL ")
+
+		mergeSQL := fmt.Sprintf(`MERGE INTO %s AS target
+USING (%s) AS source
+ON %s
+WHEN MATCHED THEN
+	UPDATE SET %s
+WHEN NOT MATCHED THEN
+	INSERT (%s) VALUES (%s)`,
+			tableName,
+			usingSubquery,
+			joinClause,
+			updateClause,
+			insertColumns,
+			insertValuesClause)
+
+		log.Printf("Executing MERGE batch %d-%d (%d rows, %d bind params)",
+			i+1, end, len(batch), len(bindArgs))
+
+		if _, err := c.db.ExecContext(ctx, mergeSQL, bindArgs...); err != nil {
+			result.Error = fmt.Errorf("failed to execute MERGE batch %d-%d: %w", i+1, end, err)
+			result.Duration = time.Since(startTime)
+			return result, result.Error
+		}
+
+		totalRows += int64(len(batch))
+
+		if end%500 == 0 || end == len(data) {
+			log.Printf("Merged %d/%d rows...", end, len(data))
+		}
+	}
+
+	result.RowsLoaded = totalRows
+	result.Duration = time.Since(startTime)
+
+	log.Printf("Successfully merged %d rows to %s (Duration: %v)",
+		totalRows, tableName, result.Duration)
+
+	return result, nil
 }
 
 // LoadTableWithRollback tests data loading to Snowflake with transaction rollback (for dry-run validation)
 func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName string, data []map[string]interface{}, truncateFirst bool) (*LoadResult, error) {
 	startTime := time.Now()
-	
+
 	result := &LoadResult{
 		Table: tableName,
 	}
-	
-	log.Printf("DRY RUN: Testing Snowflake load for table %s with transaction rollback (rows: %d, truncate: %t)", 
+
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		result.Error = fmt.Errorf("invalid table name: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+
+	log.Printf("DRY RUN: Testing Snowflake load for table %s with transaction rollback (rows: %d, truncate: %t)",
 		tableName, len(data), truncateFirst)
 	
 	// Begin transaction for rollback testing
@@ -528,6 +485,9 @@ func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName s
 
 // GetTableRowCount returns the number of rows in a Snowflake table
 func (c *SnowflakeClient) GetTableRowCount(ctx context.Context, tableName string) (int64, error) {
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		return 0, fmt.Errorf("invalid table name: %w", err)
+	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 	
 	var count int64
@@ -637,6 +597,22 @@ func (c *SnowflakeClient) executeSessionCommand(ctx context.Context, command, id
 		return fmt.Errorf("failed to execute session command '%s': %w", sql, err)
 	}
 	
+	return nil
+}
+
+// ValidateTableIdentifier checks that a table name (possibly qualified like SCHEMA.TABLE)
+// contains only safe identifier characters. Returns an error if the name is invalid.
+func ValidateTableIdentifier(name string) error {
+	if name == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+	// Split on dots for qualified names like DATABASE.SCHEMA.TABLE
+	parts := strings.Split(name, ".")
+	for _, part := range parts {
+		if !isValidSnowflakeIdentifier(part) {
+			return fmt.Errorf("invalid identifier component %q in table name %q", part, name)
+		}
+	}
 	return nil
 }
 
