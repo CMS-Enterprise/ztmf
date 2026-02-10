@@ -1,0 +1,66 @@
+name: Zero Trust Office Hours Prep
+description: Track preparation tasks for monthly Zero Trust Office Hours
+labels: ["office-hours"]
+projects: ["CMS-Enterprise/44"]
+body:
+  - type: dropdown
+    id: month
+    attributes:
+      label: Month
+      description: Which month's Office Hours is this for?
+      options:
+        - January 2026
+        - February 2026
+        - March 2026
+        - April 2026
+        - May 2026
+        - June 2026
+        - July 2026
+        - August 2026
+        - September 2026
+        - October 2026
+        - November 2026
+        - December 2026
+    validations:
+      required: true
+
+  - type: input
+    id: office-hours-date
+    attributes:
+      label: Office Hours Date
+      description: Enter the 3rd Wednesday of the selected month (e.g., January 21, 2026)
+      placeholder: "Month DD, YYYY"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prep-tasks
+    attributes:
+      label: Preparation Tasks
+      description: |
+        Fill in the due dates, then after creating this issue, hover over each task and click "Convert to issue" to create linked sub-issues.
+      value: |
+        ### 14 Business Days Before
+        - [ ] [Office Hours] Schedule 2 weeks, 1 week, and 1 hour reminders in Slack/Teams (Due: _______)
+
+        ### 7 Business Days Before
+        - [ ] [Office Hours] Send Preso to Leslie Nettles & Kim for 508 (Due: _______)
+
+        ### 5 Business Days Before
+        - [ ] [Office Hours] Set up Poll/Survey in Zoom (Due: _______)
+        - [ ] [Office Hours] Minute to Learn - TBD (Due: _______)
+
+        ### Day Of
+        - [ ] [Office Hours] Main Presentation: <Topic> (Due: _______)
+        - [ ] [Office Hours] Post slides and recording; update metrics (Due: _______)
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Any special considerations for this session
+      placeholder: Topics to cover, guest speakers, etc.
+    validations:
+      required: false

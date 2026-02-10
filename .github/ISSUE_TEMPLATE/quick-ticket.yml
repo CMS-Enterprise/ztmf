@@ -1,0 +1,27 @@
+name: Quick Ticket
+description: Minimal issue for rapid capture - requires refinement before work begins
+labels: ["needs-refinement"]
+projects: ["CMS-Enterprise/44"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: What type of work is this?
+      options:
+        - Task
+        - Epic
+        - Spike
+        - Chore
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Brief description of the work needed
+      placeholder: Describe what needs to be done...
+    validations:
+      required: true

@@ -1,0 +1,57 @@
+name: Documentation Request
+description: Request new or updated documentation
+labels: ["documentation"]
+projects: ["CMS-Enterprise/44"]
+body:
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation is needed?
+      options:
+        - README updates
+        - API documentation
+        - User guide
+        - Architecture docs
+        - Inline code comments
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be documented?
+      placeholder: Describe what documentation is needed and why...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current State
+      description: What documentation exists now (if updating)?
+      placeholder: Describe what currently exists, or leave blank for new documentation...
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know the documentation is complete?
+      value: |
+        - [ ] Documentation covers the requested topic
+        - [ ] Examples/code snippets included where appropriate
+        - [ ] Reviewed for accuracy and clarity
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information or references
+      placeholder: Add any other context, links to related docs, or references here
+    validations:
+      required: false

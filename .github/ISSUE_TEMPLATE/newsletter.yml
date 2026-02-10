@@ -1,0 +1,57 @@
+name: Zero Trust Ambassadors Newsletter
+description: Track preparation tasks for monthly Zero Trust Ambassadors Newsletter
+labels: ["documentation"]
+projects: ["CMS-Enterprise/44"]
+type: "Task"
+body:
+  - type: dropdown
+    id: month
+    attributes:
+      label: Month
+      description: Which month's Newsletter is this for?
+      options:
+        - January 2026
+        - February 2026
+        - March 2026
+        - April 2026
+        - May 2026
+        - June 2026
+        - July 2026
+        - August 2026
+        - September 2026
+        - October 2026
+        - November 2026
+        - December 2026
+    validations:
+      required: true
+
+  - type: input
+    id: Newsletter-date
+    attributes:
+      label: Newsletter Date Publish
+      description: Target date of publish (e.g., January 21, 2026)
+      placeholder: "Month DD, YYYY"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prep-tasks
+    attributes:
+      label: Preparation Tasks
+      description: |
+        Fill in the due dates, then after creating this issue, hover over each task and click "Convert to issue" to create linked sub-issues.
+      value: |
+        - [ ] [Newsletter] Set up newsletter (Due: _______)
+        - [ ] [Newsletter] Clean up list (Due: _______)
+        - [ ] [Newsletter] Send newsletter (Due: _______)
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Any special considerations for this session
+      placeholder: Topics to cover, guest speakers, etc.
+    validations:
+      required: false
