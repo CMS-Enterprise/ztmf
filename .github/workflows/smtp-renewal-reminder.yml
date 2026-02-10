@@ -1,0 +1,49 @@
+name: SMTP Credential Renewal Reminder
+
+on:
+  schedule:
+    # Runs every January 25 at 9 AM EST (14:00 UTC) — annual reminder ~2 weeks before Feb 8 expiration
+    - cron: '0 14 25 1 *'
+
+jobs:
+  create-reminder:
+    runs-on: ubuntu-latest
+    if: github.repository == 'CMS-Enterprise/ztmf'
+    steps:
+      - name: Create renewal issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YEAR: ${{ github.event.schedule && format('{0}', github.run_number) }}
+        run: |
+          CURRENT_YEAR=$(date +%Y)
+          EXPIRY_DATE="February 8, ${CURRENT_YEAR}"
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Annual reminder: SMTP service account password renewal ${CURRENT_YEAR}" \
+            --label "security,infrastructure" \
+            --assignee "danielbowne" \
+            --body "$(cat <<EOF
+          ## Action Required
+
+          Annual reminder to check and renew the SMTP service account password for ZTMF email functionality.
+
+          CMS AD passwords for SMTP relay accounts typically expire on an annual basis. Verify the current expiration date and renew if needed.
+
+          ### How to renew
+          1. Open a CMS Cloud Support Jira ticket (CLDSPT project) requesting AD SMTP relay password reset
+          2. Receive new credentials from the AD team
+          3. Update the \`ztmf_smtp\` secret in AWS Secrets Manager (both dev and prod)
+          4. Test email send from the ZTMF application
+
+          ### Reference
+          - Previous ticket: [CLDSPT-100588](https://jiraent.cms.gov/browse/CLDSPT-100588)
+          - Original issue: #256
+
+          ### Impact if missed
+          Data call emails stop working — ISSOs won't receive notifications.
+
+          ---
+          *This issue was auto-created by the smtp-renewal-reminder workflow. Delete the workflow file to stop these reminders.*
+          EOF
+          )"
