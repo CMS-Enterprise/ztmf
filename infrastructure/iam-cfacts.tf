@@ -161,3 +161,28 @@ resource "aws_iam_role_policy_attachment" "cfacts_sync_lambda_s3" {
   role       = aws_iam_role.cfacts_sync_lambda.name
   policy_arn = aws_iam_policy.cfacts_sync_lambda_s3.arn
 }
+
+# IAM policy for X-Ray tracing
+resource "aws_iam_policy" "cfacts_sync_lambda_xray" {
+  name        = "ztmf-cfacts-sync-lambda-xray-${var.environment}"
+  description = "IAM policy for X-Ray tracing from ZTMF CFACTS Sync Lambdas"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments",
+          "xray:PutTelemetryRecords"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cfacts_sync_lambda_xray" {
+  role       = aws_iam_role.cfacts_sync_lambda.name
+  policy_arn = aws_iam_policy.cfacts_sync_lambda_xray.arn
+}

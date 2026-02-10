@@ -32,12 +32,12 @@ resource "aws_lambda_function" "cfacts_snowflake_sync" {
   # Environment variables
   environment {
     variables = {
-      ENVIRONMENT          = var.environment
-      DB_SECRET_ID         = local.db_cred_secret
-      DB_ENDPOINT          = aws_rds_cluster.ztmf.endpoint
-      DB_PORT              = "5432"
-      DB_NAME              = "ztmf"
-      SLACK_SECRET_ID      = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      ENVIRONMENT           = var.environment
+      DB_SECRET_ID          = local.db_cred_secret
+      DB_ENDPOINT           = aws_rds_cluster.ztmf.endpoint
+      DB_PORT               = "5432"
+      DB_NAME               = "ztmf"
+      SLACK_SECRET_ID       = aws_secretsmanager_secret.ztmf_slack_webhook.name
       CFACTS_SNOWFLAKE_VIEW = var.cfacts_snowflake_view
     }
   }
@@ -71,6 +71,7 @@ resource "aws_lambda_function" "cfacts_snowflake_sync" {
     aws_iam_role_policy_attachment.cfacts_sync_lambda_secrets,
     aws_iam_role_policy_attachment.cfacts_sync_lambda_vpc,
     aws_iam_role_policy_attachment.cfacts_sync_lambda_sqs,
+    aws_iam_role_policy_attachment.cfacts_sync_lambda_xray,
     aws_cloudwatch_log_group.cfacts_snowflake_lambda,
   ]
 }
@@ -177,6 +178,7 @@ resource "aws_lambda_function" "cfacts_s3_sync" {
     aws_iam_role_policy_attachment.cfacts_sync_lambda_vpc,
     aws_iam_role_policy_attachment.cfacts_sync_lambda_sqs,
     aws_iam_role_policy_attachment.cfacts_sync_lambda_s3,
+    aws_iam_role_policy_attachment.cfacts_sync_lambda_xray,
     aws_cloudwatch_log_group.cfacts_s3_lambda,
   ]
 }

@@ -1,6 +1,6 @@
 # specific to ztmf dev account
-environment        = "dev"
-domain_name_prefix = "dev."
+environment            = "dev"
+domain_name_prefix     = "dev."
 ecs_service_task_count = 1
 # job_code = "ZTMF_SCORING_USER"
 
