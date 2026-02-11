@@ -28,7 +28,7 @@ func handler(ctx context.Context, event json.RawMessage) error {
 
 	log.Printf("ZTMF CFACTS S3 CSV Sync Lambda started - Environment: %s", cfg.Env)
 
-	bucket, key, dryRun, triggerType, err := parseEvent(event, cfg.Env)
+	bucket, key, dryRun, triggerType, err := parseEvent(event)
 	if err != nil {
 		log.Printf("Failed to parse event: %v", err)
 		return err
@@ -68,12 +68,12 @@ func handler(ctx context.Context, event json.RawMessage) error {
 }
 
 // parseEvent extracts bucket, key, dryRun from either an S3 event or manual event.
-func parseEvent(event json.RawMessage, env string) (bucket, key string, dryRun bool, triggerType string, err error) {
+func parseEvent(event json.RawMessage) (bucket, key string, dryRun bool, triggerType string, err error) {
 	// Try S3 event first
 	var s3Event events.S3Event
 	if jsonErr := json.Unmarshal(event, &s3Event); jsonErr == nil && len(s3Event.Records) > 0 {
 		record := s3Event.Records[0]
-		return record.S3.Bucket.Name, record.S3.Object.Key, env != "prod", "s3", nil
+		return record.S3.Bucket.Name, record.S3.Object.Key, false, "s3", nil
 	}
 
 	// Try manual event
@@ -81,10 +81,6 @@ func parseEvent(event json.RawMessage, env string) (bucket, key string, dryRun b
 	if jsonErr := json.Unmarshal(event, &manual); jsonErr == nil && manual.Bucket != "" && manual.Key != "" {
 		if manual.TriggerType == "" {
 			manual.TriggerType = "manual"
-		}
-		if env != "prod" && manual.TriggerType == "manual" {
-			manual.DryRun = true
-			log.Printf("Defaulting to dry-run mode for manual test in %s environment", env)
 		}
 		return manual.Bucket, manual.Key, manual.DryRun, manual.TriggerType, nil
 	}
