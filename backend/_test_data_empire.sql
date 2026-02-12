@@ -18,15 +18,15 @@
 
 
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
-INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', false) ON CONFLICT DO NOTHING;
+INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Admin User (Death Star Commander)
-INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', false) ON CONFLICT DO NOTHING;
+INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test ISSO Users (Imperial Officers)
-INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', false) ON CONFLICT DO NOTHING;
-INSERT INTO public.users VALUES ('33333333-3333-3333-3333-333333333333', 'Commander.Veers@hoth.empire', 'General Veers', 'ISSO', false) ON CONFLICT DO NOTHING;
-INSERT INTO public.users VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', false) ON CONFLICT DO NOTHING;
+INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users VALUES ('33333333-3333-3333-3333-333333333333', 'Commander.Veers@hoth.empire', 'General Veers', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
@@ -37,43 +37,43 @@ INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
-INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (1, 'FY24SecRv', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (2, 'FY25DSAsm', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1001,
-    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
+    'DEATHSTR',
     'DS-1',
-    'Death Star Orbital Battle Station',
-    'Fully Operational Battle Station',
-    'ISB-(INTEL)',
+    'DeathStar',
+    'MainCore',
+    'ISB-INTEL',
     'IMPENG',
-    'Imperial Engineering Corps',
-    'Advanced Weapons Research Division',
-    'Space-Station',
+    'ImpEngCo',
+    'WepsResDiv',
+    'SpaceStat',
     'galen.erso@scarif.empire',
-    'grand.moff@deathstar.empire',
+    'Grand.Moff@DeathStar.Empire',
     TRUE,
     '1977-05-25 00:00:00+00',
     '11111111-1111-1111-1111-111111111111',
-    'Destroyed by Rebel Alliance at Battle of Yavin'
+    'Destroyed by Rebels at Yavin'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1002,
-    'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
+    'EXECUTOR',
     'SSD-EX',
-    'Super Star Destroyer Executor Command Systems',
-    'Flagship Communication Hub',
-    'IMPNAVY-(FLEET)',
+    'Executor',
+    'CommHub',
+    'IMP-NAVY',
     'STARCOM',
-    'Imperial Starfleet Command',
-    'Naval Operations Division',
-    'Imperial-Fleet',
+    'ImpFleet',
+    'NavOpsDiv',
+    'ImpFleet',
     'captain.needa@executor.empire',
-    'admiral.piett@executor.empire',
+    'Admiral.Piett@executor.empire',
     FALSE,
     NULL,
     NULL,
@@ -82,15 +82,15 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1003,
-    'ENDOR-1983-6D4E-AB8C-SHIELD999',
+    'ENDOR',
     'SLD-GEN',
-    'Shield Generator Control Network',
-    'Planetary Defense Shield System',
-    'IMPENG-(DEF)',
+    'ShieldGen',
+    'DefShield',
+    'IMP-ENG',
     'BUNKER',
-    'Imperial Bunker Operations',
-    'Planetary Defense Division',
-    'Forest-Moon',
+    'ImpBunker',
+    'DefDiv',
+    'ForestMoo',
     'major.hewex@endor.empire',
     'commander.jerjerrod@deathstar2.empire',
     FALSE,

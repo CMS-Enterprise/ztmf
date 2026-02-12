@@ -88,58 +88,86 @@ jobs:
         with:
           go-version: '1.24.1'
 
-      - name: Lambda - Build
+      - name: Lambda - Build (Data Sync)
         run: |
           set -e
           cd backend
-          echo "Building Lambda function for Linux with static linking..."
+          echo "Building Data Sync Lambda..."
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda/.
-          echo "Creating Lambda deployment package..."
           zip lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          rm bootstrap
           ls -la lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+
+      - name: Lambda - Build (CFACTS Snowflake)
+        run: |
+          set -e
+          cd backend
+          echo "Building CFACTS Snowflake Sync Lambda..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-cfacts-snowflake/.
+          zip cfacts-snowflake-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          rm bootstrap
+          ls -la cfacts-snowflake-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+
+      - name: Lambda - Build (CFACTS S3)
+        run: |
+          set -e
+          cd backend
+          echo "Building CFACTS S3 CSV Sync Lambda..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-cfacts-s3/.
+          zip cfacts-s3-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          rm bootstrap
+          ls -la cfacts-s3-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
       - name: Lambda - Upload to S3
         run: |
           set -e
-          # Use environment-aware bucket naming (matches Terraform)
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
           LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
-          echo "Uploading Lambda package to bucket: $LAMBDA_BUCKET"
-          
-          # Upload with commit SHA tag
-          aws s3 cp backend/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
-          
-          # Update the latest symlink
-          aws s3 cp backend/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip s3://$LAMBDA_BUCKET/lambda-deployment-latest.zip
-          
-          echo "Lambda deployment package uploaded successfully"
+          SHA="${{ steps.revParse.outputs.shaShort }}"
+          echo "Uploading Lambda packages to bucket: $LAMBDA_BUCKET"
+
+          # Data Sync Lambda
+          aws s3 cp backend/lambda-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/lambda-deployment-${SHA}.zip
+          aws s3 cp backend/lambda-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/lambda-deployment-latest.zip
+
+          # CFACTS Snowflake Lambda
+          aws s3 cp backend/cfacts-snowflake-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-snowflake-deployment-${SHA}.zip
+          aws s3 cp backend/cfacts-snowflake-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-snowflake-deployment-latest.zip
+
+          # CFACTS S3 Lambda
+          aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-${SHA}.zip
+          aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-latest.zip
+
+          echo "All Lambda deployment packages uploaded successfully"
 
       - name: Lambda - Update Function Code
         run: |
           set -e
-          # Use environment-aware function naming (matches Terraform)
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
-          LAMBDA_FUNCTION="ztmf-data-sync-${ENV_LOWER}"
           LAMBDA_BUCKET="ztmf-lambda-deployments-${ENV_LOWER}"
-          
-          echo "Checking if Lambda function exists: $LAMBDA_FUNCTION"
-          
-          # Check if Lambda function exists before trying to update
-          if aws lambda get-function --function-name $LAMBDA_FUNCTION >/dev/null 2>&1; then
-            echo "Updating existing Lambda function: $LAMBDA_FUNCTION"
-            echo "Using deployment package: s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip"
-            
-            # Update Lambda function code
-            aws lambda update-function-code \
-              --function-name $LAMBDA_FUNCTION \
-              --s3-bucket $LAMBDA_BUCKET \
-              --s3-key lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
-            
-            echo "Lambda function updated successfully"
-          else
-            echo "Lambda function doesn't exist yet - will be created by infrastructure workflow"
-            echo "Deployment package ready at: s3://$LAMBDA_BUCKET/lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip"
-          fi
+          SHA="${{ steps.revParse.outputs.shaShort }}"
+
+          # Update each Lambda function if it exists
+          for FUNC_PAIR in \
+            "ztmf-data-sync-${ENV_LOWER}:lambda-deployment-${SHA}.zip" \
+            "ztmf-cfacts-snowflake-sync-${ENV_LOWER}:cfacts-snowflake-deployment-${SHA}.zip" \
+            "ztmf-cfacts-s3-sync-${ENV_LOWER}:cfacts-s3-deployment-${SHA}.zip"; do
+
+            LAMBDA_FUNCTION="${FUNC_PAIR%%:*}"
+            S3_KEY="${FUNC_PAIR#*:}"
+
+            echo "Checking Lambda function: $LAMBDA_FUNCTION"
+            if aws lambda get-function --function-name $LAMBDA_FUNCTION >/dev/null 2>&1; then
+              echo "Updating: $LAMBDA_FUNCTION with $S3_KEY"
+              aws lambda update-function-code \
+                --function-name $LAMBDA_FUNCTION \
+                --s3-bucket $LAMBDA_BUCKET \
+                --s3-key $S3_KEY
+              echo "Updated successfully: $LAMBDA_FUNCTION"
+            else
+              echo "Function doesn't exist yet: $LAMBDA_FUNCTION (will be created by infrastructure workflow)"
+            fi
+          done
         
       - name: AWS - SSM Put Parameter
         run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite

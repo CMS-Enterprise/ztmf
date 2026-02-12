@@ -1,0 +1,91 @@
+name: Epic
+description: Long-running issue tracking multiple sub-issues and relationships
+labels: ["epic"]
+projects: ["CMS-Enterprise/44"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Epic Summary
+      description: High-level description of what this epic aims to accomplish
+      placeholder: |
+        Describe the overarching goal and scope of this epic...
+    validations:
+      required: true
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: Define what "done" looks like for this entire epic
+      value: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: sub-issues
+    attributes:
+      label: Sub-Issues
+      description: List sub-issues using GitHub tasklist format for automatic tracking
+      placeholder: |
+        - [ ] #123 - Description of sub-issue
+        - [ ] #124 - Description of sub-issue
+        - [ ] Create new issue for X
+    validations:
+      required: false
+
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers
+      description: Issues or external factors blocking this epic from progressing
+      placeholder: |
+        - #456 - Waiting on API changes
+        - External dependency on vendor X
+    validations:
+      required: false
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Issues or work this epic depends on
+      placeholder: |
+        - #789 - Requires auth system refactor
+        - Depends on infrastructure team deploying new cluster
+    validations:
+      required: false
+
+  - type: textarea
+    id: related-work
+    attributes:
+      label: Related Work
+      description: Issues that are related but not blocking or dependent
+      placeholder: |
+        - #101 - Similar feature in another module
+        - #102 - Related documentation updates
+    validations:
+      required: false
+
+  - type: textarea
+    id: downstream-impacts
+    attributes:
+      label: Downstream Impacts
+      description: Issues, systems, or teams affected when this epic completes
+      placeholder: |
+        - #201 - Will need to update integration tests
+        - Team Y will need to update their API clients
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information, mockups, or references
+      placeholder: Add any other context, screenshots, or links here
+    validations:
+      required: false

@@ -48,7 +48,7 @@ resource "aws_ssm_parameter" "lambda_test_events" {
       tables       = ["users"]
       full_refresh = false
     })
-  } : {
+    } : {
     "prod-dry-run-validation" = jsonencode({
       trigger_type = "manual"
       dry_run      = true

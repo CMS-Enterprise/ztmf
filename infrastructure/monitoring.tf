@@ -61,7 +61,7 @@ resource "aws_cloudwatch_metric_alarm" "ztmf_sync_duration" {
 # Dead Letter Queue for failed Lambda invocations
 resource "aws_sqs_queue" "ztmf_sync_dlq" {
   name                      = "ztmf-data-sync-dlq-${var.environment}"
-  message_retention_seconds = 1209600         # 14 days
+  message_retention_seconds = 1209600 # 14 days
 
   tags = {
     Name        = "ZTMF Data Sync DLQ"

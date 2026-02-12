@@ -12,7 +12,7 @@ variable "managed_policy_arns" {
 }
 
 variable "condition" {
-  type = map(any)
+  type     = map(any)
   nullable = true
-  default = null
+  default  = null
 }

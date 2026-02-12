@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/export"
@@ -130,20 +132,34 @@ type TableConfig struct {
 	PrimaryKeys    []string // Primary key columns for MERGE operations
 }
 
+// snowflakeTableName builds a Snowflake table name from the configured prefix and a PostgreSQL table name.
+func snowflakeTableName(prefix, pgTable string) string {
+	return prefix + "_" + strings.ToUpper(pgTable)
+}
+
 // getTablesToSync returns the list of tables to synchronize
 func (s *Synchronizer) getTablesToSync(requestedTables []string) ([]TableConfig, error) {
+	// Read prefix from env var; default "ZTMF" for backward compatibility
+	prefix := os.Getenv("SNOWFLAKE_TABLE_PREFIX")
+	if prefix == "" {
+		prefix = "ZTMF"
+	}
+	if err := export.ValidateTableIdentifier(prefix); err != nil {
+		return nil, fmt.Errorf("invalid SNOWFLAKE_TABLE_PREFIX: %w", err)
+	}
+
 	// Define all available tables with primary keys for MERGE operations
 	allTables := []TableConfig{
-		{PostgresTable: "datacalls", SnowflakeTable: "ZTMF_DATACALLS", OrderBy: "datacallid", PrimaryKeys: []string{"datacallid"}},
-		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: "ZTMF_DATACALLS_FISMASYSTEMS", OrderBy: "datacallid, fismasystemid", PrimaryKeys: []string{"datacallid", "fismasystemid"}},
-		{PostgresTable: "fismasystems", SnowflakeTable: "ZTMF_FISMASYSTEMS", OrderBy: "fismasystemid", PrimaryKeys: []string{"fismasystemid"}},
-		{PostgresTable: "functionoptions", SnowflakeTable: "ZTMF_FUNCTIONOPTIONS", OrderBy: "functionoptionid", PrimaryKeys: []string{"functionoptionid"}},
-		{PostgresTable: "functions", SnowflakeTable: "ZTMF_FUNCTIONS", OrderBy: "functionid", PrimaryKeys: []string{"functionid"}},
-		{PostgresTable: "pillars", SnowflakeTable: "ZTMF_PILLARS", OrderBy: "pillarid", PrimaryKeys: []string{"pillarid"}},
-		{PostgresTable: "questions", SnowflakeTable: "ZTMF_QUESTIONS", OrderBy: "questionid", PrimaryKeys: []string{"questionid"}},
-		{PostgresTable: "scores", SnowflakeTable: "ZTMF_SCORES", OrderBy: "scoreid", PrimaryKeys: []string{"scoreid"}},
-		{PostgresTable: "users", SnowflakeTable: "ZTMF_USERS", OrderBy: "userid", PrimaryKeys: []string{"userid"}},
-		{PostgresTable: "users_fismasystems", SnowflakeTable: "ZTMF_USERS_FISMASYSTEMS", OrderBy: "userid, fismasystemid", PrimaryKeys: []string{"userid", "fismasystemid"}},
+		{PostgresTable: "datacalls", SnowflakeTable: snowflakeTableName(prefix, "datacalls"), OrderBy: "datacallid", PrimaryKeys: []string{"datacallid"}},
+		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "datacalls_fismasystems"), OrderBy: "datacallid, fismasystemid", PrimaryKeys: []string{"datacallid", "fismasystemid"}},
+		{PostgresTable: "fismasystems", SnowflakeTable: snowflakeTableName(prefix, "fismasystems"), OrderBy: "fismasystemid", PrimaryKeys: []string{"fismasystemid"}},
+		{PostgresTable: "functionoptions", SnowflakeTable: snowflakeTableName(prefix, "functionoptions"), OrderBy: "functionoptionid", PrimaryKeys: []string{"functionoptionid"}},
+		{PostgresTable: "functions", SnowflakeTable: snowflakeTableName(prefix, "functions"), OrderBy: "functionid", PrimaryKeys: []string{"functionid"}},
+		{PostgresTable: "pillars", SnowflakeTable: snowflakeTableName(prefix, "pillars"), OrderBy: "pillarid", PrimaryKeys: []string{"pillarid"}},
+		{PostgresTable: "questions", SnowflakeTable: snowflakeTableName(prefix, "questions"), OrderBy: "questionid", PrimaryKeys: []string{"questionid"}},
+		{PostgresTable: "scores", SnowflakeTable: snowflakeTableName(prefix, "scores"), OrderBy: "scoreid", PrimaryKeys: []string{"scoreid"}},
+		{PostgresTable: "users", SnowflakeTable: snowflakeTableName(prefix, "users"), OrderBy: "userid", PrimaryKeys: []string{"userid"}},
+		{PostgresTable: "users_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "users_fismasystems"), OrderBy: "userid, fismasystemid", PrimaryKeys: []string{"userid", "fismasystemid"}},
 	}
 	
 	// If no specific tables requested, return all

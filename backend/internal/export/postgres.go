@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -57,6 +58,11 @@ func NewPostgresClient(ctx context.Context) (*PostgresClient, error) {
 	}, nil
 }
 
+// Pool returns the underlying connection pool for direct query access.
+func (c *PostgresClient) Pool() *pgxpool.Pool {
+	return c.pool
+}
+
 // Close closes the PostgreSQL connection pool
 func (c *PostgresClient) Close() {
 	if c.pool != nil {
@@ -68,13 +74,32 @@ func (c *PostgresClient) Close() {
 // ExportTable extracts all data from a PostgreSQL table
 func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orderBy string) (*ExportResult, error) {
 	startTime := time.Now()
-	
+
 	result := &ExportResult{
 		Table: tableName,
 	}
-	
+
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		result.Error = fmt.Errorf("invalid table name: %w", err)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
+	}
+	if orderBy != "" {
+		// orderBy can be comma-separated column list like "datacallid, fismasystemid"
+		for _, col := range strings.Split(orderBy, ",") {
+			col = strings.TrimSpace(col)
+			if col != "" {
+				if err := ValidateTableIdentifier(col); err != nil {
+					result.Error = fmt.Errorf("invalid orderBy column: %w", err)
+					result.Duration = time.Since(startTime)
+					return result, result.Error
+				}
+			}
+		}
+	}
+
 	log.Printf("Exporting data from table: %s", tableName)
-	
+
 	// Build query with optional ORDER BY
 	query := fmt.Sprintf("SELECT * FROM %s", tableName)
 	if orderBy != "" {
@@ -145,6 +170,9 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 
 // GetTableRowCount returns the number of rows in a table
 func (c *PostgresClient) GetTableRowCount(ctx context.Context, tableName string) (int64, error) {
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		return 0, fmt.Errorf("invalid table name: %w", err)
+	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 	
 	var count int64
