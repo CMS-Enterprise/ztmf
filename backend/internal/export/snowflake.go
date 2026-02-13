@@ -517,38 +517,39 @@ func (c *SnowflakeClient) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// initializeSession sets up the Snowflake session with proper context
+// initializeSession sets up the Snowflake session with proper context.
+// Role is set first because it determines access to warehouse/database/schema.
 func (c *SnowflakeClient) initializeSession(ctx context.Context) error {
 	// Validate and sanitize inputs to prevent SQL injection
 	if err := c.validateSessionIdentifiers(); err != nil {
 		return fmt.Errorf("invalid session parameters: %w", err)
 	}
-	
-	// Execute session commands with validated inputs
-	if c.cfg.Warehouse != "" {
-		if err := c.executeSessionCommand(ctx, "USE WAREHOUSE", c.cfg.Warehouse); err != nil {
-			return err
-		}
-	}
-	
-	if c.cfg.Database != "" {
-		if err := c.executeSessionCommand(ctx, "USE DATABASE", c.cfg.Database); err != nil {
-			return err
-		}
-	}
-	
-	if c.cfg.Schema != "" {
-		if err := c.executeSessionCommand(ctx, "USE SCHEMA", c.cfg.Schema); err != nil {
-			return err
-		}
-	}
-	
+
+	// Set role FIRST — it determines permissions for subsequent USE commands
 	if c.cfg.Role != "" {
 		if err := c.executeSessionCommand(ctx, "USE ROLE", c.cfg.Role); err != nil {
 			return err
 		}
 	}
-	
+
+	if c.cfg.Warehouse != "" {
+		if err := c.executeSessionCommand(ctx, "USE WAREHOUSE", c.cfg.Warehouse); err != nil {
+			return err
+		}
+	}
+
+	if c.cfg.Database != "" {
+		if err := c.executeSessionCommand(ctx, "USE DATABASE", c.cfg.Database); err != nil {
+			return err
+		}
+	}
+
+	if c.cfg.Schema != "" {
+		if err := c.executeSessionCommand(ctx, "USE SCHEMA", c.cfg.Schema); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
