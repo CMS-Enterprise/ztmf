@@ -38,7 +38,23 @@ func Middleware(next http.Handler) http.Handler {
 
 			user, err := model.FindUserByEmail(r.Context(), claims.Email)
 
-			if err != nil {
+			if err != nil && cfg.Env == "local" {
+				log.Printf("Local dev: auto-creating ADMIN user for %s\n", claims.Email)
+				user = &model.User{
+					Email:    claims.Email,
+					FullName: claims.Name,
+					Role:     "ADMIN",
+				}
+				if user.FullName == "" {
+					user.FullName = claims.Email
+				}
+				user, err = user.Save(r.Context())
+				if err != nil {
+					log.Printf("Failed to auto-create user: %s\n", err)
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+			} else if err != nil {
 				log.Printf("Could not find user by email: %s with error %s\n", claims.Email, err)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return

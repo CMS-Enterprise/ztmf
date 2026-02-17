@@ -27,7 +27,7 @@ type smtp struct {
 
 // config is shared by all binaries with values derived from environment variables
 type config struct {
-	Env      string `env:"ENVIRONMENT" envDefault:"local"`
+	Env      string `env:"ENVIRONMENT" envDefault:"production"`
 	Port     string `env:"PORT" envDefault:"3000"`
 	CertFile string `env:"CERT_FILE"`
 	KeyFile  string `env:"KEY_FILE"`

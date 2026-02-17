@@ -59,7 +59,7 @@ jobs:
           DB_NAME: ztmf
           DB_USER: admin
           DB_PASS: localDev 
-          DB_POPULATE: "/src/backend/_test_data.sql"
+          DB_POPULATE: "/src/backend/_test_data_empire.sql"
           AUTH_HS256_SECRET: "zeroTrust"
           AUTH_HEADER_FIELD: "Authorization"
           WORKSPACE: ${{ github.workspace }}

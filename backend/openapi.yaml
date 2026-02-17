@@ -56,6 +56,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/ServerError'
+  /datacalls/latest:
+    get:
+      summary: Get the latest data call
+      description: Returns the most recent data call
+      operationId: getLatestDataCall
+      responses:
+        '200':
+          description: The latest data call
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DataCall'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /datacalls/{datacallid}:
     get:
       summary: Get a data call by ID
@@ -305,6 +324,51 @@ paths:
       responses:
         '204':
           description: FISMA system updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Decommission a FISMA system
+      description: Marks a FISMA system as decommissioned with optional date and notes (Admin only)
+      operationId: deleteFismaSystem
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decommissioned_date:
+                  type: string
+                  format: date-time
+                  description: Custom decommission date (defaults to now)
+                notes:
+                  type: string
+                  description: Reason or notes for decommissioning
+      responses:
+        '200':
+          description: FISMA system decommissioned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FismaSystem'
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
@@ -1118,6 +1182,22 @@ components:
         issoemail:
           type: string
           nullable: true
+        decommissioned:
+          type: boolean
+          description: Whether the system has been decommissioned
+        decommissioned_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Date the system was decommissioned
+        decommissioned_by:
+          type: string
+          nullable: true
+          description: User ID of the admin who decommissioned the system
+        decommissioned_notes:
+          type: string
+          nullable: true
+          description: Notes about why the system was decommissioned
       required:
         - fismauid
         - fismaacronym
@@ -1134,7 +1214,7 @@ components:
           type: string
         role:
           type: string
-          enum: [ADMIN, ISSO, ISSM]
+          enum: [ADMIN, READONLY_ADMIN, ISSO, ISSM]
         deleted:
           type: boolean
       required:

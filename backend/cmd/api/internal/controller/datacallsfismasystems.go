@@ -26,6 +26,7 @@ func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	if !authdUser.IsAdmin() && !authdUser.IsAssignedFismaSystem(fismasystemID) {
 		respond(w, r, nil, ErrForbidden)
+		return
 	}
 
 	df := &model.DataCallFismaSystem{

@@ -20,6 +20,14 @@ func (u *User) IsAdmin() bool {
 	return u.Role == "ADMIN"
 }
 
+func (u *User) IsReadOnlyAdmin() bool {
+	return u.Role == "READONLY_ADMIN"
+}
+
+func (u *User) HasAdminRead() bool {
+	return u.Role == "ADMIN" || u.Role == "READONLY_ADMIN"
+}
+
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
 	if len(u.AssignedFismaSystems) < 1 {
 		return false

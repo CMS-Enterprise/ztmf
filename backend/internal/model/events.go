@@ -64,6 +64,9 @@ func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 	}
 
 	user := UserFromContext(ctx)
+	if user == nil {
+		return
+	}
 
 	e.UserID = user.UserID
 
