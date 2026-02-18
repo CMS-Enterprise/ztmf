@@ -44,6 +44,11 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 
+	if user.IsReadOnlyAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return

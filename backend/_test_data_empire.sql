@@ -20,8 +20,8 @@
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
--- Test Admin User (Death Star Commander)
-INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+-- Test READONLY_ADMIN User (Death Star Commander - observes but does not modify)
+INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test ISSO Users (Imperial Officers)
 INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
@@ -33,6 +33,9 @@ INSERT INTO public.users VALUES ('55555555-5555-5555-5555-555555555555', 'Empero
 
 -- Test READONLY_ADMIN for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+
+-- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions)
+INSERT INTO public.users VALUES (DEFAULT, 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;

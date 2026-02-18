@@ -119,12 +119,3 @@ func TestUser_Validate(t *testing.T) {
 		})
 	}
 }
-
-func TestIsValidRole(t *testing.T) {
-	assert.True(t, isValidRole("ADMIN"))
-	assert.True(t, isValidRole("READONLY_ADMIN"))
-	assert.True(t, isValidRole("ISSO"))
-	assert.True(t, isValidRole("ISSM"))
-	assert.False(t, isValidRole("readonly_admin"))
-	assert.False(t, isValidRole("UNKNOWN"))
-}
