@@ -35,7 +35,7 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findAnswersInput := model.FindAnswersInput{}
 
-	if !user.IsAdmin() {
+	if !user.HasAdminRead() {
 		findAnswersInput.UserID = &user.UserID
 	}
 

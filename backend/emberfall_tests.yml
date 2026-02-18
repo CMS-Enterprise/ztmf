@@ -6,6 +6,12 @@
 commonHeaders: &commonHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3QudXNlckBub3doZXJlLnh5eiJ9.zmgPiVjkLNzh4sl9uD_KAR28bd___-OlLhHsXWQNSC4"
 
+readonlyAdminHeaders: &readonlyAdminHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InJlYWRvbmx5LmFkbWluQG5vd2hlcmUueHl6In0.q1vO0pcC_3Ct7XuOs2NqVtj4xsD-3fj3Do0eA62tvW0"
+
+issoHeaders: &issoHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imlzc28udXNlckBub3doZXJlLnh5eiJ9.vVrud1ADntR8wUdRZ2vah7EFTgcGXMTVDPzfs84uorI"
+
 # Data definitions using YAML anchors
 dataCallData: &dataCallData
   datacall: "FY2025 Q1"
@@ -701,4 +707,245 @@ tests:
             subject: null
             body: null
             group: "ADNIM"
+
+  # READONLY_ADMIN Tests
+  # Verify READONLY_ADMIN can authenticate
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Readonly.Admin@nowhere.xyz"
+            role: "READONLY_ADMIN"
+
+  # READONLY_ADMIN can GET /api/v1/users (read access)
+  - url: http://localhost:8080/api/v1/users
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # READONLY_ADMIN can GET /api/v1/fismasystems (read access)
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/users (write blocked)
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "blocked@example.com"
+        fullname: "Blocked User"
+        role: "ISSO"
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/fismasystems (write blocked)
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/datacalls (write blocked)
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *dataCallData
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/questions (write blocked)
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/functions (write blocked)
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *functionData
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/scores (write blocked - key fix)
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1
+        functionoptionid: 1
+        notes: "should be blocked"
+        datacallid: 1
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on PUT datacalls/{id}/fismasystems/{id} (write blocked - key fix)
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on DELETE /api/v1/users (write blocked)
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: DELETE
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on DELETE /api/v1/fismasystems (write blocked)
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: DELETE
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "should be blocked"
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "test"
+        body: "test"
+        group: "ALL"
+    expect:
+      status: 403
+
+  # READONLY_ADMIN can GET /api/v1/scores (read access)
+  - url: http://localhost:8080/api/v1/scores
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # READONLY_ADMIN can GET /api/v1/scores/aggregate (read access)
+  - url: http://localhost:8080/api/v1/scores/aggregate
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # READONLY_ADMIN can GET /api/v1/datacalls (read access)
+  - url: http://localhost:8080/api/v1/datacalls
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # READONLY_ADMIN can GET /api/v1/events (read access)
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # ISSO Tests
+  # Verify ISSO can authenticate
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Isso.User@nowhere.xyz"
+            role: "ISSO"
+
+  # ISSO gets 403 on GET /api/v1/events (audit trail restricted to admin roles)
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # ISSO gets 403 on GET /api/v1/users (user management restricted)
+  - url: http://localhost:8080/api/v1/users
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # ISSO gets 403 on POST /api/v1/users (write blocked)
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "blocked@example.com"
+        fullname: "Blocked User"
+        role: "ISSO"
+    expect:
+      status: 403
 

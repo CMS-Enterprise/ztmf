@@ -15,7 +15,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	)
 	// TODO: replace the repititious admin checks with ACL
 	authdUser := model.UserFromContext(r.Context())
-	if !authdUser.IsAdmin() {
+	if !authdUser.HasAdminRead() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -31,7 +31,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 
 func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
-	if !authdUser.IsAdmin() {
+	if !authdUser.HasAdminRead() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

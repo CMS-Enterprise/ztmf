@@ -8,9 +8,10 @@ import (
 // use of map enables O(1) vs O(N) as would be the case with slices.Contains([]string)
 // it also avoids the complexity of using constants as enums
 var roles = map[string]interface{}{
-	"ADMIN": nil, // the value isn't used, only the ok check value is
-	"ISSO":  nil,
-	"ISSM":  nil,
+	"ADMIN":          nil, // the value isn't used, only the ok check value is
+	"READONLY_ADMIN": nil,
+	"ISSO":           nil,
+	"ISSM":           nil,
 }
 
 var datacenterenvironments = map[string]interface{}{

@@ -11,7 +11,7 @@ import (
 
 func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
-	if !authdUser.IsAdmin() {
+	if !authdUser.HasAdminRead() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

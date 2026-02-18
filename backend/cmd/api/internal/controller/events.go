@@ -7,6 +7,12 @@ import (
 )
 
 func GetEvents(w http.ResponseWriter, r *http.Request) {
+	user := model.UserFromContext(r.Context())
+	if !user.HasAdminRead() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
 	findEventsInput := &model.FindEventsInput{}
 	err := decoder.Decode(findEventsInput, r.URL.Query())
 	if err != nil {

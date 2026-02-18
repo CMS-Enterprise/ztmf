@@ -71,7 +71,7 @@ Configuration is loaded once at application startup and made available through t
 #### Available Configuration Options
 
 ##### Core Settings
-- `ENVIRONMENT` - Application environment (default: "local")
+- `ENVIRONMENT` - Application environment (default: "production"). Set to "local" for local dev auto-user creation.
 - `PORT` - HTTP server port (default: "3000")
 - `CERT_FILE` - Path to TLS certificate file
 - `KEY_FILE` - Path to TLS key file

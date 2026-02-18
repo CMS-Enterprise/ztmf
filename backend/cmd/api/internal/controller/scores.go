@@ -18,7 +18,7 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.IsAdmin() {
+	if !user.HasAdminRead() {
 		findScoresInput.UserID = &user.UserID
 	}
 
@@ -42,6 +42,11 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	err = getJSON(r.Body, &score)
 	if err != nil {
 		log.Println(err)
+	}
+
+	if user.IsReadOnlyAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
 	}
 
 	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
@@ -70,7 +75,7 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.IsAdmin() {
+	if !user.HasAdminRead() {
 		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 

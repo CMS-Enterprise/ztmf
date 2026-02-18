@@ -21,7 +21,7 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.IsAdmin() {
+	if !user.HasAdminRead() {
 		input.UserID = &user.UserID
 	}
 
@@ -41,7 +41,12 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 		input.FismaSystemID = &fismasystemID
 	}
 
-	if !user.IsAdmin() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
+	if input.FismaSystemID == nil {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	if !user.HasAdminRead() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

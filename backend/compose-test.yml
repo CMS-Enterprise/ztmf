@@ -28,13 +28,13 @@ services:
       DB_NAME: ztmf
       DB_USER: admin
       DB_PASS: testpass
-      DB_POPULATE: /app/_test_data.sql
+      DB_POPULATE: /app/_test_data_empire.sql
       AUTH_HS256_SECRET: zeroTrust
       AUTH_HEADER_FIELD: Authorization
       ENVIRONMENT: test
     network_mode: host  # Use host network like CI
     volumes:
-      - ./_test_data.sql:/app/_test_data.sql:ro
+      - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro
     depends_on:
       test-db:
         condition: service_healthy

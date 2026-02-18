@@ -20,13 +20,22 @@
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
--- Test Admin User (Death Star Commander)
-INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+-- Test READONLY_ADMIN User (Death Star Commander - observes but does not modify)
+INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test ISSO Users (Imperial Officers)
 INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 INSERT INTO public.users VALUES ('33333333-3333-3333-3333-333333333333', 'Commander.Veers@hoth.empire', 'General Veers', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 INSERT INTO public.users VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+
+-- Test READONLY_ADMIN User (Emperor - can observe everything but not modify)
+INSERT INTO public.users VALUES ('55555555-5555-5555-5555-555555555555', 'Emperor.Palpatine@coruscant.empire', 'Emperor Palpatine', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+
+-- Test READONLY_ADMIN for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
+INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+
+-- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions)
+INSERT INTO public.users VALUES (DEFAULT, 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
@@ -37,41 +46,41 @@ INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
-INSERT INTO public.datacalls VALUES (1, 'FY24SecRv', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY25DSAsm', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1001,
-    'DEATHSTR',
+    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
     'DS-1',
-    'DeathStar',
-    'MainCore',
-    'ISB-INTEL',
+    'Death Star Orbital Battle Station',
+    'Fully Operational Battle Station',
+    'ISB-(INTEL)',
     'IMPENG',
-    'ImpEngCo',
-    'WepsResDiv',
-    'SpaceStat',
+    'Imperial Engineering Corps',
+    'Advanced Weapons Research Division',
+    'Space-Station',
     'galen.erso@scarif.empire',
     'Grand.Moff@DeathStar.Empire',
     TRUE,
     '1977-05-25 00:00:00+00',
     '11111111-1111-1111-1111-111111111111',
-    'Destroyed by Rebels at Yavin'
+    'Destroyed by Rebel Alliance at Battle of Yavin'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1002,
-    'EXECUTOR',
+    'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
     'SSD-EX',
-    'Executor',
-    'CommHub',
-    'IMP-NAVY',
+    'Super Star Destroyer Executor Command Systems',
+    'Flagship Communication Hub',
+    'IMPNAVY-(FLEET)',
     'STARCOM',
-    'ImpFleet',
-    'NavOpsDiv',
-    'ImpFleet',
+    'Imperial Starfleet Command',
+    'Naval Operations Division',
+    'Imperial-Fleet',
     'captain.needa@executor.empire',
     'Admiral.Piett@executor.empire',
     FALSE,
@@ -82,15 +91,15 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1003,
-    'ENDOR',
+    'ENDOR-1983-6D4E-AB8C-SHIELD999',
     'SLD-GEN',
-    'ShieldGen',
-    'DefShield',
-    'IMP-ENG',
+    'Shield Generator Control Network',
+    'Planetary Defense Shield System',
+    'IMPENG-(DEF)',
     'BUNKER',
-    'ImpBunker',
-    'DefDiv',
-    'ForestMoo',
+    'Imperial Bunker Operations',
+    'Planetary Defense Division',
+    'Forest-Moon',
     'major.hewex@endor.empire',
     'commander.jerjerrod@deathstar2.empire',
     FALSE,
@@ -144,24 +153,45 @@ INSERT INTO public.questions VALUES (8017, 'What measures detect Force-sensitive
 INSERT INTO public.questions VALUES (8018, 'How does your system manage Imperial identity lifecycle from recruitment to retirement?', 'Describe automated identity provisioning, access reviews, and deprovisioning processes for Imperial officers, contractors, and service accounts.', 6, 0) ON CONFLICT DO NOTHING;
 
 -- Sample Functions (Imperial Zero Trust Functions) - MUST come before functionoptions
-INSERT INTO public.functions VALUES (7001, 'Imperial Device Management', 'Track and secure all Imperial battle stations, Star Destroyers, and TIE fighters', 'Imperial-Fleet', NULL, 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7002, 'Death Star Application Security', 'Secure superlaser targeting systems and reactor core applications', 'Space-Station', NULL, 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7003, 'Imperial Network Security', 'Protect Imperial communication networks from Rebel infiltration', 'Imperial-Fleet', NULL, 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7004, 'Imperial Data Protection', 'Safeguard Death Star plans and tactical intelligence from unauthorized access', 'Space-Station', NULL, 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7005, 'Imperial Cross-Cutting Controls', 'Enforce Empire-wide security policies across all systems and fleets', 'Imperial-Fleet', NULL, 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7006, 'Imperial Identity Verification', 'Authenticate Imperial officers and detect Force-sensitive infiltrators', 'Imperial-Fleet', NULL, 6, 0) ON CONFLICT DO NOTHING;
+-- Each datacenterenvironment needs functions with questionid set so FindQuestionsByFismaSystem works
+-- (INNER JOIN functions ON functions.questionid=questions.questionid)
+
+-- Imperial-Fleet functions (system 1002 - Executor) - one per pillar
+INSERT INTO public.functions VALUES (7001, 'Imperial Device Management', 'Track and secure all Imperial battle stations, Star Destroyers, and TIE fighters', 'Imperial-Fleet', 8001, 1, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7002, 'Fleet Application Security', 'Secure fleet command applications and tactical software', 'Imperial-Fleet', 8004, 2, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7003, 'Imperial Network Security', 'Protect Imperial communication networks from Rebel infiltration', 'Imperial-Fleet', 8007, 3, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7004, 'Fleet Data Protection', 'Safeguard tactical intelligence from unauthorized access', 'Imperial-Fleet', 8010, 4, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7005, 'Imperial Cross-Cutting Controls', 'Enforce Empire-wide security policies across all systems and fleets', 'Imperial-Fleet', 8013, 5, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7006, 'Imperial Identity Verification', 'Authenticate Imperial officers and detect Force-sensitive infiltrators', 'Imperial-Fleet', 8016, 6, 0) ON CONFLICT DO NOTHING;
+
+-- Space-Station functions (system 1001 - Death Star) - one per pillar
+INSERT INTO public.functions VALUES (7007, 'Battle Station Device Management', 'Track and secure all Death Star systems and defensive installations', 'Space-Station', 8001, 1, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7008, 'Death Star Application Security', 'Secure superlaser targeting systems and reactor core applications', 'Space-Station', 8004, 2, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7009, 'Station Network Security', 'Protect Death Star internal communication networks', 'Space-Station', 8007, 3, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7010, 'Death Star Data Protection', 'Safeguard Death Star plans and schematics from unauthorized access', 'Space-Station', 8010, 4, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7011, 'Station Cross-Cutting Controls', 'Enforce security policies across all Death Star subsystems', 'Space-Station', 8013, 5, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7012, 'Station Identity Verification', 'Authenticate personnel accessing Death Star critical systems', 'Space-Station', 8016, 6, 0) ON CONFLICT DO NOTHING;
+
+-- Forest-Moon functions (system 1003 - Shield Generator) - one per pillar
+INSERT INTO public.functions VALUES (7013, 'Bunker Device Management', 'Track and secure shield generator equipment and AT-ST walkers', 'Forest-Moon', 8001, 1, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7014, 'Bunker Application Security', 'Secure shield generator control applications', 'Forest-Moon', 8004, 2, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7015, 'Endor Network Security', 'Protect Forest Moon communication networks from Ewok interference', 'Forest-Moon', 8007, 3, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7016, 'Bunker Data Protection', 'Safeguard shield generator technical data and access codes', 'Forest-Moon', 8010, 4, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7017, 'Moon Cross-Cutting Controls', 'Enforce security policies across all Forest Moon installations', 'Forest-Moon', 8013, 5, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7018, 'Moon Identity Verification', 'Authenticate Imperial personnel and detect Rebel infiltrators on Endor', 'Forest-Moon', 8016, 6, 0) ON CONFLICT DO NOTHING;
 
 -- Sample Function Options (Zero Trust Maturity Levels) - MUST come before scores
+-- Imperial-Fleet functions (7001-7006)
 -- Devices (7001)
 INSERT INTO public.functionoptions VALUES (1, 7001, 1, 'Traditional', 'Manual Imperial device registry with basic access logs') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (2, 7001, 2, 'Defined', 'Centralized Star Destroyer inventory with automated tracking') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (3, 7001, 3, 'Managed', 'Real-time TIE fighter monitoring with behavioral analysis') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (4, 7001, 4, 'Advanced', 'Predictive Death Star maintenance with AI threat detection') ON CONFLICT DO NOTHING;
 
--- Applications (7002) 
-INSERT INTO public.functionoptions VALUES (5, 7002, 1, 'Traditional', 'Basic superlaser targeting with manual authentication') ON CONFLICT DO NOTHING;
-INSERT INTO public.functionoptions VALUES (6, 7002, 2, 'Defined', 'Standardized reactor core protocols with access controls') ON CONFLICT DO NOTHING;
-INSERT INTO public.functionoptions VALUES (7, 7002, 3, 'Managed', 'Automated threat scanning for all Death Star applications') ON CONFLICT DO NOTHING;
+-- Applications (7002)
+INSERT INTO public.functionoptions VALUES (5, 7002, 1, 'Traditional', 'Basic fleet command applications with manual authentication') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (6, 7002, 2, 'Defined', 'Standardized fleet protocols with access controls') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (7, 7002, 3, 'Managed', 'Automated threat scanning for all fleet applications') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (8, 7002, 4, 'Advanced', 'Zero trust application architecture with micro-segmentation') ON CONFLICT DO NOTHING;
 
 -- Networks (7003)
@@ -171,7 +201,7 @@ INSERT INTO public.functionoptions VALUES (11, 7003, 3, 'Managed', 'Dynamic Impe
 INSERT INTO public.functionoptions VALUES (12, 7003, 4, 'Advanced', 'Software-defined Imperial networks with zero trust architecture') ON CONFLICT DO NOTHING;
 
 -- Data (7004)
-INSERT INTO public.functionoptions VALUES (13, 7004, 1, 'Traditional', 'Death Star plans stored on isolated Imperial databases') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (13, 7004, 1, 'Traditional', 'Tactical data stored on isolated Imperial databases') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (14, 7004, 2, 'Defined', 'Classified data with standardized Imperial encryption protocols') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (15, 7004, 3, 'Managed', 'Automated data loss prevention for tactical intelligence') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (16, 7004, 4, 'Advanced', 'Dynamic data protection with behavioral analytics') ON CONFLICT DO NOTHING;
@@ -187,16 +217,78 @@ INSERT INTO public.functionoptions VALUES (21, 7006, 2, 'Defined', 'Standardized
 INSERT INTO public.functionoptions VALUES (22, 7006, 3, 'Managed', 'Centralized Imperial identity with Force-sensitivity screening') ON CONFLICT DO NOTHING;
 INSERT INTO public.functionoptions VALUES (23, 7006, 4, 'Advanced', 'Continuous Imperial identity verification with behavioral analysis') ON CONFLICT DO NOTHING;
 
--- Comprehensive Test Scores across all Zero Trust pillars
--- Death Star System Scores (datacall 1) - All 6 pillars
-INSERT INTO public.scores VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 2, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 5, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 9, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 13, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 17, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 21, 1) ON CONFLICT DO NOTHING;
+-- Space-Station functions (7007-7012)
+INSERT INTO public.functionoptions VALUES (24, 7007, 1, 'Traditional', 'Manual battle station device registry') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (25, 7007, 2, 'Defined', 'Centralized Death Star systems inventory') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (26, 7007, 3, 'Managed', 'Real-time station monitoring with anomaly detection') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (27, 7007, 4, 'Advanced', 'Predictive maintenance with AI threat detection') ON CONFLICT DO NOTHING;
 
--- Executor System Scores (datacall 1) - Higher maturity levels
+INSERT INTO public.functionoptions VALUES (28, 7008, 1, 'Traditional', 'Basic superlaser targeting with manual authentication') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (29, 7008, 2, 'Defined', 'Standardized reactor core protocols with access controls') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (30, 7008, 3, 'Managed', 'Automated threat scanning for Death Star applications') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (31, 7008, 4, 'Advanced', 'Zero trust Death Star application architecture') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (32, 7009, 1, 'Traditional', 'Basic station communication channels') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (33, 7009, 2, 'Defined', 'Segmented station networks with encryption') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (34, 7009, 3, 'Managed', 'Dynamic station network security monitoring') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (35, 7009, 4, 'Advanced', 'Software-defined station networks with zero trust') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (36, 7010, 1, 'Traditional', 'Death Star plans on isolated databases') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (37, 7010, 2, 'Defined', 'Classified schematics with encryption') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (38, 7010, 3, 'Managed', 'Automated DLP for Death Star plans') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (39, 7010, 4, 'Advanced', 'Dynamic protection with behavioral analytics') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (40, 7011, 2, 'Defined', 'Station-wide security policies standardized') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (41, 7011, 3, 'Managed', 'Automated compliance across Death Star systems') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (42, 7011, 4, 'Advanced', 'Continuous security posture with adaptive controls') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (43, 7012, 1, 'Traditional', 'Basic personnel credentials with manual check') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (44, 7012, 2, 'Defined', 'Standardized ID with biometric authentication') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (45, 7012, 3, 'Managed', 'Centralized identity with screening') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (46, 7012, 4, 'Advanced', 'Continuous identity verification') ON CONFLICT DO NOTHING;
+
+-- Forest-Moon functions (7013-7018)
+INSERT INTO public.functionoptions VALUES (47, 7013, 1, 'Traditional', 'Manual AT-ST and equipment registry') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (48, 7013, 2, 'Defined', 'Centralized bunker equipment inventory') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (49, 7013, 3, 'Managed', 'Real-time AT-ST monitoring with behavioral analysis') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (50, 7013, 4, 'Advanced', 'Predictive maintenance for shield equipment') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (51, 7014, 1, 'Traditional', 'Basic shield control with manual authentication') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (52, 7014, 2, 'Defined', 'Standardized generator protocols') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (53, 7014, 3, 'Managed', 'Automated threat scanning for bunker applications') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (54, 7014, 4, 'Advanced', 'Zero trust bunker application architecture') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (55, 7015, 1, 'Traditional', 'Basic Endor communication channels') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (56, 7015, 2, 'Defined', 'Segmented Forest Moon networks') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (57, 7015, 3, 'Managed', 'Dynamic Endor network security monitoring') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (58, 7015, 4, 'Advanced', 'Software-defined Endor networks with zero trust') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (59, 7016, 1, 'Traditional', 'Shield data on isolated databases') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (60, 7016, 2, 'Defined', 'Access codes with standardized encryption') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (61, 7016, 3, 'Managed', 'Automated DLP for shield generator data') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (62, 7016, 4, 'Advanced', 'Dynamic protection with behavioral analytics') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (63, 7017, 2, 'Defined', 'Moon-wide security policies standardized') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (64, 7017, 3, 'Managed', 'Automated compliance across Forest Moon installations') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (65, 7017, 4, 'Advanced', 'Continuous security posture with adaptive controls') ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions VALUES (66, 7018, 1, 'Traditional', 'Basic personnel credentials') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (67, 7018, 2, 'Defined', 'Standardized ID with biometric auth') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (68, 7018, 3, 'Managed', 'Centralized identity with Rebel detection') ON CONFLICT DO NOTHING;
+INSERT INTO public.functionoptions VALUES (69, 7018, 4, 'Advanced', 'Continuous verification with behavioral analysis') ON CONFLICT DO NOTHING;
+
+-- Comprehensive Test Scores across all Zero Trust pillars
+-- Scores reference functionoptionids: 1-23 (Imperial-Fleet), 24-46 (Space-Station), 47-69 (Forest-Moon)
+
+-- Death Star System Scores (datacall 1) - Space-Station functionoptions
+INSERT INTO public.scores VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 25, 1) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 28, 1) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 32, 1) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 36, 1) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 40, 1) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 44, 1) ON CONFLICT DO NOTHING;
+
+-- Executor System Scores (datacall 1) - Imperial-Fleet functionoptions
 INSERT INTO public.scores VALUES (9007, 1002, '2024-09-01 00:00:00+00', 'Star Destroyer inventory centrally tracked with automation', 2, 1) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9008, 1002, '2024-09-01 00:00:00+00', 'Bridge applications use standardized access controls', 6, 1) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9009, 1002, '2024-09-01 00:00:00+00', 'Fleet networks have dynamic security with real-time monitoring', 11, 1) ON CONFLICT DO NOTHING;
@@ -204,15 +296,15 @@ INSERT INTO public.scores VALUES (9010, 1002, '2024-09-01 00:00:00+00', 'Tactica
 INSERT INTO public.scores VALUES (9011, 1002, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Executor systems', 18, 1) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9012, 1002, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with Force-sensitivity screening', 22, 1) ON CONFLICT DO NOTHING;
 
--- Shield Generator System Scores (datacall 2) - Mixed maturity
-INSERT INTO public.scores VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 3, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 8, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 12, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 16, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 19, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 23, 2) ON CONFLICT DO NOTHING;
+-- Shield Generator System Scores (datacall 2) - Forest-Moon functionoptions
+INSERT INTO public.scores VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 49, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 54, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 58, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 62, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 65, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 69, 2) ON CONFLICT DO NOTHING;
 
--- Executor System Scores (datacall 2) - Updated scores for FY2025
+-- Executor System Scores (datacall 2) - Imperial-Fleet functionoptions
 INSERT INTO public.scores VALUES (9019, 1002, '2024-09-01 00:00:00+00', 'Enhanced Star Destroyer device security with predictive maintenance', 4, 2) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9020, 1002, '2024-09-01 00:00:00+00', 'Advanced bridge applications with zero trust architecture', 8, 2) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9021, 1002, '2024-09-01 00:00:00+00', 'Imperial fleet networks fully software-defined with zero trust', 12, 2) ON CONFLICT DO NOTHING;
@@ -220,10 +312,19 @@ INSERT INTO public.scores VALUES (9022, 1002, '2024-09-01 00:00:00+00', 'Tactica
 INSERT INTO public.scores VALUES (9023, 1002, '2024-09-01 00:00:00+00', 'Continuous adaptive Imperial security posture across all systems', 19, 2) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9024, 1002, '2024-09-01 00:00:00+00', 'Advanced identity verification with continuous Force-sensitivity monitoring', 23, 2) ON CONFLICT DO NOTHING;
 
--- Death Star System Scores (datacall 2) - Improved scores for FY2025  
-INSERT INTO public.scores VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 3, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 6, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 11, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 15, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 18, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 22, 2) ON CONFLICT DO NOTHING;
+-- Death Star System Scores (datacall 2) - Space-Station functionoptions
+INSERT INTO public.scores VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 26, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 29, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 34, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 2) ON CONFLICT DO NOTHING;
+
+-- Reset sequences past the max explicit IDs to avoid primary key conflicts
+SELECT setval('pillars_pillarid_seq', (SELECT COALESCE(MAX(pillarid), 0) FROM public.pillars));
+SELECT setval('datacalls_datacallid_seq', (SELECT COALESCE(MAX(datacallid), 0) FROM public.datacalls));
+SELECT setval('fismasystems_fismasystemid_seq', (SELECT COALESCE(MAX(fismasystemid), 0) FROM public.fismasystems));
+SELECT setval('questions_questionid_seq', (SELECT COALESCE(MAX(questionid), 0) FROM public.questions));
+SELECT setval('functions_functionid_seq', (SELECT COALESCE(MAX(functionid), 0) FROM public.functions));
+SELECT setval('functionoptions_functionoptionid_seq', (SELECT COALESCE(MAX(functionoptionid), 0) FROM public.functionoptions));
+SELECT setval('scores_scoreid_seq', (SELECT COALESCE(MAX(scoreid), 0) FROM public.scores));
