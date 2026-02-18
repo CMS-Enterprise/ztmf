@@ -41,6 +41,7 @@ func TestIsValidEmail(t *testing.T) {
 		{"invalid no at sign", "notanemail", false},
 		{"invalid empty", "", false},
 		{"invalid no domain", "user@", false},
+		{"incomplete domain (RFC 5322 allows)", "user@gm", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
