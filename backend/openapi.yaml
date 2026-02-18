@@ -1186,6 +1186,9 @@ components:
         issoemail:
           type: string
           nullable: true
+        sdl_sync_enabled:
+          type: boolean
+          description: Controls whether this system is included in SDL/Snowflake sync. Existing systems default to true; new systems default to false (opt-in).
         decommissioned:
           type: boolean
           description: Whether the system has been decommissioned

@@ -73,6 +73,13 @@ func (c *PostgresClient) Close() {
 
 // ExportTable extracts all data from a PostgreSQL table
 func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orderBy string) (*ExportResult, error) {
+	return c.ExportTableWhere(ctx, tableName, orderBy, "")
+}
+
+// ExportTableWhere extracts data from a PostgreSQL table with an optional WHERE clause.
+// The whereClause parameter should be a valid SQL condition without the WHERE keyword
+// (e.g. "sdl_sync_enabled = true"). If empty, all rows are returned.
+func (c *PostgresClient) ExportTableWhere(ctx context.Context, tableName string, orderBy string, whereClause string) (*ExportResult, error) {
 	startTime := time.Now()
 
 	result := &ExportResult{
@@ -100,12 +107,15 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 
 	log.Printf("Exporting data from table: %s", tableName)
 
-	// Build query with optional ORDER BY
+	// Build query with optional WHERE and ORDER BY
 	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
 	if orderBy != "" {
 		query += fmt.Sprintf(" ORDER BY %s", orderBy)
 	}
-	
+
 	// Execute query
 	rows, err := c.pool.Query(ctx, query)
 	if err != nil {
@@ -114,19 +124,19 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 		return result, result.Error
 	}
 	defer rows.Close()
-	
+
 	// Get column names
 	fieldDescriptions := rows.FieldDescriptions()
 	columnNames := make([]string, len(fieldDescriptions))
 	for i, fd := range fieldDescriptions {
 		columnNames[i] = fd.Name
 	}
-	
-	
+
+
 	// Extract all rows
 	var data []map[string]interface{}
 	rowCount := int64(0)
-	
+
 	for rows.Next() {
 		// Scan row into interface{} values
 		values, err := rows.Values()
@@ -135,36 +145,36 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 			result.Duration = time.Since(startTime)
 			return result, result.Error
 		}
-		
+
 		// Build row map
 		rowData := make(map[string]interface{})
 		for i, columnName := range columnNames {
 			rowData[columnName] = values[i]
 		}
-		
+
 		data = append(data, rowData)
 		rowCount++
-		
+
 		// Log progress for large tables
 		if rowCount%10000 == 0 {
 			log.Printf("Extracted %d rows from %s...", rowCount, tableName)
 		}
 	}
-	
+
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		result.Error = fmt.Errorf("error during row iteration: %w", err)
 		result.Duration = time.Since(startTime)
 		return result, result.Error
 	}
-	
+
 	result.RowsExtracted = rowCount
 	result.Data = data
 	result.Duration = time.Since(startTime)
-	
-	log.Printf("Successfully extracted %d rows from %s (Duration: %v)", 
+
+	log.Printf("Successfully extracted %d rows from %s (Duration: %v)",
 		rowCount, tableName, result.Duration)
-	
+
 	return result, nil
 }
 

@@ -130,6 +130,7 @@ type TableConfig struct {
 	SnowflakeTable string
 	OrderBy        string
 	PrimaryKeys    []string // Primary key columns for MERGE operations
+	WhereClause    string   // Optional WHERE filter (without the WHERE keyword)
 }
 
 // snowflakeTableName builds a Snowflake table name from the configured prefix and a PostgreSQL table name.
@@ -148,18 +149,23 @@ func (s *Synchronizer) getTablesToSync(requestedTables []string) ([]TableConfig,
 		return nil, fmt.Errorf("invalid SNOWFLAKE_TABLE_PREFIX: %w", err)
 	}
 
-	// Define all available tables with primary keys for MERGE operations
+	// SDL sync subquery for filtering FISMA-dependent tables to only include
+	// systems where sdl_sync_enabled is true
+	sdlFilter := "fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE sdl_sync_enabled = true)"
+
+	// Define all available tables with primary keys for MERGE operations.
+	// FISMA-dependent tables include a WhereClause to respect the sdl_sync_enabled toggle.
 	allTables := []TableConfig{
 		{PostgresTable: "datacalls", SnowflakeTable: snowflakeTableName(prefix, "datacalls"), OrderBy: "datacallid", PrimaryKeys: []string{"datacallid"}},
-		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "datacalls_fismasystems"), OrderBy: "datacallid, fismasystemid", PrimaryKeys: []string{"datacallid", "fismasystemid"}},
-		{PostgresTable: "fismasystems", SnowflakeTable: snowflakeTableName(prefix, "fismasystems"), OrderBy: "fismasystemid", PrimaryKeys: []string{"fismasystemid"}},
+		{PostgresTable: "datacalls_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "datacalls_fismasystems"), OrderBy: "datacallid, fismasystemid", PrimaryKeys: []string{"datacallid", "fismasystemid"}, WhereClause: sdlFilter},
+		{PostgresTable: "fismasystems", SnowflakeTable: snowflakeTableName(prefix, "fismasystems"), OrderBy: "fismasystemid", PrimaryKeys: []string{"fismasystemid"}, WhereClause: "sdl_sync_enabled = true"},
 		{PostgresTable: "functionoptions", SnowflakeTable: snowflakeTableName(prefix, "functionoptions"), OrderBy: "functionoptionid", PrimaryKeys: []string{"functionoptionid"}},
 		{PostgresTable: "functions", SnowflakeTable: snowflakeTableName(prefix, "functions"), OrderBy: "functionid", PrimaryKeys: []string{"functionid"}},
 		{PostgresTable: "pillars", SnowflakeTable: snowflakeTableName(prefix, "pillars"), OrderBy: "pillarid", PrimaryKeys: []string{"pillarid"}},
 		{PostgresTable: "questions", SnowflakeTable: snowflakeTableName(prefix, "questions"), OrderBy: "questionid", PrimaryKeys: []string{"questionid"}},
-		{PostgresTable: "scores", SnowflakeTable: snowflakeTableName(prefix, "scores"), OrderBy: "scoreid", PrimaryKeys: []string{"scoreid"}},
+		{PostgresTable: "scores", SnowflakeTable: snowflakeTableName(prefix, "scores"), OrderBy: "scoreid", PrimaryKeys: []string{"scoreid"}, WhereClause: sdlFilter},
 		{PostgresTable: "users", SnowflakeTable: snowflakeTableName(prefix, "users"), OrderBy: "userid", PrimaryKeys: []string{"userid"}},
-		{PostgresTable: "users_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "users_fismasystems"), OrderBy: "userid, fismasystemid", PrimaryKeys: []string{"userid", "fismasystemid"}},
+		{PostgresTable: "users_fismasystems", SnowflakeTable: snowflakeTableName(prefix, "users_fismasystems"), OrderBy: "userid, fismasystemid", PrimaryKeys: []string{"userid", "fismasystemid"}, WhereClause: sdlFilter},
 	}
 	
 	// If no specific tables requested, return all
@@ -204,7 +210,7 @@ func (s *Synchronizer) syncTable(ctx context.Context, table TableConfig, fullRef
 		
 		// 1. Extract real data from PostgreSQL
 		log.Printf("Extracting real data from PostgreSQL table: %s", table.PostgresTable)
-		exportResult, err := s.pgClient.ExportTable(ctx, table.PostgresTable, table.OrderBy)
+		exportResult, err := s.pgClient.ExportTableWhere(ctx, table.PostgresTable, table.OrderBy, table.WhereClause)
 		if err != nil {
 			result.Error = fmt.Errorf("dry-run failed: could not extract from %s: %w", table.PostgresTable, err)
 			return result
@@ -238,7 +244,7 @@ func (s *Synchronizer) syncTable(ctx context.Context, table TableConfig, fullRef
 		
 		// 1. Extract data from PostgreSQL
 		log.Printf("Extracting data from PostgreSQL table: %s", table.PostgresTable)
-		exportResult, err := s.pgClient.ExportTable(ctx, table.PostgresTable, table.OrderBy)
+		exportResult, err := s.pgClient.ExportTableWhere(ctx, table.PostgresTable, table.OrderBy, table.WhereClause)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to extract from %s: %w", table.PostgresTable, err)
 			return result

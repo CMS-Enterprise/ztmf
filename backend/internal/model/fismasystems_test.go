@@ -70,6 +70,30 @@ func TestFismaSystemDecommissionedField(t *testing.T) {
 	}
 }
 
+// TestFismaSystemSDLSyncEnabledField tests the SDL sync toggle field
+func TestFismaSystemSDLSyncEnabledField(t *testing.T) {
+	t.Run("DefaultFalse", func(t *testing.T) {
+		system := FismaSystem{}
+		assert.False(t, system.SDLSyncEnabled, "SDLSyncEnabled should default to false (zero value)")
+	})
+
+	t.Run("SetTrue", func(t *testing.T) {
+		system := FismaSystem{SDLSyncEnabled: true}
+		assert.True(t, system.SDLSyncEnabled, "SDLSyncEnabled should be true when set")
+	})
+
+	t.Run("ColumnArrayContainsSDLSyncEnabled", func(t *testing.T) {
+		found := false
+		for _, col := range fismaSystemColumns {
+			if col == "sdl_sync_enabled" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "fismaSystemColumns should contain sdl_sync_enabled")
+	})
+}
+
 // TestFindFismaSystemsInput_DecommissionedFilter tests the query input struct
 func TestFindFismaSystemsInput_DecommissionedFilter(t *testing.T) {
 	t.Run("DefaultDecommissionedValue", func(t *testing.T) {
