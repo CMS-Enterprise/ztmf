@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes"}
 
 type FismaSystem struct {
 	FismaSystemID         int32   `json:"fismasystemid"`
@@ -24,6 +24,7 @@ type FismaSystem struct {
 	DataCenterEnvironment *string `json:"datacenterenvironment"`
 	DataCallContact       *string `json:"datacallcontact"`
 	ISSOEmail             *string    `json:"issoemail"`
+	SDLSyncEnabled        bool       `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
 	Decommissioned        bool       `json:"decommissioned"`
 	DecommissionedDate    *time.Time `json:"decommissioned_date"`
 	DecommissionedBy      *string    `json:"decommissioned_by"`
@@ -86,8 +87,8 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		// INSERT - exclude decommissioned fields
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
-			Columns(fismaSystemColumns[1:12]...).
-			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail).
+			Columns(fismaSystemColumns[1:13]...).
+			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
 		// UPDATE - exclude decommissioned fields
@@ -103,6 +104,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			Set("datacenterenvironment", f.DataCenterEnvironment).
 			Set("datacallcontact", f.DataCallContact).
 			Set("issoemail", f.ISSOEmail).
+			Set("sdl_sync_enabled", f.SDLSyncEnabled).
 			Where("fismasystemid=?", f.FismaSystemID).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	}

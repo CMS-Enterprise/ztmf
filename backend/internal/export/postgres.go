@@ -71,12 +71,47 @@ func (c *PostgresClient) Close() {
 	}
 }
 
+// registeredWhereClauses is an allowlist of WHERE clauses that may be passed to
+// ExportTableWhere. Every clause used at runtime MUST be registered here first.
+// This prevents SQL injection by ensuring only known-safe, developer-authored
+// clauses are ever concatenated into a query string.
+//
+// SECURITY: Never add a clause that contains user-supplied or dynamic input.
+// All clauses must be static string literals defined at compile time.
+var registeredWhereClauses = map[string]bool{
+	"sdl_sync_enabled = true": true,
+	"fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE sdl_sync_enabled = true)": true,
+}
+
+// registerWhereClause adds a static WHERE clause to the allowlist.
+// Call this from init() or package initialization for any new filter patterns.
+func registerWhereClause(clause string) {
+	registeredWhereClauses[clause] = true
+}
+
 // ExportTable extracts all data from a PostgreSQL table
 func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orderBy string) (*ExportResult, error) {
+	return c.ExportTableWhere(ctx, tableName, orderBy, "")
+}
+
+// ExportTableWhere extracts data from a PostgreSQL table with an optional WHERE clause.
+// The whereClause must be either empty or a value registered in registeredWhereClauses.
+// This is an internal function — callers must use static, compile-time string literals.
+//
+// SECURITY: whereClause is concatenated into SQL. Only pre-registered static clauses
+// are accepted. Never pass user input or dynamically constructed strings.
+func (c *PostgresClient) ExportTableWhere(ctx context.Context, tableName string, orderBy string, whereClause string) (*ExportResult, error) {
 	startTime := time.Now()
 
 	result := &ExportResult{
 		Table: tableName,
+	}
+
+	// Validate whereClause against allowlist to prevent SQL injection
+	if whereClause != "" && !registeredWhereClauses[whereClause] {
+		result.Error = fmt.Errorf("unregistered WHERE clause rejected (possible SQL injection): %q", whereClause)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
 	}
 
 	if err := ValidateTableIdentifier(tableName); err != nil {
@@ -100,12 +135,15 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 
 	log.Printf("Exporting data from table: %s", tableName)
 
-	// Build query with optional ORDER BY
+	// Build query with optional WHERE and ORDER BY
 	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
 	if orderBy != "" {
 		query += fmt.Sprintf(" ORDER BY %s", orderBy)
 	}
-	
+
 	// Execute query
 	rows, err := c.pool.Query(ctx, query)
 	if err != nil {
@@ -114,19 +152,19 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 		return result, result.Error
 	}
 	defer rows.Close()
-	
+
 	// Get column names
 	fieldDescriptions := rows.FieldDescriptions()
 	columnNames := make([]string, len(fieldDescriptions))
 	for i, fd := range fieldDescriptions {
 		columnNames[i] = fd.Name
 	}
-	
-	
+
+
 	// Extract all rows
 	var data []map[string]interface{}
 	rowCount := int64(0)
-	
+
 	for rows.Next() {
 		// Scan row into interface{} values
 		values, err := rows.Values()
@@ -135,36 +173,36 @@ func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orde
 			result.Duration = time.Since(startTime)
 			return result, result.Error
 		}
-		
+
 		// Build row map
 		rowData := make(map[string]interface{})
 		for i, columnName := range columnNames {
 			rowData[columnName] = values[i]
 		}
-		
+
 		data = append(data, rowData)
 		rowCount++
-		
+
 		// Log progress for large tables
 		if rowCount%10000 == 0 {
 			log.Printf("Extracted %d rows from %s...", rowCount, tableName)
 		}
 	}
-	
+
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		result.Error = fmt.Errorf("error during row iteration: %w", err)
 		result.Duration = time.Since(startTime)
 		return result, result.Error
 	}
-	
+
 	result.RowsExtracted = rowCount
 	result.Data = data
 	result.Duration = time.Since(startTime)
-	
-	log.Printf("Successfully extracted %d rows from %s (Duration: %v)", 
+
+	log.Printf("Successfully extracted %d rows from %s (Duration: %v)",
 		rowCount, tableName, result.Duration)
-	
+
 	return result, nil
 }
 

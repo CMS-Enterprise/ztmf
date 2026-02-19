@@ -33,6 +33,7 @@ fismaSystemData: &fismaSystemData
   datacenterenvironment: "AWS"
   datacallcontact: "contact@example.com"
   issoemail: "isso@example.com"
+  sdl_sync_enabled: false
   decommissioned: false
   decommissioned_date: null
   decommissioned_by: null
@@ -50,6 +51,7 @@ updatedFismaSystemData: &updatedFismaSystemData
   datacenterenvironment: "AWS"
   datacallcontact: "updated-contact@example.com"
   issoemail: "updated-isso@example.com"
+  sdl_sync_enabled: false
   decommissioned: false
   decommissioned_date: null
   decommissioned_by: null
@@ -67,6 +69,7 @@ decommissionedFismaSystemData: &decommissionedFismaSystemData
   datacenterenvironment: "AWS"
   datacallcontact: "updated-contact@example.com"
   issoemail: "updated-isso@example.com"
+  sdl_sync_enabled: true
   decommissioned: true
   decommissioned_date: "2025-01-15T00:00:00Z"
   decommissioned_notes: "System migrated to cloud infrastructure"
@@ -277,7 +280,34 @@ tests:
         json:
           data:
             <<: *updatedFismaSystemData
-  
+
+  # Toggle sdl_sync_enabled to true and verify it round-trips
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+        sdl_sync_enabled: true
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *updatedFismaSystemData
+            sdl_sync_enabled: true
+
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
     headers:
