@@ -5,18 +5,6 @@
 -- NOTE: Schema is created by migrations - this file only contains test data INSERTs
 -- Migrations run first, then this file populates data via DB_POPULATE
 
-
-
-
-
-
-
-
-
-
-
-
-
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
@@ -324,6 +312,105 @@ INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperia
 INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 2) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 2) ON CONFLICT DO NOTHING;
 INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 2) ON CONFLICT DO NOTHING;
+
+-- CFACTS Systems (synced from CMS CFACTS via Snowflake SDL)
+-- Matches existing FISMA systems by UUID for future comparison features
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
+    'DS-1',
+    'Death Star Orbital Battle Station Security Package',
+    'Grand Moff Tarkin',
+    'Grand.Moff@DeathStar.Empire',
+    FALSE,
+    FALSE,
+    TRUE,
+    'Decommissioned',
+    'ISB-(INTEL)',
+    'Advanced Weapons Research Division',
+    'Imperial Engineering Corps',
+    '1977-05-25 00:00:00+00',
+    '1977-05-25 00:00:00+00',
+    '1977-05-25 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
+    'SSD-EX',
+    'Super Star Destroyer Executor Security Package',
+    'Admiral Piett',
+    'Admiral.Piett@executor.empire',
+    TRUE,
+    FALSE,
+    FALSE,
+    'Operations & Maintenance',
+    'IMPNAVY-(FLEET)',
+    'Naval Operations Division',
+    'Imperial Starfleet Command',
+    '2026-12-31 00:00:00+00',
+    NULL,
+    '2025-01-10 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    'ENDOR-1983-6D4E-AB8C-SHIELD999',
+    'SLD-GEN',
+    'Shield Generator Control Network Security Package',
+    'Commander Jerjerrod',
+    'commander.jerjerrod@deathstar2.empire',
+    TRUE,
+    FALSE,
+    FALSE,
+    'Operations & Maintenance',
+    'IMPENG-(DEF)',
+    'Planetary Defense Division',
+    'Imperial Bunker Operations',
+    '2026-06-30 00:00:00+00',
+    NULL,
+    '2025-01-08 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+-- CFACTS-only system (no matching ZTMF fismasystem) for future comparison testing
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    'STRKLLR-2016-7E5F-BC9D-ILUM12345',
+    'SK-BASE',
+    'Starkiller Base Weapons Platform Security Package',
+    'General Hux',
+    'general.hux@firstorder.empire',
+    TRUE,
+    FALSE,
+    FALSE,
+    'Operations & Maintenance',
+    'FO-(WEAPONS)',
+    'First Order Weapons Division',
+    'Starkiller Operations',
+    '2027-01-01 00:00:00+00',
+    NULL,
+    '2025-01-12 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+-- CFACTS system for Emberfall E2E tests
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    '12345678-ABCD-4321-AFAB-123456789ABC',
+    'ZTMF',
+    'Zero Trust Maturity Framework Security Package',
+    'Test ISSO',
+    'isso@example.com',
+    TRUE,
+    FALSE,
+    FALSE,
+    'Operations & Maintenance',
+    'Security',
+    'IT Division',
+    'Security Group',
+    '2026-12-31 00:00:00+00',
+    NULL,
+    '2025-01-01 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
 
 -- Reset sequences past the max explicit IDs to avoid primary key conflicts
 SELECT setval('pillars_pillarid_seq', (SELECT COALESCE(MAX(pillarid), 0) FROM public.pillars));

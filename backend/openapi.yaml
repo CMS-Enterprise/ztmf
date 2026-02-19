@@ -1099,6 +1099,89 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/ServerError'
+  /cfactssystems:
+    get:
+      summary: List CFACTS systems
+      description: Returns a list of CFACTS systems synced from CMS CFACTS via Snowflake SDL (ADMIN and READONLY_ADMIN only)
+      operationId: listCfactsSystems
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fisma_acronym
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: is_active
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: is_retired
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: is_decommissioned
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: component_acronym
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: lifecycle_phase
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of CFACTS systems
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CfactsSystem'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /cfactssystems/{fisma_uuid}:
+    get:
+      summary: Get a CFACTS system by UUID
+      description: Returns a specific CFACTS system by its FISMA UUID (ADMIN and READONLY_ADMIN only)
+      operationId: getCfactsSystem
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fisma_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A CFACTS system
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CfactsSystem'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /massemails:
     post:
       summary: Send mass email
@@ -1370,6 +1453,64 @@ components:
           type: string
         description:
           type: string
+    CfactsSystem:
+      type: object
+      description: FISMA system data synced from CMS CFACTS via Snowflake SDL
+      properties:
+        fisma_uuid:
+          type: string
+          description: Primary key UUID from CFACTS
+        fisma_acronym:
+          type: string
+        authorization_package_name:
+          type: string
+          nullable: true
+        primary_isso_name:
+          type: string
+          nullable: true
+        primary_isso_email:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+          nullable: true
+        is_retired:
+          type: boolean
+          nullable: true
+        is_decommissioned:
+          type: boolean
+          nullable: true
+        lifecycle_phase:
+          type: string
+          nullable: true
+        component_acronym:
+          type: string
+          nullable: true
+        division_name:
+          type: string
+          nullable: true
+        group_name:
+          type: string
+          nullable: true
+        ato_expiration_date:
+          type: string
+          format: date-time
+          nullable: true
+        decommission_date:
+          type: string
+          format: date-time
+          nullable: true
+        last_modified_date:
+          type: string
+          format: date-time
+          nullable: true
+        synced_at:
+          type: string
+          format: date-time
+      required:
+        - fisma_uuid
+        - fisma_acronym
+        - synced_at
     Event:
       type: object
       properties:
