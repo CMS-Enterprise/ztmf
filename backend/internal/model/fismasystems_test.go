@@ -92,6 +92,24 @@ func TestFismaSystemSDLSyncEnabledField(t *testing.T) {
 		}
 		assert.True(t, found, "fismaSystemColumns should contain sdl_sync_enabled")
 	})
+
+	t.Run("ColumnIndexPosition", func(t *testing.T) {
+		// sdl_sync_enabled must be at index 12 so the INSERT slice [1:13] includes it
+		// and excludes the decommissioned fields that start at index 13.
+		assert.Equal(t, "sdl_sync_enabled", fismaSystemColumns[12],
+			"sdl_sync_enabled must be at index 12 for Save() INSERT slice [1:13]")
+		assert.Equal(t, "decommissioned", fismaSystemColumns[13],
+			"decommissioned must be at index 13 (first excluded from INSERT)")
+	})
+
+	t.Run("InsertSliceBoundary", func(t *testing.T) {
+		// The INSERT uses fismaSystemColumns[1:13] which should end with sdl_sync_enabled
+		insertCols := fismaSystemColumns[1:13]
+		assert.Equal(t, "sdl_sync_enabled", insertCols[len(insertCols)-1],
+			"last column in INSERT slice must be sdl_sync_enabled")
+		assert.Equal(t, 12, len(insertCols),
+			"INSERT slice should have 12 columns (fismauid through sdl_sync_enabled)")
+	})
 }
 
 // TestFindFismaSystemsInput_DecommissionedFilter tests the query input struct

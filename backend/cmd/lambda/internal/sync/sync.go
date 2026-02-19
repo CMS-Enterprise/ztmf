@@ -278,12 +278,27 @@ func (s *Synchronizer) syncTable(ctx context.Context, table TableConfig, fullRef
 		
 		// 3. Verify row counts
 		if result.RowsExtracted != result.RowsLoaded {
-			result.Error = fmt.Errorf("row count mismatch: extracted %d, loaded %d", 
+			result.Error = fmt.Errorf("row count mismatch: extracted %d, loaded %d",
 				result.RowsExtracted, result.RowsLoaded)
 			return result
 		}
-		
+
 		log.Printf("Verified row counts: %d extracted = %d loaded", result.RowsExtracted, result.RowsLoaded)
+
+		// 4. For filtered tables using incremental sync, delete Snowflake rows that
+		// are no longer in the source result set (e.g. system toggled sdl_sync_enabled off).
+		// MERGE only upserts — it cannot detect rows removed by the source filter.
+		// Full-refresh handles this via TRUNCATE, so only needed for incremental.
+		if table.WhereClause != "" && !fullRefresh {
+			deleted, err := s.snowClient.DeleteExcludedRows(ctx, table.SnowflakeTable, exportResult.Data, table.PrimaryKeys)
+			if err != nil {
+				result.Error = fmt.Errorf("failed to delete excluded rows from %s: %w", table.SnowflakeTable, err)
+				return result
+			}
+			if deleted > 0 {
+				log.Printf("Cleaned up %d stale rows from %s after filter change", deleted, table.SnowflakeTable)
+			}
+		}
 	}
 	
 	result.Duration = time.Since(startTime)

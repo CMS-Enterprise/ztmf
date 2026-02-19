@@ -25,14 +25,15 @@ type SnowflakeClient struct {
 
 // SnowflakeConfig contains Snowflake connection parameters
 type SnowflakeConfig struct {
-	Account    string `json:"account"`
-	Username   string `json:"username"`
-	Password   string `json:"password,omitempty"`    // Optional: for password auth
-	PrivateKey string `json:"private_key,omitempty"` // Optional: unencrypted PEM private key
-	Warehouse  string `json:"warehouse"`
-	Database   string `json:"database"`
-	Schema     string `json:"schema"`
-	Role       string `json:"role"`
+	Account      string `json:"account"`
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`      // Optional: for password auth
+	PrivateKey   string `json:"private_key,omitempty"`   // Optional: unencrypted PEM private key
+	Warehouse    string `json:"warehouse"`
+	Database     string `json:"database"`
+	Schema       string `json:"schema"`
+	Role         string `json:"role"`
+	InsecureMode bool   `json:"insecure_mode,omitempty"` // Disable TLS verification (GovCloud endpoints)
 }
 
 // LoadResult contains the results of a data load operation
@@ -56,13 +57,15 @@ func NewSnowflakeClient(ctx context.Context) (*SnowflakeClient, error) {
 	// Open connection
 	db, err := sql.Open("snowflake", connString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open Snowflake connection: %w", err)
+		// Sanitize: connection string may contain credentials
+		return nil, fmt.Errorf("failed to open Snowflake connection - check credentials and account configuration")
 	}
-	
+
 	// Test the connection
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to ping Snowflake: %w", err)
+		// Sanitize: driver errors may include DSN with credentials
+		return nil, fmt.Errorf("failed to ping Snowflake - check credentials and network connectivity")
 	}
 	
 	client := &SnowflakeClient{
@@ -483,6 +486,105 @@ func (c *SnowflakeClient) LoadTableWithRollback(ctx context.Context, tableName s
 	return result, nil
 }
 
+// DeleteExcludedRows removes rows from a Snowflake table whose primary key values
+// are not present in the provided dataset. This handles the case where a source-side
+// filter (e.g. sdl_sync_enabled toggled off) excludes rows that were previously synced.
+// The MERGE operation only upserts; it cannot detect rows that disappeared from the
+// source result set. This method fills that gap.
+//
+// data is the filtered export from PostgreSQL (only rows that SHOULD exist in Snowflake).
+// Uses a NOT EXISTS subquery with bind parameters to avoid SQL injection.
+func (c *SnowflakeClient) DeleteExcludedRows(ctx context.Context, tableName string, data []map[string]interface{}, primaryKeys []string) (int64, error) {
+	if err := ValidateTableIdentifier(tableName); err != nil {
+		return 0, fmt.Errorf("invalid table name: %w", err)
+	}
+
+	if len(primaryKeys) == 0 {
+		return 0, fmt.Errorf("primaryKeys must not be empty")
+	}
+
+	// If source returned zero rows, delete everything from the Snowflake table
+	if len(data) == 0 {
+		deleteSQL := fmt.Sprintf("DELETE FROM %s", tableName)
+		log.Printf("Deleting all rows from %s (source filter returned 0 rows)", tableName)
+		res, err := c.db.ExecContext(ctx, deleteSQL)
+		if err != nil {
+			return 0, fmt.Errorf("failed to delete all rows from %s: %w", tableName, err)
+		}
+		return res.RowsAffected()
+	}
+
+	keysUpper := make([]string, len(primaryKeys))
+	keysLower := make([]string, len(primaryKeys))
+	for i, k := range primaryKeys {
+		keysUpper[i] = strings.ToUpper(k)
+		keysLower[i] = strings.ToLower(k)
+	}
+
+	// Build join condition for NOT EXISTS: keep.K1 = target.K1 AND keep.K2 = target.K2
+	joinConds := make([]string, len(keysUpper))
+	for j, ku := range keysUpper {
+		joinConds[j] = fmt.Sprintf("keep.%s = target.%s", ku, ku)
+	}
+	joinClause := strings.Join(joinConds, " AND ")
+
+	// Build the USING subquery as SELECT ? AS K1, ? AS K2 UNION ALL SELECT ?, ? ...
+	// Same pattern as MergeTable — first row uses aliases, subsequent rows use plain ?
+	selectParts := make([]string, len(keysUpper))
+	for i, ku := range keysUpper {
+		selectParts[i] = fmt.Sprintf("? AS %s", ku)
+	}
+	firstRowSelect := "SELECT " + strings.Join(selectParts, ", ")
+
+	plainPlaceholders := make([]string, len(keysUpper))
+	for i := range plainPlaceholders {
+		plainPlaceholders[i] = "?"
+	}
+	subsequentRowSelect := "SELECT " + strings.Join(plainPlaceholders, ", ")
+
+	// Build the full USING subquery with ALL source rows in a single pass.
+	// ZTMF tables are small (hundreds of rows), so a single statement is fine.
+	allBindArgs := make([]interface{}, 0, len(data)*len(primaryKeys))
+	allRowSelects := make([]string, len(data))
+
+	for r, row := range data {
+		for _, kl := range keysLower {
+			allBindArgs = append(allBindArgs, row[kl])
+		}
+		if r == 0 {
+			allRowSelects[r] = firstRowSelect
+		} else {
+			allRowSelects[r] = subsequentRowSelect
+		}
+	}
+
+	usingSubquery := strings.Join(allRowSelects, " UNION ALL ")
+
+	deleteSQL := fmt.Sprintf(`DELETE FROM %s AS target WHERE NOT EXISTS (
+		SELECT 1 FROM (%s) AS keep WHERE %s
+	)`, tableName, usingSubquery, joinClause)
+
+	log.Printf("Deleting excluded rows from %s (%d source rows to keep)", tableName, len(data))
+
+	res, err := c.db.ExecContext(ctx, deleteSQL, allBindArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete excluded rows from %s: %w", tableName, err)
+	}
+
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Warning: could not determine rows deleted from %s: %v", tableName, err)
+	}
+
+	if deleted > 0 {
+		log.Printf("Deleted %d stale rows from %s", deleted, tableName)
+	} else {
+		log.Printf("No stale rows to delete from %s", tableName)
+	}
+
+	return deleted, nil
+}
+
 // GetTableRowCount returns the number of rows in a Snowflake table
 func (c *SnowflakeClient) GetTableRowCount(ctx context.Context, tableName string) (int64, error) {
 	if err := ValidateTableIdentifier(tableName); err != nil {
@@ -717,7 +819,7 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 			Password:          "", // Required by driver even for RSA auth
 			PrivateKey:        rsaPrivateKey,
 			Authenticator:     gosnowflake.AuthTypeJwt,
-			InsecureMode:      strings.Contains(snowflakeConfig.Account, "gov"), // Only for GovCloud cert issues
+			InsecureMode:      snowflakeConfig.InsecureMode,
 		}
 		
 		connString, err := gosnowflake.DSN(cfg)

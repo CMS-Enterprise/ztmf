@@ -20,8 +20,8 @@
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
--- Test READONLY_ADMIN User (Death Star Commander - observes but does not modify)
-INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+-- Test ADMIN User (Death Star Commander - full administrative access)
+INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test ISSO Users (Imperial Officers)
 INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
@@ -34,7 +34,9 @@ INSERT INTO public.users VALUES ('55555555-5555-5555-5555-555555555555', 'Empero
 -- Test READONLY_ADMIN for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
 
--- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions)
+-- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions).
+-- Email uses mixed case ("Isso.User") while the JWT contains lowercase ("isso.user")
+-- to verify that findByEmail is case-insensitive — same pattern as _test_data.sql.
 INSERT INTO public.users VALUES (DEFAULT, 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
@@ -53,7 +55,7 @@ INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01
 -- Use explicit column names to work with initial schema
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1001,
-    'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
+    'DEA75100-1977-4A1F-8B2E-A1DE0AA00404',
     'DS-1',
     'Death Star Orbital Battle Station',
     'Fully Operational Battle Station',
@@ -73,7 +75,7 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1002,
-    'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
+    'E0EC0100-1980-4C3D-9A7B-00F020240000',
     'SSD-EX',
     'Super Star Destroyer Executor Command Systems',
     'Flagship Communication Hub',
@@ -93,7 +95,7 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 
 INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
     1003,
-    'ENDOR-1983-6D4E-AB8C-SHIELD999',
+    'E1D00198-36D4-4EAB-8C00-501E1D000999',
     'SLD-GEN',
     'Shield Generator Control Network',
     'Planetary Defense Shield System',

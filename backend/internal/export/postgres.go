@@ -71,19 +71,47 @@ func (c *PostgresClient) Close() {
 	}
 }
 
+// registeredWhereClauses is an allowlist of WHERE clauses that may be passed to
+// ExportTableWhere. Every clause used at runtime MUST be registered here first.
+// This prevents SQL injection by ensuring only known-safe, developer-authored
+// clauses are ever concatenated into a query string.
+//
+// SECURITY: Never add a clause that contains user-supplied or dynamic input.
+// All clauses must be static string literals defined at compile time.
+var registeredWhereClauses = map[string]bool{
+	"sdl_sync_enabled = true": true,
+	"fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE sdl_sync_enabled = true)": true,
+}
+
+// registerWhereClause adds a static WHERE clause to the allowlist.
+// Call this from init() or package initialization for any new filter patterns.
+func registerWhereClause(clause string) {
+	registeredWhereClauses[clause] = true
+}
+
 // ExportTable extracts all data from a PostgreSQL table
 func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orderBy string) (*ExportResult, error) {
 	return c.ExportTableWhere(ctx, tableName, orderBy, "")
 }
 
 // ExportTableWhere extracts data from a PostgreSQL table with an optional WHERE clause.
-// The whereClause parameter should be a valid SQL condition without the WHERE keyword
-// (e.g. "sdl_sync_enabled = true"). If empty, all rows are returned.
+// The whereClause must be either empty or a value registered in registeredWhereClauses.
+// This is an internal function — callers must use static, compile-time string literals.
+//
+// SECURITY: whereClause is concatenated into SQL. Only pre-registered static clauses
+// are accepted. Never pass user input or dynamically constructed strings.
 func (c *PostgresClient) ExportTableWhere(ctx context.Context, tableName string, orderBy string, whereClause string) (*ExportResult, error) {
 	startTime := time.Now()
 
 	result := &ExportResult{
 		Table: tableName,
+	}
+
+	// Validate whereClause against allowlist to prevent SQL injection
+	if whereClause != "" && !registeredWhereClauses[whereClause] {
+		result.Error = fmt.Errorf("unregistered WHERE clause rejected (possible SQL injection): %q", whereClause)
+		result.Duration = time.Since(startTime)
+		return result, result.Error
 	}
 
 	if err := ValidateTableIdentifier(tableName); err != nil {
