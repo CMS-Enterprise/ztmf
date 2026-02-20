@@ -42,7 +42,7 @@ help:
 # Create compose-dev.yml and start services
 dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	@echo "🚀 Starting development environment..."
-	cd backend && docker compose -f compose-dev.yml up -d
+	cd backend && docker compose -f compose-dev.yml up -d --build
 	@echo "✅ Development environment ready!"
 	@echo "📡 API available at: http://localhost:$(API_PORT)"
 	@echo "🗄️  Database available at: localhost:54321"
@@ -136,7 +136,7 @@ dev-up: backend/compose-dev.yml backend/dev.compose.env
 		echo "✅ Development services already running"; \
 	else \
 		echo "🚀 Starting development services..."; \
-		cd backend && docker compose -f compose-dev.yml up -d; \
+		cd backend && docker compose -f compose-dev.yml up -d --build; \
 	fi
 
 # Stop development services

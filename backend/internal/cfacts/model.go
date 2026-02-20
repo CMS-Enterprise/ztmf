@@ -15,13 +15,14 @@ type CfactsSystem struct {
 	LifecyclePhase           *string    `json:"lifecycle_phase"`
 	ComponentAcronym         *string    `json:"component_acronym"`
 	DivisionName             *string    `json:"division_name"`
+	GroupAcronym             *string    `json:"group_acronym"`
 	GroupName                *string    `json:"group_name"`
 	ATOExpirationDate        *time.Time `json:"ato_expiration_date"`
 	DecommissionDate         *time.Time `json:"decommission_date"`
 	LastModifiedDate         *time.Time `json:"last_modified_date"`
 }
 
-// cfactsColumns lists the 15 data columns in cfacts_systems (synced_at is set by DB).
+// cfactsColumns lists the 16 data columns in cfacts_systems (synced_at is set by DB).
 var cfactsColumns = []string{
 	"fisma_uuid",
 	"fisma_acronym",
@@ -34,6 +35,7 @@ var cfactsColumns = []string{
 	"lifecycle_phase",
 	"component_acronym",
 	"division_name",
+	"group_acronym",
 	"group_name",
 	"ato_expiration_date",
 	"decommission_date",
@@ -53,6 +55,7 @@ var SnowflakeColumnMap = map[string]string{
 	"LIFECYCLE_PHASE":            "lifecycle_phase",
 	"COMPONENT_ACRONYM":          "component_acronym",
 	"DIVISION_NAME":              "division_name",
+	"GROUP_ACRONYM":              "group_acronym",
 	"GROUP_NAME":                 "group_name",
 	"ATO_EXPIRATION_DATE":        "ato_expiration_date",
 	"DECOMMISSION_DATE":          "decommission_date",
@@ -73,6 +76,7 @@ func (c *CfactsSystem) values() []any {
 		c.LifecyclePhase,
 		c.ComponentAcronym,
 		c.DivisionName,
+		c.GroupAcronym,
 		c.GroupName,
 		c.ATOExpirationDate,
 		c.DecommissionDate,

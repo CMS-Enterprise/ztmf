@@ -80,7 +80,7 @@ resource "aws_lambda_function" "cfacts_snowflake_sync" {
 resource "aws_cloudwatch_event_rule" "cfacts_snowflake_schedule" {
   name        = "ztmf-cfacts-snowflake-schedule-${var.environment}"
   description = "Daily schedule for CFACTS Snowflake sync to PostgreSQL"
-  state       = "DISABLED"
+  state       = "ENABLED"
 
   schedule_expression = "cron(0 3 * * ? *)"
 
