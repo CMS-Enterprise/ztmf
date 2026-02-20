@@ -178,6 +178,7 @@ func scanToSystem(values []any, colIdx map[string]int, rowNum int) (cfacts.Cfact
 		LifecyclePhase:           optStr(getString("LIFECYCLE_PHASE")),
 		ComponentAcronym:         optStr(getString("COMPONENT_ACRONYM")),
 		DivisionName:             optStr(getString("DIVISION_NAME")),
+		GroupAcronym:             optStr(getString("GROUP_ACRONYM")),
 		GroupName:                optStr(getString("GROUP_NAME")),
 	}
 

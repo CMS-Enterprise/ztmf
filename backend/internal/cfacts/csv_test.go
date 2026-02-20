@@ -9,8 +9,8 @@ import (
 )
 
 func TestParseCSV_Normal(t *testing.T) {
-	csv := `FISMA_UUID,FISMA_ACRONYM,AUTHORIZATION_PACKAGE_NAME,PRIMARY_ISSO_NAME,PRIMARY_ISSO_EMAIL,IS_ACTIVE,IS_RETIRED,IS_DECOMMISSIONED,LIFECYCLE_PHASE,COMPONENT_ACRONYM,DIVISION_NAME,GROUP_NAME,ATO_EXPIRATION_DATE,DECOMMISSION_DATE,LAST_MODIFIED_DATE
-50CF5C69-FB39-4957-B386-859DBA29B16D,esMD,Electronic Submission of Medical Documentation,"""Bethune, Todd""",rxkx@cms.hhs.gov,true,false,false,Operate,CPI,Medical Review,Provider Group,2027-10-23 00:00:00.000000000,,2026-02-02 02:00:22.364000000`
+	csv := `FISMA_UUID,FISMA_ACRONYM,AUTHORIZATION_PACKAGE_NAME,PRIMARY_ISSO_NAME,PRIMARY_ISSO_EMAIL,IS_ACTIVE,IS_RETIRED,IS_DECOMMISSIONED,LIFECYCLE_PHASE,COMPONENT_ACRONYM,DIVISION_NAME,GROUP_ACRONYM,GROUP_NAME,ATO_EXPIRATION_DATE,DECOMMISSION_DATE,LAST_MODIFIED_DATE
+50CF5C69-FB39-4957-B386-859DBA29B16D,esMD,Electronic Submission of Medical Documentation,"""Bethune, Todd""",rxkx@cms.hhs.gov,true,false,false,Operate,CPI,Medical Review,PROVGRP,Provider Group,2027-10-23 00:00:00.000000000,,2026-02-02 02:00:22.364000000`
 
 	systems, err := ParseCSV(strings.NewReader(csv))
 	require.NoError(t, err)
@@ -27,14 +27,15 @@ func TestParseCSV_Normal(t *testing.T) {
 	assert.Equal(t, false, *s.IsDecommissioned)
 	assert.Equal(t, "Operate", *s.LifecyclePhase)
 	assert.Equal(t, "CPI", *s.ComponentAcronym)
+	assert.Equal(t, "PROVGRP", *s.GroupAcronym)
 	assert.Nil(t, s.DecommissionDate) // Empty field
 	assert.NotNil(t, s.ATOExpirationDate)
 	assert.NotNil(t, s.LastModifiedDate)
 }
 
 func TestParseCSV_EmptyOptionalFields(t *testing.T) {
-	csv := `FISMA_UUID,FISMA_ACRONYM,AUTHORIZATION_PACKAGE_NAME,PRIMARY_ISSO_NAME,PRIMARY_ISSO_EMAIL,IS_ACTIVE,IS_RETIRED,IS_DECOMMISSIONED,LIFECYCLE_PHASE,COMPONENT_ACRONYM,DIVISION_NAME,GROUP_NAME,ATO_EXPIRATION_DATE,DECOMMISSION_DATE,LAST_MODIFIED_DATE
-ABC-123,TEST,,,,,,,,,,,,,`
+	csv := `FISMA_UUID,FISMA_ACRONYM,AUTHORIZATION_PACKAGE_NAME,PRIMARY_ISSO_NAME,PRIMARY_ISSO_EMAIL,IS_ACTIVE,IS_RETIRED,IS_DECOMMISSIONED,LIFECYCLE_PHASE,COMPONENT_ACRONYM,DIVISION_NAME,GROUP_ACRONYM,GROUP_NAME,ATO_EXPIRATION_DATE,DECOMMISSION_DATE,LAST_MODIFIED_DATE
+ABC-123,TEST,,,,,,,,,,,,,,`
 
 	systems, err := ParseCSV(strings.NewReader(csv))
 	require.NoError(t, err)
@@ -50,6 +51,7 @@ ABC-123,TEST,,,,,,,,,,,,,`
 	assert.Nil(t, s.IsRetired)
 	assert.Nil(t, s.IsDecommissioned)
 	assert.Nil(t, s.LifecyclePhase)
+	assert.Nil(t, s.GroupAcronym)
 	assert.Nil(t, s.ATOExpirationDate)
 	assert.Nil(t, s.DecommissionDate)
 	assert.Nil(t, s.LastModifiedDate)
