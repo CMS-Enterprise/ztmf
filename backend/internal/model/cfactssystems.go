@@ -19,6 +19,7 @@ var cfactsSystemColumns = []string{
 	"lifecycle_phase",
 	"component_acronym",
 	"division_name",
+	"group_acronym",
 	"group_name",
 	"ato_expiration_date",
 	"decommission_date",
@@ -38,6 +39,7 @@ type CfactsSystem struct {
 	LifecyclePhase           *string    `json:"lifecycle_phase" db:"lifecycle_phase"`
 	ComponentAcronym         *string    `json:"component_acronym" db:"component_acronym"`
 	DivisionName             *string    `json:"division_name" db:"division_name"`
+	GroupAcronym             *string    `json:"group_acronym" db:"group_acronym"`
 	GroupName                *string    `json:"group_name" db:"group_name"`
 	ATOExpirationDate        *time.Time `json:"ato_expiration_date" db:"ato_expiration_date"`
 	DecommissionDate         *time.Time `json:"decommission_date" db:"decommission_date"`
@@ -51,6 +53,7 @@ type FindCfactsSystemsInput struct {
 	IsRetired        *bool   `schema:"is_retired"`
 	IsDecommissioned *bool   `schema:"is_decommissioned"`
 	ComponentAcronym *string `schema:"component_acronym"`
+	GroupAcronym     *string `schema:"group_acronym"`
 	LifecyclePhase   *string `schema:"lifecycle_phase"`
 }
 
@@ -77,6 +80,10 @@ func FindCfactsSystems(ctx context.Context, input FindCfactsSystemsInput) ([]*Cf
 
 	if input.ComponentAcronym != nil {
 		sqlb = sqlb.Where("component_acronym=?", *input.ComponentAcronym)
+	}
+
+	if input.GroupAcronym != nil {
+		sqlb = sqlb.Where("group_acronym=?", *input.GroupAcronym)
 	}
 
 	if input.LifecyclePhase != nil {

@@ -1132,6 +1132,11 @@ paths:
           required: false
           schema:
             type: string
+        - name: group_acronym
+          in: query
+          required: false
+          schema:
+            type: string
         - name: lifecycle_phase
           in: query
           required: false
@@ -1487,6 +1492,9 @@ components:
           type: string
           nullable: true
         division_name:
+          type: string
+          nullable: true
+        group_acronym:
           type: string
           nullable: true
         group_name:

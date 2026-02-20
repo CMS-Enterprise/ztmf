@@ -34,6 +34,7 @@ func TestCfactsSystem_StructFields(t *testing.T) {
 	assert.Nil(t, system.LifecyclePhase)
 	assert.Nil(t, system.ComponentAcronym)
 	assert.Nil(t, system.DivisionName)
+	assert.Nil(t, system.GroupAcronym)
 	assert.Nil(t, system.GroupName)
 	assert.Nil(t, system.ATOExpirationDate)
 	assert.Nil(t, system.DecommissionDate)
@@ -49,6 +50,7 @@ func TestFindCfactsSystemsInput_Defaults(t *testing.T) {
 	assert.Nil(t, input.IsRetired)
 	assert.Nil(t, input.IsDecommissioned)
 	assert.Nil(t, input.ComponentAcronym)
+	assert.Nil(t, input.GroupAcronym)
 	assert.Nil(t, input.LifecyclePhase)
 }
 
