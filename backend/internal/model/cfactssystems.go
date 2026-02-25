@@ -48,6 +48,7 @@ type CfactsSystem struct {
 }
 
 type FindCfactsSystemsInput struct {
+	UserID           *string `schema:"-"`
 	FismaAcronym     *string `schema:"fisma_acronym"`
 	IsActive         *bool   `schema:"is_active"`
 	IsRetired        *bool   `schema:"is_retired"`
@@ -58,41 +59,73 @@ type FindCfactsSystemsInput struct {
 }
 
 func FindCfactsSystems(ctx context.Context, input FindCfactsSystemsInput) ([]*CfactsSystem, error) {
+	// Prefix columns with table name to avoid ambiguity when joining
+	cols := make([]string, len(cfactsSystemColumns))
+	for i, c := range cfactsSystemColumns {
+		cols[i] = "cfacts_systems." + c
+	}
+
 	sqlb := stmntBuilder.
-		Select(cfactsSystemColumns...).
+		Select(cols...).
 		From("cfacts_systems")
 
+	if input.UserID != nil {
+		sqlb = sqlb.
+			InnerJoin("fismasystems ON fismasystems.fismauid = cfacts_systems.fisma_uuid").
+			InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid = ?", *input.UserID)
+	}
+
 	if input.FismaAcronym != nil {
-		sqlb = sqlb.Where("fisma_acronym=?", *input.FismaAcronym)
+		sqlb = sqlb.Where("cfacts_systems.fisma_acronym=?", *input.FismaAcronym)
 	}
 
 	if input.IsActive != nil {
-		sqlb = sqlb.Where("is_active=?", *input.IsActive)
+		sqlb = sqlb.Where("cfacts_systems.is_active=?", *input.IsActive)
 	}
 
 	if input.IsRetired != nil {
-		sqlb = sqlb.Where("is_retired=?", *input.IsRetired)
+		sqlb = sqlb.Where("cfacts_systems.is_retired=?", *input.IsRetired)
 	}
 
 	if input.IsDecommissioned != nil {
-		sqlb = sqlb.Where("is_decommissioned=?", *input.IsDecommissioned)
+		sqlb = sqlb.Where("cfacts_systems.is_decommissioned=?", *input.IsDecommissioned)
 	}
 
 	if input.ComponentAcronym != nil {
-		sqlb = sqlb.Where("component_acronym=?", *input.ComponentAcronym)
+		sqlb = sqlb.Where("cfacts_systems.component_acronym=?", *input.ComponentAcronym)
 	}
 
 	if input.GroupAcronym != nil {
-		sqlb = sqlb.Where("group_acronym=?", *input.GroupAcronym)
+		sqlb = sqlb.Where("cfacts_systems.group_acronym=?", *input.GroupAcronym)
 	}
 
 	if input.LifecyclePhase != nil {
-		sqlb = sqlb.Where("lifecycle_phase=?", *input.LifecyclePhase)
+		sqlb = sqlb.Where("cfacts_systems.lifecycle_phase=?", *input.LifecyclePhase)
 	}
 
-	sqlb = sqlb.OrderBy("fisma_acronym ASC")
+	sqlb = sqlb.OrderBy("cfacts_systems.fisma_acronym ASC")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[CfactsSystem])
+}
+
+// UserCanAccessCfactsSystem checks whether a user is assigned to the FISMA system
+// that corresponds to the given CFACTS fisma_uuid, via the users_fismasystems junction table.
+func UserCanAccessCfactsSystem(ctx context.Context, userID string, fismaUUID string) (bool, error) {
+	sqlb := stmntBuilder.
+		Select("1").
+		From("users_fismasystems").
+		InnerJoin("fismasystems ON fismasystems.fismasystemid = users_fismasystems.fismasystemid").
+		Where("fismasystems.fismauid = ? AND users_fismasystems.userid = ?", fismaUUID, userID).
+		Limit(1)
+
+	_, err := queryRow(ctx, sqlb, pgx.RowTo[int])
+	if err != nil {
+		if err == ErrNoData {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func FindCfactsSystem(ctx context.Context, fismaUUID string) (*CfactsSystem, error) {

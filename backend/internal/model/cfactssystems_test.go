@@ -45,6 +45,7 @@ func TestCfactsSystem_StructFields(t *testing.T) {
 func TestFindCfactsSystemsInput_Defaults(t *testing.T) {
 	input := FindCfactsSystemsInput{}
 
+	assert.Nil(t, input.UserID)
 	assert.Nil(t, input.FismaAcronym)
 	assert.Nil(t, input.IsActive)
 	assert.Nil(t, input.IsRetired)
@@ -52,6 +53,16 @@ func TestFindCfactsSystemsInput_Defaults(t *testing.T) {
 	assert.Nil(t, input.ComponentAcronym)
 	assert.Nil(t, input.GroupAcronym)
 	assert.Nil(t, input.LifecyclePhase)
+}
+
+func TestFindCfactsSystemsInput_UserID(t *testing.T) {
+	userID := "12345678-1234-4abc-8def-123456789abc"
+	input := FindCfactsSystemsInput{
+		UserID: &userID,
+	}
+
+	assert.NotNil(t, input.UserID)
+	assert.Equal(t, userID, *input.UserID)
 }
 
 func TestFindCfactsSystem_EmptyUUID(t *testing.T) {

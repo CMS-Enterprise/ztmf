@@ -1024,8 +1024,33 @@ tests:
     expect:
       status: 403
 
-  # ISSO gets 403 on GET /api/v1/cfactssystems (admin-only)
+  # ISSO can GET /api/v1/cfactssystems (returns only assigned systems via join)
   - url: http://localhost:8080/api/v1/cfactssystems
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # ISSO can GET /api/v1/cfactssystems/<uuid> for an assigned system
+  - url: http://localhost:8080/api/v1/cfactssystems/E1D00198-36D4-4EAB-8C00-501E1D000999
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
+            fisma_acronym: "SLD-GEN"
+
+  # ISSO gets 403 on GET /api/v1/cfactssystems/<uuid> for unassigned system
+  - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
     method: GET
     headers:
       <<: *issoHeaders

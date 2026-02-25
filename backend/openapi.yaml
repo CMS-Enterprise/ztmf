@@ -1102,7 +1102,7 @@ paths:
   /cfactssystems:
     get:
       summary: List CFACTS systems
-      description: Returns a list of CFACTS systems synced from CMS CFACTS via Snowflake SDL (ADMIN and READONLY_ADMIN only)
+      description: Returns a list of CFACTS systems synced from CMS CFACTS via Snowflake SDL. Admins and READONLY_ADMINs see all systems; ISSOs see only their assigned systems.
       operationId: listCfactsSystems
       security:
         - bearerAuth: []
@@ -1161,7 +1161,7 @@ paths:
   /cfactssystems/{fisma_uuid}:
     get:
       summary: Get a CFACTS system by UUID
-      description: Returns a specific CFACTS system by its FISMA UUID (ADMIN and READONLY_ADMIN only)
+      description: Returns a specific CFACTS system by its FISMA UUID. Admins and READONLY_ADMINs can access any system; ISSOs can only access systems they are assigned to.
       operationId: getCfactsSystem
       security:
         - bearerAuth: []

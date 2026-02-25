@@ -25,7 +25,8 @@ INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonl
 -- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions).
 -- Email uses mixed case ("Isso.User") while the JWT contains lowercase ("isso.user")
 -- to verify that findByEmail is case-insensitive — same pattern as _test_data.sql.
-INSERT INTO public.users VALUES (DEFAULT, 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+-- Fixed UUID so we can assign to fismasystems for CFACTS access testing.
+INSERT INTO public.users VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
@@ -105,6 +106,7 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 INSERT INTO public.users_fismasystems VALUES ('22222222-2222-2222-2222-222222222222', 1002) ON CONFLICT DO NOTHING; -- Piett -> Executor
 INSERT INTO public.users_fismasystems VALUES ('33333333-3333-3333-3333-333333333333', 1001) ON CONFLICT DO NOTHING; -- Veers -> Death Star  
 INSERT INTO public.users_fismasystems VALUES ('44444444-4444-4444-4444-444444444444', 1003) ON CONFLICT DO NOTHING; -- Krennic -> Shield Gen
+INSERT INTO public.users_fismasystems VALUES ('66666666-6666-6666-6666-666666666666', 1003) ON CONFLICT DO NOTHING; -- Emberfall ISSO -> Shield Gen (for CFACTS access E2E tests)
 
 -- DataCall-System Assignments (Systems participating in audits)
 INSERT INTO public.datacalls_fismasystems VALUES (1, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review
@@ -412,6 +414,28 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     'SEC',
     'Security Group',
     '2026-12-31 00:00:00+00',
+    NULL,
+    '2025-01-01 00:00:00+00',
+    '2025-01-15 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+-- CFACTS system that matches fismasystem 1003 (Shield Gen) by fismauid for ISSO CFACTS access E2E tests.
+-- The join path is: cfacts_systems.fisma_uuid -> fismasystems.fismauid -> users_fismasystems.
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+    'E1D00198-36D4-4EAB-8C00-501E1D000999',
+    'SLD-GEN',
+    'Shield Generator Control Network CFACTS Package',
+    'Krennic, Orson',
+    'Director.Krennic@scarif.empire',
+    TRUE,
+    FALSE,
+    FALSE,
+    'Operate',
+    'IA',
+    'Imperial Army',
+    'IAPD',
+    'Planetary Defense Systems Group',
+    '2027-12-31 00:00:00+00',
     NULL,
     '2025-01-01 00:00:00+00',
     '2025-01-15 00:00:00+00'

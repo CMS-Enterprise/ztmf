@@ -9,16 +9,16 @@ import (
 
 func ListCfactsSystems(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.HasAdminRead() {
-		respond(w, r, nil, ErrForbidden)
-		return
-	}
 
 	input := model.FindCfactsSystemsInput{}
 	err := decoder.Decode(&input, r.URL.Query())
 	if err != nil {
 		respond(w, r, nil, err)
 		return
+	}
+
+	if !user.HasAdminRead() {
+		input.UserID = &user.UserID
 	}
 
 	systems, err := model.FindCfactsSystems(r.Context(), input)
@@ -28,16 +28,24 @@ func ListCfactsSystems(w http.ResponseWriter, r *http.Request) {
 
 func GetCfactsSystem(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.HasAdminRead() {
-		respond(w, r, nil, ErrForbidden)
-		return
-	}
 
 	vars := mux.Vars(r)
 	fismaUUID, ok := vars["fisma_uuid"]
 	if !ok || fismaUUID == "" {
 		respond(w, r, nil, ErrNotFound)
 		return
+	}
+
+	if !user.HasAdminRead() {
+		canAccess, err := model.UserCanAccessCfactsSystem(r.Context(), user.UserID, fismaUUID)
+		if err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		if !canAccess {
+			respond(w, r, nil, ErrForbidden)
+			return
+		}
 	}
 
 	system, err := model.FindCfactsSystem(r.Context(), fismaUUID)
