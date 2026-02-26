@@ -138,8 +138,10 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 	}
 
 	// When a specific system is requested alongside a pre-populated FismaSystemIDs
-	// (e.g. ISSO scope), further narrow to just that system.
-	if input.FismaSystemID != nil && len(input.FismaSystemIDs) > 1 {
+	// (e.g. ISSO scope), further narrow to just that system. Using >= 1 ensures
+	// consistent behaviour for single-system ISSOs; the extra predicate is
+	// redundant with the IN clause but harmless.
+	if input.FismaSystemID != nil && len(input.FismaSystemIDs) >= 1 {
 		subSqlb = subSqlb.Where("fismasystemid=?", *input.FismaSystemID)
 	}
 
