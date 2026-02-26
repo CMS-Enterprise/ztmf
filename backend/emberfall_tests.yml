@@ -979,3 +979,27 @@ tests:
     expect:
       status: 403
 
+  # Regression: ISSO requesting scores for a specific assigned system should only
+  # get that system's data, not all their assigned systems' scores.
+  # Previously FismaSystemID filter was ignored when FismaSystemIDs was pre-populated.
+  # NOTE: body assertion omitted — Emberfall panics on array comparison (aquia-inc/emberfall#36)
+  # TODO: add body assertion (data[0].fismasystemid == 1003) once Emberfall fix ships
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1003&include_pillars=true
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # ISSO requesting a system they are NOT assigned to should get empty data, not a 403
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
