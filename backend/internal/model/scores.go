@@ -137,6 +137,12 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 		subSqlb = subSqlb.Where(squirrel.Eq{"fismasystemid": input.FismaSystemIDs})
 	}
 
+	// When a specific system is requested alongside a pre-populated FismaSystemIDs
+	// (e.g. ISSO scope), further narrow to just that system.
+	if input.FismaSystemID != nil && len(input.FismaSystemIDs) > 1 {
+		subSqlb = subSqlb.Where("fismasystemid=?", *input.FismaSystemID)
+	}
+
 	sqlb := squirrel.Select("*").
 		FromSelect(subSqlb, "avg_by_datacall_fismasystem").
 		GroupBy("datacallid, fismasystemid, systemscore").
