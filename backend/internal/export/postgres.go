@@ -83,12 +83,6 @@ var registeredWhereClauses = map[string]bool{
 	"fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE sdl_sync_enabled = true)": true,
 }
 
-// registerWhereClause adds a static WHERE clause to the allowlist.
-// Call this from init() or package initialization for any new filter patterns.
-func registerWhereClause(clause string) {
-	registeredWhereClauses[clause] = true
-}
-
 // ExportTable extracts all data from a PostgreSQL table
 func (c *PostgresClient) ExportTable(ctx context.Context, tableName string, orderBy string) (*ExportResult, error) {
 	return c.ExportTableWhere(ctx, tableName, orderBy, "")

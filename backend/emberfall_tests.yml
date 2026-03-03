@@ -116,6 +116,25 @@ updatedQuestionData: &updatedQuestionData
   order: 2
   pillarid: 1
 
+cfactsSystemData: &cfactsSystemData
+  fisma_uuid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fisma_acronym: "ZTMF"
+  authorization_package_name: "Zero Trust Maturity Framework Security Package"
+  primary_isso_name: "Test ISSO"
+  primary_isso_email: "isso@example.com"
+  is_active: true
+  is_retired: false
+  is_decommissioned: false
+  lifecycle_phase: "Operations & Maintenance"
+  component_acronym: "Security"
+  division_name: "IT Division"
+  group_acronym: "SEC"
+  group_name: "Security Group"
+  ato_expiration_date: "2026-12-31T00:00:00Z"
+  decommission_date: null
+  last_modified_date: "2025-01-01T00:00:00Z"
+  synced_at: "2025-01-15T00:00:00Z"
+
 scoreData: &scoreData
   functionoptionid: 1
   notes: "Test score created by Emberfall"
@@ -718,7 +737,45 @@ tests:
       headers:
         content-type: "application/json"
 
-  
+  # CFACTS Systems Endpoints (read-only, admin access)
+  - url: http://localhost:8080/api/v1/cfactssystems
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *cfactsSystemData
+
+  - url: http://localhost:8080/api/v1/cfactssystems?is_active=true
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  - url: http://localhost:8080/api/v1/cfactssystems/nonexistent-uuid-does-not-exist
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
   # massemails only supports this one route
   # test that it errors on invalid input
   - url: http://localhost:8080/api/v1/massemails
@@ -933,6 +990,16 @@ tests:
       headers:
         content-type: "application/json"
 
+  # READONLY_ADMIN can GET /api/v1/cfactssystems (read access)
+  - url: http://localhost:8080/api/v1/cfactssystems
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
   # ISSO Tests
   # Verify ISSO can authenticate
   - url: http://localhost:8080/api/v1/users/current
@@ -951,6 +1018,39 @@ tests:
 
   # ISSO gets 403 on GET /api/v1/events (audit trail restricted to admin roles)
   - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # ISSO can GET /api/v1/cfactssystems (returns only assigned systems via join)
+  - url: http://localhost:8080/api/v1/cfactssystems
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # ISSO can GET /api/v1/cfactssystems/<uuid> for an assigned system
+  - url: http://localhost:8080/api/v1/cfactssystems/E1D00198-36D4-4EAB-8C00-501E1D000999
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
+            fisma_acronym: "SLD-GEN"
+
+  # ISSO gets 403 on GET /api/v1/cfactssystems/<uuid> for unassigned system
+  - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
     method: GET
     headers:
       <<: *issoHeaders

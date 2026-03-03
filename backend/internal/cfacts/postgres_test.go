@@ -16,6 +16,7 @@ func TestCfactsSystemValues(t *testing.T) {
 	phase := "Operate"
 	comp := "CPI"
 	div := "Division"
+	grpAcro := "GRP"
 	group := "Group"
 	now := time.Now()
 
@@ -31,6 +32,7 @@ func TestCfactsSystemValues(t *testing.T) {
 		LifecyclePhase:           &phase,
 		ComponentAcronym:         &comp,
 		DivisionName:             &div,
+		GroupAcronym:             &grpAcro,
 		GroupName:                &group,
 		ATOExpirationDate:        &now,
 		DecommissionDate:         nil,
@@ -38,14 +40,14 @@ func TestCfactsSystemValues(t *testing.T) {
 	}
 
 	vals := sys.values()
-	assert.Len(t, vals, 15)
+	assert.Len(t, vals, 16)
 	assert.Equal(t, "UUID-123", vals[0])
 	assert.Equal(t, "TEST", vals[1])
 	assert.Equal(t, &name, vals[2])
 	assert.Nil(t, vals[3]) // PrimaryISSOName
 	assert.Equal(t, &email, vals[4])
 	assert.Equal(t, &active, vals[5])
-	assert.Nil(t, vals[13]) // DecommissionDate
+	assert.Nil(t, vals[14]) // DecommissionDate
 }
 
 func TestSyncResult(t *testing.T) {

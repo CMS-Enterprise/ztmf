@@ -33,13 +33,13 @@ func TestRegisteredWhereClauses(t *testing.T) {
 	})
 }
 
-func TestRegisterWhereClause(t *testing.T) {
+func TestWhereClauseAllowlist(t *testing.T) {
 	testClause := "test_column = true"
 	// Ensure it's not registered yet
 	delete(registeredWhereClauses, testClause)
 	assert.False(t, registeredWhereClauses[testClause])
 
-	registerWhereClause(testClause)
+	registeredWhereClauses[testClause] = true
 	assert.True(t, registeredWhereClauses[testClause])
 
 	// Clean up

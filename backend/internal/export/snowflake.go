@@ -506,7 +506,7 @@ func (c *SnowflakeClient) DeleteExcludedRows(ctx context.Context, tableName stri
 	// If source returned zero rows, delete everything from the Snowflake table
 	if len(data) == 0 {
 		deleteSQL := fmt.Sprintf("DELETE FROM %s", tableName)
-		log.Printf("Deleting all rows from %s (source filter returned 0 rows)", tableName)
+		log.Printf("WARNING: source filter returned 0 rows for %s — deleting ALL Snowflake rows. If this is unexpected, check SDL sync filters.", tableName)
 		res, err := c.db.ExecContext(ctx, deleteSQL)
 		if err != nil {
 			return 0, fmt.Errorf("failed to delete all rows from %s: %w", tableName, err)
@@ -839,7 +839,11 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 			snowflakeConfig.Schema,
 			snowflakeConfig.Warehouse,
 			snowflakeConfig.Role)
-		
+
+		if snowflakeConfig.InsecureMode {
+			connString += "&insecureMode=true"
+		}
+
 		return snowflakeConfig, connString, nil
 	}
 }

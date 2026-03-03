@@ -86,6 +86,7 @@ func parseRecord(record []string, colIdx map[string]int, lineNum int) (CfactsSys
 		LifecyclePhase:           optString(get("LIFECYCLE_PHASE")),
 		ComponentAcronym:         optString(get("COMPONENT_ACRONYM")),
 		DivisionName:             optString(get("DIVISION_NAME")),
+		GroupAcronym:             optString(get("GROUP_ACRONYM")),
 		GroupName:                optString(get("GROUP_NAME")),
 	}
 
