@@ -171,6 +171,30 @@ resource "aws_cloudfront_distribution" "ztmf" {
     viewer_protocol_policy = "redirect-to-https"
   }
 
+  # Serve static error page when the API origin returns 5xx errors.
+  # The error page is deployed to S3 alongside the React app assets.
+  # Short TTL (10s) so CloudFront picks up a recovered origin quickly.
+  custom_error_response {
+    error_code            = 502
+    response_code         = 200
+    response_page_path    = "/error.html"
+    error_caching_min_ttl = 10
+  }
+
+  custom_error_response {
+    error_code            = 503
+    response_code         = 200
+    response_page_path    = "/error.html"
+    error_caching_min_ttl = 10
+  }
+
+  custom_error_response {
+    error_code            = 504
+    response_code         = 200
+    response_page_path    = "/error.html"
+    error_caching_min_ttl = 10
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "whitelist"
