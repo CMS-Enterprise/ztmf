@@ -265,7 +265,7 @@ test-e2e:
 	@echo "🧪 Running Emberfall E2E tests (isolated environment)..."
 	@if ! command -v emberfall >/dev/null 2>&1; then \
 		echo "❌ Emberfall not installed"; \
-		echo "   Install: curl -L https://github.com/aquia-inc/emberfall/releases/download/v0.3.1/emberfall_Linux_x86_64.tar.gz | tar -xz && mv emberfall ~/.local/bin/"; \
+		echo "   Install: curl -L https://github.com/aquia-inc/emberfall/releases/download/v0.4.1/emberfall_Linux_x86_64.tar.gz | tar -xz && mv emberfall ~/.local/bin/"; \
 		exit 1; \
 	fi
 	@echo "🧹 Cleaning up any existing test containers..."
@@ -276,7 +276,7 @@ test-e2e:
 	@sleep 15
 	@echo "🔥 Running Emberfall tests..."
 	@sed 's/localhost:8080/localhost:8090/g' backend/emberfall_tests.yml > /tmp/emberfall_test_isolated.yml
-	@emberfall --config /tmp/emberfall_test_isolated.yml || (echo "❌ Emberfall tests failed"; cd backend && docker compose -f compose-test.yml down -v; exit 1)
+	@emberfall --tests /tmp/emberfall_test_isolated.yml || (echo "❌ Emberfall tests failed"; cd backend && docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🧹 Cleaning up test environment..."
 	@cd backend && docker compose -f compose-test.yml down -v
 	@rm /tmp/emberfall_test_isolated.yml
