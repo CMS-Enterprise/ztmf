@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+#
+# update-acm-and-secrets.sh
+# Reads certificate files from disk, imports/updates the cert in ACM,
+# and backs up cert + key in Secrets Manager so they need not be stored on disk.
+#
+# Prerequisites:
+#   - AWS CLI installed and configured (credentials with acm:ImportCertificate, secretsmanager:*)
+#   - jq (for building Secrets Manager JSON)
+# Certificates are assumed to come from DigiCert (manual); this script only automates
+# the ACM import and Secrets Manager backup from files provided by the GTL.
+#
+
+set -euo pipefail
+
+if ! command -v aws &>/dev/null; then
+  echo "Error: aws CLI not found. Install the AWS CLI and ensure it is on PATH." >&2
+  exit 1
+fi
+if ! command -v jq &>/dev/null; then
+  echo "Error: jq not found. Install jq for JSON handling (e.g. brew install jq)." >&2
+  exit 1
+fi
+
+# Defaults (override with env or flags)
+AWS_REGION="${AWS_REGION:-us-east-1}"
+SECRET_NAME="${SECRET_NAME:-}"
+
+usage() {
+  cat <<EOF
+Usage: $0 [OPTIONS] --cert CERT_FILE --key KEY_FILE
+
+Required:
+  --cert FILE     Path to the certificate file (PEM)
+  --key FILE      Path to the private key file (PEM)
+
+ACM (one of):
+  --certificate-arn ARN   Update this existing ACM certificate (import replaces in place)
+  --new-certificate       Create a new certificate in ACM (outputs ARN)
+
+Optional:
+  --chain FILE    Path to the certificate chain file (PEM). Omit if cert is full chain.
+  --secret-name NAME   Secrets Manager secret name or ID for backup (default: derived from cert ARN or required)
+  --region REGION AWS region (default: ${AWS_REGION})
+  --dry-run       Print what would be done; do not call AWS
+
+Examples:
+  # Update existing ACM cert and backup to a named secret
+  $0 --cert /path/to/cert.pem --key /path/to/key.pem --certificate-arn arn:aws:acm:us-east-1:123456789012:certificate/abc-123 --secret-name my-app/ssl-backup
+
+  # Create new ACM cert and backup to Secrets Manager
+  $0 --cert /path/to/cert.pem --key /path/to/key.pem --new-certificate --secret-name my-app/ssl-backup
+EOF
+  exit 1
+}
+
+CERT_FILE=""
+KEY_FILE=""
+CHAIN_FILE=""
+CERTIFICATE_ARN=""
+NEW_CERTIFICATE=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cert)
+      CERT_FILE="$2"
+      shift 2
+      ;;
+    --key)
+      KEY_FILE="$2"
+      shift 2
+      ;;
+    --chain)
+      CHAIN_FILE="$2"
+      shift 2
+      ;;
+    --certificate-arn)
+      CERTIFICATE_ARN="$2"
+      shift 2
+      ;;
+    --new-certificate)
+      NEW_CERTIFICATE=true
+      shift
+      ;;
+    --secret-name)
+      SECRET_NAME="$2"
+      shift 2
+      ;;
+    --region)
+      AWS_REGION="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+if [[ -z "$CERT_FILE" || -z "$KEY_FILE" ]]; then
+  echo "Error: --cert and --key are required." >&2
+  usage
+fi
+
+if [[ "$NEW_CERTIFICATE" != true && -z "$CERTIFICATE_ARN" ]]; then
+  echo "Error: specify either --certificate-arn (to update) or --new-certificate (to create)." >&2
+  usage
+fi
+
+if [[ "$NEW_CERTIFICATE" == true && -n "$CERTIFICATE_ARN" ]]; then
+  echo "Error: use either --certificate-arn or --new-certificate, not both." >&2
+  usage
+fi
+
+if [[ -z "$SECRET_NAME" && "$NEW_CERTIFICATE" == true ]]; then
+  echo "Error: --secret-name is required when using --new-certificate (no ARN to derive a name)." >&2
+  usage
+fi
+
+for f in "$CERT_FILE" "$KEY_FILE"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: file not found: $f" >&2
+    exit 2
+  fi
+done
+if [[ -n "$CHAIN_FILE" && ! -f "$CHAIN_FILE" ]]; then
+  echo "Error: chain file not found: $CHAIN_FILE" >&2
+  exit 2
+fi
+
+# Read files (assume PEM, no binary)
+CERT_CONTENT=$(cat "$CERT_FILE")
+KEY_CONTENT=$(cat "$KEY_FILE")
+CHAIN_CONTENT=""
+if [[ -n "$CHAIN_FILE" ]]; then
+  CHAIN_CONTENT=$(cat "$CHAIN_FILE")
+fi
+
+export AWS_DEFAULT_REGION="$AWS_REGION"
+
+# --- ACM import (create or update) ---
+if [[ "$NEW_CERTIFICATE" == true ]]; then
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY-RUN] Would run: aws acm import-certificate --certificate fileb://${CERT_FILE} --private-key fileb://${KEY_FILE} ..."
+  else
+    IMPORT_ARGS=(--certificate "fileb://${CERT_FILE}" --private-key "fileb://${KEY_FILE}")
+    if [[ -n "$CHAIN_CONTENT" ]]; then
+      IMPORT_ARGS+=(--certificate-chain "fileb://${CHAIN_FILE}")
+    fi
+    OUT=$(aws acm import-certificate "${IMPORT_ARGS[@]}")
+    CERTIFICATE_ARN=$(echo "$OUT" | grep -o '"CertificateArn": "[^"]*"' | cut -d'"' -f4)
+    echo "Created ACM certificate: $CERTIFICATE_ARN"
+  fi
+else
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY-RUN] Would run: aws acm import-certificate --certificate-arn $CERTIFICATE_ARN --certificate fileb://... --private-key fileb://..."
+  else
+    IMPORT_ARGS=(--certificate-arn "$CERTIFICATE_ARN" --certificate "fileb://${CERT_FILE}" --private-key "fileb://${KEY_FILE}")
+    if [[ -n "$CHAIN_CONTENT" ]]; then
+      IMPORT_ARGS+=(--certificate-chain "fileb://${CHAIN_FILE}")
+    fi
+    aws acm import-certificate "${IMPORT_ARGS[@]}"
+    echo "Updated ACM certificate: $CERTIFICATE_ARN"
+  fi
+fi
+
+# --- Secrets Manager backup (cert + key) ---
+if [[ -z "$SECRET_NAME" ]]; then
+  # Derive a safe secret name from the certificate ARN (e.g. acm-backup/abc-123)
+  SECRET_NAME="acm-backup/$(echo "$CERTIFICATE_ARN" | awk -F'/' '{print $NF}')"
+fi
+
+# Store as JSON so consumers can parse certificate and privateKey easily
+SECRET_JSON=$(jq -n \
+  --arg cert "$CERT_CONTENT" \
+  --arg key "$KEY_CONTENT" \
+  '{certificate: $cert, privateKey: $key}')
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "[DRY-RUN] Would create/update Secrets Manager secret: $SECRET_NAME"
+  exit 0
+fi
+
+if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" &>/dev/null; then
+  aws secretsmanager put-secret-value \
+    --secret-id "$SECRET_NAME" \
+    --secret-string "$SECRET_JSON"
+  echo "Updated Secrets Manager secret: $SECRET_NAME"
+else
+  aws secretsmanager create-secret \
+    --name "$SECRET_NAME" \
+    --description "Backup of ACM certificate and private key (do not store on disk)" \
+    --secret-string "$SECRET_JSON"
+  echo "Created Secrets Manager secret: $SECRET_NAME"
+fi
+
+echo "Done. Certificate is in ACM and backed up in Secrets Manager."
