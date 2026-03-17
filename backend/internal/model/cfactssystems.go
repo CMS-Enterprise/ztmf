@@ -24,6 +24,7 @@ var cfactsSystemColumns = []string{
 	"ato_expiration_date",
 	"decommission_date",
 	"last_modified_date",
+	"auth_methods",
 	"synced_at",
 }
 
@@ -44,6 +45,7 @@ type CfactsSystem struct {
 	ATOExpirationDate        *time.Time `json:"ato_expiration_date" db:"ato_expiration_date"`
 	DecommissionDate         *time.Time `json:"decommission_date" db:"decommission_date"`
 	LastModifiedDate         *time.Time `json:"last_modified_date" db:"last_modified_date"`
+	AuthMethods              *string    `json:"auth_methods" db:"auth_methods"`
 	SyncedAt                 time.Time  `json:"synced_at" db:"synced_at"`
 }
 

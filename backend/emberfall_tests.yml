@@ -133,6 +133,7 @@ cfactsSystemData: &cfactsSystemData
   ato_expiration_date: "2026-12-31T00:00:00Z"
   decommission_date: null
   last_modified_date: "2025-01-01T00:00:00Z"
+  auth_methods: "Imperial-SSO"
   synced_at: "2025-01-15T00:00:00Z"
 
 scoreData: &scoreData

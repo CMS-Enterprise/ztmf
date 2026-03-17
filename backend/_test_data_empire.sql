@@ -317,7 +317,7 @@ INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Central
 
 -- CFACTS Systems (synced from CMS CFACTS via Snowflake SDL)
 -- Matches existing FISMA systems by UUID for future comparison features
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     'DEATHSTR-1977-4A1F-8B2E-ALDERAAN404',
     'DS-1',
     'Death Star Orbital Battle Station Security Package',
@@ -334,10 +334,11 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '1977-05-25 00:00:00+00',
     '1977-05-25 00:00:00+00',
     '1977-05-25 00:00:00+00',
+    'Imperial-SSO, Other (Retinal Scanner)',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     'EXECUTOR-1980-5C3D-9A7B-HOTH2024',
     'SSD-EX',
     'Super Star Destroyer Executor Security Package',
@@ -354,10 +355,11 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '2026-12-31 00:00:00+00',
     NULL,
     '2025-01-10 00:00:00+00',
+    'Imperial-SSO, Code Cylinder',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     'ENDOR-1983-6D4E-AB8C-SHIELD999',
     'SLD-GEN',
     'Shield Generator Control Network Security Package',
@@ -374,11 +376,12 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '2026-06-30 00:00:00+00',
     NULL,
     '2025-01-08 00:00:00+00',
+    'Imperial-LDAP',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
 -- CFACTS-only system (no matching ZTMF fismasystem) for future comparison testing
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     'STRKLLR-2016-7E5F-BC9D-ILUM12345',
     'SK-BASE',
     'Starkiller Base Weapons Platform Security Package',
@@ -395,11 +398,12 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '2027-01-01 00:00:00+00',
     NULL,
     '2025-01-12 00:00:00+00',
+    'Sith-MFA, Other (Kyber Crystal Auth)',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
 -- CFACTS system for Emberfall E2E tests
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     '12345678-ABCD-4321-AFAB-123456789ABC',
     'ZTMF',
     'Zero Trust Maturity Framework Security Package',
@@ -416,12 +420,13 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '2026-12-31 00:00:00+00',
     NULL,
     '2025-01-01 00:00:00+00',
+    'Imperial-SSO',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
 
 -- CFACTS system that matches fismasystem 1003 (Shield Gen) by fismauid for ISSO CFACTS access E2E tests.
 -- The join path is: cfacts_systems.fisma_uuid -> fismasystems.fismauid -> users_fismasystems.
-INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, synced_at) VALUES (
+INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_package_name, primary_isso_name, primary_isso_email, is_active, is_retired, is_decommissioned, lifecycle_phase, component_acronym, division_name, group_acronym, group_name, ato_expiration_date, decommission_date, last_modified_date, auth_methods, synced_at) VALUES (
     'E1D00198-36D4-4EAB-8C00-501E1D000999',
     'SLD-GEN',
     'Shield Generator Control Network CFACTS Package',
@@ -438,8 +443,18 @@ INSERT INTO public.cfacts_systems (fisma_uuid, fisma_acronym, authorization_pack
     '2027-12-31 00:00:00+00',
     NULL,
     '2025-01-01 00:00:00+00',
+    'Imperial-LDAP, Code Cylinder',
     '2025-01-15 00:00:00+00'
 ) ON CONFLICT DO NOTHING;
+
+-- IdM Scoring lookup table for identity enrichment tooltips
+INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES
+    ('Imperial-SSO', 'Imperial Single Sign-On (Imperial-SSO)', 3, 'Imperial Single Sign-On provides MFA via holographic verification and code cylinder backup.'),
+    ('Imperial-LDAP', 'Imperial Directory Services (Imperial-LDAP)', 2, 'Imperial LDAP directory provides basic authentication with periodic credential rotation.'),
+    ('Code Cylinder', 'Code Cylinder Hardware Token', 2, 'Physical code cylinder provides single-factor hardware authentication for secure facilities.'),
+    ('Sith-MFA', 'Sith Multi-Factor Authentication (Sith-MFA)', 4, 'Sith Multi-Factor Authentication uses Force-sensitivity detection combined with biometric and knowledge factors.'),
+    ('Single Factor (Only)', 'Single Factor Only', 1, 'Single factor authentication only - no MFA capability.')
+ON CONFLICT (idm_name) DO NOTHING;
 
 -- Reset sequences past the max explicit IDs to avoid primary key conflicts
 SELECT setval('pillars_pillarid_seq', (SELECT COALESCE(MAX(pillarid), 0) FROM public.pillars));

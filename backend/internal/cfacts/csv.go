@@ -104,6 +104,8 @@ func parseRecord(record []string, colIdx map[string]int, lineNum int) (CfactsSys
 		return CfactsSystem{}, err
 	}
 
+	sys.AuthMethods = optString(get("AUTH_METHODS"))
+
 	return sys, nil
 }
 
