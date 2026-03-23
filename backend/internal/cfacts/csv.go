@@ -105,6 +105,7 @@ func parseRecord(record []string, colIdx map[string]int, lineNum int) (CfactsSys
 	}
 
 	sys.AuthMethods = optString(get("AUTH_METHODS"))
+	sys.FipsImpactLevel = optString(get("FIPS_IMPACT_LEVEL"))
 
 	return sys, nil
 }

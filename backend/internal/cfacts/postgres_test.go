@@ -40,7 +40,7 @@ func TestCfactsSystemValues(t *testing.T) {
 	}
 
 	vals := sys.values()
-	assert.Len(t, vals, 17)
+	assert.Len(t, vals, 18)
 	assert.Equal(t, "UUID-123", vals[0])
 	assert.Equal(t, "TEST", vals[1])
 	assert.Equal(t, &name, vals[2])
@@ -49,6 +49,7 @@ func TestCfactsSystemValues(t *testing.T) {
 	assert.Equal(t, &active, vals[5])
 	assert.Nil(t, vals[14]) // DecommissionDate
 	assert.Nil(t, vals[16]) // AuthMethods
+	assert.Nil(t, vals[17]) // FipsImpactLevel
 }
 
 func TestSyncResult(t *testing.T) {

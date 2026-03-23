@@ -134,6 +134,7 @@ cfactsSystemData: &cfactsSystemData
   decommission_date: null
   last_modified_date: "2025-01-01T00:00:00Z"
   auth_methods: "Imperial-SSO"
+  fips_impact_level: "High"
   synced_at: "2025-01-15T00:00:00Z"
 
 scoreData: &scoreData

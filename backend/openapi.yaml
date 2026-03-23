@@ -1516,6 +1516,10 @@ components:
           type: string
           nullable: true
           description: Comma-separated list of identity management systems reported in CFACTS
+        fips_impact_level:
+          type: string
+          nullable: true
+          description: FIPS 199 overall impact rating (High, Moderate, Low)
         synced_at:
           type: string
           format: date-time
