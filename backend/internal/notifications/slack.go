@@ -71,27 +71,36 @@ func (s *SlackNotifier) SendSyncNotification(ctx context.Context, result SyncRes
 	return s.sendToSlack(ctx, payload)
 }
 
+// getSyncLabel returns a human-readable label for the sync direction
+func getSyncLabel(triggerType string) string {
+	if strings.HasPrefix(triggerType, "cfacts-snowflake") {
+		return "CFACTS Import (SDL → ZTMF)"
+	}
+	return "Data Export (ZTMF → SDL)"
+}
+
 // buildSyncMessage creates formatted Slack message based on sync results
 func (s *SlackNotifier) buildSyncMessage(result SyncResult) string {
 	quarter := getCurrentQuarter()
 	scheduleType := getScheduleType(result.Environment)
 	envUpper := strings.ToUpper(result.Environment)
-	
+	syncLabel := getSyncLabel(result.TriggerType)
+
 	if result.FailureCount == 0 {
-		// Success message with environment-specific context
 		var dataMessage string
 		if result.DryRun {
 			dataMessage = fmt.Sprintf("🧪 %s dry-run validation completed successfully", quarter)
 		} else if result.Environment == "prod" {
-			dataMessage = fmt.Sprintf("📅 %s data now available in Snowflake", quarter)
+			dataMessage = fmt.Sprintf("📅 %s data now available", quarter)
 		} else {
 			dataMessage = fmt.Sprintf("📅 %s data synced to %s", quarter, strings.ToLower(result.Environment))
 		}
 
-		return fmt.Sprintf(`✅ ZTMF Data Sync SUCCESS (%s - %s)
+		return fmt.Sprintf(`✅ %s SUCCESS (%s - %s)
 📊 %d tables synced: %s rows
 ⏱️ Duration: %s
 %s`,
+			syncLabel,
 			envUpper,
 			scheduleType,
 			result.SuccessCount,
@@ -99,21 +108,20 @@ func (s *SlackNotifier) buildSyncMessage(result SyncResult) string {
 			formatDuration(result.Duration),
 			dataMessage)
 	} else {
-		// Failure message
 		failedTablesStr := strings.Join(result.FailedTables, ", ")
 		errorSummary := ""
 		if len(result.ErrorMessages) > 0 {
-			// Get first error for summary
 			errorSummary = result.ErrorMessages[0]
 			if len(errorSummary) > 100 {
 				errorSummary = errorSummary[:100] + "..."
 			}
 		}
-		
-		return fmt.Sprintf(`🚨 ZTMF Data Sync FAILURE (%s - %s)
+
+		return fmt.Sprintf(`🚨 %s FAILURE (%s - %s)
 ❌ %d table(s) failed: %s
 ✅ %d tables successful: %s rows
 🔧 Action Required: %s`,
+			syncLabel,
 			envUpper,
 			scheduleType,
 			result.FailureCount,
