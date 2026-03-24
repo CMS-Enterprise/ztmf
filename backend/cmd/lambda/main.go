@@ -116,6 +116,7 @@ func sendSlackNotification(ctx context.Context, event SyncEvent, result *sync.Sy
 	notifyResult := notifications.SyncResult{
 		Environment:   config.GetInstance().Env,
 		TriggerType:   event.TriggerType,
+		DryRun:        event.DryRun,
 		SuccessCount:  successCount,
 		FailureCount:  len(failedTables),
 		TotalRows:     result.TotalRows,

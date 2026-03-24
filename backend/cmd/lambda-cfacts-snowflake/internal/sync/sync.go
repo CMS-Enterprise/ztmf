@@ -180,6 +180,8 @@ func scanToSystem(values []any, colIdx map[string]int, rowNum int) (cfacts.Cfact
 		DivisionName:             optStr(getString("DIVISION_NAME")),
 		GroupAcronym:             optStr(getString("GROUP_ACRONYM")),
 		GroupName:                optStr(getString("GROUP_NAME")),
+		AuthMethods:             optStr(getString("AUTH_METHODS")),
+		FipsImpactLevel:         optStr(getString("FIPS_IMPACT_LEVEL")),
 	}
 
 	var err error

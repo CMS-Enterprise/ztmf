@@ -101,6 +101,7 @@ func sendSlackNotification(ctx context.Context, event CfactsSyncEvent, rowCount 
 	result := notifications.SyncResult{
 		Environment:   config.GetInstance().Env,
 		TriggerType:   fmt.Sprintf("cfacts-snowflake/%s", event.TriggerType),
+		DryRun:        event.DryRun,
 		SuccessCount:  1 - failureCount,
 		FailureCount:  failureCount,
 		TotalRows:     rowCount,
