@@ -23,6 +23,7 @@ type SlackNotifier struct {
 type SyncResult struct {
 	Environment    string
 	TriggerType    string
+	DryRun         bool
 	SuccessCount   int
 	FailureCount   int
 	TotalRows      int64
@@ -79,10 +80,12 @@ func (s *SlackNotifier) buildSyncMessage(result SyncResult) string {
 	if result.FailureCount == 0 {
 		// Success message with environment-specific context
 		var dataMessage string
-		if result.Environment == "prod" {
+		if result.DryRun {
+			dataMessage = fmt.Sprintf("🧪 %s dry-run validation completed successfully", quarter)
+		} else if result.Environment == "prod" {
 			dataMessage = fmt.Sprintf("📅 %s data now available in Snowflake", quarter)
 		} else {
-			dataMessage = fmt.Sprintf("🧪 %s dry-run validation completed successfully", quarter)
+			dataMessage = fmt.Sprintf("📅 %s data synced to %s", quarter, strings.ToLower(result.Environment))
 		}
 
 		return fmt.Sprintf(`✅ ZTMF Data Sync SUCCESS (%s - %s)
