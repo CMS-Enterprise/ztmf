@@ -16,7 +16,9 @@ INSERT INTO public.cfacts_systems (
     group_name,
     ato_expiration_date,
     decommission_date,
-    last_modified_date
+    last_modified_date,
+    auth_methods,
+    fips_impact_level
 ) VALUES
 -- Death Star - DECOMMISSIONED (blown up at Yavin)
 (
@@ -34,7 +36,9 @@ INSERT INTO public.cfacts_systems (
     'Orbital Weapons Systems Group',
     '1977-05-25 00:00:00+00',
     '1977-05-25 00:00:00+00',
-    NOW()
+    NOW(),
+    'RACF',
+    'High'
 ),
 
 -- Executor - DECOMMISSIONED (crashed into Death Star II at Endor)
@@ -53,7 +57,9 @@ INSERT INTO public.cfacts_systems (
     'Fleet Command Systems Group',
     '1983-05-25 00:00:00+00',
     '1983-05-25 00:00:00+00',
-    NOW()
+    NOW(),
+    'IDM-Okta',
+    'High'
 ),
 
 -- Shield Generator - ACTIVE (matches ZTMF but ISSO email different)
@@ -72,7 +78,9 @@ INSERT INTO public.cfacts_systems (
     'Planetary Defense Systems Group',
     '2027-12-31 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    'IDM-Okta, EUA',
+    'Moderate'
 ),
 
 -- NEW SYSTEMS NOT IN ZTMF (active in CFACTS)
@@ -93,7 +101,9 @@ INSERT INTO public.cfacts_systems (
     'Starfighter Production Group',
     '2026-08-15 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    'IDM-Okta',
+    'Moderate'
 ),
 
 -- Star Destroyer Fleet Management
@@ -112,7 +122,9 @@ INSERT INTO public.cfacts_systems (
     'Fleet Operations Group',
     '2027-03-20 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    'IDM-Okta, Other (Imperial Navy Auth)',
+    'High'
 ),
 
 -- Stormtrooper Training Academy
@@ -131,7 +143,9 @@ INSERT INTO public.cfacts_systems (
     'Training and Development Group',
     '2026-11-30 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    'EUA',
+    'Low'
 ),
 
 -- Imperial Intelligence Network
@@ -150,7 +164,9 @@ INSERT INTO public.cfacts_systems (
     'Counter-Intelligence Group',
     '2027-06-15 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    'IDM-Okta',
+    'High'
 ),
 
 -- Detention Block Management (missing ISSO - data quality issue)
@@ -169,7 +185,9 @@ INSERT INTO public.cfacts_systems (
     'Detention Facility Operations Group',
     '2026-09-10 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    NULL,
+    'Moderate'
 ),
 
 -- RETIRED SYSTEMS
@@ -190,7 +208,9 @@ INSERT INTO public.cfacts_systems (
     'Senate Operations Group',
     '0019-01-01 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    NULL,
+    NULL
 ),
 
 -- Jedi Temple Archives (retired after Order 66)
@@ -209,7 +229,9 @@ INSERT INTO public.cfacts_systems (
     'Knowledge Management Group',
     '0019-01-01 00:00:00+00',
     '0019-05-04 00:00:00+00',
-    NOW()
+    NOW(),
+    NULL,
+    NULL
 ),
 
 -- Clone Army Management (retired, replaced by stormtroopers)
@@ -228,7 +250,9 @@ INSERT INTO public.cfacts_systems (
     'Clone Forces Legacy Systems Group',
     '0022-01-01 00:00:00+00',
     NULL,
-    NOW()
+    NOW(),
+    NULL,
+    NULL
 ),
 
 -- INITIATE PHASE (new systems being set up)
@@ -249,5 +273,7 @@ INSERT INTO public.cfacts_systems (
     'Advanced Weapons Research Group',
     NULL,
     NULL,
-    NOW()
+    NOW(),
+    NULL,
+    NULL
 );

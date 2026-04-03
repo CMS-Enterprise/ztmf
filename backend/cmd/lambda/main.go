@@ -79,6 +79,8 @@ func handler(ctx context.Context, event json.RawMessage) error {
 	
 	if err != nil {
 		log.Printf("Sync failed: %v", err)
+		// Send failure notification before returning
+		sendFailureNotification(ctx, syncEvent, err)
 		return err
 	}
 	
@@ -126,6 +128,29 @@ func sendSlackNotification(ctx context.Context, event SyncEvent, result *sync.Sy
 	}
 	
 	return notifier.SendSyncNotification(ctx, notifyResult)
+}
+
+// sendFailureNotification sends a Slack notification when sync fails.
+func sendFailureNotification(ctx context.Context, event SyncEvent, syncErr error) {
+	notifier, err := notifications.NewSlackNotifier(ctx)
+	if err != nil {
+		log.Printf("Failed to initialize Slack notifier for failure notification: %v", err)
+		return
+	}
+
+	result := notifications.SyncResult{
+		Environment:   config.GetInstance().Env,
+		TriggerType:   event.TriggerType,
+		DryRun:        event.DryRun,
+		SuccessCount:  0,
+		FailureCount:  1,
+		FailedTables:  []string{"(sync initialization)"},
+		ErrorMessages: []string{syncErr.Error()},
+	}
+
+	if notifyErr := notifier.SendSyncNotification(ctx, result); notifyErr != nil {
+		log.Printf("Failed to send failure notification: %v", notifyErr)
+	}
 }
 
 func main() {

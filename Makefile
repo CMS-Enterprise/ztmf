@@ -3,7 +3,7 @@
 # Single source of truth for the local API port
 API_PORT ?= 8080
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-e2e test-full full-stack-up full-stack-down frontend-env
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env
 
 # Default target
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test                Run all tests"
 	@echo "  make test-unit           Run unit tests only (fast)"
+	@echo "  make test-build          Build all binaries (API + Lambdas)"
 	@echo "  make test-integration    Run integration tests"
 	@echo "  make test-coverage       Run tests and generate HTML coverage report"
 	@echo "  make test-coverage-view  Open HTML coverage report in browser"
@@ -282,16 +283,30 @@ test-e2e:
 	@rm /tmp/emberfall_test_isolated.yml
 	@echo "✅ E2E tests passed!"
 
+test-build:
+	@echo "Building all binaries (API + Lambdas)..."
+	@cd backend && go build ./cmd/api/...
+	@cd backend && go build ./cmd/lambda/...
+	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
+	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@echo "✅ All binaries build successfully"
+
 test-full:
 	@echo "Running comprehensive test suite..."
 	@echo ""
-	@echo "1/3 Running unit tests..."
+	@echo "1/4 Building all binaries (API + Lambdas)..."
+	@cd backend && go build ./cmd/api/...
+	@cd backend && go build ./cmd/lambda/...
+	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
+	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@echo ""
+	@echo "2/4 Running unit tests..."
 	@cd backend && go test -short ./...
 	@echo ""
-	@echo "2/3 Generating coverage report..."
+	@echo "3/4 Generating coverage report..."
 	@cd backend && go test -cover ./...
 	@echo ""
-	@echo "3/3 Running Emberfall E2E tests (isolated containers)..."
+	@echo "4/4 Running Emberfall E2E tests (isolated containers)..."
 	@make test-e2e
 	@echo ""
 	@echo "✅ All tests complete"

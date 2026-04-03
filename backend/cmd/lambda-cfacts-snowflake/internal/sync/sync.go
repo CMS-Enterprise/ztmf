@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"github.com/CMS-Enterprise/ztmf/backend/internal/cfacts"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/export"
 )
@@ -90,6 +92,7 @@ func snowflakeColumns() []string {
 	for sfCol := range cfacts.SnowflakeColumnMap {
 		cols = append(cols, sfCol)
 	}
+	sort.Strings(cols)
 	return cols
 }
 
