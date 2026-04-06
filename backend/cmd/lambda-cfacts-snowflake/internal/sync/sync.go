@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"github.com/CMS-Enterprise/ztmf/backend/internal/cfacts"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/export"
 )
@@ -90,6 +92,7 @@ func snowflakeColumns() []string {
 	for sfCol := range cfacts.SnowflakeColumnMap {
 		cols = append(cols, sfCol)
 	}
+	sort.Strings(cols)
 	return cols
 }
 
@@ -180,6 +183,8 @@ func scanToSystem(values []any, colIdx map[string]int, rowNum int) (cfacts.Cfact
 		DivisionName:             optStr(getString("DIVISION_NAME")),
 		GroupAcronym:             optStr(getString("GROUP_ACRONYM")),
 		GroupName:                optStr(getString("GROUP_NAME")),
+		AuthMethods:             optStr(getString("AUTH_METHODS")),
+		FipsImpactLevel:         optStr(getString("FIPS_IMPACT_LEVEL")),
 	}
 
 	var err error

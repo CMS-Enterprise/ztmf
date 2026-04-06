@@ -20,9 +20,11 @@ type CfactsSystem struct {
 	ATOExpirationDate        *time.Time `json:"ato_expiration_date"`
 	DecommissionDate         *time.Time `json:"decommission_date"`
 	LastModifiedDate         *time.Time `json:"last_modified_date"`
+	AuthMethods              *string    `json:"auth_methods"`
+	FipsImpactLevel          *string    `json:"fips_impact_level"`
 }
 
-// cfactsColumns lists the 16 data columns in cfacts_systems (synced_at is set by DB).
+// cfactsColumns lists the 18 data columns in cfacts_systems (synced_at is set by DB).
 var cfactsColumns = []string{
 	"fisma_uuid",
 	"fisma_acronym",
@@ -40,6 +42,8 @@ var cfactsColumns = []string{
 	"ato_expiration_date",
 	"decommission_date",
 	"last_modified_date",
+	"auth_methods",
+	"fips_impact_level",
 }
 
 // SnowflakeColumnMap maps uppercase Snowflake column names to CfactsSystem field names.
@@ -60,6 +64,8 @@ var SnowflakeColumnMap = map[string]string{
 	"ATO_EXPIRATION_DATE":        "ato_expiration_date",
 	"DECOMMISSION_DATE":          "decommission_date",
 	"LAST_MODIFIED_DATE":         "last_modified_date",
+	"AUTH_METHODS":               "auth_methods",
+	"FIPS_IMPACT_LEVEL":          "fips_impact_level",
 }
 
 // values returns the ordered slice of field values for database insertion.
@@ -81,5 +87,7 @@ func (c *CfactsSystem) values() []any {
 		c.ATOExpirationDate,
 		c.DecommissionDate,
 		c.LastModifiedDate,
+		c.AuthMethods,
+		c.FipsImpactLevel,
 	}
 }
