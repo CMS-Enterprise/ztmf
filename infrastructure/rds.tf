@@ -1,10 +1,10 @@
 resource "aws_db_subnet_group" "ztmf" {
-  name       = "ztmf"
+  name       = local.name_prefix
   subnet_ids = data.aws_subnets.private.ids
 }
 
 resource "aws_security_group" "ztmf_db" {
-  name        = "ztmf_db"
+  name        = "${local.name_prefix}_db"
   description = "Allow postgresql inbound traffic"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -18,7 +18,7 @@ resource "aws_security_group" "ztmf_db" {
 }
 
 resource "aws_rds_cluster" "ztmf" {
-  cluster_identifier          = "ztmf"
+  cluster_identifier          = local.name_prefix
   engine                      = "aurora-postgresql"
   engine_mode                 = "provisioned"
   engine_version              = "16.8"
@@ -29,8 +29,8 @@ resource "aws_rds_cluster" "ztmf" {
   storage_encrypted           = true
 
   serverlessv2_scaling_configuration {
-    max_capacity = 1.0
-    min_capacity = 0.5
+    max_capacity = var.aurora_max_capacity
+    min_capacity = var.aurora_min_capacity
   }
   vpc_security_group_ids = [aws_security_group.ztmf_db.id]
 }

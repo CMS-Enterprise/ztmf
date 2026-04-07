@@ -1,4 +1,7 @@
+# GitHub OIDC provider is an account-level singleton (one per URL per account).
+# Only the VPC owner creates it — impl shares dev's provider and role.
 resource "aws_iam_openid_connect_provider" "github_actions" {
+  count          = local.is_vpc_owner ? 1 : 0
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
   thumbprint_list = [
@@ -8,9 +11,10 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 module "github_actions" {
+  count     = local.is_vpc_owner ? 1 : 0
   name      = "ztmf_github_actions"
   source    = "./modules/role"
-  principal = { Federated = aws_iam_openid_connect_provider.github_actions.arn }
+  principal = { Federated = aws_iam_openid_connect_provider.github_actions[0].arn }
   managed_policy_arns = [
     "arn:aws:iam::${local.account_id}:policy/CMSApprovedAWSServices",
     "arn:aws:iam::${local.account_id}:policy/ADO-Restriction-Policy",

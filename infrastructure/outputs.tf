@@ -29,7 +29,20 @@ output "lambda_function_arn" {
 
 # Store test events as SSM parameters for team reference
 resource "aws_ssm_parameter" "lambda_test_events" {
-  for_each = var.environment == "dev" ? {
+  for_each = var.environment == "prod" ? {
+    "prod-dry-run-validation" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = true
+      tables       = ["users", "scores"]
+      full_refresh = false
+    })
+    "prod-manual-full-sync" = jsonencode({
+      trigger_type = "manual"
+      dry_run      = false
+      tables       = []
+      full_refresh = true
+    })
+    } : {
     "dry-run-single-table" = jsonencode({
       trigger_type = "manual"
       dry_run      = true
@@ -47,19 +60,6 @@ resource "aws_ssm_parameter" "lambda_test_events" {
       dry_run      = false
       tables       = ["users"]
       full_refresh = false
-    })
-    } : {
-    "prod-dry-run-validation" = jsonencode({
-      trigger_type = "manual"
-      dry_run      = true
-      tables       = ["users", "scores"]
-      full_refresh = false
-    })
-    "prod-manual-full-sync" = jsonencode({
-      trigger_type = "manual"
-      dry_run      = false
-      tables       = []
-      full_refresh = true
     })
   }
 

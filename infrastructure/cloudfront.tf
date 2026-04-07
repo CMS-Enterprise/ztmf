@@ -1,14 +1,14 @@
 resource "aws_cloudfront_origin_access_control" "cloudfront_s3_oac" {
-  name                              = "ZTMF CloudFront S3 OAC"
-  description                       = "ZTMF CloudFront S3 OAC"
+  name                              = "${upper(local.name_prefix)} CloudFront S3 OAC"
+  description                       = "${upper(local.name_prefix)} CloudFront S3 OAC"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
 resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
-  name    = "ZTMF-HSTS-Policy"
-  comment = "HSTS policy for ZTMF"
+  name    = "${upper(local.name_prefix)}-HSTS-Policy"
+  comment = "HSTS policy for ${upper(local.name_prefix)}"
 
   security_headers_config {
     strict_transport_security {
@@ -49,7 +49,7 @@ resource "aws_cloudfront_response_headers_policy" "hsts_policy" {
 
 resource "aws_cloudfront_vpc_origin" "internal_alb" {
   vpc_origin_endpoint_config {
-    name                   = "ZTMF_API"
+    name                   = "${upper(local.name_prefix)}_API"
     arn                    = aws_lb.ztmf_api.arn
     http_port              = 80
     https_port             = 443
