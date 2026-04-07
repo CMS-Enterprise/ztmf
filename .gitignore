@@ -18,6 +18,7 @@ backend/lambda
 CLAUDE.md
 AGENTS.md
 .claude/
+.githooks/
 
 # Test coverage files
 coverage.out
