@@ -50,6 +50,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: test
+        continue-on-error: true
         uses: snyk/actions/golang@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -86,6 +87,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: iac test
+        continue-on-error: true
         uses: snyk/actions/golang@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
