@@ -304,7 +304,7 @@ test-full:
 	@cd backend && go test -short ./...
 	@echo ""
 	@echo "3/4 Generating coverage report..."
-	@cd backend && go test -cover ./...
+	@cd backend && go test -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
 	@echo ""
 	@echo "4/4 Running Emberfall E2E tests (isolated containers)..."
 	@make test-e2e
