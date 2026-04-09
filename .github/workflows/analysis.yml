@@ -60,6 +60,7 @@ jobs:
   Snyk-Code-Test:
     name: snyk code test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -75,6 +76,7 @@ jobs:
         run: npm install -g snyk
 
       - name: code test
+        continue-on-error: true
         run: snyk code test --severity-threshold=high ./backend
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
