@@ -19,6 +19,9 @@ CLAUDE.md
 AGENTS.md
 .claude/
 
+# Per-worktree git hooks (not shared)
+.githooks/
+
 # Test coverage files
 coverage.out
 coverage.html
