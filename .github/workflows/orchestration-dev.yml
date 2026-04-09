@@ -34,10 +34,10 @@ jobs:
 
   backend:
     name: Backend
-    needs: 
+    needs:
       - analysis
       - diff
-    if: github.event.pull_request.draft == false && contains(needs.diff.outputs.backend, 'backend/')
+    if: ${{ github.event.pull_request.draft == false && contains(needs.diff.outputs.backend, 'backend/') && !failure() && !cancelled() }}
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV
