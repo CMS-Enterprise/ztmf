@@ -67,19 +67,14 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-
       - name: code test
         continue-on-error: true
-        run: snyk code test --severity-threshold=high ./backend
+        uses: snyk/actions/golang@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-IaC-Test:
     name: snyk iac test
