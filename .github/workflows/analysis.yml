@@ -71,13 +71,13 @@ jobs:
         with:
           go-version-file: backend/go.mod
 
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
       - name: code test
-        uses: snyk/actions/golang@master
+        run: snyk code test --severity-threshold=high ./backend
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: code test
-          args: --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-IaC-Test:
     name: snyk iac test
