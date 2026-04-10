@@ -784,7 +784,7 @@ func buildSnowflakeConnectionString() (*SnowflakeConfig, string, error) {
 		snowflakeConfig.Database = "BUS_ZEROTRUST"
 	}
 	if snowflakeConfig.Schema == "" {
-		snowflakeConfig.Schema = "PRIVATE"
+		snowflakeConfig.Schema = "CORE"
 	}
 	if snowflakeConfig.Role == "" {
 		snowflakeConfig.Role = "ZTMF_LOADER"
