@@ -93,7 +93,7 @@ func sanitizeErr(err error) (int, error) {
 		status = 403
 	case errors.Is(err, model.ErrNotUnique),
 		errors.Is(err, ErrMalformed),
-
+		errors.Is(err, model.ErrNotesTooLong),
 		errors.Is(err, model.ErrNoReference):
 		status = 400
 	case errors.Is(err, model.ErrDbConnection):
