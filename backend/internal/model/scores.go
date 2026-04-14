@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
@@ -49,7 +50,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 
 func (s *Score) validate(ctx context.Context) error {
 
-	if s.Notes != nil && len(*s.Notes) > 2000 {
+	if s.Notes != nil && utf8.RuneCountInString(*s.Notes) > 2000 {
 		return ErrNotesTooLong
 	}
 
@@ -58,7 +59,8 @@ func (s *Score) validate(ctx context.Context) error {
 		return err
 	}
 
-	if time.Now().UTC().After(dataCall.Deadline) {
+	user := UserFromContext(ctx)
+	if time.Now().UTC().After(dataCall.Deadline) && (user == nil || !user.IsAdmin()) {
 		return ErrPastDeadline
 	}
 
