@@ -18,6 +18,7 @@ var (
 	ErrNotUnique    = errors.New("not unique")
 	ErrNoReference  = errors.New("reference not found")
 	ErrPastDeadline = errors.New("deadline has passed")
+	ErrNotesTooLong = errors.New("notes exceed maximum length of 2000 characters")
 )
 
 type InvalidInputError struct {

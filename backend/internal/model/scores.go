@@ -49,6 +49,10 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 
 func (s *Score) validate(ctx context.Context) error {
 
+	if s.Notes != nil && len(*s.Notes) > 2000 {
+		return ErrNotesTooLong
+	}
+
 	dataCall, err := FindDataCallByID(ctx, s.DataCallID)
 	if err != nil {
 		return err

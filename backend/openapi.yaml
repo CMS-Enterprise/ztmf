@@ -1342,6 +1342,7 @@ components:
         notes:
           type: string
           nullable: true
+          maxLength: 2000
         functionoptionid:
           type: integer
           format: int32
