@@ -1,7 +1,10 @@
-# CMS already provides a VPC, we just need some endpoints in it
+# CMS already provides a VPC, we just need some endpoints in it.
+# VPC endpoints are per-VPC singletons — only the VPC owner creates them.
+# Environments sharing a VPC (e.g. impl sharing dev's) skip endpoint creation.
 
 resource "aws_security_group" "ztmf_vpc_endpoints" {
-  name        = "ztmf_vpc_endpoints"
+  count       = local.is_vpc_owner ? 1 : 0
+  name        = "${local.name_prefix}_vpc_endpoints"
   description = "Allow HTTP(S) traffic from private subnets"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -23,12 +26,12 @@ resource "aws_security_group" "ztmf_vpc_endpoints" {
 }
 
 resource "aws_vpc_endpoint" "ztmf" {
-  for_each            = toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"])
+  for_each            = local.is_vpc_owner ? toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"]) : toset([])
   vpc_id              = data.aws_vpc.ztmf.id
   service_name        = "com.amazonaws.us-east-1.${each.value}"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
-  security_group_ids  = [aws_security_group.ztmf_vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.ztmf_vpc_endpoints[0].id]
   private_dns_enabled = true
   dns_options { private_dns_only_for_inbound_resolver_endpoint = false }
 }

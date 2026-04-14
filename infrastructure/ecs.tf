@@ -1,5 +1,5 @@
 resource "aws_ecs_cluster" "ztmf" {
-  name = "ztmf"
+  name = local.name_prefix
 
   setting {
     name  = "containerInsights"
@@ -8,14 +8,14 @@ resource "aws_ecs_cluster" "ztmf" {
 }
 
 module "api_task_execution" {
-  name                = "ztmf_api_task_execution"
+  name                = "${local.name_prefix}_api_task_execution"
   source              = "./modules/role"
   principal           = { Service = "ecs-tasks.amazonaws.com" }
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
 }
 
 module "api_task" {
-  name      = "ztmf_api_task"
+  name      = "${local.name_prefix}_api_task"
   source    = "./modules/role"
   principal = { Service = "ecs-tasks.amazonaws.com" }
 }
@@ -44,13 +44,13 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
 }
 
 resource "aws_cloudwatch_log_group" "ztmf_api" {
-  name = "ztmf_api"
+  name = "${local.name_prefix}_api"
 }
 
 resource "aws_ecs_task_definition" "ztmf_api" {
   execution_role_arn       = module.api_task_execution.role_arn
   task_role_arn            = module.api_task.role_arn
-  family                   = "api"
+  family                   = contains(["dev", "prod"], var.environment) ? "api" : "${local.name_prefix}-api"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -60,7 +60,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       name             = "ztmfapi"
       command          = ["/usr/local/bin/ztmfapi"]
       workingDirectory = "/api"
-      image            = "${aws_ecr_repository.ztmf_api.repository_url}:${data.aws_ssm_parameter.ztmf_api_tag.insecure_value}"
+      image            = "${local.ecr_repository_url}:${data.aws_ssm_parameter.ztmf_api_tag.insecure_value}"
       essential        = true
       portMappings     = [{ containerPort = 443 }]
 
@@ -125,7 +125,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "ztmf_api"
+          "awslogs-group"         = "${local.name_prefix}_api"
           "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "api"
         }
@@ -135,7 +135,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
 }
 
 resource "aws_security_group" "ztmf_api_task" {
-  name        = "ztmf-api-task"
+  name        = "${local.name_prefix}-api-task"
   description = "Allow TLS inbound traffic"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -172,7 +172,7 @@ resource "aws_security_group" "ztmf_api_task" {
 }
 
 resource "aws_ecs_service" "ztmf_api" {
-  name            = "ztmf-api"
+  name            = "${local.name_prefix}-api"
   cluster         = aws_ecs_cluster.ztmf.id
   task_definition = aws_ecs_task_definition.ztmf_api.arn
   launch_type     = "FARGATE"

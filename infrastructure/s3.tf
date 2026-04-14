@@ -57,7 +57,7 @@ data "aws_iam_policy_document" "allow_s3_access_from_cloudfront" {
 }
 
 resource "aws_s3_bucket" "ztmf_logs" {
-  bucket = "ztmf-logs-${local.account_id}-use1"
+  bucket = "${local.name_prefix}-logs-${local.account_id}-use1"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "ztmf_logs" {

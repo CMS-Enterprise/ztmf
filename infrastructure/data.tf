@@ -5,7 +5,7 @@ data "aws_region" "current" {}
 data "aws_vpc" "ztmf" {
   filter {
     name   = "tag:Name"
-    values = ["ztmf-east-${var.environment}"]
+    values = ["ztmf-east-${local.vpc_environment}"]
   }
 }
 
@@ -72,7 +72,7 @@ data "aws_secretsmanager_secrets" "rds" {
 
   filter {
     name   = "tag-value"
-    values = ["arn:aws:rds:us-east-1:${local.account_id}:cluster:ztmf"]
+    values = ["arn:aws:rds:us-east-1:${local.account_id}:cluster:${local.name_prefix}"]
   }
 }
 
@@ -83,12 +83,14 @@ data "aws_secretsmanager_secrets" "rds" {
 # }
 
 data "aws_ssm_parameter" "ztmf_api_tag" {
-  name = "ztmf_api_tag"
+  name = "${local.name_prefix}_api_tag"
 }
 
 // this resource needed to be created manually by importing a Digitcert certificate
+// the cert's primary domain is dev.ztmf.cms.gov with other environments as SANs
+// impl.ztmf.cms.gov must be added as a SAN before deploying the impl environment
 data "aws_acm_certificate" "ztmf" {
-  domain      = "dev.ztmf.cms.gov" // use dev. here because thats the domain value of the cert. other names are listed as alts
+  domain      = "dev.ztmf.cms.gov"
   statuses    = ["ISSUED"]
   most_recent = true
 }

@@ -1,0 +1,56 @@
+name: Orchestration IMPL
+
+on:
+  pull_request:
+    branches:
+      - impl
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+jobs:
+  analysis:
+    name: Analysis
+    uses: ./.github/workflows/analysis.yml
+    secrets: inherit
+
+  diff:
+    if: github.event.pull_request.draft == false
+    name: Check for Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.backend.outputs.backend }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in backend/
+        id: backend
+        run: echo "backend=$(git --no-pager diff --name-only origin/impl backend/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
+
+  backend:
+    name: Backend
+    needs:
+      - analysis
+      - diff
+    if: github.event.pull_request.draft == false && contains(needs.diff.outputs.backend, 'backend/')
+    uses: ./.github/workflows/backend.yml
+    with:
+      environment: IMPL
+    secrets: inherit
+
+  infrastructure:
+    name: Infrastructure
+    needs:
+      - analysis
+      - diff
+      - backend
+    if: ${{ github.event.pull_request.draft == false && !failure() && !cancelled() }}
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: IMPL
+    secrets: inherit

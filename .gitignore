@@ -18,6 +18,7 @@ backend/lambda
 CLAUDE.md
 AGENTS.md
 .claude/
+.githooks/
 
 # Per-worktree git hooks (not shared)
 .githooks/

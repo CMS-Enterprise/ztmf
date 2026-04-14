@@ -7,6 +7,20 @@ locals {
 
   domain_name = "${var.domain_name_prefix}ztmf.cms.gov"
 
+  // Resource name prefix: "ztmf" for dev/prod (preserves existing names), "ztmf-impl" for impl, etc.
+  // This allows multiple environments to coexist in the same AWS account without name collisions.
+  name_prefix = contains(["dev", "prod"], var.environment) ? "ztmf" : "ztmf-${var.environment}"
+
+  // Which VPC to use — impl shares the dev VPC, everything else uses its own
+  vpc_environment = var.vpc_environment != "" ? var.vpc_environment : var.environment
+
+  // Whether this environment owns its VPC (controls VPC endpoint creation, bastion, etc.)
+  // When sharing a VPC, these resources already exist from the owning environment.
+  is_vpc_owner = local.vpc_environment == var.environment
+
+  // Secret name prefix: shared secrets use "ztmf" for dev/prod, "ztmf_impl" for impl
+  secret_prefix = contains(["dev", "prod"], var.environment) ? "ztmf" : "ztmf_${var.environment}"
+
   // simplify referencing of json object fields for aws_verifiedaccess_trust_provider.ztmf_idmokta.oidc_options
   // technically only one of the fields was a true secret (client_secret), but since we have the space here
   //  we can use it to simplify code instead of placing all the other fields in TF vars
