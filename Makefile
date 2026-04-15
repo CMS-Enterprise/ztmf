@@ -42,6 +42,7 @@ help:
 
 # Create compose-dev.yml and start services
 dev-setup: backend/compose-dev.yml backend/dev.compose.env
+	@git config core.hooksPath .hooks 2>/dev/null || true
 	@echo "🚀 Starting development environment..."
 	cd backend && docker compose -f compose-dev.yml up -d --build
 	@echo "✅ Development environment ready!"
