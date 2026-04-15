@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Pre-commit hook: Block dangerous files, ensure Go code compiles and tests pass
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Check for files that should never be committed
+BLOCKED_PATTERNS=(
+    '\.tfstate$'
+    '\.tfstate\.backup$'
+    '\.tfplan$'
+    '\.pem$'
+    '\.p12$'
+    '\.pfx$'
+    '\.key$'
+    '\.crt$'
+    'credentials\.json$'
+    '\.env\.local$'
+    'id_rsa'
+    'id_ed25519'
+)
+
+STAGED_FILES=$(git diff --cached --name-only)
+BLOCKED=""
+
+for pattern in "${BLOCKED_PATTERNS[@]}"; do
+    MATCHES=$(echo "$STAGED_FILES" | grep -E "$pattern" || true)
+    if [ -n "$MATCHES" ]; then
+        BLOCKED="$BLOCKED$MATCHES"$'\n'
+    fi
+done
+
+if [ -n "$BLOCKED" ]; then
+    echo "❌ Blocked files detected in staging area:"
+    echo "$BLOCKED" | sed '/^$/d' | while read -r f; do echo "   - $f"; done
+    echo ""
+    echo "   These file types should not be committed to the repository."
+    echo "   Remove them with: git reset HEAD <file>"
+    exit 1
+fi
+
+# Check for large files (>5MB)
+LARGE_FILES=""
+for file in $STAGED_FILES; do
+    if [ -f "$file" ]; then
+        SIZE=$(wc -c < "$file" 2>/dev/null || echo 0)
+        if [ "$SIZE" -gt 5242880 ]; then
+            LARGE_FILES="$LARGE_FILES   - $file ($(( SIZE / 1048576 ))MB)"$'\n'
+        fi
+    fi
+done
+
+if [ -n "$LARGE_FILES" ]; then
+    echo "❌ Large files detected (>5MB):"
+    echo "$LARGE_FILES"
+    echo "   Binary artifacts should be built in CI, not committed."
+    echo "   Remove with: git reset HEAD <file>"
+    exit 1
+fi
+
+echo "✓ File checks passed"
+
+# Check if any Go files are being committed
+if echo "$STAGED_FILES" | grep -q '\.go$'; then
+    echo "→ Checking Go compilation..."
+
+    if ! (cd backend && go build ./...) 2>/dev/null; then
+        echo "❌ Go compilation failed. Fix errors before committing."
+        exit 1
+    fi
+    echo "✓ Go compilation successful"
+
+    echo "→ Running unit tests..."
+    if ! (cd backend && go test -short ./...) 2>/dev/null; then
+        echo "❌ Unit tests failed. Fix failures before committing."
+        exit 1
+    fi
+    echo "✓ Unit tests passed"
+fi
+
+echo "✓ Pre-commit checks passed"
+exit 0
