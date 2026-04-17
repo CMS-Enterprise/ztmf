@@ -398,17 +398,23 @@ full-stack-down:
 
 # Database access to Aurora (replaces the EC2 bastion). Launches an on-demand
 # Fargate ops task, drops a shell or opens an SSM port-forward, then stops the
-# task when the session ends. Requires AWS credentials set for the target
-# account (any mechanism: aws-vault, AWS SSO, env vars) and the Session Manager
-# Plugin on PATH. See scripts/db-tunnel.sh.
+# task when the session ends. Requires the Session Manager Plugin on PATH and
+# AWS credentials for the target account already resolvable (e.g. `kion creds`
+# populates ~/.aws/credentials under profile names, or aws-vault, or env vars).
+#
+# Profile names default to the repo convention ztmf-dev / ztmf-prod; override
+# by setting AWS_PROFILE_DEV / AWS_PROFILE_PROD in your shell if yours differ.
+AWS_PROFILE_DEV  ?= ztmf-dev
+AWS_PROFILE_PROD ?= ztmf-prod
+
 db-shell-dev:
-	@./scripts/db-tunnel.sh dev --shell
+	@AWS_PROFILE=$(AWS_PROFILE_DEV)  ./scripts/db-tunnel.sh dev  --shell
 
 db-shell-prod:
-	@./scripts/db-tunnel.sh prod --shell
+	@AWS_PROFILE=$(AWS_PROFILE_PROD) ./scripts/db-tunnel.sh prod --shell
 
 db-forward-dev:
-	@./scripts/db-tunnel.sh dev --forward 15432
+	@AWS_PROFILE=$(AWS_PROFILE_DEV)  ./scripts/db-tunnel.sh dev  --forward 15432
 
 db-forward-prod:
-	@./scripts/db-tunnel.sh prod --forward 15432
+	@AWS_PROFILE=$(AWS_PROFILE_PROD) ./scripts/db-tunnel.sh prod --forward 15432
