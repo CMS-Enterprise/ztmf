@@ -36,7 +36,7 @@ help:
 	@echo ""
 	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
 	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
-	@echo "  make db-forward-<env> Port-forward Aurora:5432 to localhost:15432 (local psql)"
+	@echo "  make db-forward-<env> Port-forward Aurora:5432 to localhost:15433 (local psql)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev-setup                           # Full dev environment setup"
@@ -398,23 +398,24 @@ full-stack-down:
 
 # Database access to Aurora (replaces the EC2 bastion). Launches an on-demand
 # Fargate ops task, drops a shell or opens an SSM port-forward, then stops the
-# task when the session ends. Requires the Session Manager Plugin on PATH and
-# AWS credentials for the target account already resolvable (e.g. `kion creds`
-# populates ~/.aws/credentials under profile names, or aws-vault, or env vars).
+# task when the session ends.
 #
-# Profile names default to the repo convention ztmf-dev / ztmf-prod; override
-# by setting AWS_PROFILE_DEV / AWS_PROFILE_PROD in your shell if yours differ.
-AWS_PROFILE_DEV  ?= ztmf-dev
-AWS_PROFILE_PROD ?= ztmf-prod
-
+# Prereqs (caller-managed): the Session Manager Plugin on PATH, and AWS
+# credentials already resolvable for the target account (any mechanism). The
+# script does not assume a profile name. Set AWS_PROFILE (or other aws CLI
+# credential env vars) in your shell before invoking, for example:
+#     AWS_PROFILE=<your-dev-profile> make db-forward-dev
+#
+# The script verifies the active credentials resolve the expected env's VPC
+# tag before doing anything, so running against the wrong account fails fast.
 db-shell-dev:
-	@AWS_PROFILE=$(AWS_PROFILE_DEV)  ./scripts/db-tunnel.sh dev  --shell
+	@./scripts/db-tunnel.sh dev --shell
 
 db-shell-prod:
-	@AWS_PROFILE=$(AWS_PROFILE_PROD) ./scripts/db-tunnel.sh prod --shell
+	@./scripts/db-tunnel.sh prod --shell
 
 db-forward-dev:
-	@AWS_PROFILE=$(AWS_PROFILE_DEV)  ./scripts/db-tunnel.sh dev  --forward 15432
+	@./scripts/db-tunnel.sh dev --forward 15433
 
 db-forward-prod:
-	@AWS_PROFILE=$(AWS_PROFILE_PROD) ./scripts/db-tunnel.sh prod --forward 15432
+	@./scripts/db-tunnel.sh prod --forward 15433

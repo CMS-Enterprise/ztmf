@@ -5,7 +5,7 @@
 #
 # Usage:
 #   scripts/db-tunnel.sh <dev|prod> --shell
-#   scripts/db-tunnel.sh <dev|prod> --forward [LOCAL_PORT]   # default 15432
+#   scripts/db-tunnel.sh <dev|prod> --forward [LOCAL_PORT]   # default 15433
 #
 # Prereqs:
 #   - AWS credentials set for the target account (however you manage them:
@@ -23,7 +23,7 @@ fi
 
 ENV="$1"; shift
 MODE="$1"; shift
-LOCAL_PORT="${1:-15432}"
+LOCAL_PORT="${1:-15433}"
 
 case "$ENV" in dev|prod) ;; *) echo "env must be dev or prod" >&2; exit 2 ;; esac
 case "$MODE" in --shell|--forward) ;; *) echo "mode must be --shell or --forward" >&2; exit 2 ;; esac

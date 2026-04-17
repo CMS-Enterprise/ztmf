@@ -163,10 +163,10 @@ flow and stop the task when the session ends.
 # Drop a shell inside the ops container and run psql/pg_dump in-place:
 make db-shell-dev    # or db-shell-prod
 
-# Or port-forward Aurora:5432 to localhost:15432 and use local tools (psql,
+# Or port-forward Aurora:5432 to localhost:15433 and use local tools (psql,
 # pgAdmin, DataGrip):
 make db-forward-dev  # or db-forward-prod
-psql -h localhost -p 15432 -U admin -d ztmf
+psql -h localhost -p 15433 -U admin -d ztmf
 ```
 
 See `scripts/db-tunnel.sh` for the underlying flow. Requirements:
