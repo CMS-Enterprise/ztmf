@@ -37,3 +37,31 @@ resource "aws_ecr_registry_scanning_configuration" "ztmf_api" {
     }
   }
 }
+
+resource "aws_ecr_repository" "ztmf_ops" {
+  name                 = "ztmf/ops"
+  image_tag_mutability = "IMMUTABLE"
+}
+
+resource "aws_ecr_lifecycle_policy" "ztmf_ops" {
+  repository = aws_ecr_repository.ztmf_ops.name
+
+  policy = <<EOF
+{
+    "rules": [
+        {
+            "rulePriority": 1,
+            "description": "Keep last 2 images",
+            "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 2
+            },
+            "action": {
+                "type": "expire"
+            }
+        }
+    ]
+}
+EOF
+}

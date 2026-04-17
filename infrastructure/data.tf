@@ -86,6 +86,11 @@ data "aws_ssm_parameter" "ztmf_api_tag" {
   name = "ztmf_api_tag"
 }
 
+data "aws_ssm_parameter" "ztmf_ops_tag" {
+  name       = aws_ssm_parameter.ztmf_ops_tag.name
+  depends_on = [aws_ssm_parameter.ztmf_ops_tag]
+}
+
 // this resource needed to be created manually by importing a Digitcert certificate
 data "aws_acm_certificate" "ztmf" {
   domain      = "dev.ztmf.cms.gov" // use dev. here because thats the domain value of the cert. other names are listed as alts
