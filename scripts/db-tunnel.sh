@@ -107,7 +107,8 @@ else
   TARGET="ecs:${CLUSTER}_${TASK_ID}_${RUNTIME_ID}"
 
   echo "[5/5] forwarding ${AURORA_HOST}:5432 to localhost:${LOCAL_PORT}"
-  echo "    connect with: psql -h localhost -p ${LOCAL_PORT} -U admin -d ztmf"
+  echo "    connect with: psql -h localhost -p ${LOCAL_PORT} -d ztmf"
+  echo "    (supply -U <user> or check the RDS master secret for credentials)"
   echo "    Ctrl-C to end."
   aws ssm start-session \
     --target "$TARGET" \

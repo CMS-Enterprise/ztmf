@@ -63,4 +63,6 @@ jobs:
         run: docker push ${{ steps.repo.outputs.url }}:${{ steps.revParse.outputs.shaShort }}
 
       - name: AWS - SSM Put Parameter
-        run: aws ssm put-parameter --name ztmf_ops_tag --value ${{ steps.revParse.outputs.shaShort }} --overwrite
+        run: |
+          set -euo pipefail
+          aws ssm put-parameter --name ztmf_ops_tag --value "${{ steps.revParse.outputs.shaShort }}" --overwrite

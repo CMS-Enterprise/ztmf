@@ -265,7 +265,7 @@ resource "aws_ecs_task_definition" "ztmf_ops" {
   container_definitions = jsonencode([
     {
       name      = "ztmfops"
-      image     = "${aws_ecr_repository.ztmf_ops.repository_url}:${aws_ssm_parameter.ztmf_ops_tag.value}"
+      image     = "${aws_ecr_repository.ztmf_ops.repository_url}:${data.aws_ssm_parameter.ztmf_ops_tag.insecure_value}"
       essential = true
 
       environment = [
