@@ -13,8 +13,8 @@ This repo contains the following major components:
 1. [Go](https://go.dev/) at the required version specified in [backend/go.mod](backend/go.mod#L3)
 2. [Docker](https://www.docker.com/) for running the development environment
 3. [Make](https://www.gnu.org/software/make/) for development workflow automation
-4. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/) (optional for production database access)
-5. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) for establishing SSM tunnels (production only)
+4. PostgreSQL management tool of your choice such as [pgAdmin](https://www.pgadmin.org/) (optional for production database access via `make db-forward-<env>`)
+5. [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [Session Manager Plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for Aurora access via on-demand Fargate ops task (production only)
 6. [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform) for deploying infrastructure changes manually if necessary (though CICD should handle most changes)
 7. [Emberfall](https://github.com/aquia-inc/emberfall) for running smoke tests locally (very helpful when adding new routes or parameters)
 

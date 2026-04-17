@@ -154,4 +154,30 @@ The Terraform configuration follows a logical service-based organization:
 
 ## Database Access
 
-A bastion host is provided for database administration. The bastion host is accessible via AWS Systems Manager Session Manager and has access to the database.
+Aurora is reached via an on-demand Fargate ops task (`ztmf_ops` task definition,
+defined in `ecs.tf`). There is no long-running bastion. Operators launch the
+task via the repo's make targets, which wrap an `aws ecs run-task` + ECS Exec
+flow and stop the task when the session ends.
+
+```bash
+# Drop a shell inside the ops container and run psql/pg_dump in-place:
+make db-shell-dev    # or db-shell-prod
+
+# Or port-forward Aurora:5432 to localhost:15432 and use local tools (psql,
+# pgAdmin, DataGrip):
+make db-forward-dev  # or db-forward-prod
+psql -h localhost -p 15432 -U admin -d ztmf
+```
+
+See `scripts/db-tunnel.sh` for the underlying flow. Requirements:
+
+- AWS credentials set for the target account (any mechanism: aws-vault, AWS SSO,
+  env vars, instance profile). The script does not hardcode a profile name.
+- Session Manager Plugin on PATH ([install instructions](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)).
+- `jq` on PATH.
+
+Image publishing: `backend/ops/Dockerfile` -> `.github/workflows/ops-image.yml`
+(triggered on `push` to `main` with path filter on `backend/ops/**`, or via
+manual `workflow_dispatch`). The workflow updates the `ztmf_ops_tag` SSM
+parameter, which the task definition reads so `terraform apply` picks up the
+new image SHA on the next deploy.

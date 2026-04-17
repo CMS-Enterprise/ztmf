@@ -3,7 +3,7 @@
 # Single source of truth for the local API port
 API_PORT ?= 8080
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
 
 # Default target
 help:
@@ -33,6 +33,10 @@ help:
 	@echo "Authentication:"
 	@echo "  make generate-jwt     Generate JWT token for testing (requires EMAIL variable)"
 	@echo "  make test-empire-data Generate JWT tokens for Empire test users"
+	@echo ""
+	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
+	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
+	@echo "  make db-forward-<env> Port-forward Aurora:5432 to localhost:15432 (local psql)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev-setup                           # Full dev environment setup"
@@ -391,3 +395,20 @@ full-stack-down:
 	@make dev-down
 	@pkill -f "vite" || true
 	@echo "✅ Full stack stopped"
+
+# Database access to Aurora (replaces the EC2 bastion). Launches an on-demand
+# Fargate ops task, drops a shell or opens an SSM port-forward, then stops the
+# task when the session ends. Requires AWS credentials set for the target
+# account (any mechanism: aws-vault, AWS SSO, env vars) and the Session Manager
+# Plugin on PATH. See scripts/db-tunnel.sh.
+db-shell-dev:
+	@./scripts/db-tunnel.sh dev --shell
+
+db-shell-prod:
+	@./scripts/db-tunnel.sh prod --shell
+
+db-forward-dev:
+	@./scripts/db-tunnel.sh dev --forward 15432
+
+db-forward-prod:
+	@./scripts/db-tunnel.sh prod --forward 15432

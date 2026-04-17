@@ -192,3 +192,122 @@ resource "aws_ecs_service" "ztmf_api" {
   wait_for_steady_state = true
 }
 
+# On-demand ops task (replaces the EC2 bastion). Operators launch via
+# `make db-shell-<env>` / `make db-forward-<env>` (scripts/db-tunnel.sh).
+# No service / desired_count: launched via `aws ecs run-task`, stopped when the
+# operator session ends. Image built from backend/ops/Dockerfile.
+
+module "ops_task_execution" {
+  name                = "ztmf_ops_task_execution"
+  source              = "./modules/role"
+  principal           = { Service = "ecs-tasks.amazonaws.com" }
+  managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
+}
+
+module "ops_task" {
+  name      = "ztmf_ops_task"
+  source    = "./modules/role"
+  principal = { Service = "ecs-tasks.amazonaws.com" }
+}
+
+resource "aws_iam_role_policy" "ztmf_ops_task" {
+  name = "opsTaskPermissions"
+  role = module.ops_task.role_id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Effect   = "Allow"
+        Resource = [local.db_cred_secret]
+      },
+      {
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel",
+        ]
+        Effect   = "Allow"
+        Resource = ["*"]
+      },
+    ]
+  })
+}
+
+resource "aws_cloudwatch_log_group" "ztmf_ops" {
+  name              = "ztmf_ops"
+  retention_in_days = 30
+}
+
+resource "aws_ssm_parameter" "ztmf_ops_tag" {
+  name  = "ztmf_ops_tag"
+  type  = "String"
+  tier  = "Standard"
+  value = "bootstrap"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ecs_task_definition" "ztmf_ops" {
+  execution_role_arn       = module.ops_task_execution.role_arn
+  task_role_arn            = module.ops_task.role_arn
+  family                   = "ops"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  container_definitions = jsonencode([
+    {
+      name      = "ztmfops"
+      image     = "${aws_ecr_repository.ztmf_ops.repository_url}:${aws_ssm_parameter.ztmf_ops_tag.value}"
+      essential = true
+
+      environment = [
+        { name = "ENVIRONMENT", value = var.environment },
+        { name = "AWS_REGION", value = "us-east-1" },
+        { name = "DB_NAME", value = "ztmf" },
+        { name = "DB_ENDPOINT", value = aws_rds_cluster.ztmf.endpoint },
+        { name = "DB_PORT", value = "5432" },
+        { name = "DB_SECRET_ID", value = local.db_cred_secret },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ztmf_ops.name
+          "awslogs-region"        = "us-east-1"
+          "awslogs-stream-prefix" = "ops"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_security_group" "ztmf_ops_task" {
+  name        = "ztmf_ops_task"
+  description = "on-demand ops task: ECS Exec + Aurora access"
+  vpc_id      = data.aws_vpc.ztmf.id
+
+  egress {
+    description     = "HTTPS to VPC endpoints (ECR, SSM, Secrets Manager, CloudWatch)"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ztmf_vpc_endpoints.id]
+  }
+
+  egress {
+    description     = "PostgreSQL to Aurora"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ztmf_db.id]
+  }
+}
+
