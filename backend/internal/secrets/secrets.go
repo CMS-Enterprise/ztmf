@@ -56,6 +56,38 @@ func (s *Secret) Unmarshal(v any) error {
 	return json.Unmarshal([]byte(*sv), v)
 }
 
+// Put writes a new AWSCURRENT version for this secret. The input is JSON-marshaled
+// before writing. On success, AWS Secrets Manager automatically rotates version stage
+// labels: the previous AWSCURRENT becomes AWSPREVIOUS.
+//
+// The in-memory cache is refreshed so subsequent Value() / Unmarshal() calls return
+// the new value without a stale read.
+func (s *Secret) Put(ctx context.Context, v any) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	awsCfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	secManClient := secretsmanager.NewFromConfig(awsCfg)
+
+	secretString := string(payload)
+	input := &secretsmanager.PutSecretValueInput{
+		SecretId:     &s.id,
+		SecretString: &secretString,
+	}
+
+	if _, err := secManClient.PutSecretValue(ctx, input); err != nil {
+		return err
+	}
+
+	return s.Refresh()
+}
+
 // Secret creates a new secret and caches it for later retrieval. Subsequest caand returns *Secret
 func NewSecret(secretId string) (*Secret, error) {
 	getSecretValueOutput, describeSecretOutput, err := getSecretData(secretId)
