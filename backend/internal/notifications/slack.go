@@ -149,15 +149,17 @@ Error: %s
 			r.Service, envUpper, r.SecretName, r.DaysSinceRotated)
 	}
 
-	dryRunTag := ""
 	if r.DryRun {
-		dryRunTag = " [DRY RUN]"
+		return fmt.Sprintf(`✅ %s ROTATION DRY RUN (%s)
+🧪 Secret: %s (no changes written; upstream rotation and secret put were skipped)
+⏱️ Duration: %s`,
+			r.Service, envUpper, r.SecretName, dur)
 	}
 
-	return fmt.Sprintf(`✅ %s ROTATION SUCCESS%s (%s)
+	return fmt.Sprintf(`✅ %s ROTATION SUCCESS (%s)
 🔐 Secret: %s (AWSCURRENT updated, previous moved to AWSPREVIOUS)
 ⏱️ Duration: %s`,
-		r.Service, dryRunTag, envUpper, r.SecretName, dur)
+		r.Service, envUpper, r.SecretName, dur)
 }
 
 // getSyncLabel returns a human-readable label for the sync direction
