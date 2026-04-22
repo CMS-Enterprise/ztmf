@@ -91,11 +91,14 @@ resource "aws_cloudwatch_event_target" "ztmf_kion_key_rotate_target" {
   target_id = "ZtmfKionKeyRotateLambdaTarget"
   arn       = aws_lambda_function.ztmf_kion_key_rotate.arn
 
-  # dev runs in dry-run mode so scheduled invocations exercise the wiring
-  # without consuming a fresh Kion key every day.
+  # Dev and prod both run real rotations on the daily schedule. The
+  # orchestrator's four-day idempotency window keeps Kion traffic to one
+  # rotation every four days per environment. Manual operators who want a
+  # dry-run wiring check can still invoke the Lambda directly with the
+  # payload {"trigger_type":"manual","dry_run":true,"force":true}.
   input = jsonencode({
     trigger_type = "scheduled"
-    dry_run      = var.environment != "prod"
+    dry_run      = false
     force        = false
   })
 }

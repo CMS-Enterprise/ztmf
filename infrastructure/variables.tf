@@ -24,7 +24,7 @@ variable "snowflake_table_prefix" {
 }
 
 variable "kion_rotate_schedule_enabled" {
-  description = "Enable the daily EventBridge schedule for ztmf-kion-key-rotate. Defaults to false because the Lambda's NAT egress IPs are not yet on the Kion tenant allowlist (see CMS-Enterprise/ztmf-misc#174). Flip to true after Kion confirms the allowlist change so scheduled rotations begin."
+  description = "Enable the daily EventBridge schedule for ztmf-kion-key-rotate. Kion NAT allowlist is in place (CMS-Enterprise/ztmf-misc#174) and real rotation was validated end to end on 2026-04-22, so this defaults to true. Set to false only for temporary maintenance windows when rotation must be paused."
   type        = bool
-  default     = false
+  default     = true
 }

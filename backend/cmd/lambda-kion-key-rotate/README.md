@@ -54,7 +54,7 @@ The base URL lives in the secret payload (not in Lambda environment or Terraform
 ```
 
 - `trigger_type`: `scheduled` (EventBridge) or `manual` (operator-invoked).
-- `dry_run`: Lambda loads the secret, checks idempotency, logs what it would do, posts a dry-run Slack message, and returns without calling Kion or writing the secret. EventBridge sets this to `true` for dev and `false` for prod.
+- `dry_run`: Lambda loads the secret, checks idempotency, logs what it would do, posts a dry-run Slack message, and returns without calling Kion or writing the secret. EventBridge sets `dry_run=false` on the scheduled target in both dev and prod. Operators who want to validate wiring without rotating should invoke manually with `"dry_run":true`.
 - `force`: bypass the `ROTATE_AFTER_DAYS` check. Use for recovery invocations only.
 
 ## Initial bootstrap
