@@ -13,9 +13,21 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
 
+// slackHTTPClient is reused across SendSlack calls. CheckRedirect returns
+// http.ErrUseLastResponse so the client does not follow 3xx: the Slack webhook
+// should never redirect, and following a redirect would replay the POST body
+// (which can include credential material on the RecoveryKey path) to an
+// unintended destination.
+var slackHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // SlackNotifier handles sending notifications to Slack
 type SlackNotifier struct {
-	webhookURL string
+	webhookURL  string
 	environment string
 }
 
@@ -63,12 +75,91 @@ func NewSlackNotifier(ctx context.Context) (*SlackNotifier, error) {
 // SendSyncNotification sends a notification about sync results
 func (s *SlackNotifier) SendSyncNotification(ctx context.Context, result SyncResult) error {
 	message := s.buildSyncMessage(result)
-	
+
 	payload := map[string]interface{}{
 		"text": message,
 	}
-	
+
 	return s.sendToSlack(ctx, payload)
+}
+
+// RotationResult represents the outcome of a credential rotation job for notifications.
+// RecoveryKey must only be populated in the narrow failure window where the upstream
+// rotation succeeded but persisting the new value to AWS Secrets Manager failed; it is
+// emitted so an operator can paste the key into Secrets Manager manually. All other
+// paths must leave RecoveryKey empty so no key material is ever written to Slack.
+type RotationResult struct {
+	Environment      string
+	Service          string
+	SecretName       string
+	Success          bool
+	DryRun           bool
+	Skipped          bool
+	DaysSinceRotated int
+	Duration         time.Duration
+	ErrorMessage     string
+	RecoveryKey      string
+}
+
+// SendRotationNotification posts a credential rotation result to Slack. The recovery
+// path is flagged as critical and is the only code path that serializes key material.
+func (s *SlackNotifier) SendRotationNotification(ctx context.Context, r RotationResult) error {
+	message := s.buildRotationMessage(r)
+
+	payload := map[string]interface{}{
+		"text": message,
+	}
+
+	return s.sendToSlack(ctx, payload)
+}
+
+// buildRotationMessage formats a human-readable Slack message for a rotation outcome.
+func (s *SlackNotifier) buildRotationMessage(r RotationResult) string {
+	envUpper := strings.ToUpper(r.Environment)
+	dur := formatDuration(r.Duration)
+
+	if r.RecoveryKey != "" {
+		// Critical: the upstream provider rotated but the secret write failed.
+		// The operator must paste this value into the secret manually.
+		return fmt.Sprintf(`🚨 %s ROTATION CRITICAL (%s)
+❌ Secret: %s
+❌ Upstream rotation succeeded, but persisting to Secrets Manager failed after retries.
+🔧 Paste this value into AWSCURRENT for %s immediately:
+` + "```%s```" + `
+Error: %s
+⏱️ Duration: %s`,
+			r.Service, envUpper, r.SecretName, r.SecretName, r.RecoveryKey, r.ErrorMessage, dur)
+	}
+
+	if !r.Success {
+		errorSummary := r.ErrorMessage
+		if len(errorSummary) > 200 {
+			errorSummary = errorSummary[:200] + "..."
+		}
+		return fmt.Sprintf(`🚨 %s ROTATION FAILURE (%s)
+❌ Secret: %s
+🔧 Action Required: %s
+⏱️ Duration: %s`,
+			r.Service, envUpper, r.SecretName, errorSummary, dur)
+	}
+
+	if r.Skipped {
+		return fmt.Sprintf(`⏭️ %s ROTATION SKIPPED (%s)
+ℹ️ Secret: %s (last rotated %d day(s) ago, under threshold)`,
+			r.Service, envUpper, r.SecretName, r.DaysSinceRotated)
+	}
+
+	if r.DryRun {
+		return fmt.Sprintf(`✅ %s ROTATION DRY RUN (%s)
+🧪 Secret: %s (no changes written; upstream rotation and secret put were skipped)
+⏱️ Duration: %s`,
+			r.Service, envUpper, r.SecretName, dur)
+	}
+
+	return fmt.Sprintf(`✅ %s ROTATION SUCCESS (%s)
+🔐 Secret: %s (AWSCURRENT updated, previous moved to AWSPREVIOUS)
+⏱️ Duration: %s`,
+		r.Service, envUpper, r.SecretName, dur)
 }
 
 // getSyncLabel returns a human-readable label for the sync direction
@@ -145,18 +236,17 @@ func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]inte
 	}
 	
 	req.Header.Set("Content-Type", "application/json")
-	
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send Slack notification: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("slack webhook returned status %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 

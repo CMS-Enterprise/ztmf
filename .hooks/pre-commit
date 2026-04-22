@@ -72,7 +72,17 @@ if echo "$STAGED_FILES" | grep -q '\.go$'; then
     echo "✓ Go compilation successful"
 
     echo "→ Running unit tests..."
-    if ! (cd backend && go test -short ./...) 2>/dev/null; then
+    # Source dev.compose.env so tests that read DB_* env (e.g. controller tests
+    # that touch pgx) point at the local compose-dev Postgres on :54321 instead
+    # of falling through to libpq defaults on :5432. Without this, a Postgres on
+    # host :5432 from an unrelated project hangs the pgx handshake.
+    if ! (
+        cd backend
+        if [ -f dev.compose.env ]; then
+            set -a; . ./dev.compose.env; set +a
+        fi
+        go test -short ./...
+    ) 2>/dev/null; then
         echo "❌ Unit tests failed. Fix failures before committing."
         exit 1
     fi

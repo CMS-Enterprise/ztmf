@@ -74,6 +74,7 @@ resource "aws_cloudwatch_metric_alarm" "cfacts_s3_errors" {
 resource "aws_sqs_queue" "cfacts_sync_dlq" {
   name                      = "ztmf-cfacts-sync-dlq-${var.environment}"
   message_retention_seconds = 1209600 # 14 days
+  sqs_managed_sse_enabled   = true
 
   tags = {
     Name        = "ZTMF CFACTS Sync DLQ"

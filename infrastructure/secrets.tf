@@ -61,6 +61,35 @@ resource "aws_secretsmanager_secret" "ztmf_snowflake_prod" {
   }
 }
 
+# Kion App API key for the Lambda that rotates it daily (dev environment)
+# Seeded manually once per account; thereafter rotated by ztmf-kion-key-rotate-dev
+resource "aws_secretsmanager_secret" "ztmf_kion_dev" {
+  count = var.environment == "dev" ? 1 : 0
+  name  = "ztmf_kion_dev"
+
+  description = "Kion App API key for ZTMF dev account. Rotated daily by ztmf-kion-key-rotate-dev Lambda. Payload: {api_key, base_url, rotated_at}."
+
+  tags = {
+    Name        = "ZTMF Kion API Key Dev"
+    Environment = "dev"
+    Purpose     = "Kion API access"
+  }
+}
+
+# Kion App API key for the Lambda that rotates it daily (prod environment)
+resource "aws_secretsmanager_secret" "ztmf_kion_prod" {
+  count = var.environment == "prod" ? 1 : 0
+  name  = "ztmf_kion_prod"
+
+  description = "Kion App API key for ZTMF prod account. Rotated daily by ztmf-kion-key-rotate-prod Lambda. Payload: {api_key, base_url, rotated_at}."
+
+  tags = {
+    Name        = "ZTMF Kion API Key Prod"
+    Environment = "prod"
+    Purpose     = "Kion API access"
+  }
+}
+
 # Slack webhook URL for data sync alerts (shared across environments)
 resource "aws_secretsmanager_secret" "ztmf_slack_webhook" {
   name = "ztmf_slack_webhook"
