@@ -25,11 +25,19 @@ type Client struct {
 }
 
 // NewClient returns a Client configured with a 30s request timeout that matches
-// the local rotation tool. The httpClient is reused across calls.
+// the local rotation tool. The httpClient refuses to follow redirects: a
+// redirect on the rotation endpoint should never happen, and auto-following
+// would replay the POST body (which carries the current API key) to whatever
+// target the redirect points at.
 func NewClient(baseURL string) *Client {
 	return &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -107,7 +115,14 @@ func (c *Client) rotateOnce(ctx context.Context, currentKey string, body []byte)
 	if resp.StatusCode >= 500 {
 		return "", true, fmt.Errorf("kion: status %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		// Redirect on a POST is never expected for this endpoint and our client
+		// is configured not to follow. Surface as an explicit error without
+		// retry: silently following could replay key material to the redirect
+		// target.
+		return "", false, fmt.Errorf("kion: unexpected redirect %d to %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		// 4xx: the current key is dead or invalid. No retry.
 		return "", false, fmt.Errorf("kion: status %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}

@@ -13,9 +13,21 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
 
+// slackHTTPClient is reused across SendSlack calls. CheckRedirect returns
+// http.ErrUseLastResponse so the client does not follow 3xx: the Slack webhook
+// should never redirect, and following a redirect would replay the POST body
+// (which can include credential material on the RecoveryKey path) to an
+// unintended destination.
+var slackHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // SlackNotifier handles sending notifications to Slack
 type SlackNotifier struct {
-	webhookURL string
+	webhookURL  string
 	environment string
 }
 
@@ -222,18 +234,17 @@ func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]inte
 	}
 	
 	req.Header.Set("Content-Type", "application/json")
-	
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send Slack notification: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("slack webhook returned status %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 

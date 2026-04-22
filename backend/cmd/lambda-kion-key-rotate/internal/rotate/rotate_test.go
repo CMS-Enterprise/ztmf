@@ -76,6 +76,10 @@ func fixedNow(t time.Time) func() time.Time {
 	return func() time.Time { return t }
 }
 
+// timePtr is a small helper so the test fixtures can keep using literal
+// time.Date(...) calls while the Secret schema uses *time.Time.
+func timePtr(t time.Time) *time.Time { return &t }
+
 func buildOrchestrator(t *testing.T, secret *fakeSecret, k *fakeKion, in Input) (*Orchestrator, *fakeNotifier, *fakeMetrics) {
 	t.Helper()
 	n := &fakeNotifier{}
@@ -89,7 +93,7 @@ func TestRun_IdempotencySkip(t *testing.T) {
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 19, 6, 0, 0, 0, time.UTC), // 2 days ago
+		RotatedAt: timePtr(time.Date(2026, 4, 19, 6, 0, 0, 0, time.UTC)), // 2 days ago
 	})
 	k := &fakeKion{newKey: "should-not-be-used"}
 
@@ -121,7 +125,7 @@ func TestRun_ForceBypassesIdempotency(t *testing.T) {
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 20, 6, 0, 0, 0, time.UTC), // 1 day ago
+		RotatedAt: timePtr(time.Date(2026, 4, 20, 6, 0, 0, 0, time.UTC)), // 1 day ago
 	})
 	k := &fakeKion{newKey: "rotated"}
 
@@ -158,7 +162,7 @@ func TestRun_DryRun_NoRotateNoWrite(t *testing.T) {
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 10, 6, 0, 0, 0, time.UTC), // old enough to rotate
+		RotatedAt: timePtr(time.Date(2026, 4, 10, 6, 0, 0, 0, time.UTC)), // old enough to rotate
 	})
 	k := &fakeKion{newKey: "would-be-new"}
 
@@ -191,7 +195,7 @@ func TestRun_HappyPath(t *testing.T) {
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC), // 5 days ago
+		RotatedAt: timePtr(time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC)), // 5 days ago
 	})
 	k := &fakeKion{newKey: "shiny-new"}
 
@@ -230,7 +234,7 @@ func TestRun_KionFailure_NoSecretWrite(t *testing.T) {
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC),
+		RotatedAt: timePtr(time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC)),
 	})
 	k := &fakeKion{err: errors.New("kion 401")}
 
@@ -252,21 +256,27 @@ func TestRun_KionFailure_NoSecretWrite(t *testing.T) {
 	}
 }
 
+// shrinkBackoff swaps the exponential-backoff base unit to milliseconds so
+// tests that exercise the put-retry path stay fast and deterministic.
+func shrinkBackoff(t *testing.T) {
+	t.Helper()
+	prev := backoffBase
+	backoffBase = 1 * time.Millisecond
+	t.Cleanup(func() { backoffBase = prev })
+}
+
 func TestRun_PutFailureEmitsRecoveryKey(t *testing.T) {
+	shrinkBackoff(t)
+
 	s := newFakeSecret(Secret{
 		APIKey:    "abc",
 		BaseURL:   "https://kion",
-		RotatedAt: time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC),
+		RotatedAt: timePtr(time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC)),
 	})
 	s.putErr = errors.New("secrets manager down")
 	s.putFails = 99 // all attempts fail
 
 	k := &fakeKion{newKey: "rotated-but-unpersisted"}
-
-	// Use shorter delays by passing a short-deadline context. The retries wait
-	// 1s,2s,4s,8s between attempts, so allow ~20s budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	o, n, _ := buildOrchestrator(t, s, k, Input{
 		Environment:     "prod",
@@ -274,7 +284,7 @@ func TestRun_PutFailureEmitsRecoveryKey(t *testing.T) {
 		RotateAfterDays: 4,
 	})
 
-	_, err := o.Run(ctx)
+	_, err := o.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -290,6 +300,67 @@ func TestRun_PutFailureEmitsRecoveryKey(t *testing.T) {
 	}
 	if s.putCalls != secretWriteTries {
 		t.Errorf("expected %d put attempts, got %d", secretWriteTries, s.putCalls)
+	}
+}
+
+// ctxRecordingNotifier captures ctx.Err() at the moment of the call rather
+// than the context itself. The recovery path in Orchestrator.Run uses
+// context.WithTimeout + defer cancel(), so reading the ctx after Run returns
+// would always show it as cancelled and lose the signal we want to test:
+// whether the notifier was invoked with a fresh context or the caller's.
+type ctxRecordingNotifier struct {
+	called    bool
+	errAtCall error
+}
+
+func (c *ctxRecordingNotifier) SendRotationNotification(ctx context.Context, r notifications.RotationResult) error {
+	c.called = true
+	c.errAtCall = ctx.Err()
+	return nil
+}
+
+// TestRun_RecoveryPath_UsesDetachedContext verifies that when the Kion rotation
+// succeeds but persisting the new value fails, the Slack notification uses a
+// fresh context rather than the caller's context. This matters because the
+// recovery alert carries the only copy of the new key outside AWS; it must not
+// be cut off by a handler context that is near its Lambda deadline.
+func TestRun_RecoveryPath_UsesDetachedContext(t *testing.T) {
+	shrinkBackoff(t)
+
+	s := newFakeSecret(Secret{
+		APIKey:    "abc",
+		BaseURL:   "https://kion",
+		RotatedAt: timePtr(time.Date(2026, 4, 16, 6, 0, 0, 0, time.UTC)),
+	})
+	s.putErr = errors.New("secrets manager down")
+	s.putFails = 99
+
+	k := &fakeKion{newKey: "rotated-but-unpersisted"}
+	notifier := &ctxRecordingNotifier{}
+	m := &fakeMetrics{}
+	now := fixedNow(time.Date(2026, 4, 21, 6, 0, 0, 0, time.UTC))
+
+	in := Input{
+		Environment:     "prod",
+		SecretName:      "ztmf_kion_prod",
+		RotateAfterDays: 4,
+	}
+	o := New(in, s, func(string) KionClient { return k }, notifier, m, now)
+
+	// Parent context is already cancelled. If the notifier receives this
+	// context, the detachment has failed.
+	parent, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := o.Run(parent)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !notifier.called {
+		t.Fatal("notifier was not called")
+	}
+	if notifier.errAtCall != nil {
+		t.Errorf("notifier should have received a fresh context; got err=%v at call time (parent was cancelled)", notifier.errAtCall)
 	}
 }
 

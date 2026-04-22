@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/x509"
 	"errors"
 	"log"
@@ -96,7 +97,7 @@ func GetInstance() *config {
 					return
 				}
 
-				secretVal, err = SmtpCertRootSecret.Value()
+				secretVal, err = SmtpCertRootSecret.Value(context.Background())
 				if err != nil {
 					return
 				}
@@ -111,7 +112,7 @@ func GetInstance() *config {
 					return
 				}
 
-				secretVal, err = SmtpCertIntermediateSecret.Value()
+				secretVal, err = SmtpCertIntermediateSecret.Value(context.Background())
 				if err != nil {
 					return
 				}

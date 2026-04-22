@@ -34,6 +34,18 @@ const (
 	secretWriteTries = 5
 )
 
+// backoffBase is the base unit for exponential backoff on secret-write retries.
+// Exposed as a package-level variable so tests can shrink it to keep the suite
+// fast and deterministic without changing the production behavior.
+var backoffBase = 1 * time.Second
+
+// recoveryNotifyTimeout is how long we give the Slack webhook in the recovery
+// branch after upstream rotation succeeded but persisting the new value failed.
+// The parent Lambda context may be nearly exhausted at that point, so the
+// recovery path uses a fresh detached context to maximize the chance the
+// operator receives the alert carrying the recovery key.
+const recoveryNotifyTimeout = 15 * time.Second
+
 // KionClient rotates the Kion App API key at a given base URL.
 type KionClient interface {
 	Rotate(ctx context.Context, currentKey string) (string, error)
@@ -62,13 +74,16 @@ type MetricPublisher interface {
 	PublishDaysSinceRotation(ctx context.Context, days float64) error
 }
 
-// Secret is the JSON shape stored in AWS Secrets Manager. Both api_key and base_url
-// are required on read; rotated_at is optional on first bootstrap and becomes
-// authoritative after the first successful rotation.
+// Secret is the JSON shape stored in AWS Secrets Manager. Both api_key and
+// base_url are required on read; rotated_at is nil on first bootstrap and
+// populated after the first successful rotation. RotatedAt is a pointer
+// because stdlib encoding/json does not apply omitempty to time.Time structs,
+// and we want the absence of a previous rotation to be unambiguous on the
+// wire.
 type Secret struct {
-	APIKey    string    `json:"api_key"`
-	BaseURL   string    `json:"base_url"`
-	RotatedAt time.Time `json:"rotated_at,omitzero"`
+	APIKey    string     `json:"api_key"`
+	BaseURL   string     `json:"base_url"`
+	RotatedAt *time.Time `json:"rotated_at,omitempty"`
 }
 
 // Input controls one invocation.
@@ -129,9 +144,9 @@ func (o *Orchestrator) Run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("secret %q: base_url is empty, seed it before running", o.in.SecretName)
 	}
 
-	daysSince := daysSince(start, current.RotatedAt)
+	daysSince := daysSinceRotation(start, current.RotatedAt)
 
-	if !o.in.Force && !current.RotatedAt.IsZero() && daysSince < o.in.RotateAfterDays {
+	if !o.in.Force && current.RotatedAt != nil && !current.RotatedAt.IsZero() && daysSince < o.in.RotateAfterDays {
 		log.Printf("rotation skipped: %d day(s) since last rotation, threshold is %d", daysSince, o.in.RotateAfterDays)
 		o.publishMetric(ctx, daysSince)
 		o.notify(ctx, notifications.RotationResult{
@@ -178,17 +193,23 @@ func (o *Orchestrator) Run(ctx context.Context) (*Result, error) {
 		return nil, err
 	}
 
+	now := o.now().UTC()
 	updated := Secret{
 		APIKey:    newKey,
 		BaseURL:   current.BaseURL,
-		RotatedAt: o.now().UTC(),
+		RotatedAt: &now,
 	}
 
 	if writeErr := o.putWithRetries(ctx, updated); writeErr != nil {
-		// Kion rotated successfully but we could not persist. The old key is dead.
-		// Emit the recovery alert so an operator can paste the new key manually.
+		// Kion rotated successfully but we could not persist. The old key is
+		// dead. Emit the recovery alert so an operator can paste the new key
+		// manually. Use a detached context so the Slack POST is not starved
+		// by a nearly-exhausted Lambda deadline: this is the one notification
+		// we must not lose.
 		log.Printf("secret persist failed after Kion rotation: %v", writeErr)
-		o.notify(ctx, notifications.RotationResult{
+		notifyCtx, cancel := context.WithTimeout(context.Background(), recoveryNotifyTimeout)
+		defer cancel()
+		o.notify(notifyCtx, notifications.RotationResult{
 			Environment:      o.in.Environment,
 			Service:          serviceLabel,
 			SecretName:       o.in.SecretName,
@@ -222,7 +243,7 @@ func (o *Orchestrator) putWithRetries(ctx context.Context, s Secret) error {
 	var lastErr error
 	for attempt := range secretWriteTries {
 		if attempt > 0 {
-			delay := time.Duration(1<<uint(attempt-1)) * time.Second
+			delay := time.Duration(1<<uint(attempt-1)) * backoffBase
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -260,9 +281,13 @@ func (o *Orchestrator) notify(ctx context.Context, r notifications.RotationResul
 	}
 }
 
-func daysSince(now, past time.Time) int {
-	if past.IsZero() {
+// daysSinceRotation returns whole days elapsed between the stored rotation
+// timestamp and now. When the stored timestamp is missing (first bootstrap)
+// or zero-valued, it returns math.MaxInt32 so the idempotency check always
+// treats the secret as stale and proceeds to rotate.
+func daysSinceRotation(now time.Time, past *time.Time) int {
+	if past == nil || past.IsZero() {
 		return math.MaxInt32
 	}
-	return int(now.Sub(past).Hours() / 24)
+	return int(now.Sub(*past).Hours() / 24)
 }

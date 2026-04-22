@@ -110,8 +110,22 @@ func handler(ctx context.Context, raw json.RawMessage) error {
 }
 
 func parseEvent(raw json.RawMessage, env string) Event {
+	// If the payload parses as our Event shape at all, honor any fields the
+	// operator set even when trigger_type is omitted. This lets manual
+	// invocations like {"dry_run":false,"force":true} behave as the caller
+	// expects in dev instead of being overridden by the defaults below.
 	var evt Event
-	if err := json.Unmarshal(raw, &evt); err == nil && evt.TriggerType != "" {
+	parseOK := json.Unmarshal(raw, &evt) == nil
+
+	if parseOK && evt.TriggerType == "" {
+		// Distinguish "operator sent empty JSON" from "operator omitted the
+		// field but set others": fall through to the CloudWatch parse only
+		// when the raw payload has no fields we care about.
+		if evt.DryRun || evt.Force {
+			evt.TriggerType = "manual"
+			return evt
+		}
+	} else if parseOK {
 		return evt
 	}
 
@@ -124,7 +138,7 @@ func parseEvent(raw json.RawMessage, env string) Event {
 		}
 	}
 
-	// Empty or manual-test event.
+	// Empty or manual-test event with no discriminating fields.
 	return Event{
 		TriggerType: "manual",
 		DryRun:      env != "prod",
