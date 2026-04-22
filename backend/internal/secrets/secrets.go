@@ -16,10 +16,16 @@ import (
 // Secret is a lite wrapper around secretsmanager.GetSecretValueOutput and
 // secretsmanager.DescribeSecretOutput that caches the secret and refreshes
 // it when the rotation metadata indicates a new version should exist.
+//
+// The Secrets Manager client is constructed once at NewSecret time and reused
+// across reads, writes, and refreshes. Without caching, a rotation cycle with
+// five Put retries triggers up to ten config loads and client constructions;
+// with it, the Lambda loads AWS config once per cold start.
 type Secret struct {
 	id       string
 	secret   *secretsmanager.GetSecretValueOutput
 	metadata *secretsmanager.DescribeSecretOutput
+	client   *secretsmanager.Client
 }
 
 // Value returns the current secret string. If AWS Secrets Manager has rotated
@@ -44,7 +50,7 @@ func (s *Secret) Value(ctx context.Context) (*string, error) {
 // Refresh updates the secret and metadata from Secrets Manager using ctx for
 // the RPC timeout and cancellation.
 func (s *Secret) Refresh(ctx context.Context) error {
-	getSecretValueOutput, describeSecretOutput, err := getSecretData(ctx, s.id)
+	getSecretValueOutput, describeSecretOutput, err := s.fetchSecretData(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,13 +87,6 @@ func (s *Secret) Put(ctx context.Context, v any) error {
 		return err
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-
-	secManClient := secretsmanager.NewFromConfig(awsCfg)
-
 	secretString := string(payload)
 	input := &secretsmanager.PutSecretValueInput{
 		SecretId:           &s.id,
@@ -95,7 +94,7 @@ func (s *Secret) Put(ctx context.Context, v any) error {
 		ClientRequestToken: aws.String(payloadRequestToken(payload)),
 	}
 
-	if _, err := secManClient.PutSecretValue(ctx, input); err != nil {
+	if _, err := s.client.PutSecretValue(ctx, input); err != nil {
 		return err
 	}
 
@@ -104,37 +103,36 @@ func (s *Secret) Put(ctx context.Context, v any) error {
 
 // NewSecret fetches the secret from Secrets Manager and caches it for later
 // retrieval. Used at application startup, so context.Background() is used
-// internally for the initial fetch.
+// internally for the initial fetch and for the client construction.
 func NewSecret(secretId string) (*Secret, error) {
-	getSecretValueOutput, describeSecretOutput, err := getSecretData(context.Background(), secretId)
+	ctx := context.Background()
+	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &Secret{id: secretId, secret: getSecretValueOutput, metadata: describeSecretOutput}, nil
+	client := secretsmanager.NewFromConfig(awsCfg)
+
+	s := &Secret{id: secretId, client: client}
+	if err := s.Refresh(ctx); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
-// getSecretData fetches both GetSecretValue and DescribeSecret for a secret.
-// The returned pair is used together to cache value + rotation metadata.
-// Internal use only.
-func getSecretData(ctx context.Context, secretId string) (*secretsmanager.GetSecretValueOutput, *secretsmanager.DescribeSecretOutput, error) {
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+// fetchSecretData issues the GetSecretValue and DescribeSecret pair against
+// the cached client. Used by Refresh.
+func (s *Secret) fetchSecretData(ctx context.Context) (*secretsmanager.GetSecretValueOutput, *secretsmanager.DescribeSecretOutput, error) {
+	log.Printf("Fetching secret from %s ...\n", s.id)
+
+	getSecretValueInput := secretsmanager.GetSecretValueInput{SecretId: &s.id}
+	describeSecretInput := secretsmanager.DescribeSecretInput{SecretId: &s.id}
+
+	getSecretValueOutput, err := s.client.GetSecretValue(ctx, &getSecretValueInput)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	secManClient := secretsmanager.NewFromConfig(awsCfg)
-
-	log.Printf("Fetching secret from %s ...\n", secretId)
-
-	getSecretValueInput := secretsmanager.GetSecretValueInput{SecretId: &secretId}
-	describeSecretInput := secretsmanager.DescribeSecretInput{SecretId: &secretId}
-
-	getSecretValueOutput, err := secManClient.GetSecretValue(ctx, &getSecretValueInput)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	describeSecretOutput, err := secManClient.DescribeSecret(ctx, &describeSecretInput)
+	describeSecretOutput, err := s.client.DescribeSecret(ctx, &describeSecretInput)
 	if err != nil {
 		return nil, nil, err
 	}

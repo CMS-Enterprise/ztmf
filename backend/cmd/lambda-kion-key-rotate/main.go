@@ -34,10 +34,28 @@ const (
 )
 
 // Event is the JSON input delivered by EventBridge or a manual invocation.
+// DryRun and Force are pointers so that absence of a field is distinguishable
+// from the zero value. A manual invocation with {"dry_run":false} in dev
+// should honor that explicit false instead of being overridden by the
+// env-based default.
 type Event struct {
 	TriggerType string `json:"trigger_type"`
-	DryRun      bool   `json:"dry_run"`
-	Force       bool   `json:"force"`
+	DryRun      *bool  `json:"dry_run,omitempty"`
+	Force       *bool  `json:"force,omitempty"`
+}
+
+// resolved returns the concrete DryRun and Force flags, applying the
+// environment-based default only when the operator did not specify a value.
+func (e Event) resolved(env string) (dryRun, force bool) {
+	if e.DryRun != nil {
+		dryRun = *e.DryRun
+	} else {
+		dryRun = env != "prod"
+	}
+	if e.Force != nil {
+		force = *e.Force
+	}
+	return dryRun, force
 }
 
 func handler(ctx context.Context, raw json.RawMessage) error {
@@ -45,8 +63,9 @@ func handler(ctx context.Context, raw json.RawMessage) error {
 
 	log.Printf("Kion key rotation Lambda start: environment=%s", cfg.Env)
 
-	evt := parseEvent(raw, cfg.Env)
-	log.Printf("event: trigger_type=%s dry_run=%t force=%t", evt.TriggerType, evt.DryRun, evt.Force)
+	evt := parseEvent(raw)
+	dryRun, force := evt.resolved(cfg.Env)
+	log.Printf("event: trigger_type=%s dry_run=%t force=%t", evt.TriggerType, dryRun, force)
 
 	secretID := os.Getenv("KION_SECRET_ID")
 	if secretID == "" {
@@ -86,8 +105,8 @@ func handler(ctx context.Context, raw json.RawMessage) error {
 		Environment:     cfg.Env,
 		SecretName:      secretID,
 		RotateAfterDays: rotateAfterDays,
-		DryRun:          evt.DryRun,
-		Force:           evt.Force,
+		DryRun:          dryRun,
+		Force:           force,
 	}
 
 	var rotNotifier rotate.Notifier
@@ -109,40 +128,29 @@ func handler(ctx context.Context, raw json.RawMessage) error {
 	return nil
 }
 
-func parseEvent(raw json.RawMessage, env string) Event {
-	// If the payload parses as our Event shape at all, honor any fields the
-	// operator set even when trigger_type is omitted. This lets manual
-	// invocations like {"dry_run":false,"force":true} behave as the caller
-	// expects in dev instead of being overridden by the defaults below.
+func parseEvent(raw json.RawMessage) Event {
+	// Attempt our own shape first. Pointer fields on Event distinguish
+	// "operator set false" from "operator omitted the field", so any non-nil
+	// pointer or non-empty trigger_type is enough to trust the payload.
 	var evt Event
 	parseOK := json.Unmarshal(raw, &evt) == nil
-
-	if parseOK && evt.TriggerType == "" {
-		// Distinguish "operator sent empty JSON" from "operator omitted the
-		// field but set others": fall through to the CloudWatch parse only
-		// when the raw payload has no fields we care about.
-		if evt.DryRun || evt.Force {
+	if parseOK && (evt.TriggerType != "" || evt.DryRun != nil || evt.Force != nil) {
+		if evt.TriggerType == "" {
 			evt.TriggerType = "manual"
-			return evt
 		}
-	} else if parseOK {
 		return evt
 	}
 
-	// Fall back to CloudWatch scheduled-event shape.
+	// Fall back to CloudWatch scheduled-event shape. The handler applies the
+	// env-based DryRun default when DryRun is nil, so we leave it unset here.
 	var cw events.CloudWatchEvent
 	if err := json.Unmarshal(raw, &cw); err == nil && cw.Source != "" {
-		return Event{
-			TriggerType: "scheduled",
-			DryRun:      env != "prod",
-		}
+		return Event{TriggerType: "scheduled"}
 	}
 
-	// Empty or manual-test event with no discriminating fields.
-	return Event{
-		TriggerType: "manual",
-		DryRun:      env != "prod",
-	}
+	// Empty or manual-test event with no discriminating fields. Leave DryRun
+	// nil so the handler picks the env-based default.
+	return Event{TriggerType: "manual"}
 }
 
 // cloudWatchMetrics publishes the DaysSinceRotation gauge.
