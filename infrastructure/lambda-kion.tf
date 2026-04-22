@@ -67,10 +67,17 @@ resource "aws_lambda_function" "ztmf_kion_key_rotate" {
 
 # Daily schedule at 06:00 UTC. The Lambda's idempotency check means firing
 # every day is safe; it only calls Kion once every ROTATE_AFTER_DAYS days.
+#
+# Gated by var.kion_rotate_schedule_enabled so the rule is created in a
+# DISABLED state until the Lambda's NAT egress IPs are allowlisted on the
+# Kion tenant (tracked in CMS-Enterprise/ztmf-misc#174). With the schedule
+# disabled the Lambda, secret, DLQ, and alarms all exist and can be
+# exercised via manual `aws lambda invoke`; flipping the variable to true
+# and re-applying terraform is the only step needed to go live.
 resource "aws_cloudwatch_event_rule" "ztmf_kion_key_rotate_schedule" {
   name                = "ztmf-kion-key-rotate-schedule-${var.environment}"
   description         = "Daily trigger for the ZTMF Kion key rotation Lambda"
-  state               = "ENABLED"
+  state               = var.kion_rotate_schedule_enabled ? "ENABLED" : "DISABLED"
   schedule_expression = "cron(0 6 * * ? *)"
 
   tags = {

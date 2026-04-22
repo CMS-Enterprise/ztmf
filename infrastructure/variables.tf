@@ -22,3 +22,9 @@ variable "snowflake_table_prefix" {
   type        = string
   default     = "ZTMF"
 }
+
+variable "kion_rotate_schedule_enabled" {
+  description = "Enable the daily EventBridge schedule for ztmf-kion-key-rotate. Defaults to false because the Lambda's NAT egress IPs are not yet on the Kion tenant allowlist (see CMS-Enterprise/ztmf-misc#174). Flip to true after Kion confirms the allowlist change so scheduled rotations begin."
+  type        = bool
+  default     = false
+}
