@@ -178,4 +178,3 @@ If a CMS Security Hub scan flags this secret for missing native rotation, route 
 - Prior art: `backend/cmd/lambda-cfacts-snowflake/` for the Lambda pattern.
 - Secrets helper: `backend/internal/secrets/secrets.go` (`Put` was added for this Lambda).
 - Slack helper: `backend/internal/notifications/slack.go` (`SendRotationNotification` was added for this Lambda).
-- Retired local cron: `~/projects/prod/cms-kion-automation` (`uv run kion rotate`).
