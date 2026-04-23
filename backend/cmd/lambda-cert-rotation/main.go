@@ -1,8 +1,18 @@
+// Command lambda-cert-rotation validates and imports TLS certificate bundles
+// uploaded to a well-known S3 prefix into ACM. Expected uploads under
+// <prefix>/{cert.pem,key.pem,chain.pem}: once all three are present the Lambda
+// validates the bundle, re-imports to ACM over the configured ARN, backs the
+// bundle up to Secrets Manager, and archives the source files.
+//
+// Notifications are emitted to Slack via the shared notifications.SlackNotifier,
+// which reads the ztmf_slack_webhook secret identified by SLACK_SECRET_ID. The
+// Lambda is idempotent at the ACM layer; rapid upload of the three parts may
+// trigger three invocations but only the one that observes all three files
+// does meaningful work.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,13 +27,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/smithy-go"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/awsclients"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/certvalidator"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/config"
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/slack"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/notifications"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
 
 const (
@@ -32,9 +42,39 @@ const (
 	chainKeyName = "chain.pem"
 )
 
+// notifier abstracts notifications.SlackNotifier so handleRecord can be
+// exercised without hitting the webhook secret or Slack itself.
+type notifier interface {
+	SendCertRotationNotification(ctx context.Context, r notifications.CertRotationResult) error
+}
+
+// nopNotifier is used when Slack configuration cannot be resolved; it lets
+// rotation continue without blocking on notification infrastructure.
+type nopNotifier struct{}
+
+func (nopNotifier) SendCertRotationNotification(context.Context, notifications.CertRotationResult) error {
+	return nil
+}
+
+// s3API is the minimal subset of the S3 client used by handleRecord. Defined
+// here so tests can substitute a fake without the real SDK.
+type s3API interface {
+	HeadObject(ctx context.Context, in *s3.HeadObjectInput, opts ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	GetObject(ctx context.Context, in *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	CopyObject(ctx context.Context, in *s3.CopyObjectInput, opts ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
+	DeleteObject(ctx context.Context, in *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+}
+
+// acmAPI is the minimal subset of the ACM client used by handleRecord.
+type acmAPI interface {
+	ImportCertificate(ctx context.Context, in *acm.ImportCertificateInput, opts ...func(*acm.Options)) (*acm.ImportCertificateOutput, error)
+}
+
 type handler struct {
-	cfg     config.Config
-	clients awsclients.Clients
+	cfg      config.Config
+	s3       s3API
+	acm      acmAPI
+	notifier notifier
 }
 
 func main() {
@@ -49,15 +89,25 @@ func main() {
 		log.Fatalf("aws clients: %v", err)
 	}
 
-	lambda.Start((&handler{cfg: cfg, clients: clients}).Handle)
+	var n notifier
+	slackNotifier, err := notifications.NewSlackNotifier(ctx)
+	if err != nil {
+		// Notification failure must not block rotation; log and fall back.
+		log.Printf("Slack notifier unavailable, continuing without notifications: %v", err)
+		n = nopNotifier{}
+	} else {
+		n = slackNotifier
+	}
+
+	lambda.Start((&handler{cfg: cfg, s3: clients.S3, acm: clients.ACM, notifier: n}).Handle)
 }
 
 func (h *handler) Handle(ctx context.Context, evt events.S3Event) error {
-	// Multiple records are possible; process independently.
 	for _, r := range evt.Records {
 		if err := h.handleRecord(ctx, r); err != nil {
-			// Returning error will retry; we only want retries for transient AWS issues.
-			// Slack notification is sent inside handleRecord on failures (when configured).
+			// Returning an error triggers Lambda retry; only transient AWS
+			// errors (S3/ACM/Secrets Manager) take this path. Validation
+			// problems are reported via Slack and return nil.
 			return err
 		}
 	}
@@ -75,7 +125,6 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 		return nil
 	}
 	if bucket != h.cfg.CertBucket {
-		// Ignore other buckets.
 		return nil
 	}
 	if !strings.HasSuffix(strings.ToLower(key), ".pem") {
@@ -84,63 +133,48 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 
 	envPrefix, envCfg, ok := h.matchPrefix(key)
 	if !ok {
-		// Not one of the configured env prefixes.
 		return nil
 	}
 
-	sl, slackEnabled, err := h.buildSlackClient(ctx, envCfg)
-	if err != nil {
-		// Can't notify Slack if Slack isn't resolvable; treat as transient (retry) because
-		// Secrets Manager/permissions/temporary errors are possible.
-		return err
-	}
-	if !slackEnabled {
-		log.Printf("Slack notifications disabled - webhook not configured (envPrefix=%s)", envPrefix)
-	}
-
-	// Only react to exact filenames under prefix: <env>/cert.pem etc.
 	base := path.Base(key)
 	if base != certKeyName && base != keyKeyName && base != chainKeyName {
 		return nil
 	}
 
-	// NOTE: uploading cert.pem, key.pem, and chain.pem in quick succession can trigger
-	// 3 separate Lambda invocations. This is expected. The ACM import is idempotent, but
-	// you may see duplicate Slack success messages as a result.
+	s3Location := fmt.Sprintf("s3://%s/%s/", bucket, envPrefix)
 
-	// Check if all three exist; if not, exit cleanly.
 	wantCert := path.Join(envPrefix, certKeyName)
 	wantKey := path.Join(envPrefix, keyKeyName)
 	wantChain := path.Join(envPrefix, chainKeyName)
 
 	existsCert, err := h.objectExists(ctx, bucket, wantCert)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to check S3 object existence: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check cert.pem: %w", err))
 	}
 	existsKey, err := h.objectExists(ctx, bucket, wantKey)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to check S3 object existence: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check key.pem: %w", err))
 	}
 	existsChain, err := h.objectExists(ctx, bucket, wantChain)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to check S3 object existence: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check chain.pem: %w", err))
 	}
 	if !existsCert || !existsKey || !existsChain {
-		// Quiet exit until all parts present.
+		// Quiet exit until the full bundle is present.
 		return nil
 	}
 
 	certPEM, err := h.getObjectBytes(ctx, bucket, wantCert)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to read cert.pem: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("read cert.pem: %w", err))
 	}
 	keyPEM, err := h.getObjectBytes(ctx, bucket, wantKey)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to read key.pem: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("read key.pem: %w", err))
 	}
 	chainPEM, err := h.getObjectBytes(ctx, bucket, wantChain)
 	if err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nError: unable to read chain.pem: %v", strings.ToUpper(envPrefix), err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("read chain.pem: %w", err))
 	}
 
 	now := time.Now().UTC()
@@ -150,118 +184,71 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 		ChainPEM: chainPEM,
 	}, envCfg.Domain, now)
 	if err != nil {
-		msg := fmt.Sprintf(
-			"TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: %v\nAction Required: Upload valid files to s3://%s/%s/{cert.pem,key.pem,chain.pem}",
-			strings.ToUpper(envPrefix),
-			envCfg.Domain,
-			err,
-			bucket,
-			envPrefix,
-		)
-		if ve, ok := err.(certvalidator.ValidationError); ok && strings.TrimSpace(ve.ActionRequired) != "" {
-			msg = fmt.Sprintf(
-				"TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: %s\nAction Required: %s\nLocation: s3://%s/%s/",
-				strings.ToUpper(envPrefix),
-				envCfg.Domain,
-				ve.Msg,
-				ve.ActionRequired,
-				bucket,
-				envPrefix,
-			)
-		}
-		_ = sl.PostText(ctx, msg)
-		// Validation errors should not retry.
-		return nil
+		return h.notifyValidationFailure(ctx, envPrefix, envCfg.Domain, s3Location, err)
 	}
 
 	if h.cfg.DryRun {
-		_ = sl.PostText(ctx, fmt.Sprintf(
-			"TLS CERT ROTATION SUCCESS (%s) [DRY RUN]\nDomain: %s\nExpires: %s (%d days remaining)\nChain: Server cert + %d intermediate CA",
-			strings.ToUpper(envPrefix),
-			res.Domain,
-			res.NotAfter.UTC().Format("2006-01-02"),
-			res.DaysRemaining,
-			res.IntermediateCount,
-		))
+		_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+			Environment:       envPrefix,
+			Domain:            res.Domain,
+			Success:           true,
+			DryRun:            true,
+			NotAfter:          res.NotAfter,
+			DaysRemaining:     res.DaysRemaining,
+			IntermediateCount: res.IntermediateCount,
+		})
 		return nil
 	}
 
-	// 1) Import to ACM by re-importing over known ARN.
-	_, err = h.clients.ACM.ImportCertificate(ctx, &acm.ImportCertificateInput{
+	if _, err = h.acm.ImportCertificate(ctx, &acm.ImportCertificateInput{
 		CertificateArn:   aws.String(envCfg.AcmCertificateArn),
 		Certificate:      certPEM,
 		PrivateKey:       keyPEM,
 		CertificateChain: chainPEM,
-	})
-	if err != nil {
-		msg := fmt.Sprintf(
-			"TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: ACM import failed: %v\nAction Required: Investigate ACM permissions and certificate ARN.",
-			strings.ToUpper(envPrefix),
-			envCfg.Domain,
-			err,
-		)
-		return notifyAndReturn(ctx, sl, slackEnabled, msg, err)
+	}); err != nil {
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("ACM import: %w", err))
 	}
 
-	// 2) Backup to Secrets Manager.
-	backupPayload, err := json.Marshal(map[string]string{
+	backupPayload := map[string]string{
 		"cert_pem":  string(certPEM),
 		"key_pem":   string(keyPEM),
 		"chain_pem": string(chainPEM),
 		"domain":    envCfg.Domain,
 		"not_after": res.NotAfter.UTC().Format(time.RFC3339),
-	})
+	}
+	backupSecret, err := secrets.NewSecret(envCfg.BackupSecretArn)
 	if err != nil {
-		msg := fmt.Sprintf(
-			"TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: unable to serialize backup payload: %v\nAction Required: Investigate Lambda logs and retry rotation.",
-			strings.ToUpper(envPrefix),
-			envCfg.Domain,
-			err,
-		)
-		return notifyAndReturn(ctx, sl, slackEnabled, msg, err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("open backup secret: %w", err))
+	}
+	if err := backupSecret.Put(ctx, backupPayload); err != nil {
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("backup put: %w", err))
 	}
 
-	_, err = h.clients.Secrets.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
-		SecretId:     aws.String(envCfg.BackupSecretArn),
-		SecretString: aws.String(string(backupPayload)),
-	})
-	if err != nil {
-		msg := fmt.Sprintf(
-			"TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: Secrets Manager backup failed: %v\nAction Required: Investigate Secrets Manager permissions/ARN.",
-			strings.ToUpper(envPrefix),
-			envCfg.Domain,
-			err,
-		)
-		return notifyAndReturn(ctx, sl, slackEnabled, msg, err)
-	}
-
-	// 3) Archive files to processed/<env>/<timestamp>/... then delete originals.
-	ts := now.Format("20060102T150405Z")
-	archiveBase := path.Join(h.cfg.ArchivePrefix, envPrefix, ts)
-
+	archiveBase := path.Join(h.cfg.ArchivePrefix, envPrefix, now.Format("20060102T150405Z"))
 	if err := h.archiveOne(ctx, bucket, wantCert, path.Join(archiveBase, certKeyName)); err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: archiving cert.pem failed: %v", strings.ToUpper(envPrefix), envCfg.Domain, err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive cert.pem: %w", err))
 	}
 	if err := h.archiveOne(ctx, bucket, wantKey, path.Join(archiveBase, keyKeyName)); err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: archiving key.pem failed: %v", strings.ToUpper(envPrefix), envCfg.Domain, err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive key.pem: %w", err))
 	}
 	if err := h.archiveOne(ctx, bucket, wantChain, path.Join(archiveBase, chainKeyName)); err != nil {
-		return notifyAndReturn(ctx, sl, slackEnabled, fmt.Sprintf("TLS CERT ROTATION FAILED (%s)\nDomain: %s\nError: archiving chain.pem failed: %v", strings.ToUpper(envPrefix), envCfg.Domain, err), err)
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive chain.pem: %w", err))
 	}
 
-	_ = sl.PostText(ctx, fmt.Sprintf(
-		"TLS CERT ROTATION SUCCESS (%s)\nDomain: %s\nExpires: %s (%d days remaining)\nChain: Server cert + %d intermediate CA\nACM ARN: %s",
-		strings.ToUpper(envPrefix),
-		res.Domain,
-		res.NotAfter.UTC().Format("2006-01-02"),
-		res.DaysRemaining,
-		res.IntermediateCount,
-		envCfg.AcmCertificateArn,
-	))
-
+	_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+		Environment:       envPrefix,
+		Domain:            res.Domain,
+		Success:           true,
+		NotAfter:          res.NotAfter,
+		DaysRemaining:     res.DaysRemaining,
+		IntermediateCount: res.IntermediateCount,
+		AcmCertificateArn: envCfg.AcmCertificateArn,
+	})
 	return nil
 }
 
+// matchPrefix returns the first path segment of objectKey if it is a configured
+// env prefix. Trailing slashes and leading slashes are tolerated.
 func (h *handler) matchPrefix(objectKey string) (string, config.EnvConfig, bool) {
 	objectKey = strings.TrimPrefix(objectKey, "/")
 	parts := strings.SplitN(objectKey, "/", 2)
@@ -273,33 +260,8 @@ func (h *handler) matchPrefix(objectKey string) (string, config.EnvConfig, bool)
 	return prefix, cfg, ok
 }
 
-func (h *handler) buildSlackClient(ctx context.Context, envCfg config.EnvConfig) (slack.Client, bool, error) {
-	if v := strings.TrimSpace(envCfg.SlackWebhookURL); v != "" && !slack.IsDisabledWebhookValue(v) {
-		return slack.Client{WebhookURL: v}, true, nil
-	}
-
-	arn := strings.TrimSpace(envCfg.SlackWebhookSecretArn)
-	if arn == "" {
-		return slack.Client{}, false, nil
-	}
-	out, err := h.clients.Secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: aws.String(arn),
-	})
-	if err != nil {
-		return slack.Client{}, false, fmt.Errorf("get slack webhook secret value: %w", err)
-	}
-	if out.SecretString == nil {
-		return slack.Client{}, false, nil
-	}
-	v := strings.TrimSpace(*out.SecretString)
-	if v == "" || slack.IsDisabledWebhookValue(v) {
-		return slack.Client{}, false, nil
-	}
-	return slack.Client{WebhookURL: v}, true, nil
-}
-
 func (h *handler) objectExists(ctx context.Context, bucket, key string) (bool, error) {
-	_, err := h.clients.S3.HeadObject(ctx, &s3.HeadObjectInput{
+	_, err := h.s3.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -312,7 +274,8 @@ func (h *handler) objectExists(ctx context.Context, bucket, key string) (bool, e
 			return false, nil
 		}
 	}
-	// Some S3 errors present as ResponseError with 404; best-effort treat those as non-existent.
+	// Some S3 responses surface 404 as a generic ResponseError; fall back to
+	// a string match so a NotFound HEAD does not force a Lambda retry.
 	if strings.Contains(err.Error(), "status code: 404") {
 		return false, nil
 	}
@@ -320,7 +283,7 @@ func (h *handler) objectExists(ctx context.Context, bucket, key string) (bool, e
 }
 
 func (h *handler) getObjectBytes(ctx context.Context, bucket, key string) ([]byte, error) {
-	out, err := h.clients.S3.GetObject(ctx, &s3.GetObjectInput{
+	out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -332,30 +295,54 @@ func (h *handler) getObjectBytes(ctx context.Context, bucket, key string) ([]byt
 }
 
 func (h *handler) archiveOne(ctx context.Context, bucket, srcKey, dstKey string) error {
-	_, err := h.clients.S3.CopyObject(ctx, &s3.CopyObjectInput{
+	if _, err := h.s3.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(bucket),
 		CopySource: aws.String(pathEscape(bucket + "/" + srcKey)),
 		Key:        aws.String(dstKey),
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
-	_, err = h.clients.S3.DeleteObject(ctx, &s3.DeleteObjectInput{
+	_, err := h.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(srcKey),
 	})
 	return err
 }
 
+// pathEscape URL-encodes an S3 CopySource value while preserving forward
+// slashes. CopySource must be URL-encoded per the S3 API.
 func pathEscape(s string) string {
-	// S3 CopySource uses URL-encoding but keeps '/'.
 	u := url.URL{Path: s}
 	return strings.TrimPrefix(u.EscapedPath(), "/")
 }
 
-func notifyAndReturn(ctx context.Context, sl slack.Client, enabled bool, message string, err error) error {
-	if enabled {
-		_ = sl.PostText(ctx, message)
+// notifyValidationFailure sends a Slack notification for operator-correctable
+// input errors (bad PEM, wrong domain, expired cert). Always returns nil so
+// Lambda does not retry the invocation.
+func (h *handler) notifyValidationFailure(ctx context.Context, envPrefix, domain, s3Location string, verr error) error {
+	result := notifications.CertRotationResult{
+		Environment:      envPrefix,
+		Domain:           domain,
+		ValidationFailed: true,
+		ErrorMessage:     verr.Error(),
+		S3Location:       s3Location,
 	}
-	return err
+	if ve, ok := verr.(certvalidator.ValidationError); ok {
+		result.ErrorMessage = ve.Msg
+		result.ActionRequired = ve.ActionRequired
+	}
+	_ = h.notifier.SendCertRotationNotification(ctx, result)
+	return nil
+}
+
+// notifyInfraFailure sends a Slack notification for infrastructure errors
+// (S3, ACM, Secrets Manager) and returns the original error so Lambda retries.
+func (h *handler) notifyInfraFailure(ctx context.Context, envPrefix, domain, s3Location string, infraErr error) error {
+	_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+		Environment:  envPrefix,
+		Domain:       domain,
+		ErrorMessage: infraErr.Error(),
+		S3Location:   s3Location,
+	})
+	return infraErr
 }

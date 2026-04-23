@@ -33,38 +33,38 @@ type SlackNotifier struct {
 
 // SyncResult represents the results of a data sync operation for notifications
 type SyncResult struct {
-	Environment    string
-	TriggerType    string
-	DryRun         bool
-	SuccessCount   int
-	FailureCount   int
-	TotalRows      int64
-	Duration       time.Duration
-	FailedTables   []string
-	ErrorMessages  []string
+	Environment   string
+	TriggerType   string
+	DryRun        bool
+	SuccessCount  int
+	FailureCount  int
+	TotalRows     int64
+	Duration      time.Duration
+	FailedTables  []string
+	ErrorMessages []string
 }
 
 // NewSlackNotifier creates a new Slack notifier
 func NewSlackNotifier(ctx context.Context) (*SlackNotifier, error) {
 	cfg := config.GetInstance()
-	
+
 	// Load Slack webhook URLs from secrets
 	webhookSecret, err := secrets.NewSecret("ztmf_slack_webhook")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Slack webhook secret: %w", err)
 	}
-	
+
 	type webhookConfig struct {
-		Primary   string `json:"primary"`   // Main alerts channel
+		Primary   string `json:"primary"`             // Main alerts channel
 		Secondary string `json:"secondary,omitempty"` // Optional secondary channel
 		Critical  string `json:"critical,omitempty"`  // Optional critical alerts channel
 	}
-	
+
 	var webhook webhookConfig
 	if err := webhookSecret.Unmarshal(&webhook); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Slack webhook config: %w", err)
 	}
-	
+
 	// Use primary webhook URL (can be extended for multiple channels later)
 	return &SlackNotifier{
 		webhookURL:  webhook.Primary,
@@ -125,7 +125,7 @@ func (s *SlackNotifier) buildRotationMessage(r RotationResult) string {
 ❌ Secret: %s
 ❌ Upstream rotation succeeded, but persisting to Secrets Manager failed after retries.
 🔧 Paste this value into AWSCURRENT for %s immediately:
-` + "```%s```" + `
+`+"```%s```"+`
 Error: %s
 ⏱️ Duration: %s`,
 			r.Service, envUpper, r.SecretName, r.SecretName, r.RecoveryKey, r.ErrorMessage, dur)
@@ -160,6 +160,101 @@ Error: %s
 🔐 Secret: %s (AWSCURRENT updated, previous moved to AWSPREVIOUS)
 ⏱️ Duration: %s`,
 		r.Service, envUpper, r.SecretName, dur)
+}
+
+// CertRotationResult describes the outcome of one cert-rotation Lambda invocation
+// for Slack notification. Success/DryRun/ValidationFailed are mutually exclusive
+// with Success: a Success run was a real (or dry-run) successful rotation, a
+// ValidationFailed run is an operator-correctable input problem (bad PEM, wrong
+// domain, expired cert), and any other non-success is treated as an infra
+// failure (ACM import, Secrets Manager put, S3 archive, etc.).
+type CertRotationResult struct {
+	Environment       string
+	Domain            string
+	Success           bool
+	DryRun            bool
+	ValidationFailed  bool
+	NotAfter          time.Time
+	DaysRemaining     int
+	IntermediateCount int
+	AcmCertificateArn string
+	ActionRequired    string
+	ErrorMessage      string
+	S3Location        string
+}
+
+// SendCertRotationNotification posts a cert-rotation result to Slack using the
+// shared notifier plumbing (webhook secret lookup, redirect-safe HTTP client).
+func (s *SlackNotifier) SendCertRotationNotification(ctx context.Context, r CertRotationResult) error {
+	message := s.buildCertRotationMessage(r)
+
+	payload := map[string]interface{}{
+		"text": message,
+	}
+
+	return s.sendToSlack(ctx, payload)
+}
+
+// buildCertRotationMessage formats a Slack message for a cert-rotation outcome.
+func (s *SlackNotifier) buildCertRotationMessage(r CertRotationResult) string {
+	envUpper := strings.ToUpper(r.Environment)
+
+	if r.Success {
+		if r.DryRun {
+			return fmt.Sprintf(`✅ TLS CERT ROTATION SUCCESS (%s) [DRY RUN]
+🔐 Domain: %s
+📅 Expires: %s (%d days remaining)
+🔗 Chain: Server cert + %d intermediate CA`,
+				envUpper,
+				r.Domain,
+				r.NotAfter.UTC().Format("2006-01-02"),
+				r.DaysRemaining,
+				r.IntermediateCount)
+		}
+		return fmt.Sprintf(`✅ TLS CERT ROTATION SUCCESS (%s)
+🔐 Domain: %s
+📅 Expires: %s (%d days remaining)
+🔗 Chain: Server cert + %d intermediate CA
+🪪 ACM ARN: %s`,
+			envUpper,
+			r.Domain,
+			r.NotAfter.UTC().Format("2006-01-02"),
+			r.DaysRemaining,
+			r.IntermediateCount,
+			r.AcmCertificateArn)
+	}
+
+	errorSummary := r.ErrorMessage
+	if len(errorSummary) > 300 {
+		errorSummary = errorSummary[:300] + "..."
+	}
+
+	if r.ValidationFailed {
+		action := strings.TrimSpace(r.ActionRequired)
+		if action == "" {
+			action = "Upload valid certificate files and retry."
+		}
+		return fmt.Sprintf(`🚨 TLS CERT ROTATION FAILED (%s)
+🔐 Domain: %s
+❌ Error: %s
+🔧 Action Required: %s
+📍 Location: %s`,
+			envUpper,
+			r.Domain,
+			errorSummary,
+			action,
+			r.S3Location)
+	}
+
+	return fmt.Sprintf(`🚨 TLS CERT ROTATION FAILED (%s)
+🔐 Domain: %s
+❌ Error: %s
+🔧 Action Required: Investigate Lambda logs and AWS resource permissions, then retry rotation.
+📍 Location: %s`,
+		envUpper,
+		r.Domain,
+		errorSummary,
+		r.S3Location)
 }
 
 // getSyncLabel returns a human-readable label for the sync direction
@@ -229,12 +324,12 @@ func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]inte
 	if err != nil {
 		return fmt.Errorf("failed to marshal Slack payload: %w", err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", s.webhookURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create Slack request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := slackHTTPClient.Do(req)
@@ -255,7 +350,7 @@ func getCurrentQuarter() string {
 	now := time.Now()
 	year := now.Year()
 	month := int(now.Month())
-	
+
 	var quarter string
 	switch {
 	case month >= 1 && month <= 3:
@@ -267,7 +362,7 @@ func getCurrentQuarter() string {
 	case month >= 10 && month <= 12:
 		quarter = "Q4"
 	}
-	
+
 	return fmt.Sprintf("%s %d", quarter, year)
 }
 
@@ -285,7 +380,7 @@ func formatNumber(n int64) string {
 	if len(str) <= 3 {
 		return str
 	}
-	
+
 	var result []byte
 	for i, char := range str {
 		if i > 0 && (len(str)-i)%3 == 0 {
@@ -293,7 +388,7 @@ func formatNumber(n int64) string {
 		}
 		result = append(result, byte(char))
 	}
-	
+
 	return string(result)
 }
 

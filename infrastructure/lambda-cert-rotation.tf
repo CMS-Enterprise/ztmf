@@ -1,6 +1,8 @@
 # ZTMF Certificate Rotation Lambda
 #
 # S3-triggered Lambda that validates and imports TLS certificates into ACM.
+# Notifies via shared Slack webhook. IAM lives in iam-cert-rotation.tf; DLQ
+# and alarms live in monitoring-cert-rotation.tf.
 
 locals {
   cert_rotation_enabled = var.enable_cert_rotation_lambda
@@ -19,10 +21,9 @@ locals {
   cert_rotation_domain              = trimspace(var.cert_rotation_domain)
   cert_rotation_env_prefixes_json = jsonencode({
     (local.cert_rotation_prefix) = {
-      domain                = local.cert_rotation_domain
-      acmCertificateArn     = local.cert_rotation_acm_certificate_arn
-      backupSecretArn       = local.cert_rotation_enabled ? aws_secretsmanager_secret.cert_rotation_backup[0].arn : ""
-      slackWebhookSecretArn = aws_secretsmanager_secret.ztmf_slack_webhook.arn
+      domain            = local.cert_rotation_domain
+      acmCertificateArn = local.cert_rotation_acm_certificate_arn
+      backupSecretArn   = local.cert_rotation_enabled ? aws_secretsmanager_secret.cert_rotation_backup[0].arn : ""
     }
   })
 }
@@ -100,175 +101,6 @@ resource "aws_secretsmanager_secret" "cert_rotation_backup" {
 }
 
 # =============================================================================
-# IAM
-# =============================================================================
-
-resource "aws_iam_role" "cert_rotation_lambda" {
-  count = local.cert_rotation_enabled ? 1 : 0
-  name  = "ztmf-cert-rotation-lambda-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "ZTMF Cert Rotation Lambda Role"
-    Environment = var.environment
-  }
-}
-
-resource "aws_iam_policy" "cert_rotation_lambda_logging" {
-  count       = local.cert_rotation_enabled ? 1 : 0
-  name        = "ztmf-cert-rotation-lambda-logging-${var.environment}"
-  description = "IAM policy for logging from ZTMF cert-rotation Lambda"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = ["arn:aws:logs:*:*:*"]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_policy" "cert_rotation_lambda_secrets" {
-  count       = local.cert_rotation_enabled ? 1 : 0
-  name        = "ztmf-cert-rotation-lambda-secrets-${var.environment}"
-  description = "IAM policy for Secrets Manager access from ZTMF cert-rotation Lambda"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [
-          aws_secretsmanager_secret.ztmf_slack_webhook.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:PutSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [
-          aws_secretsmanager_secret.cert_rotation_backup[0].arn
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_policy" "cert_rotation_lambda_acm" {
-  count       = local.cert_rotation_enabled ? 1 : 0
-  name        = "ztmf-cert-rotation-lambda-acm-${var.environment}"
-  description = "IAM policy for ACM import from ZTMF cert-rotation Lambda"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "acm:ImportCertificate"
-        ]
-        Resource = [
-          local.cert_rotation_acm_certificate_arn
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_policy" "cert_rotation_lambda_s3" {
-  count       = local.cert_rotation_enabled ? 1 : 0
-  name        = "ztmf-cert-rotation-lambda-s3-${var.environment}"
-  description = "IAM policy for cert rotation S3 bucket access"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "S3ReadWriteRotationObjects"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:HeadObject",
-          "s3:PutObject",
-          "s3:DeleteObject"
-        ]
-        Resource = [
-          "arn:aws:s3:::${local.cert_rotation_bucket_name}/${local.cert_rotation_prefix}/*",
-          "arn:aws:s3:::${local.cert_rotation_bucket_name}/processed/${local.cert_rotation_prefix}/*"
-        ]
-      },
-      {
-        Sid    = "S3ListBucketForPrefix"
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::${local.cert_rotation_bucket_name}"
-        ]
-        Condition = {
-          StringLike = {
-            "s3:prefix" = [
-              "${local.cert_rotation_prefix}/*",
-              "processed/${local.cert_rotation_prefix}/*"
-            ]
-          }
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "cert_rotation_lambda_logging" {
-  count      = local.cert_rotation_enabled ? 1 : 0
-  role       = aws_iam_role.cert_rotation_lambda[0].name
-  policy_arn = aws_iam_policy.cert_rotation_lambda_logging[0].arn
-}
-
-resource "aws_iam_role_policy_attachment" "cert_rotation_lambda_secrets" {
-  count      = local.cert_rotation_enabled ? 1 : 0
-  role       = aws_iam_role.cert_rotation_lambda[0].name
-  policy_arn = aws_iam_policy.cert_rotation_lambda_secrets[0].arn
-}
-
-resource "aws_iam_role_policy_attachment" "cert_rotation_lambda_acm" {
-  count      = local.cert_rotation_enabled ? 1 : 0
-  role       = aws_iam_role.cert_rotation_lambda[0].name
-  policy_arn = aws_iam_policy.cert_rotation_lambda_acm[0].arn
-}
-
-resource "aws_iam_role_policy_attachment" "cert_rotation_lambda_s3" {
-  count      = local.cert_rotation_enabled ? 1 : 0
-  role       = aws_iam_role.cert_rotation_lambda[0].name
-  policy_arn = aws_iam_policy.cert_rotation_lambda_s3[0].arn
-}
-
-# =============================================================================
 # Lambda + S3 notifications
 # =============================================================================
 
@@ -276,6 +108,12 @@ resource "aws_cloudwatch_log_group" "cert_rotation_lambda" {
   count             = local.cert_rotation_enabled ? 1 : 0
   name              = "/aws/lambda/ztmf-cert-rotation-${var.environment}"
   retention_in_days = 30
+
+  tags = {
+    Name        = "ZTMF Cert Rotation Lambda Logs"
+    Environment = var.environment
+    Function    = "ztmf-cert-rotation"
+  }
 }
 
 resource "aws_lambda_function" "cert_rotation" {
@@ -285,19 +123,26 @@ resource "aws_lambda_function" "cert_rotation" {
   handler       = "bootstrap"
   runtime       = "provided.al2"
 
-  # Deployment package from S3 (uploaded by CI/CD)
+  # Deployment package from S3 (uploaded by CI/CD).
   s3_bucket = aws_s3_bucket.lambda_deployments.bucket
   s3_key    = "cert-rotation-deployment-latest.zip"
 
   memory_size = 256
   timeout     = 60
 
+  vpc_config {
+    subnet_ids         = data.aws_subnets.private.ids
+    security_group_ids = [aws_security_group.ztmf_sync_lambda.id]
+  }
+
   environment {
     variables = {
+      ENVIRONMENT       = var.environment
       CERT_BUCKET       = aws_s3_bucket.cert_rotation[0].bucket
       ENV_PREFIXES_JSON = local.cert_rotation_env_prefixes_json
       ARCHIVE_PREFIX    = "processed"
       DRY_RUN           = var.environment != "prod" ? "true" : "false"
+      SLACK_SECRET_ID   = aws_secretsmanager_secret.ztmf_slack_webhook.name
     }
   }
 
@@ -306,6 +151,14 @@ resource "aws_lambda_function" "cert_rotation" {
     application_log_level = "INFO"
     system_log_level      = "WARN"
     log_group             = aws_cloudwatch_log_group.cert_rotation_lambda[0].name
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.ztmf_cert_rotation_dlq[0].arn
+  }
+
+  tracing_config {
+    mode = "Active"
   }
 
   tags = {
@@ -319,6 +172,9 @@ resource "aws_lambda_function" "cert_rotation" {
     aws_iam_role_policy_attachment.cert_rotation_lambda_secrets,
     aws_iam_role_policy_attachment.cert_rotation_lambda_acm,
     aws_iam_role_policy_attachment.cert_rotation_lambda_s3,
+    aws_iam_role_policy_attachment.cert_rotation_lambda_vpc,
+    aws_iam_role_policy_attachment.cert_rotation_lambda_sqs,
+    aws_iam_role_policy_attachment.cert_rotation_lambda_xray,
     aws_cloudwatch_log_group.cert_rotation_lambda,
   ]
 }
@@ -389,4 +245,3 @@ variable "cert_rotation_acm_certificate_arn" {
     error_message = "cert_rotation_acm_certificate_arn must be set when enable_cert_rotation_lambda is true."
   }
 }
-

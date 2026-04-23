@@ -8,21 +8,21 @@ import (
 	"strings"
 )
 
+// EnvConfig is the per-S3-prefix configuration needed to validate and import
+// a certificate bundle. Slack webhook configuration is intentionally NOT here:
+// notifications go through the shared notifications.SlackNotifier, which reads
+// the ztmf_slack_webhook secret via SLACK_SECRET_ID at the Lambda env level.
 type EnvConfig struct {
 	Domain            string `json:"domain"`
 	AcmCertificateArn string `json:"acmCertificateArn"`
 	BackupSecretArn   string `json:"backupSecretArn"`
-	// SlackWebhookURL should be used only for dev/testing. Prefer SlackWebhookSecretArn
-	// so Terraform does not store the webhook in state.
-	SlackWebhookURL       string `json:"slackWebhookUrl"`
-	SlackWebhookSecretArn string `json:"slackWebhookSecretArn"`
 }
 
 type Config struct {
 	CertBucket       string
 	ArchivePrefix    string
 	DryRun           bool
-	EnvPrefixesToCfg map[string]EnvConfig // key like "dev" or "dev/"
+	EnvPrefixesToCfg map[string]EnvConfig // key like "dev" (no trailing slash)
 }
 
 func Load() (Config, error) {
@@ -66,7 +66,6 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("ENV_PREFIXES_JSON[%q].backupSecretArn is required unless DRY_RUN=true", k)
 		}
 
-		// Slack config is optional: when missing, the Lambda should continue without notifications.
 		normalized[key] = v
 	}
 
