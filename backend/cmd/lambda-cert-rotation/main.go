@@ -13,6 +13,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,19 +30,27 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/smithy-go"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/awsclients"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/certvalidator"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/notifications"
-	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 )
 
 const (
 	certKeyName  = "cert.pem"
 	keyKeyName   = "key.pem"
 	chainKeyName = "chain.pem"
+
+	// bundleFreshnessWindow bounds how far apart cert.pem, key.pem, and
+	// chain.pem uploads may be before the bundle is considered stale. A stale
+	// bundle typically indicates leftover files from a previously-failed
+	// rotation that were paired with a freshly-uploaded replacement. Rejecting
+	// those pairings prevents a valid new cert from being imported with an
+	// outdated intermediate chain.
+	bundleFreshnessWindow = time.Hour
 )
 
 // notifier abstracts notifications.SlackNotifier so handleRecord can be
@@ -70,10 +81,16 @@ type acmAPI interface {
 	ImportCertificate(ctx context.Context, in *acm.ImportCertificateInput, opts ...func(*acm.Options)) (*acm.ImportCertificateOutput, error)
 }
 
+// secretsAPI is the minimal subset of Secrets Manager used by handleRecord.
+type secretsAPI interface {
+	PutSecretValue(ctx context.Context, in *secretsmanager.PutSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error)
+}
+
 type handler struct {
 	cfg      config.Config
 	s3       s3API
 	acm      acmAPI
+	secrets  secretsAPI
 	notifier notifier
 }
 
@@ -99,7 +116,13 @@ func main() {
 		n = slackNotifier
 	}
 
-	lambda.Start((&handler{cfg: cfg, s3: clients.S3, acm: clients.ACM, notifier: n}).Handle)
+	lambda.Start((&handler{
+		cfg:      cfg,
+		s3:       clients.S3,
+		acm:      clients.ACM,
+		secrets:  clients.Secrets,
+		notifier: n,
+	}).Handle)
 }
 
 func (h *handler) Handle(ctx context.Context, evt events.S3Event) error {
@@ -147,21 +170,29 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 	wantKey := path.Join(envPrefix, keyKeyName)
 	wantChain := path.Join(envPrefix, chainKeyName)
 
-	existsCert, err := h.objectExists(ctx, bucket, wantCert)
+	certHead, err := h.headIfExists(ctx, bucket, wantCert)
 	if err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check cert.pem: %w", err))
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("head cert.pem: %w", err))
 	}
-	existsKey, err := h.objectExists(ctx, bucket, wantKey)
+	keyHead, err := h.headIfExists(ctx, bucket, wantKey)
 	if err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check key.pem: %w", err))
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("head key.pem: %w", err))
 	}
-	existsChain, err := h.objectExists(ctx, bucket, wantChain)
+	chainHead, err := h.headIfExists(ctx, bucket, wantChain)
 	if err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("check chain.pem: %w", err))
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("head chain.pem: %w", err))
 	}
-	if !existsCert || !existsKey || !existsChain {
+	if certHead == nil || keyHead == nil || chainHead == nil {
 		// Quiet exit until the full bundle is present.
 		return nil
+	}
+
+	// Freshness check defends against partial-rotation poison: if a prior run
+	// archived only some of cert/key/chain before failing, a subsequent upload
+	// of one file would otherwise pair a fresh cert with a stale intermediate
+	// chain and silently import an inconsistent bundle into ACM.
+	if err := verifyBundleFreshness(certHead, keyHead, chainHead, bundleFreshnessWindow); err != nil {
+		return h.notifyValidationFailure(ctx, envPrefix, envCfg.Domain, s3Location, err)
 	}
 
 	certPEM, err := h.getObjectBytes(ctx, bucket, wantCert)
@@ -206,33 +237,29 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 		PrivateKey:       keyPEM,
 		CertificateChain: chainPEM,
 	}); err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("ACM import: %w", err))
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("ACM ImportCertificate %s: %w", envCfg.AcmCertificateArn, err))
 	}
 
-	backupPayload := map[string]string{
-		"cert_pem":  string(certPEM),
-		"key_pem":   string(keyPEM),
-		"chain_pem": string(chainPEM),
-		"domain":    envCfg.Domain,
-		"not_after": res.NotAfter.UTC().Format(time.RFC3339),
-	}
-	backupSecret, err := secrets.NewSecret(envCfg.BackupSecretArn)
-	if err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("open backup secret: %w", err))
-	}
-	if err := backupSecret.Put(ctx, backupPayload); err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("backup put: %w", err))
+	if err := h.putBackup(ctx, envCfg, res, certPEM, keyPEM, chainPEM); err != nil {
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, err)
 	}
 
+	// Archive in two phases so a mid-sequence failure cannot leave the source
+	// prefix with a mixed-age bundle. Phase 1 copies all three files to
+	// processed/; a failure here leaves the sources intact and the retry is
+	// safe. Phase 2 deletes the sources; partial deletes are captured into a
+	// joined error so the freshness check on the next invocation will reject
+	// any leftover-pair scenario rather than rotate with stale chain.
 	archiveBase := path.Join(h.cfg.ArchivePrefix, envPrefix, now.Format("20060102T150405Z"))
-	if err := h.archiveOne(ctx, bucket, wantCert, path.Join(archiveBase, certKeyName)); err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive cert.pem: %w", err))
+	bundleKeys := []string{wantCert, wantKey, wantChain}
+	bundleBasenames := []string{certKeyName, keyKeyName, chainKeyName}
+	for i, src := range bundleKeys {
+		if err := h.copyObject(ctx, bucket, src, path.Join(archiveBase, bundleBasenames[i])); err != nil {
+			return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive copy %s: %w", src, err))
+		}
 	}
-	if err := h.archiveOne(ctx, bucket, wantKey, path.Join(archiveBase, keyKeyName)); err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive key.pem: %w", err))
-	}
-	if err := h.archiveOne(ctx, bucket, wantChain, path.Join(archiveBase, chainKeyName)); err != nil {
-		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, fmt.Errorf("archive chain.pem: %w", err))
+	if err := h.deleteSources(ctx, bucket, bundleKeys); err != nil {
+		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, err)
 	}
 
 	_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
@@ -260,26 +287,77 @@ func (h *handler) matchPrefix(objectKey string) (string, config.EnvConfig, bool)
 	return prefix, cfg, ok
 }
 
-func (h *handler) objectExists(ctx context.Context, bucket, key string) (bool, error) {
-	_, err := h.s3.HeadObject(ctx, &s3.HeadObjectInput{
+// headIfExists returns the HeadObject result for key, or (nil, nil) if the
+// object does not exist. Non-404 errors are propagated so the caller can
+// surface them as infra failures.
+func (h *handler) headIfExists(ctx context.Context, bucket, key string) (*s3.HeadObjectOutput, error) {
+	out, err := h.s3.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
 	if err == nil {
-		return true, nil
+		return out, nil
 	}
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.ErrorCode() == "NotFound" {
-			return false, nil
+			return nil, nil
 		}
 	}
 	// Some S3 responses surface 404 as a generic ResponseError; fall back to
 	// a string match so a NotFound HEAD does not force a Lambda retry.
 	if strings.Contains(err.Error(), "status code: 404") {
-		return false, nil
+		return nil, nil
 	}
-	return false, err
+	return nil, err
+}
+
+// verifyBundleFreshness returns a ValidationError when the LastModified
+// timestamps of the three bundle files span more than window. Operator
+// uploads are normally seconds apart; a multi-hour spread means at least one
+// of the three files is left over from a prior rotation.
+func verifyBundleFreshness(certHead, keyHead, chainHead *s3.HeadObjectOutput, window time.Duration) error {
+	heads := map[string]*s3.HeadObjectOutput{
+		certKeyName:  certHead,
+		keyKeyName:   keyHead,
+		chainKeyName: chainHead,
+	}
+	var minTime, maxTime time.Time
+	first := true
+	for name, head := range heads {
+		if head == nil || head.LastModified == nil {
+			return certvalidator.ValidationError{
+				Msg:            fmt.Sprintf("%s is missing LastModified metadata", name),
+				ActionRequired: fmt.Sprintf("Re-upload %s alongside the other bundle files.", name),
+			}
+		}
+		t := head.LastModified.UTC()
+		if first {
+			minTime = t
+			maxTime = t
+			first = false
+			continue
+		}
+		if t.Before(minTime) {
+			minTime = t
+		}
+		if t.After(maxTime) {
+			maxTime = t
+		}
+	}
+	if spread := maxTime.Sub(minTime); spread > window {
+		return certvalidator.ValidationError{
+			Msg: fmt.Sprintf(
+				"bundle files span %s across LastModified timestamps; %s/%s/%s must be uploaded within %s of each other",
+				spread.Round(time.Second), certKeyName, keyKeyName, chainKeyName, window,
+			),
+			ActionRequired: fmt.Sprintf(
+				"Delete any lingering %s / %s / %s at the prefix and re-upload all three files together.",
+				certKeyName, keyKeyName, chainKeyName,
+			),
+		}
+	}
+	return nil
 }
 
 func (h *handler) getObjectBytes(ctx context.Context, bucket, key string) ([]byte, error) {
@@ -294,19 +372,69 @@ func (h *handler) getObjectBytes(ctx context.Context, bucket, key string) ([]byt
 	return io.ReadAll(out.Body)
 }
 
-func (h *handler) archiveOne(ctx context.Context, bucket, srcKey, dstKey string) error {
-	if _, err := h.s3.CopyObject(ctx, &s3.CopyObjectInput{
+func (h *handler) copyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
+	_, err := h.s3.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(bucket),
 		CopySource: aws.String(pathEscape(bucket + "/" + srcKey)),
 		Key:        aws.String(dstKey),
-	}); err != nil {
-		return err
-	}
-	_, err := h.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(srcKey),
 	})
 	return err
+}
+
+// deleteSources deletes every key in srcKeys, attempting every delete even if
+// earlier ones fail. The returned error aggregates any per-key failures so the
+// caller can surface a single infra failure message.
+func (h *handler) deleteSources(ctx context.Context, bucket string, srcKeys []string) error {
+	var deleteErrs []error
+	for _, src := range srcKeys {
+		if _, err := h.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(src),
+		}); err != nil {
+			deleteErrs = append(deleteErrs, fmt.Errorf("delete %s: %w", src, err))
+		}
+	}
+	if len(deleteErrs) > 0 {
+		return fmt.Errorf("archive delete: %w", errors.Join(deleteErrs...))
+	}
+	return nil
+}
+
+// putBackup writes the validated bundle to the backup secret using a
+// deterministic ClientRequestToken so retries with the same payload do not
+// create duplicate secret versions. A SDK call rather than
+// backend/internal/secrets.NewSecret is used here because the backup secret
+// has no AWSCURRENT value on first use, which would cause NewSecret's initial
+// GetSecretValue to fail (see awsclients package doc).
+func (h *handler) putBackup(ctx context.Context, envCfg config.EnvConfig, res certvalidator.Result, certPEM, keyPEM, chainPEM []byte) error {
+	payload, err := json.Marshal(map[string]string{
+		"cert_pem":  string(certPEM),
+		"key_pem":   string(keyPEM),
+		"chain_pem": string(chainPEM),
+		"domain":    envCfg.Domain,
+		"not_after": res.NotAfter.UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal backup payload: %w", err)
+	}
+	_, err = h.secrets.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
+		SecretId:           aws.String(envCfg.BackupSecretArn),
+		SecretString:       aws.String(string(payload)),
+		ClientRequestToken: aws.String(payloadRequestToken(payload)),
+	})
+	if err != nil {
+		return fmt.Errorf("put backup secret %s: %w", envCfg.BackupSecretArn, err)
+	}
+	return nil
+}
+
+// payloadRequestToken returns a deterministic 32-character hex token derived
+// from the payload. Identical payloads produce identical tokens, so Secrets
+// Manager PutSecretValue retries with the same payload do not create
+// duplicate versions. Mirrors the helper in backend/internal/secrets.
+func payloadRequestToken(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])[:32]
 }
 
 // pathEscape URL-encodes an S3 CopySource value while preserving forward
@@ -317,8 +445,8 @@ func pathEscape(s string) string {
 }
 
 // notifyValidationFailure sends a Slack notification for operator-correctable
-// input errors (bad PEM, wrong domain, expired cert). Always returns nil so
-// Lambda does not retry the invocation.
+// input errors (bad PEM, wrong domain, expired cert, stale bundle). Always
+// returns nil so Lambda does not retry the invocation.
 func (h *handler) notifyValidationFailure(ctx context.Context, envPrefix, domain, s3Location string, verr error) error {
 	result := notifications.CertRotationResult{
 		Environment:      envPrefix,

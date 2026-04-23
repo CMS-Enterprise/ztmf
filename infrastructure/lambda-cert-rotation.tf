@@ -222,6 +222,14 @@ variable "cert_rotation_prefix" {
   description = "S3 prefix under the cert bucket to watch (defaults to environment)"
   type        = string
   default     = ""
+
+  validation {
+    # Prevent collision with the hard-coded archive prefix. If the watched
+    # prefix were "processed", the Lambda's own archive writes would match
+    # the S3 notification filter and retrigger the Lambda on its own output.
+    condition     = trim(var.cert_rotation_prefix, "/") != "processed"
+    error_message = "cert_rotation_prefix must not be \"processed\"; that value is reserved for the archive destination."
+  }
 }
 
 variable "cert_rotation_domain" {
@@ -243,5 +251,13 @@ variable "cert_rotation_acm_certificate_arn" {
   validation {
     condition     = var.enable_cert_rotation_lambda == false || trimspace(var.cert_rotation_acm_certificate_arn) != ""
     error_message = "cert_rotation_acm_certificate_arn must be set when enable_cert_rotation_lambda is true."
+  }
+
+  validation {
+    # Typo guard at plan time. The Lambda re-imports over this exact ARN at
+    # runtime; a malformed ARN (e.g. wrong region, or a secrets ARN pasted
+    # in by mistake) would otherwise only surface as a runtime AccessDenied.
+    condition     = var.enable_cert_rotation_lambda == false || can(regex("^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]+$", trimspace(var.cert_rotation_acm_certificate_arn)))
+    error_message = "cert_rotation_acm_certificate_arn must match arn:aws:acm:<region>:<account>:certificate/<id>."
   }
 }

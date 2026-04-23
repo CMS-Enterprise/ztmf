@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/smithy-go"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/lambda-cert-rotation/internal/config"
@@ -89,6 +91,101 @@ func toLower(s string) string {
 	return string(out)
 }
 
+func TestPayloadRequestToken_DeterministicLength32(t *testing.T) {
+	payload := []byte(`{"foo":"bar","baz":"qux"}`)
+	a := payloadRequestToken(payload)
+	b := payloadRequestToken(payload)
+	if a != b {
+		t.Fatalf("token not deterministic: %q vs %q", a, b)
+	}
+	if len(a) != 32 {
+		t.Fatalf("token length %d, want 32 (Secrets Manager requires 32-64)", len(a))
+	}
+	other := payloadRequestToken([]byte(`{"foo":"different"}`))
+	if other == a {
+		t.Fatalf("different payloads produced identical token")
+	}
+}
+
+func TestVerifyBundleFreshness(t *testing.T) {
+	base := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	headAt := func(offset time.Duration) *s3.HeadObjectOutput {
+		t := base.Add(offset)
+		return &s3.HeadObjectOutput{LastModified: &t}
+	}
+
+	cases := []struct {
+		name    string
+		cert    *s3.HeadObjectOutput
+		key     *s3.HeadObjectOutput
+		chain   *s3.HeadObjectOutput
+		window  time.Duration
+		wantErr bool
+	}{
+		{
+			name:   "all three within window",
+			cert:   headAt(0),
+			key:    headAt(30 * time.Second),
+			chain:  headAt(90 * time.Second),
+			window: time.Hour,
+		},
+		{
+			name:   "equal timestamps",
+			cert:   headAt(0),
+			key:    headAt(0),
+			chain:  headAt(0),
+			window: time.Hour,
+		},
+		{
+			name:    "cert fresh, key 3 days stale",
+			cert:    headAt(0),
+			key:     headAt(-72 * time.Hour),
+			chain:   headAt(-72 * time.Hour),
+			window:  time.Hour,
+			wantErr: true,
+		},
+		{
+			name:    "chain just over window",
+			cert:    headAt(0),
+			key:     headAt(0),
+			chain:   headAt(time.Hour + time.Second),
+			window:  time.Hour,
+			wantErr: true,
+		},
+		{
+			name:    "missing last modified",
+			cert:    headAt(0),
+			key:     &s3.HeadObjectOutput{},
+			chain:   headAt(0),
+			window:  time.Hour,
+			wantErr: true,
+		},
+		{
+			name:    "nil head treated as missing",
+			cert:    nil,
+			key:     headAt(0),
+			chain:   headAt(0),
+			window:  time.Hour,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := verifyBundleFreshness(tc.cert, tc.key, tc.chain, tc.window)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // captureNotifier records every notification for assertion in tests.
 type captureNotifier struct {
 	calls []notifications.CertRotationResult
@@ -132,6 +229,16 @@ func (p panicACM) ImportCertificate(context.Context, *acm.ImportCertificateInput
 	return nil, nil
 }
 
+// panicSecrets fails the test if any Secrets Manager call is made.
+type panicSecrets struct {
+	t *testing.T
+}
+
+func (p panicSecrets) PutSecretValue(context.Context, *secretsmanager.PutSecretValueInput, ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
+	p.t.Fatalf("unexpected PutSecretValue call")
+	return nil, nil
+}
+
 func TestHandleRecord_EarlyExits(t *testing.T) {
 	cfg := config.Config{
 		CertBucket:    "ztmf-cert-rotation-dev",
@@ -161,6 +268,7 @@ func TestHandleRecord_EarlyExits(t *testing.T) {
 				cfg:      cfg,
 				s3:       panicS3{t: t},
 				acm:      panicACM{t: t},
+				secrets:  panicSecrets{t: t},
 				notifier: notif,
 			}
 
@@ -187,29 +295,39 @@ func (notFoundErr) ErrorCode() string             { return "NotFound" }
 func (notFoundErr) ErrorMessage() string          { return "Not Found" }
 func (notFoundErr) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
-// fakeS3 is a programmable S3 stub used for the "incomplete bundle" path.
+// fakeS3 is a programmable S3 stub. Keys present in `heads` return the
+// associated HeadObjectOutput; keys absent return 404. Copy/Delete simply
+// succeed unless failKeys contains the key.
 type fakeS3 struct {
-	exists  map[string]bool
-	headErr error
+	heads    map[string]*s3.HeadObjectOutput
+	headErr  error
+	failCopy map[string]error
+	failDel  map[string]error
 }
 
 func (f fakeS3) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
 	if f.headErr != nil {
 		return nil, f.headErr
 	}
-	if f.exists[*in.Key] {
-		return &s3.HeadObjectOutput{}, nil
+	if out, ok := f.heads[*in.Key]; ok {
+		return out, nil
 	}
 	return nil, notFoundErr{}
 }
 func (f fakeS3) GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	return nil, errors.New("unexpected GetObject")
 }
-func (f fakeS3) CopyObject(context.Context, *s3.CopyObjectInput, ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
-	return nil, errors.New("unexpected CopyObject")
+func (f fakeS3) CopyObject(_ context.Context, in *s3.CopyObjectInput, _ ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	if err, ok := f.failCopy[*in.Key]; ok {
+		return nil, err
+	}
+	return &s3.CopyObjectOutput{}, nil
 }
-func (f fakeS3) DeleteObject(context.Context, *s3.DeleteObjectInput, ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
-	return nil, errors.New("unexpected DeleteObject")
+func (f fakeS3) DeleteObject(_ context.Context, in *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	if err, ok := f.failDel[*in.Key]; ok {
+		return nil, err
+	}
+	return &s3.DeleteObjectOutput{}, nil
 }
 
 func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
@@ -221,14 +339,18 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 		},
 	}
 
+	now := time.Now().UTC()
 	notif := &captureNotifier{}
 	h := &handler{
 		cfg: cfg,
 		s3: fakeS3{
 			// Only cert.pem present; key.pem and chain.pem missing.
-			exists: map[string]bool{"dev/cert.pem": true},
+			heads: map[string]*s3.HeadObjectOutput{
+				"dev/cert.pem": {LastModified: &now},
+			},
 		},
 		acm:      panicACM{t: t},
+		secrets:  panicSecrets{t: t},
 		notifier: notif,
 	}
 
@@ -241,5 +363,57 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 	}
 	if len(notif.calls) != 0 {
 		t.Errorf("incomplete bundle should not notify; got %+v", notif.calls)
+	}
+}
+
+func TestHandleRecord_StaleBundleIsValidationFailure(t *testing.T) {
+	cfg := config.Config{
+		CertBucket:    "ztmf-cert-rotation-dev",
+		ArchivePrefix: "processed",
+		EnvPrefixesToCfg: map[string]config.EnvConfig{
+			"dev": {Domain: "dev.ztmf.cms.gov"},
+		},
+	}
+
+	// Operator uploaded a fresh cert.pem over 3-day-old key.pem/chain.pem.
+	// This is the exact Codex scenario the freshness check defends against.
+	fresh := time.Now().UTC()
+	stale := fresh.Add(-72 * time.Hour)
+	notif := &captureNotifier{}
+	h := &handler{
+		cfg: cfg,
+		s3: fakeS3{
+			heads: map[string]*s3.HeadObjectOutput{
+				"dev/cert.pem":  {LastModified: &fresh},
+				"dev/key.pem":   {LastModified: &stale},
+				"dev/chain.pem": {LastModified: &stale},
+			},
+		},
+		// ACM and Secrets must not be called when the bundle is rejected
+		// as stale; the panic stubs prove the short-circuit.
+		acm:      panicACM{t: t},
+		secrets:  panicSecrets{t: t},
+		notifier: notif,
+	}
+
+	rec := events.S3EventRecord{}
+	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
+	rec.S3.Object.Key = "dev/cert.pem"
+
+	if err := h.handleRecord(context.Background(), rec); err != nil {
+		t.Fatalf("stale bundle should be a validation failure (nil return), got: %v", err)
+	}
+	if len(notif.calls) != 1 {
+		t.Fatalf("want 1 notification, got %d: %+v", len(notif.calls), notif.calls)
+	}
+	got := notif.calls[0]
+	if !got.ValidationFailed {
+		t.Errorf("notification should have ValidationFailed=true; got %+v", got)
+	}
+	if got.Success {
+		t.Errorf("notification should not be Success; got %+v", got)
+	}
+	if got.Environment != "dev" {
+		t.Errorf("environment = %q, want dev", got.Environment)
 	}
 }
