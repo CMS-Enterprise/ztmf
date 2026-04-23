@@ -57,10 +57,13 @@ func Load() (Config, error) {
 		key = strings.TrimSuffix(key, "/")
 
 		// Reject prefixes that collide with the archive prefix. If they
-		// matched, archive writes under processed/<key>/... would still
-		// satisfy the S3 notification filter_prefix and retrigger the
-		// Lambda on its own output, producing an unbounded rotation loop.
-		if key == archivePrefix {
+		// matched, archive writes would still satisfy the S3 notification
+		// filter_prefix and retrigger the Lambda on its own output,
+		// producing an unbounded rotation loop. Case-insensitive because
+		// S3 key matching is case-sensitive but operators frequently
+		// typo-copy with mixed case and a "Processed" prefix would still
+		// be a foot-gun worth guarding.
+		if strings.EqualFold(key, archivePrefix) {
 			return Config{}, fmt.Errorf("ENV_PREFIXES_JSON[%q] collides with ARCHIVE_PREFIX=%q; choose a different env prefix", k, archivePrefix)
 		}
 

@@ -85,6 +85,29 @@ resource "aws_s3_bucket_lifecycle_configuration" "cert_rotation" {
       days = 90
     }
   }
+
+  # Source prefix is versioned, so DeleteObject writes a delete marker and
+  # retains the previous object as a noncurrent version. Without this rule,
+  # every rotated key.pem would linger indefinitely as a readable noncurrent
+  # version. Expire noncurrent versions after one day; the Lambda's retry
+  # window is measured in minutes, so one day is a wide operational margin
+  # and a tight confidentiality bound.
+  rule {
+    id     = "expire-noncurrent-source-versions"
+    status = "Enabled"
+
+    filter {
+      prefix = "${local.cert_rotation_prefix}/"
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
 }
 
 resource "aws_secretsmanager_secret" "cert_rotation_backup" {
@@ -227,8 +250,9 @@ variable "cert_rotation_prefix" {
     # Prevent collision with the hard-coded archive prefix. If the watched
     # prefix were "processed", the Lambda's own archive writes would match
     # the S3 notification filter and retrigger the Lambda on its own output.
-    condition     = trim(var.cert_rotation_prefix, "/") != "processed"
-    error_message = "cert_rotation_prefix must not be \"processed\"; that value is reserved for the archive destination."
+    # Case-insensitive so a typo like "Processed" is still rejected at plan.
+    condition     = lower(trim(var.cert_rotation_prefix, "/")) != "processed"
+    error_message = "cert_rotation_prefix must not be \"processed\" (case-insensitive); that value is reserved for the archive destination."
   }
 }
 

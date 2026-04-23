@@ -219,7 +219,7 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 	}
 
 	if h.cfg.DryRun {
-		_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+		h.notify(ctx, notifications.CertRotationResult{
 			Environment:       envPrefix,
 			Domain:            res.Domain,
 			Success:           true,
@@ -262,7 +262,7 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 		return h.notifyInfraFailure(ctx, envPrefix, envCfg.Domain, s3Location, err)
 	}
 
-	_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+	h.notify(ctx, notifications.CertRotationResult{
 		Environment:       envPrefix,
 		Domain:            res.Domain,
 		Success:           true,
@@ -444,6 +444,17 @@ func pathEscape(s string) string {
 	return strings.TrimPrefix(u.EscapedPath(), "/")
 }
 
+// notify sends a Slack notification and logs any send error. Slack failures
+// are never allowed to block rotation, but silent discards leave operators
+// with no audit trail if the webhook was unreachable; the log line keeps a
+// CloudWatch breadcrumb for every such drop.
+func (h *handler) notify(ctx context.Context, r notifications.CertRotationResult) {
+	if err := h.notifier.SendCertRotationNotification(ctx, r); err != nil {
+		log.Printf("slack notification failed (env=%s domain=%s success=%t dry_run=%t validation_failed=%t): %v",
+			r.Environment, r.Domain, r.Success, r.DryRun, r.ValidationFailed, err)
+	}
+}
+
 // notifyValidationFailure sends a Slack notification for operator-correctable
 // input errors (bad PEM, wrong domain, expired cert, stale bundle). Always
 // returns nil so Lambda does not retry the invocation.
@@ -459,14 +470,14 @@ func (h *handler) notifyValidationFailure(ctx context.Context, envPrefix, domain
 		result.ErrorMessage = ve.Msg
 		result.ActionRequired = ve.ActionRequired
 	}
-	_ = h.notifier.SendCertRotationNotification(ctx, result)
+	h.notify(ctx, result)
 	return nil
 }
 
 // notifyInfraFailure sends a Slack notification for infrastructure errors
 // (S3, ACM, Secrets Manager) and returns the original error so Lambda retries.
 func (h *handler) notifyInfraFailure(ctx context.Context, envPrefix, domain, s3Location string, infraErr error) error {
-	_ = h.notifier.SendCertRotationNotification(ctx, notifications.CertRotationResult{
+	h.notify(ctx, notifications.CertRotationResult{
 		Environment:  envPrefix,
 		Domain:       domain,
 		ErrorMessage: infraErr.Error(),

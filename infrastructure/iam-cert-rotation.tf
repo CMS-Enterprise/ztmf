@@ -76,11 +76,13 @@ resource "aws_iam_policy" "cert_rotation_lambda_secrets" {
         ]
       },
       {
+        # Write-only. The Lambda never reads the backup secret: it produces
+        # the payload from the S3 bundle it just validated. Granting only
+        # PutSecretValue keeps the role from being able to read back the
+        # private key material it stored.
         Sid    = "CertRotationBackupWrite"
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret",
           "secretsmanager:PutSecretValue"
         ]
         Resource = [

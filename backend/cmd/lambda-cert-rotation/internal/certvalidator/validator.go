@@ -145,7 +145,13 @@ func parseCertsPEM(b []byte) ([]*x509.Certificate, error) {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
-			return nil, errors.New("no PEM blocks found")
+			// pem.Decode returns nil once the remaining bytes are not a PEM
+			// block (e.g. trailing DigiCert subject annotations or OpenSSL
+			// -text output after a valid certificate). Stop scanning instead
+			// of discarding the certificates already parsed; the
+			// len(certs) == 0 check below still rejects genuinely empty
+			// input with a clear error.
+			break
 		}
 		if block.Type != "CERTIFICATE" {
 			continue
@@ -155,6 +161,9 @@ func parseCertsPEM(b []byte) ([]*x509.Certificate, error) {
 			return nil, err
 		}
 		certs = append(certs, c)
+	}
+	if len(certs) == 0 {
+		return nil, errors.New("no PEM blocks found")
 	}
 	return certs, nil
 }

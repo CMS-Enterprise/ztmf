@@ -1,12 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"io"
+	"math/big"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -415,5 +427,279 @@ func TestHandleRecord_StaleBundleIsValidationFailure(t *testing.T) {
 	}
 	if got.Environment != "dev" {
 		t.Errorf("environment = %q, want dev", got.Environment)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// End-to-end happy-path test using real PEM bytes and recording AWS fakes.
+// The original Blocker A (backup-secret first-rotation failure) would have
+// been caught by this test because the pre-fix code never reached
+// PutSecretValue; the recording stub asserts it is called exactly once with a
+// non-empty SecretString and a 32-character ClientRequestToken.
+
+// happyPathBundle generates a valid (leaf, key, chain) PEM triple for tests.
+// Duplicated from certvalidator/validator_test.go intentionally; the helper
+// only exists for tests and is not in the package's public API. Keeping the
+// generator here lets main_test.go be self-contained.
+func happyPathBundle(t *testing.T, domain string, notBefore, notAfter time.Time) (certPEM, keyPEM, chainPEM []byte) {
+	t.Helper()
+
+	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("gen root key: %v", err)
+	}
+	rootTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Happy Path Root"},
+		NotBefore:             notBefore.Add(-time.Hour),
+		NotAfter:              notAfter.Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	rootDER, err := x509.CreateCertificate(rand.Reader, rootTmpl, rootTmpl, &rootKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	rootCert, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatalf("parse root: %v", err)
+	}
+
+	interKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("gen inter key: %v", err)
+	}
+	interTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "Happy Path Intermediate"},
+		NotBefore:             notBefore.Add(-time.Hour),
+		NotAfter:              notAfter.Add(180 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	interDER, err := x509.CreateCertificate(rand.Reader, interTmpl, rootCert, &interKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("create intermediate: %v", err)
+	}
+	interCert, err := x509.ParseCertificate(interDER)
+	if err != nil {
+		t.Fatalf("parse intermediate: %v", err)
+	}
+
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("gen leaf key: %v", err)
+	}
+	leafTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(3),
+		Subject:               pkix.Name{CommonName: domain},
+		DNSNames:              []string{domain},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTmpl, interCert, &leafKey.PublicKey, interKey)
+	if err != nil {
+		t.Fatalf("create leaf: %v", err)
+	}
+	leafKeyBytes, err := x509.MarshalECPrivateKey(leafKey)
+	if err != nil {
+		t.Fatalf("marshal leaf key: %v", err)
+	}
+
+	certPEM = bytes.TrimSpace(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}))
+	keyPEM = bytes.TrimSpace(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyBytes}))
+	chainPEM = bytes.TrimSpace(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: interDER}))
+	return
+}
+
+// servingS3 serves HeadObject LastModified metadata and GetObject bytes from
+// an in-memory map keyed by object key. Copy and Delete succeed and count the
+// calls. Optional failKey injects a per-key error for targeted failure tests.
+type servingS3 struct {
+	heads        map[string]*s3.HeadObjectOutput
+	bodies       map[string][]byte
+	copyCount    int32
+	deleteCount  int32
+	copyKeys     []string
+	deleteKeys   []string
+	deletedFirst bool
+}
+
+func (s *servingS3) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	if out, ok := s.heads[*in.Key]; ok {
+		return out, nil
+	}
+	return nil, notFoundErr{}
+}
+func (s *servingS3) GetObject(_ context.Context, in *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	body, ok := s.bodies[*in.Key]
+	if !ok {
+		return nil, notFoundErr{}
+	}
+	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(body))}, nil
+}
+func (s *servingS3) CopyObject(_ context.Context, in *s3.CopyObjectInput, _ ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	atomic.AddInt32(&s.copyCount, 1)
+	s.copyKeys = append(s.copyKeys, *in.Key)
+	if s.deletedFirst {
+		// Regression check: archive should never delete before copies finish.
+		// If deletes run before copies, the partial-archive bug returns.
+		return nil, errors.New("source deleted before copies completed")
+	}
+	return &s3.CopyObjectOutput{}, nil
+}
+func (s *servingS3) DeleteObject(_ context.Context, in *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	atomic.AddInt32(&s.deleteCount, 1)
+	if atomic.LoadInt32(&s.copyCount) == 0 {
+		s.deletedFirst = true
+	}
+	s.deleteKeys = append(s.deleteKeys, *in.Key)
+	return &s3.DeleteObjectOutput{}, nil
+}
+
+// recordingACM records every ImportCertificate call.
+type recordingACM struct {
+	calls []*acm.ImportCertificateInput
+}
+
+func (r *recordingACM) ImportCertificate(_ context.Context, in *acm.ImportCertificateInput, _ ...func(*acm.Options)) (*acm.ImportCertificateOutput, error) {
+	r.calls = append(r.calls, in)
+	return &acm.ImportCertificateOutput{CertificateArn: in.CertificateArn}, nil
+}
+
+// recordingSecrets records every PutSecretValue call.
+type recordingSecrets struct {
+	calls []*secretsmanager.PutSecretValueInput
+}
+
+func (r *recordingSecrets) PutSecretValue(_ context.Context, in *secretsmanager.PutSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
+	r.calls = append(r.calls, in)
+	return &secretsmanager.PutSecretValueOutput{}, nil
+}
+
+func TestHandleRecord_HappyPath_EndToEnd(t *testing.T) {
+	domain := "dev.ztmf.cms.gov"
+	now := time.Now().UTC()
+	certPEM, keyPEM, chainPEM := happyPathBundle(t, domain, now.Add(-time.Hour), now.Add(365*24*time.Hour))
+
+	backupArn := "arn:aws:secretsmanager:us-east-1:111111111111:secret:ztmf-cert-rotation-backup-dev-abcdef"
+	acmArn := "arn:aws:acm:us-east-1:111111111111:certificate/abcdef00-1111-2222-3333-abcdef012345"
+
+	cfg := config.Config{
+		CertBucket:    "ztmf-cert-rotation-dev",
+		ArchivePrefix: "processed",
+		DryRun:        false,
+		EnvPrefixesToCfg: map[string]config.EnvConfig{
+			"dev": {
+				Domain:            domain,
+				AcmCertificateArn: acmArn,
+				BackupSecretArn:   backupArn,
+			},
+		},
+	}
+
+	fresh := now
+	s3Fake := &servingS3{
+		heads: map[string]*s3.HeadObjectOutput{
+			"dev/cert.pem":  {LastModified: aws.Time(fresh)},
+			"dev/key.pem":   {LastModified: aws.Time(fresh.Add(10 * time.Second))},
+			"dev/chain.pem": {LastModified: aws.Time(fresh.Add(20 * time.Second))},
+		},
+		bodies: map[string][]byte{
+			"dev/cert.pem":  certPEM,
+			"dev/key.pem":   keyPEM,
+			"dev/chain.pem": chainPEM,
+		},
+	}
+	acmFake := &recordingACM{}
+	secretsFake := &recordingSecrets{}
+	notif := &captureNotifier{}
+
+	h := &handler{
+		cfg:      cfg,
+		s3:       s3Fake,
+		acm:      acmFake,
+		secrets:  secretsFake,
+		notifier: notif,
+	}
+
+	rec := events.S3EventRecord{}
+	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
+	rec.S3.Object.Key = "dev/cert.pem"
+
+	if err := h.handleRecord(context.Background(), rec); err != nil {
+		t.Fatalf("handleRecord returned error: %v", err)
+	}
+
+	// ACM import called once with the expected ARN and the exact PEM bytes.
+	if len(acmFake.calls) != 1 {
+		t.Fatalf("want 1 ImportCertificate call, got %d", len(acmFake.calls))
+	}
+	call := acmFake.calls[0]
+	if call.CertificateArn == nil || *call.CertificateArn != acmArn {
+		t.Errorf("ACM arn = %v, want %s", call.CertificateArn, acmArn)
+	}
+	if !bytes.Equal(call.Certificate, certPEM) {
+		t.Errorf("ACM Certificate bytes do not match input cert.pem")
+	}
+	if !bytes.Equal(call.PrivateKey, keyPEM) {
+		t.Errorf("ACM PrivateKey bytes do not match input key.pem")
+	}
+	if !bytes.Equal(call.CertificateChain, chainPEM) {
+		t.Errorf("ACM CertificateChain bytes do not match input chain.pem")
+	}
+
+	// PutSecretValue called exactly once. This is the regression guard for
+	// the original Blocker A: pre-fix code never reached PutSecretValue
+	// because secrets.NewSecret failed at construction.
+	if len(secretsFake.calls) != 1 {
+		t.Fatalf("want 1 PutSecretValue call, got %d", len(secretsFake.calls))
+	}
+	sv := secretsFake.calls[0]
+	if sv.SecretId == nil || *sv.SecretId != backupArn {
+		t.Errorf("backup SecretId = %v, want %s", sv.SecretId, backupArn)
+	}
+	if sv.SecretString == nil || *sv.SecretString == "" {
+		t.Errorf("backup SecretString is empty")
+	}
+	if sv.ClientRequestToken == nil || len(*sv.ClientRequestToken) != 32 {
+		t.Errorf("backup ClientRequestToken must be 32 chars; got %v", sv.ClientRequestToken)
+	}
+	if !strings.Contains(*sv.SecretString, `"domain":"dev.ztmf.cms.gov"`) {
+		t.Errorf("backup SecretString missing expected domain field; got %q", *sv.SecretString)
+	}
+
+	// Archive phase ordering: all three copies happen before any delete.
+	if s3Fake.copyCount != 3 {
+		t.Errorf("want 3 CopyObject calls, got %d", s3Fake.copyCount)
+	}
+	if s3Fake.deleteCount != 3 {
+		t.Errorf("want 3 DeleteObject calls, got %d", s3Fake.deleteCount)
+	}
+	if s3Fake.deletedFirst {
+		t.Errorf("delete ran before all copies completed; partial-archive regression")
+	}
+
+	// Exactly one success notification, no validation/infra failure.
+	if len(notif.calls) != 1 {
+		t.Fatalf("want 1 notification, got %d: %+v", len(notif.calls), notif.calls)
+	}
+	got := notif.calls[0]
+	if !got.Success {
+		t.Errorf("notification should be Success; got %+v", got)
+	}
+	if got.DryRun {
+		t.Errorf("notification should not be DryRun; got %+v", got)
+	}
+	if got.ValidationFailed {
+		t.Errorf("notification should not be ValidationFailed; got %+v", got)
+	}
+	if got.AcmCertificateArn != acmArn {
+		t.Errorf("notification AcmCertificateArn = %q, want %q", got.AcmCertificateArn, acmArn)
 	}
 }
