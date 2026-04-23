@@ -9,6 +9,16 @@ set -e
 echo "Running pre-push checks..."
 echo "→ Running full test suite (unit + E2E)..."
 
+# Source dev.compose.env so tests that read DB_* env (e.g. controller tests
+# that touch pgx) point at the local compose-dev Postgres on :54321 instead
+# of falling through to libpq defaults on :5432. Without this, a Postgres on
+# host :5432 from an unrelated project hangs the pgx handshake.
+if [ -f backend/dev.compose.env ]; then
+    set -a
+    . ./backend/dev.compose.env
+    set +a
+fi
+
 if ! make test-full; then
     echo ""
     echo "❌ Tests failed. Push aborted."

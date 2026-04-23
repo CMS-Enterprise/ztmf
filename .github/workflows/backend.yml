@@ -118,6 +118,19 @@ jobs:
           rm bootstrap
           ls -la cfacts-s3-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
+      - name: Lambda - Build (Kion Key Rotate)
+        # Kion rotate Lambda runs on Graviton (arm64) with provided.al2023 runtime.
+        # The other Lambdas in this workflow are still x86_64/al2; those are tracked
+        # for a separate upgrade PR (see ztmf-misc follow-up issue).
+        run: |
+          set -e
+          cd backend
+          echo "Building Kion Key Rotate Lambda (arm64)..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-kion-key-rotate/.
+          zip kion-key-rotate-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          rm bootstrap
+          ls -la kion-key-rotate-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+
       - name: Lambda - Build (Cert Rotation)
         run: |
           set -e
@@ -148,6 +161,10 @@ jobs:
           aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-${SHA}.zip
           aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-latest.zip
 
+          # Kion Key Rotate Lambda
+          aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-${SHA}.zip
+          aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-latest.zip
+
           # Cert Rotation Lambda
           aws s3 cp backend/cert-rotation-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cert-rotation-deployment-${SHA}.zip
           aws s3 cp backend/cert-rotation-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cert-rotation-deployment-latest.zip
@@ -166,6 +183,7 @@ jobs:
             "ztmf-data-sync-${ENV_LOWER}:lambda-deployment-${SHA}.zip" \
             "ztmf-cfacts-snowflake-sync-${ENV_LOWER}:cfacts-snowflake-deployment-${SHA}.zip" \
             "ztmf-cfacts-s3-sync-${ENV_LOWER}:cfacts-s3-deployment-${SHA}.zip" \
+            "ztmf-kion-key-rotate-${ENV_LOWER}:kion-key-rotate-deployment-${SHA}.zip" \
             "ztmf-cert-rotation-${ENV_LOWER}:cert-rotation-deployment-${SHA}.zip"; do
 
             LAMBDA_FUNCTION="${FUNC_PAIR%%:*}"
