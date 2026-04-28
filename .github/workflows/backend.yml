@@ -131,6 +131,16 @@ jobs:
           rm bootstrap
           ls -la kion-key-rotate-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
+      - name: Lambda - Build (Cert Rotation)
+        run: |
+          set -e
+          cd backend
+          echo "Building Cert Rotation Lambda..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-cert-rotation/.
+          zip cert-rotation-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
+          rm bootstrap
+          ls -la cert-rotation-deployment-${{ steps.revParse.outputs.shaShort }}.zip
+
       - name: Lambda - Upload to S3
         run: |
           set -e
@@ -155,6 +165,10 @@ jobs:
           aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-${SHA}.zip
           aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-latest.zip
 
+          # Cert Rotation Lambda
+          aws s3 cp backend/cert-rotation-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cert-rotation-deployment-${SHA}.zip
+          aws s3 cp backend/cert-rotation-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cert-rotation-deployment-latest.zip
+
           echo "All Lambda deployment packages uploaded successfully"
 
       - name: Lambda - Update Function Code
@@ -169,7 +183,8 @@ jobs:
             "ztmf-data-sync-${ENV_LOWER}:lambda-deployment-${SHA}.zip" \
             "ztmf-cfacts-snowflake-sync-${ENV_LOWER}:cfacts-snowflake-deployment-${SHA}.zip" \
             "ztmf-cfacts-s3-sync-${ENV_LOWER}:cfacts-s3-deployment-${SHA}.zip" \
-            "ztmf-kion-key-rotate-${ENV_LOWER}:kion-key-rotate-deployment-${SHA}.zip"; do
+            "ztmf-kion-key-rotate-${ENV_LOWER}:kion-key-rotate-deployment-${SHA}.zip" \
+            "ztmf-cert-rotation-${ENV_LOWER}:cert-rotation-deployment-${SHA}.zip"; do
 
             LAMBDA_FUNCTION="${FUNC_PAIR%%:*}"
             S3_KEY="${FUNC_PAIR#*:}"
