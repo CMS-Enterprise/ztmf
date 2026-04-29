@@ -49,10 +49,11 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	}
 
 	var sqlb SqlBuilder
+	creating := u.UserID == ""
 
 	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
 	// it must be set via explicit delete. See DeleteUser below
-	if u.UserID == "" {
+	if creating {
 		sqlb = stmntBuilder.
 			Insert("users").
 			Columns("email", "fullname", "role").
@@ -68,7 +69,21 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 			Suffix("RETURNING userid, email, fullname, role, deleted")
 	}
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
+	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
+	if err != nil && creating && errors.Is(err, ErrNotUnique) {
+		// Translate the bare unique-violation into a state-aware hint so the
+		// UI can guide the admin to the right recovery path. The email index
+		// is case-insensitive, so use FindUserByEmail (which also lowercases)
+		// to detect whether the conflict is with an active or soft-deleted user.
+		if existing, findErr := FindUserByEmail(ctx, u.Email); findErr == nil && existing != nil {
+			msg := "a user with this email already exists"
+			if existing.Deleted {
+				msg = "a user with this email exists in a deleted state; toggle Show Deleted and use Restore instead of creating a new record"
+			}
+			return nil, &InvalidInputError{data: map[string]any{"email": msg}}
+		}
+	}
+	return saved, err
 }
 
 func (u *User) validate() error {
