@@ -49,16 +49,22 @@ func trapError(e error) error {
 		return ErrTooMuchData
 	}
 
-	e = errors.Unwrap(e)
-	// switch is the only way to check against custom error types
-	switch err := e.(type) {
-	case *pgconn.PgError:
-		switch err.Code {
+	// errors.As walks the wrap chain so we catch *pgconn.PgError whether pgx
+	// returns it directly or wrapped through one or more layers. errors.Unwrap
+	// alone strips a single layer and returns nil for unwrapped errors, which
+	// silently dropped 23505/23503 into the "unknown error" path.
+	var pgErr *pgconn.PgError
+	if errors.As(e, &pgErr) {
+		switch pgErr.Code {
 		case "23505":
 			// unique_violation encountered when a column is meant to contain unique values
 			// and a non-unique value is being added via insert or update
-			text := strings.Split(err.Detail, "=")
-			return fmt.Errorf("%w : %s", ErrNotUnique, text[1])
+			text := strings.Split(pgErr.Detail, "=")
+			detail := pgErr.Detail
+			if len(text) > 1 {
+				detail = text[1]
+			}
+			return fmt.Errorf("%w : %s", ErrNotUnique, detail)
 
 		case "23503":
 			// foreign_key_violation encountered when adding a record to a table with a foreign key
@@ -68,7 +74,7 @@ func trapError(e error) error {
 		case "28P01":
 			// failed to connect, password authentication failed
 			// TODO refactor DB secret caching/refreshing to avoid needing this!
-			log.Fatal(err.Error())
+			log.Fatal(pgErr.Error())
 		}
 	}
 
