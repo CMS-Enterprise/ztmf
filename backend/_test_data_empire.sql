@@ -28,6 +28,11 @@ INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonl
 -- Fixed UUID so we can assign to fismasystems for CFACTS access testing.
 INSERT INTO public.users VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
 
+-- Pre-deleted user fixture for RestoreUser tests.
+-- UUID is v4-conforming (4 at position 14, 8 at position 19) so it satisfies
+-- isValidUUID's strict regex when used as a path param.
+INSERT INTO public.users VALUES ('77777777-7777-4777-8777-777777777777', 'Captain.Needa@executor.empire', 'Captain Needa', 'ISSO', TRUE) ON CONFLICT DO NOTHING;
+
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (2, 'Applications', 0) ON CONFLICT DO NOTHING;
@@ -100,6 +105,27 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     NULL,
     NULL,
     NULL
+) ON CONFLICT DO NOTHING;
+
+-- Pre-decommissioned fixture for ReactivateFismaSystem tests
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
+    1004,
+    'BC1B3100-1980-4D5E-AB8C-D1FE0BB00808',
+    'SD-TYR',
+    'Star Destroyer Tyrant',
+    'Imperial Class Destroyer',
+    'IMPNAVY-(FLEET)',
+    'STARCOM',
+    'Imperial Starfleet Command',
+    'Naval Operations Division',
+    'Imperial-Fleet',
+    'admiral.ozzel@executor.empire',
+    'Captain.Needa@executor.empire',
+    FALSE,
+    TRUE,
+    '1980-05-21 00:00:00+00',
+    '11111111-1111-1111-1111-111111111111',
+    'Decommissioned to provide a reactivation test target'
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)

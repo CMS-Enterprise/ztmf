@@ -95,6 +95,24 @@ func TestSaveUser_ISSOForbidden(t *testing.T) {
 
 // --- DeleteUser ---
 
+func TestRestoreUser_ReadonlyAdminForbidden(t *testing.T) {
+	r := httptest.NewRequest("PUT", "/api/v1/users/11111111-1111-1111-1111-111111111111/restore", nil)
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	RestoreUser(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestRestoreUser_ISSOForbidden(t *testing.T) {
+	r := httptest.NewRequest("PUT", "/api/v1/users/11111111-1111-1111-1111-111111111111/restore", nil)
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	RestoreUser(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 func TestDeleteUser_ReadonlyAdminForbidden(t *testing.T) {
 	r := httptest.NewRequest("DELETE", "/api/v1/users/11111111-1111-1111-1111-111111111111", nil)
 	r = withUser(r, readonlyAdmin)
@@ -284,6 +302,24 @@ func TestDeleteFismaSystem_ReadonlyAdminForbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	DeleteFismaSystem(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestReactivateFismaSystem_ReadonlyAdminForbidden(t *testing.T) {
+	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/reactivate", nil)
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	ReactivateFismaSystem(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestReactivateFismaSystem_ISSOForbidden(t *testing.T) {
+	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/reactivate", nil)
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	ReactivateFismaSystem(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 

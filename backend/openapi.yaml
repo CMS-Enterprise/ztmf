@@ -377,6 +377,48 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /fismasystems/{fismasystemid}/reactivate:
+    put:
+      summary: Reactivate a decommissioned FISMA system
+      description: Clears the decommissioned flag on a FISMA system and stamps reactivation audit columns (Admin only). Decommission audit columns are preserved for history.
+      operationId: reactivateFismaSystem
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fismasystemid
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                  description: Reason or notes for reactivation
+      responses:
+        '200':
+          description: FISMA system reactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FismaSystem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /fismasystems/{fismasystemid}/datacalls:
     get:
       summary: List completed data calls for a FISMA system
@@ -624,6 +666,38 @@ paths:
       responses:
         '204':
           description: User deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/{userid}/restore:
+    put:
+      summary: Restore a soft-deleted user
+      description: Clears the deleted flag on a user (Admin only). Audit history is captured automatically in the events table.
+      operationId: restoreUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      responses:
+        '200':
+          description: User restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -1293,6 +1367,19 @@ components:
           type: string
           nullable: true
           description: Notes about why the system was decommissioned
+        reactivated_by:
+          type: string
+          nullable: true
+          description: User ID of the admin who reactivated the system after decommission
+        reactivated_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Date the system was last reactivated
+        reactivation_notes:
+          type: string
+          nullable: true
+          description: Notes about why the system was reactivated
       required:
         - fismauid
         - fismaacronym

@@ -74,6 +74,19 @@ decommissionedFismaSystemData: &decommissionedFismaSystemData
   decommissioned_date: "2025-01-15T00:00:00Z"
   decommissioned_notes: "System migrated to cloud infrastructure"
 
+# Reactivation flips decommissioned back to false but preserves the prior
+# decommission audit columns for history. reactivated_date is server-stamped
+# via NOW(), so it is not asserted here.
+reactivatedFismaSystemData: &reactivatedFismaSystemData
+  fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fismaacronym: "ZTMF-UPD"
+  fismaname: "Updated Zero Trust Maturity Framework"
+  sdl_sync_enabled: true
+  decommissioned: false
+  decommissioned_date: "2025-01-15T00:00:00Z"
+  decommissioned_notes: "System migrated to cloud infrastructure"
+  reactivation_notes: "Brought back online for follow-on work"
+
 functionData: &functionData
   function: "Identity Management"
   description: "Manage user identities and access"
@@ -103,6 +116,12 @@ deletedUserData: &deletedUserData
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: true
+
+restoredUserData: &restoredUserData
+  email: "updated.user@example.com"
+  fullname: "Updated Test User"
+  role: "ISSO"
+  deleted: false
 
 questionData: &questionData
   question: "How do you manage user identities?"
@@ -412,6 +431,43 @@ tests:
           data:
             <<: *decommissionedFismaSystemData
 
+  # Reactivate the decommissioned system (508 compliance restore path).
+  # reactivated_by/reactivated_date are not asserted here because Emberfall does
+  # not substitute {{...}} templates inside body matchers (URLs only). Same
+  # reason decommissioned_by is omitted from decommissionedFismaSystemData.
+  # Coverage of those fields lives in unit tests + manual smoke.
+  - id: reactivateFismaSystem
+    url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "Brought back online for follow-on work"
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *reactivatedFismaSystemData
+
+  # Verify reactivated system reflects the cleared decommissioned flag on read
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *reactivatedFismaSystemData
+
 
   # Functions Endpoints
   - id: createFunction
@@ -617,6 +673,35 @@ tests:
         json:
           data:
             <<: *deletedUserData
+
+  # Restore the deleted user (508 compliance recovery path)
+  - id: restoreUser
+    url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}/restore"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *restoredUserData
+
+  # Verify restored user shows deleted=false on read
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *restoredUserData
 
   # # Scores Endpoints
   # - id: createScore
@@ -953,6 +1038,26 @@ tests:
     expect:
       status: 403
 
+  # READONLY_ADMIN gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}/restore"
+    method: PUT
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 403
+
+  # READONLY_ADMIN gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
+    method: PUT
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "should be blocked"
+    expect:
+      status: 403
+
   # READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
   - url: http://localhost:8080/api/v1/massemails
     method: POST
@@ -1093,6 +1198,26 @@ tests:
         email: "blocked@example.com"
         fullname: "Blocked User"
         role: "ISSO"
+    expect:
+      status: 403
+
+  # ISSO gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
+  - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}/restore"
+    method: PUT
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # ISSO gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
+    method: PUT
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "should be blocked"
     expect:
       status: 403
 

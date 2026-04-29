@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,6 +75,22 @@ func TestUser_IsAssignedFismaSystem(t *testing.T) {
 
 	empty := &User{}
 	assert.False(t, empty.IsAssignedFismaSystem(100))
+}
+
+// TestRestoreUser covers the input validation paths that don't require a
+// live database. End-to-end happy-path coverage lives in Emberfall.
+func TestRestoreUser(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("InvalidUUID", func(t *testing.T) {
+		_, err := RestoreUser(ctx, "not-a-uuid")
+		assert.Equal(t, ErrNoData, err)
+	})
+
+	t.Run("EmptyUUID", func(t *testing.T) {
+		_, err := RestoreUser(ctx, "")
+		assert.Equal(t, ErrNoData, err)
+	})
 }
 
 func TestUser_Validate(t *testing.T) {

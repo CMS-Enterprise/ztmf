@@ -111,3 +111,28 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, r, nil, nil)
 }
+
+// RestoreUser clears the deleted flag on a soft-deleted user (admin only).
+func RestoreUser(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	userID, ok := vars["userid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	user, err := model.RestoreUser(r.Context(), userID)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respondOK(w, user)
+}

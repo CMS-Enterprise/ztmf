@@ -2,8 +2,10 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -47,10 +49,11 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	}
 
 	var sqlb SqlBuilder
+	creating := u.UserID == ""
 
 	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
 	// it must be set via explicit delete. See DeleteUser below
-	if u.UserID == "" {
+	if creating {
 		sqlb = stmntBuilder.
 			Insert("users").
 			Columns("email", "fullname", "role").
@@ -66,7 +69,21 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 			Suffix("RETURNING userid, email, fullname, role, deleted")
 	}
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
+	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
+	if err != nil && creating && errors.Is(err, ErrNotUnique) {
+		// Translate the bare unique-violation into a state-aware hint so the
+		// UI can guide the admin to the right recovery path. The email index
+		// is case-insensitive, so use FindUserByEmail (which also lowercases)
+		// to detect whether the conflict is with an active or soft-deleted user.
+		if existing, findErr := FindUserByEmail(ctx, u.Email); findErr == nil && existing != nil {
+			msg := "a user with this email already exists"
+			if existing.Deleted {
+				msg = "a user with this email exists in a deleted state; toggle Show Deleted and use Restore instead of creating a new record"
+			}
+			return nil, &InvalidInputError{data: map[string]any{"email": msg}}
+		}
+	}
+	return saved, err
 }
 
 func (u *User) validate() error {
@@ -178,4 +195,67 @@ func DeleteUser(ctx context.Context, userid string) error {
 
 	_, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
 	return err
+}
+
+// RestoreUser clears the soft-delete flag on a user and returns the restored
+// record. Uses a transaction with SELECT FOR UPDATE so the not-found vs
+// already-active distinction is decided atomically with the row lock held.
+// Records the audit event manually because the transactional path bypasses
+// queryRow's automatic recordEvent hook.
+func RestoreUser(ctx context.Context, userid string) (*User, error) {
+	if !isValidUUID(userid) {
+		return nil, ErrNoData
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, trapError(err)
+	}
+	defer tx.Rollback(ctx)
+
+	var deleted bool
+	err = tx.QueryRow(ctx,
+		"SELECT deleted FROM users WHERE userid=$1 FOR UPDATE",
+		userid,
+	).Scan(&deleted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoData
+	}
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	if !deleted {
+		return nil, &InvalidInputError{
+			data: map[string]any{"deleted": "user is already active"},
+		}
+	}
+
+	var restored User
+	err = tx.QueryRow(ctx,
+		"UPDATE users SET deleted=false WHERE userid=$1 RETURNING userid, email, fullname, role, deleted",
+		userid,
+	).Scan(&restored.UserID, &restored.Email, &restored.FullName, &restored.Role, &restored.Deleted)
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	if actor := UserFromContext(ctx); actor != nil {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
+			actor.UserID, "updated", "users", restored,
+		); err != nil {
+			return nil, trapError(err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, trapError(err)
+	}
+	return &restored, nil
 }

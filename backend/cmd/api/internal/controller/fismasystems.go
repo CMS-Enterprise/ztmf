@@ -147,3 +147,52 @@ func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, r, system, nil)
 }
+
+// ReactivateRequest contains optional parameters for reactivating a system
+type ReactivateRequest struct {
+	Notes *string `json:"notes,omitempty"`
+}
+
+// ReactivateFismaSystem clears the decommissioned flag and stamps reactivation
+// audit columns (admin only).
+func ReactivateFismaSystem(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	fismaSystemIDStr, ok := vars["fismasystemid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	var fismaSystemID int32
+	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
+
+	var req ReactivateRequest
+	if r.ContentLength > 0 {
+		if err := getJSON(r.Body, &req); err != nil {
+			log.Println(err)
+			respond(w, r, nil, ErrMalformed)
+			return
+		}
+	}
+
+	input := model.ReactivateInput{
+		FismaSystemID: fismaSystemID,
+		UserID:        authdUser.UserID,
+		Notes:         req.Notes,
+	}
+
+	system, err := model.ReactivateFismaSystem(r.Context(), input)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respondOK(w, system)
+}
