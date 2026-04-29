@@ -21,6 +21,16 @@ type response struct {
 	Err  string `json:"error,omitempty"`
 }
 
+// respondOK writes an HTTP 200 with the JSON-wrapped data payload. Use for
+// PUT-as-action endpoints (restore, reactivate) that return the updated entity
+// rather than 204; respond() reserves PUT for in-place updates that drop the
+// body.
+func respondOK(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response{Data: data})
+}
+
 func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	w.Header().Set("Content-Type", "application/json")
 

@@ -253,6 +253,41 @@ func TestDeleteFismaSystem_WithCustomDate(t *testing.T) {
 	})
 }
 
+// TestReactivateFismaSystem covers the input validation paths that don't
+// require a live database. End-to-end happy-path coverage lives in Emberfall.
+func TestReactivateFismaSystem(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("InvalidID", func(t *testing.T) {
+		_, err := ReactivateFismaSystem(ctx, ReactivateInput{
+			FismaSystemID: 0,
+			UserID:        "11111111-1111-1111-1111-111111111111",
+		})
+		assert.Equal(t, ErrNoData, err)
+	})
+}
+
+// TestFismaSystemReactivationFields confirms the struct exposes the new
+// audit fields and that the column array stays in the expected positions.
+func TestFismaSystemReactivationFields(t *testing.T) {
+	now := time.Now()
+	user := "11111111-1111-1111-1111-111111111111"
+	notes := "back in service"
+	system := FismaSystem{
+		ReactivatedBy:     &user,
+		ReactivatedDate:   &now,
+		ReactivationNotes: &notes,
+	}
+
+	assert.Equal(t, &user, system.ReactivatedBy)
+	assert.Equal(t, &now, system.ReactivatedDate)
+	assert.Equal(t, &notes, system.ReactivationNotes)
+
+	assert.Equal(t, "reactivated_by", fismaSystemColumns[17])
+	assert.Equal(t, "reactivated_date", fismaSystemColumns[18])
+	assert.Equal(t, "reactivation_notes", fismaSystemColumns[19])
+}
+
 // Helper function for creating string pointers
 func stringPtr(s string) *string {
 	return &s

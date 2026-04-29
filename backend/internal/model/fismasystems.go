@@ -2,14 +2,16 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes"}
 
 type FismaSystem struct {
 	FismaSystemID         int32   `json:"fismasystemid"`
@@ -29,6 +31,9 @@ type FismaSystem struct {
 	DecommissionedDate    *time.Time `json:"decommissioned_date"`
 	DecommissionedBy      *string    `json:"decommissioned_by"`
 	DecommissionedNotes   *string    `json:"decommissioned_notes"`
+	ReactivatedBy         *string    `json:"reactivated_by"`
+	ReactivatedDate       *time.Time `json:"reactivated_date"`
+	ReactivationNotes     *string    `json:"reactivation_notes"`
 }
 
 type FindFismaSystemsInput struct {
@@ -199,6 +204,97 @@ func UpdateDecommissionMetadata(ctx context.Context, input DecommissionInput) er
 
 	_, err := queryRow(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
 	return err
+}
+
+// ReactivateInput contains parameters for reactivating a decommissioned system
+type ReactivateInput struct {
+	FismaSystemID int32
+	UserID        string
+	Notes         *string
+}
+
+// ReactivateFismaSystem clears the decommissioned flag and stamps the
+// reactivation audit columns. Existing decommissioned_* columns are preserved
+// so the prior decommission record remains queryable for history.
+//
+// Uses a transaction with SELECT FOR UPDATE so the not-found vs already-active
+// distinction is decided atomically with the row lock held. Records the audit
+// event manually because the transactional path bypasses queryRow's automatic
+// recordEvent hook.
+func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSystem, error) {
+	if !isValidIntID(input.FismaSystemID) {
+		return nil, ErrNoData
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, trapError(err)
+	}
+	defer tx.Rollback(ctx)
+
+	var decommissioned bool
+	err = tx.QueryRow(ctx,
+		"SELECT decommissioned FROM fismasystems WHERE fismasystemid=$1 FOR UPDATE",
+		input.FismaSystemID,
+	).Scan(&decommissioned)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoData
+	}
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	if !decommissioned {
+		return nil, &InvalidInputError{
+			data: map[string]any{"decommissioned": "system is already active"},
+		}
+	}
+
+	sqlb := stmntBuilder.
+		Update("fismasystems").
+		Set("decommissioned", false).
+		Set("reactivated_by", input.UserID).
+		Set("reactivated_date", squirrel.Expr("NOW()"))
+
+	if input.Notes != nil {
+		sqlb = sqlb.Set("reactivation_notes", *input.Notes)
+	}
+
+	sqlb = sqlb.Where("fismasystemid=?", input.FismaSystemID).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+
+	sql, args, err := sqlb.ToSql()
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, trapError(err)
+	}
+	system, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[FismaSystem])
+	if err != nil {
+		return nil, trapError(err)
+	}
+
+	if actor := UserFromContext(ctx); actor != nil {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
+			actor.UserID, "updated", "fismasystems", system,
+		); err != nil {
+			return nil, trapError(err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, trapError(err)
+	}
+	return &system, nil
 }
 
 func (f *FismaSystem) validate() error {
