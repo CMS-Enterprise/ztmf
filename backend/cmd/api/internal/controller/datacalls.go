@@ -69,9 +69,12 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	if len(answers) > 0 {
 		filename = strings.ReplaceAll(answers[0].DataCall, " ", "")
 	}
-	// Quote the filename per RFC 6266 so datacall names containing spaces or
-	// punctuation produce a well-formed Content-Disposition header.
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.xlsx"`, filename))
+	// Filename is left unquoted because the frontend (FismaTable.saveSystemAnswers)
+	// parses the header by splitting on `filename=` and uses the resulting value
+	// directly as the anchor's download attribute. Chrome sanitizes filesystem-
+	// unsafe characters in that attribute -- including the double-quote -- which
+	// turns a quoted filename into _name.xlsx_ and breaks the .xlsx association.
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.xlsx", filename))
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	// Headers are already on the wire by this point, so a write error cannot
 	// be surfaced as a 5xx -- the client will see a truncated download. Log
