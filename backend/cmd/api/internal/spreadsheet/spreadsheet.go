@@ -20,8 +20,9 @@ func Excel(answers []*model.Answer) (*excelize.File, error) {
 	f.SetCellValue(sheet, "E1", "Function Description")
 	f.SetCellValue(sheet, "F1", "Question")
 	f.SetCellValue(sheet, "G1", "Answer")
-	f.SetCellValue(sheet, "H1", "Score")
-	f.SetCellValue(sheet, "I1", "ADO Answer Details")
+	f.SetCellValue(sheet, "H1", "Maturity Tier")
+	f.SetCellValue(sheet, "I1", "Score")
+	f.SetCellValue(sheet, "J1", "ADO Answer Details")
 
 	for i, a := range answers {
 		row := i + 2 // i starts at 0 and headers are in row 1
@@ -31,9 +32,10 @@ func Excel(answers []*model.Answer) (*excelize.File, error) {
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), a.Function)
 		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), a.Description)
 		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), a.Question)
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), a.OptionName)
-		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), a.Score)
-		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), a.Notes)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), a.OptionDescription)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), a.OptionName)
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), a.Score)
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), a.Notes)
 	}
 
 	return f, nil
