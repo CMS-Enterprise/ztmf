@@ -16,6 +16,7 @@ type Answer struct {
 	Question              string
 	Function              string
 	Description           string
+	OptionDescription     string
 	OptionName            string
 	Score                 int
 	Notes                 string
@@ -32,7 +33,7 @@ type FindAnswersInput struct {
 // if using lower-level methods such as FindFismaSystems, FindScores, FindQuestions, etc
 // this is primarily meant for use in exporting to spreadsheets
 func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error) {
-	sqlb := stmntBuilder.Select("datacalls.datacall, fismasystems.fismasystemid, fismasystems.fismaacronym, fismasystems.datacenterenvironment, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.optionname, functionoptions.score, scores.notes").
+	sqlb := stmntBuilder.Select("datacalls.datacall, fismasystems.fismasystemid, fismasystems.fismaacronym, fismasystems.datacenterenvironment, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.description AS optiondescription, functionoptions.optionname, functionoptions.score, scores.notes").
 		From("scores").
 		InnerJoin("datacalls ON datacalls.datacallid=scores.datacallid AND datacalls.datacallid=?", input.DataCallID).
 		InnerJoin("fismasystems ON fismasystems.fismasystemid=scores.fismasystemid").

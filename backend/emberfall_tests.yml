@@ -397,6 +397,22 @@ tests:
       headers:
         content-type: "application/json"
 
+  # Datacall xlsx export. The created datacall has no scores yet, so this
+  # test exclusively exercises the empty-answers fallback path (header-row-only
+  # xlsx, datacall-{id} filename). Confirms 200 + binary content-type and
+  # guards the prior answers[0].DataCall panic. Populated-row coverage of the
+  # OptionDescription/OptionName scan lives in unit tests + manual smoke
+  # against dev-synced data; Emberfall does not substitute {{...}} templates
+  # inside expected headers so the content-disposition assertion is skipped.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/export"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
   # Decommission FISMA system with custom date and notes
   - id: decommissionFismaSystem
     url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"

@@ -62,9 +62,23 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.xlsx", strings.ReplaceAll(answers[0].DataCall, " ", "")))
+	// Fall back to the datacall id when no answers exist so the export still
+	// returns a valid, named xlsx (header row only) instead of panicking on
+	// answers[0].DataCall.
+	filename := fmt.Sprintf("datacall-%d", findAnswersInput.DataCallID)
+	if len(answers) > 0 {
+		filename = strings.ReplaceAll(answers[0].DataCall, " ", "")
+	}
+	// Quote the filename per RFC 6266 so datacall names containing spaces or
+	// punctuation produce a well-formed Content-Disposition header.
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.xlsx"`, filename))
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	file.Write(w)
+	// Headers are already on the wire by this point, so a write error cannot
+	// be surfaced as a 5xx -- the client will see a truncated download. Log
+	// it so server-side observability catches mid-stream disconnects.
+	if err := file.Write(w); err != nil {
+		log.Printf("GetDatacallExport: error writing xlsx to response (datacallid=%d): %v", findAnswersInput.DataCallID, err)
+	}
 }
 
 func SaveDataCall(w http.ResponseWriter, r *http.Request) {
