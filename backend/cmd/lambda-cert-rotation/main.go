@@ -300,13 +300,25 @@ func (h *handler) headIfExists(ctx context.Context, bucket, key string) (*s3.Hea
 	}
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
-		if apiErr.ErrorCode() == "NotFound" {
+		// "NotFound" is the standard SDK error code for a missing object.
+		// "Forbidden" is what S3 returns instead of NotFound when the caller
+		// lacks s3:ListBucket; we deliberately omit ListBucket from the
+		// Lambda role for least privilege, so a sibling invocation observing
+		// a just-archived (deleted) bundle file gets a 403 here. Treat both
+		// as "object does not exist" so the bundle-completeness check exits
+		// quietly instead of returning a transient-failure error to Lambda
+		// (which would otherwise fire async retries and spam Slack).
+		switch apiErr.ErrorCode() {
+		case "NotFound", "Forbidden":
 			return nil, nil
 		}
 	}
-	// Some S3 responses surface 404 as a generic ResponseError; fall back to
-	// a string match so a NotFound HEAD does not force a Lambda retry.
-	if strings.Contains(err.Error(), "status code: 404") {
+	// Some S3 responses surface the same conditions as a generic
+	// ResponseError without the typed APIError code; fall back to a string
+	// match for both 404 and 403 so a missing-or-inaccessible HEAD does not
+	// force a Lambda retry.
+	if strings.Contains(err.Error(), "status code: 404") ||
+		strings.Contains(err.Error(), "status code: 403") {
 		return nil, nil
 	}
 	return nil, err
