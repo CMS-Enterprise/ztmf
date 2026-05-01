@@ -4,17 +4,6 @@
 # Notifies via shared Slack webhook. IAM lives in iam-cert-rotation.tf; DLQ
 # and alarms live in monitoring-cert-rotation.tf.
 
-# ACM certificate ARN sourced from SSM Parameter Store rather than tfvars.
-# Operator sets the per-account value once via:
-#   aws ssm put-parameter --name /ztmf/<env>/cert-rotation/acm-arn \
-#     --type String --value "arn:aws:acm:..."
-# Keeps account IDs and ARNs out of the repo and lets each AWS account own
-# its own value without committing tfvars per environment.
-data "aws_ssm_parameter" "cert_rotation_acm_arn" {
-  count = var.enable_cert_rotation_lambda ? 1 : 0
-  name  = "/ztmf/${var.environment}/cert-rotation/acm-arn"
-}
-
 locals {
   cert_rotation_enabled = var.enable_cert_rotation_lambda
   # `cert_rotation_prefix` defaults to "" (not null), so `coalesce()` won't fall back.
@@ -28,10 +17,11 @@ locals {
     ? trimspace(var.cert_rotation_bucket_name)
     : "ztmf-cert-rotation-${var.environment}"
   )
-  # nonsensitive() unwraps the SSM data source's sensitive marker so the ARN
-  # can flow into Lambda env vars and IAM policies. The value is an ACM ARN,
-  # not secret material; CloudFront and ALB already publish the same ARN.
-  cert_rotation_acm_certificate_arn = local.cert_rotation_enabled ? nonsensitive(data.aws_ssm_parameter.cert_rotation_acm_arn[0].value) : ""
+  # Reuse the same SSM-sourced ARN that CloudFront and the ALB consume via
+  # local.ztmf_acm_certificate_arn (defined in data.tf). Single source of
+  # truth: the Lambda re-imports over the same ARN that CloudFront and the
+  # ALB serve.
+  cert_rotation_acm_certificate_arn = local.cert_rotation_enabled ? local.ztmf_acm_certificate_arn : ""
   cert_rotation_domain              = trimspace(var.cert_rotation_domain)
   cert_rotation_env_prefixes_json = jsonencode({
     (local.cert_rotation_prefix) = {
