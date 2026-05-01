@@ -164,6 +164,17 @@ func (h *handler) handleRecord(ctx context.Context, r events.S3EventRecord) erro
 		return nil
 	}
 
+	// Only the chain.pem upload event drives the rotation. The cert.pem
+	// and key.pem upload events exit silently. The operator contract
+	// (documented in README.md) requires uploading all three files
+	// together for any rotation, so requiring chain.pem as the trigger
+	// is safe; in exchange we eliminate the three-way concurrent race
+	// on validate / archive / notify and produce exactly one Slack
+	// notification per real rotation regardless of upload ordering.
+	if base != chainKeyName {
+		return nil
+	}
+
 	s3Location := fmt.Sprintf("s3://%s/%s/", bucket, envPrefix)
 
 	wantCert := path.Join(envPrefix, certKeyName)

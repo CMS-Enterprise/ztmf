@@ -271,6 +271,8 @@ func TestHandleRecord_EarlyExits(t *testing.T) {
 		{"non-bundle file name under known prefix is ignored", "ztmf-cert-rotation-dev", "dev/other.pem"},
 		{"empty bucket is ignored", "", "dev/cert.pem"},
 		{"empty key is ignored", "ztmf-cert-rotation-dev", ""},
+		{"cert.pem trigger exits silently (only chain.pem drives rotation)", "ztmf-cert-rotation-dev", "dev/cert.pem"},
+		{"key.pem trigger exits silently (only chain.pem drives rotation)", "ztmf-cert-rotation-dev", "dev/key.pem"},
 	}
 
 	for _, tc := range cases {
@@ -399,9 +401,9 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 	h := &handler{
 		cfg: cfg,
 		s3: fakeS3{
-			// Only cert.pem present; key.pem and chain.pem missing.
+			// Only chain.pem present; cert.pem and key.pem missing.
 			heads: map[string]*s3.HeadObjectOutput{
-				"dev/cert.pem": {LastModified: &now},
+				"dev/chain.pem": {LastModified: &now},
 			},
 		},
 		acm:      panicACM{t: t},
@@ -411,7 +413,7 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("handleRecord returned error: %v", err)
@@ -453,7 +455,7 @@ func TestHandleRecord_StaleBundleIsValidationFailure(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("stale bundle should be a validation failure (nil return), got: %v", err)
@@ -673,7 +675,7 @@ func TestHandleRecord_HappyPath_EndToEnd(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("handleRecord returned error: %v", err)
