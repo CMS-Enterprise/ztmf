@@ -117,10 +117,8 @@ resource "aws_iam_policy" "cert_rotation_lambda_acm" {
 resource "aws_iam_policy" "cert_rotation_lambda_s3" {
   count       = local.cert_rotation_enabled ? 1 : 0
   name        = "ztmf-cert-rotation-lambda-s3-${var.environment}"
-  description = "Read, write, and delete objects under the watched prefix and its processed archive"
+  description = "Read, write, delete, and list objects under the watched prefix and its processed archive"
 
-  # No s3:ListBucket: the Lambda only acts on keys it receives from S3 event
-  # records and never enumerates the bucket.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -137,6 +135,28 @@ resource "aws_iam_policy" "cert_rotation_lambda_s3" {
           "arn:aws:s3:::${local.cert_rotation_bucket_name}/${local.cert_rotation_prefix}/*",
           "arn:aws:s3:::${local.cert_rotation_bucket_name}/processed/${local.cert_rotation_prefix}/*"
         ]
+      },
+      {
+        # CopyObject performs an internal source-existence check that
+        # requires s3:ListBucket on the source bucket; without this grant
+        # the archive copy fails with AccessDenied even though the role
+        # already has GetObject on the source key. Scope the list to the
+        # same two prefixes the Lambda reads and writes so the role
+        # cannot enumerate the rest of the bucket.
+        Sid    = "S3ListBucketForCopySourceCheck"
+        Effect = "Allow"
+        Action = ["s3:ListBucket"]
+        Resource = [
+          "arn:aws:s3:::${local.cert_rotation_bucket_name}"
+        ]
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "${local.cert_rotation_prefix}/*",
+              "processed/${local.cert_rotation_prefix}/*"
+            ]
+          }
+        }
       }
     ]
   })

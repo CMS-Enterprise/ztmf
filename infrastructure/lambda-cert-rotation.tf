@@ -17,7 +17,11 @@ locals {
     ? trimspace(var.cert_rotation_bucket_name)
     : "ztmf-cert-rotation-${var.environment}"
   )
-  cert_rotation_acm_certificate_arn = trimspace(var.cert_rotation_acm_certificate_arn)
+  # Reuse the same SSM-sourced ARN that CloudFront and the ALB consume via
+  # local.ztmf_acm_certificate_arn (defined in data.tf). Single source of
+  # truth: the Lambda re-imports over the same ARN that CloudFront and the
+  # ALB serve.
+  cert_rotation_acm_certificate_arn = local.cert_rotation_enabled ? local.ztmf_acm_certificate_arn : ""
   cert_rotation_domain              = trimspace(var.cert_rotation_domain)
   cert_rotation_env_prefixes_json = jsonencode({
     (local.cert_rotation_prefix) = {
@@ -200,6 +204,18 @@ resource "aws_lambda_function" "cert_rotation" {
     aws_iam_role_policy_attachment.cert_rotation_lambda_xray,
     aws_cloudwatch_log_group.cert_rotation_lambda,
   ]
+
+  lifecycle {
+    # Restores the ARN-shape guard that previously lived on the deleted
+    # cert_rotation_acm_certificate_arn variable. The value now comes from
+    # SSM Parameter Store, so a typo there (wrong region, secrets ARN
+    # pasted by mistake, stale ARN from a deleted cert) would otherwise
+    # surface only at runtime as ACM ImportCertificate AccessDenied.
+    precondition {
+      condition     = can(regex("^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]+$", local.cert_rotation_acm_certificate_arn))
+      error_message = "SSM /ztmf/${var.environment}/cert-rotation/acm-arn must hold a valid ACM certificate ARN of the form arn:aws:acm:<region>:<account>:certificate/<id>."
+    }
+  }
 }
 
 resource "aws_lambda_permission" "cert_rotation_allow_s3" {
@@ -267,21 +283,6 @@ variable "cert_rotation_domain" {
   }
 }
 
-variable "cert_rotation_acm_certificate_arn" {
-  description = "ACM certificate ARN to re-import (overwrites the existing cert)"
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.enable_cert_rotation_lambda == false || trimspace(var.cert_rotation_acm_certificate_arn) != ""
-    error_message = "cert_rotation_acm_certificate_arn must be set when enable_cert_rotation_lambda is true."
-  }
-
-  validation {
-    # Typo guard at plan time. The Lambda re-imports over this exact ARN at
-    # runtime; a malformed ARN (e.g. wrong region, or a secrets ARN pasted
-    # in by mistake) would otherwise only surface as a runtime AccessDenied.
-    condition     = var.enable_cert_rotation_lambda == false || can(regex("^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]+$", trimspace(var.cert_rotation_acm_certificate_arn)))
-    error_message = "cert_rotation_acm_certificate_arn must match arn:aws:acm:<region>:<account>:certificate/<id>."
-  }
-}
+# ACM certificate ARN is no longer a tfvars variable; sourced from
+# SSM Parameter Store /ztmf/<env>/cert-rotation/acm-arn (see data block
+# at top of file).

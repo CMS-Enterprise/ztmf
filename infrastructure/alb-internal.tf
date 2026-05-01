@@ -79,7 +79,7 @@ resource "aws_lb_listener" "ztmf_api_https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = data.aws_acm_certificate.ztmf.id
+  certificate_arn   = local.ztmf_acm_certificate_arn
 
   default_action {
     type             = "forward"

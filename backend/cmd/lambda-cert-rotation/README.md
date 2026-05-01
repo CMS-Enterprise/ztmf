@@ -16,9 +16,15 @@ Uploads are expected at:
 
 ## Event behavior (S3 notifications)
 
-S3 can emit one event per uploaded object, so uploading all 3 files quickly may trigger **3 separate Lambda runs**. This is expected.
+S3 emits one `ObjectCreated` event per uploaded object, so uploading all 3 files triggers 3 Lambda invocations. **Only the invocation triggered by `chain.pem` performs the rotation work.** The `cert.pem` and `key.pem` invocations exit silently. This guarantees:
 
-The ACM `ImportCertificate` call is idempotent for a fixed certificate ARN, but you may see duplicate Slack success messages if all 3 events observe "all files present" around the same time.
+- Exactly one Slack notification per real rotation, regardless of upload order.
+- No concurrent races on validation, ACM import, Secrets Manager backup, or archival.
+- The `chain.pem` upload is the canonical commit point of a new bundle.
+
+**Required upload order:** upload `chain.pem` last. If `chain.pem` is uploaded before the other two files, the bundle-completeness check exits cleanly (other two missing) and no rotation runs. Re-upload `chain.pem` after the other two files are in place to fire the rotation.
+
+The ACM `ImportCertificate` call remains idempotent for a fixed certificate ARN, so re-running the rotation by re-uploading `chain.pem` against an already-current bundle is safe.
 
 ## Bundle freshness window
 
@@ -30,7 +36,7 @@ This rule exists to defend against a specific failure mode: a prior rotation tha
 
 - Always upload all three files within the same `aws s3 cp` session. Sequential uploads are fine; the window is wide enough for normal retry scripts.
 - If you need to replace a single file (typo, wrong version), delete and re-upload **all three** rather than only the one you want to change.
-- If the Slack alert says the bundle "spans X across LastModified timestamps", delete every `*.pem` at the prefix and re-upload from scratch:
+- If the Slack alert says the bundle "spans X across LastModified timestamps", delete every `*.pem` at the prefix and re-upload from scratch. Upload `chain.pem` last, since it is the trigger for the rotation:
 
   ```bash
   aws s3 rm "s3://ztmf-cert-rotation-<env>/<env>/" --recursive --exclude "*" --include "*.pem"
