@@ -8,8 +8,8 @@ ecs_service_task_count = 1
 cfacts_snowflake_view  = "BUS_ZEROTRUST.ENRICHMENT.VW_CFACTS_SYSTEMS_FOR_ZTMF"
 snowflake_table_prefix = "ZTMF"
 
-# TLS cert rotation Lambda (disabled by default)
-enable_cert_rotation_lambda       = false
-cert_rotation_prefix              = "prod"
-cert_rotation_domain              = "prod.ztmf.cms.gov"
-cert_rotation_acm_certificate_arn = ""
+# TLS cert rotation Lambda
+# ACM ARN sourced from SSM Parameter Store /ztmf/prod/cert-rotation/acm-arn
+enable_cert_rotation_lambda = true
+cert_rotation_prefix        = "prod"
+cert_rotation_domain        = "ztmf.cms.gov"
