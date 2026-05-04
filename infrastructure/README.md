@@ -181,3 +181,77 @@ Image publishing: `backend/ops/Dockerfile` -> `.github/workflows/ops-image.yml`
 manual `workflow_dispatch`). The workflow updates the `ztmf_ops_tag` SSM
 parameter, which the task definition reads so `terraform apply` picks up the
 new image SHA on the next deploy.
+
+## Required SSM Parameters (Per Environment)
+
+Some Terraform data sources read configuration from SSM Parameter Store. These
+parameters must exist in the target account **before** running any
+`terraform plan` or `terraform apply` against that environment. They are read
+unconditionally on every plan, including by always-on resources such as
+CloudFront and the internal ALB, so a missing parameter fails the entire run
+with a data source error rather than just blocking a single resource.
+
+| Parameter Name                              | Type     | Consumed By                                              | Required?                                  |
+| ------------------------------------------- | -------- | -------------------------------------------------------- | ------------------------------------------ |
+| `/ztmf/<env>/cert-rotation/acm-arn`         | `String` | CloudFront viewer cert, internal ALB listener, cert-rotation Lambda | **Yes** when `enable_cert_rotation_lambda = true` |
+| `/ztmf/<env>/ops/image-tag` (`ztmf_ops_tag`) | `String` | `ztmf_ops` ECS task definition                           | Yes (auto-managed by ops-image workflow)   |
+
+### Seeding `cert-rotation/acm-arn` for a new environment
+
+This is a hard prereq for stand-up of any new ZTMF environment. Run once per
+account, with credentials for that account:
+
+```bash
+aws ssm put-parameter \
+  --profile ztmf-<env> \
+  --region us-east-1 \
+  --name /ztmf/<env>/cert-rotation/acm-arn \
+  --type String \
+  --value arn:aws:acm:us-east-1:<account-id>:certificate/<uuid>
+```
+
+The value is the ACM certificate ARN that CloudFront and the ALB serve, and
+that the cert-rotation Lambda re-imports over when a new bundle lands in S3.
+Use the multi-SAN certificate covering all hostnames the environment serves
+(currently `ztmf.cms.gov`, `impl.ztmf.cms.gov`, `dev.ztmf.cms.gov`).
+
+To rotate the ARN later (new cert with a different ARN, account migration,
+etc.), update the SSM parameter and run `terraform apply` for the affected
+environment. The Lambda environment variable is baked in at plan time, so the
+function will pick up the change on the next deploy.
+
+### Operational notes
+
+- A net-new account stands up in a broken Terraform state until an operator
+  runs the `aws ssm put-parameter` command above. There is no automation that
+  seeds this for you.
+- Any CI pipeline that runs `terraform plan` against a scratch account must
+  ensure the parameter is pre-populated before the plan step.
+- The `enable_cert_rotation_lambda` toggle in `tfvars/<env>.tfvars` only gates
+  the Lambda and the S3 bucket; CloudFront and the ALB continue to read the
+  same SSM parameter unconditionally.
+
+## TLS Certificate Rotation
+
+The cert-rotation Lambda (`infrastructure/lambda-cert-rotation.tf`) watches
+`s3://ztmf-cert-rotation-<env>/<env>/` for new certificate bundles. When a
+`chain.pem` is uploaded together with `cert.pem` and `key.pem`, the Lambda
+validates the full chain against the private key and the configured domain,
+then re-imports the bundle over the ACM ARN named in
+`/ztmf/<env>/cert-rotation/acm-arn`. Outcomes (success, validation failure,
+import failure) are posted to Slack.
+
+Behavior notes:
+
+- **Dev runs in `DRY_RUN = true` mode.** The Lambda validates uploads but never
+  imports to ACM. To exercise the full path on dev, flip the env variable on
+  the function manually or accept that dev is validation-only. See the inline
+  comment in `backend/cmd/lambda-cert-rotation/internal/config/config.go` for
+  rationale.
+- **Confirm the watched prefix is empty before first apply.** If old test
+  artifacts remain at `<env>/*.pem`, the next upload pairs with stale files
+  and fails the freshness check.
+- **Re-imports use the same ARN.** Downstream consumers (CloudFront, ALB)
+  pick up the new cert without their resource definitions changing, because
+  the ARN is stable. This is the reason for pinning to a known ARN via SSM
+  rather than looking the cert up dynamically.
