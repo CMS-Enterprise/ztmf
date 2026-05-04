@@ -45,6 +45,10 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
 
 resource "aws_cloudwatch_log_group" "ztmf_api" {
   name = "ztmf_api"
+  # Match CMS Cloud loggroups-retention-policy-lambda which resets every
+  # log group to 731 days on the 1st of each month. Without this terraform
+  # would drift back to "never expire" after every apply.
+  retention_in_days = 731
 }
 
 resource "aws_ecs_task_definition" "ztmf_api" {

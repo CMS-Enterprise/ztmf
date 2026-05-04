@@ -271,6 +271,8 @@ func TestHandleRecord_EarlyExits(t *testing.T) {
 		{"non-bundle file name under known prefix is ignored", "ztmf-cert-rotation-dev", "dev/other.pem"},
 		{"empty bucket is ignored", "", "dev/cert.pem"},
 		{"empty key is ignored", "ztmf-cert-rotation-dev", ""},
+		{"cert.pem trigger exits silently (only chain.pem drives rotation)", "ztmf-cert-rotation-dev", "dev/cert.pem"},
+		{"key.pem trigger exits silently (only chain.pem drives rotation)", "ztmf-cert-rotation-dev", "dev/key.pem"},
 	}
 
 	for _, tc := range cases {
@@ -306,6 +308,49 @@ func (notFoundErr) Error() string                 { return "NotFound: Not Found"
 func (notFoundErr) ErrorCode() string             { return "NotFound" }
 func (notFoundErr) ErrorMessage() string          { return "Not Found" }
 func (notFoundErr) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
+
+// forbiddenErr is what S3 returns for a missing object when the caller has
+// no s3:ListBucket permission. The cert-rotation Lambda role intentionally
+// omits ListBucket, so concurrent invocations observing a just-archived
+// (deleted) bundle file see this shape rather than the NotFound code above.
+type forbiddenErr struct{}
+
+func (forbiddenErr) Error() string                 { return "Forbidden: Forbidden" }
+func (forbiddenErr) ErrorCode() string             { return "Forbidden" }
+func (forbiddenErr) ErrorMessage() string          { return "Forbidden" }
+func (forbiddenErr) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
+
+func TestHeadIfExists_TreatsForbiddenAsMissing(t *testing.T) {
+	h := &handler{
+		s3: stubHeadS3{err: forbiddenErr{}},
+	}
+	out, err := h.headIfExists(context.Background(), "bucket", "dev/cert.pem")
+	if err != nil {
+		t.Fatalf("403 should not surface as error, got: %v", err)
+	}
+	if out != nil {
+		t.Fatalf("403 should resolve to nil HeadObjectOutput, got %+v", out)
+	}
+}
+
+// stubHeadS3 returns a fixed error for every HeadObject call. Used by the
+// targeted headIfExists unit test above.
+type stubHeadS3 struct {
+	err error
+}
+
+func (s stubHeadS3) HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	return nil, s.err
+}
+func (s stubHeadS3) GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	return nil, errors.New("unexpected")
+}
+func (s stubHeadS3) CopyObject(context.Context, *s3.CopyObjectInput, ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	return nil, errors.New("unexpected")
+}
+func (s stubHeadS3) DeleteObject(context.Context, *s3.DeleteObjectInput, ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	return nil, errors.New("unexpected")
+}
 
 // fakeS3 is a programmable S3 stub. Keys present in `heads` return the
 // associated HeadObjectOutput; keys absent return 404. Copy/Delete simply
@@ -356,9 +401,9 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 	h := &handler{
 		cfg: cfg,
 		s3: fakeS3{
-			// Only cert.pem present; key.pem and chain.pem missing.
+			// Only chain.pem present; cert.pem and key.pem missing.
 			heads: map[string]*s3.HeadObjectOutput{
-				"dev/cert.pem": {LastModified: &now},
+				"dev/chain.pem": {LastModified: &now},
 			},
 		},
 		acm:      panicACM{t: t},
@@ -368,7 +413,7 @@ func TestHandleRecord_IncompleteBundleExitsQuietly(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("handleRecord returned error: %v", err)
@@ -410,7 +455,7 @@ func TestHandleRecord_StaleBundleIsValidationFailure(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("stale bundle should be a validation failure (nil return), got: %v", err)
@@ -630,7 +675,7 @@ func TestHandleRecord_HappyPath_EndToEnd(t *testing.T) {
 
 	rec := events.S3EventRecord{}
 	rec.S3.Bucket.Name = "ztmf-cert-rotation-dev"
-	rec.S3.Object.Key = "dev/cert.pem"
+	rec.S3.Object.Key = "dev/chain.pem"
 
 	if err := h.handleRecord(context.Background(), rec); err != nil {
 		t.Fatalf("handleRecord returned error: %v", err)

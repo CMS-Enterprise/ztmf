@@ -91,11 +91,22 @@ data "aws_ssm_parameter" "ztmf_ops_tag" {
   depends_on = [aws_ssm_parameter.ztmf_ops_tag]
 }
 
-// this resource needed to be created manually by importing a Digitcert certificate
-data "aws_acm_certificate" "ztmf" {
-  domain      = "dev.ztmf.cms.gov" // use dev. here because thats the domain value of the cert. other names are listed as alts
-  statuses    = ["ISSUED"]
-  most_recent = true
+// ACM certificate ARN sourced from SSM Parameter Store, the same parameter
+// the cert-rotation Lambda re-imports over. Single source of truth across
+// CloudFront, ALB, and the rotation Lambda. Replaces the older
+// data "aws_acm_certificate" lookup, which filtered on `domain = "dev.ztmf.cms.gov"`
+// + `most_recent = true` and was non-deterministic when two ISSUED certs
+// shared a CN; that ambiguity caused the 2026-04-30 production incident.
+//
+// Operator seeds the value once per AWS account with
+//   aws ssm put-parameter --name /ztmf/<env>/cert-rotation/acm-arn \
+//     --type String --value "arn:aws:acm:..."
+data "aws_ssm_parameter" "ztmf_acm_arn" {
+  name = "/ztmf/${var.environment}/cert-rotation/acm-arn"
+}
+
+locals {
+  ztmf_acm_certificate_arn = nonsensitive(data.aws_ssm_parameter.ztmf_acm_arn.value)
 }
 
 // CMS cloud provided the following stack in each account for the preconfigured CMS cloud WAF
