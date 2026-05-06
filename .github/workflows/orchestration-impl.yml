@@ -4,10 +4,17 @@
 #   ECR_REPO_URL               = 451245779631.dkr.ecr.us-east-1.amazonaws.com/ztmf/api
 #                                (impl shares dev's ECR repo; same URL as DEV environment)
 #   PARAMETER_NAME             = ztmf-impl_api_tag
-#                                (NOT ztmf_api_tag — that is dev's. backend.yml asserts this.)
+#                                (NOT ztmf_api_tag - that is dev's. backend.yml asserts this.)
 #   BUCKET_NAME                = <impl S3 web assets bucket: impl.ztmf.cms.gov>
 #   CLOUDFRONT_DISTRIBUTION_ID = <impl CloudFront distribution ID, post first apply>
 #   SNYK_TOKEN                 = <Snyk API token, can be the same as DEV>
+#
+# Trigger model:
+#   - push to `impl`: deploys to the impl environment. impl is a long-lived
+#     environment branch; direct pushes are the intended deploy mechanism,
+#     mirroring how merges to main drive prod. PR-on-impl is also accepted
+#     so contributors can preview infra/CI changes before merging into the
+#     impl branch.
 name: Orchestration IMPL
 
 on:
@@ -29,11 +36,36 @@ jobs:
     uses: ./.github/workflows/analysis.yml
     secrets: inherit
 
+  diff:
+    name: Check for Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.backend.outputs.backend }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in backend/
+        id: backend
+        # On push events the diff is HEAD~1..HEAD; on pull_request events
+        # the runner checks out the merge ref and we compare against the
+        # base branch (`impl`) the same way orchestration-dev does.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+          echo "backend=$(git --no-pager diff --name-only "$BASE_REF" backend/ | grep -E '\.go$|\.sum$|Dockerfile' | head -n 1)" >> $GITHUB_OUTPUT
+
   backend:
     name: Backend
     needs:
       - analysis
-    if: ${{ !failure() && !cancelled() }}
+      - diff
+    if: ${{ contains(needs.diff.outputs.backend, 'backend/') && !failure() && !cancelled() }}
     uses: ./.github/workflows/backend.yml
     with:
       environment: IMPL
@@ -43,6 +75,7 @@ jobs:
     name: Infrastructure
     needs:
       - analysis
+      - diff
       - backend
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml

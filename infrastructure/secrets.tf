@@ -119,9 +119,13 @@ resource "aws_secretsmanager_secret" "ztmf_slack_webhook" {
 
   description = "Slack webhook URL for ZTMF data sync alerts and notifications"
 
+  # Tag tracks which env the webhook belongs to. dev/prod historically
+  # tagged this "shared" because there was a single webhook secret pre-impl;
+  # preserving that value avoids a no-op tag diff on dev/prod state. impl's
+  # new secret gets tagged accurately.
   tags = {
     Name        = "ZTMF Slack Webhook"
-    Environment = "shared"
+    Environment = local.manage_account_singletons ? "shared" : var.environment
     Purpose     = "Data sync notifications"
   }
 }
