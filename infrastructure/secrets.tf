@@ -6,6 +6,13 @@
 // Same two-phase bootstrap dev went through.
 resource "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
   name = "ztmf_va_trust_provider${local.underscore_sfx}"
+
+  // Operator-seeded OIDC JSON is not in terraform state. A `terraform
+  // destroy` (or accidental resource removal) would orphan the credentials
+  // and break the ALB OIDC handshake until reseeded. Block the destroy.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # cert and key are the TLS digicert certificate purchased by Elizabeth S.
@@ -34,6 +41,13 @@ resource "aws_secretsmanager_secret" "ztmf_tls_key" {
 # operator seeds a username string; re-apply creates the cluster.
 resource "aws_secretsmanager_secret" "ztmf_db_user" {
   name = "ztmf_db_user${local.underscore_sfx}"
+
+  // Aurora master_username is set at cluster creation and cannot be
+  // changed afterward. Losing this secret would orphan the value and
+  // make rotation/recovery messy. Block accidental destroy.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # host, port, and credentials for logging in to CMS SMTP service.

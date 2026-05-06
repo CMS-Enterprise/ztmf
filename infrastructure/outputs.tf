@@ -27,6 +27,29 @@ output "lambda_function_arn" {
   sensitive   = false
 }
 
+# CloudFront distribution domain - the CNAME target for the env's
+# domain_name (dev.ztmf.cms.gov, impl.ztmf.cms.gov, ztmf.cms.gov).
+# Hand this value to the DNS team to create the CNAME record.
+output "cloudfront_distribution_domain" {
+  description = "CloudFront distribution domain name; CNAME target for the env's public domain (dev.ztmf.cms.gov / impl.ztmf.cms.gov / ztmf.cms.gov)"
+  value       = aws_cloudfront_distribution.ztmf.domain_name
+  sensitive   = false
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID; populate the env's CLOUDFRONT_DISTRIBUTION_ID GitHub secret with this"
+  value       = aws_cloudfront_distribution.ztmf.id
+  sensitive   = false
+}
+
+# Internal ALB DNS - not normally needed for external DNS, but useful
+# for debugging direct ALB access from inside the VPC.
+output "alb_dns_name" {
+  description = "Internal ALB DNS name (private; only resolvable from inside the VPC)"
+  value       = aws_lb.ztmf_api.dns_name
+  sensitive   = false
+}
+
 # Store test events as SSM parameters for team reference
 resource "aws_ssm_parameter" "lambda_test_events" {
   for_each = var.environment == "dev" ? {
