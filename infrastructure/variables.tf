@@ -13,8 +13,9 @@ variable "ecs_service_task_count" {
 }
 
 variable "cfacts_snowflake_view" {
-  description = "Fully qualified Snowflake view for CFACTS system sync"
+  description = "Fully qualified Snowflake view for CFACTS system sync. Empty for impl v1 (no Snowflake account)."
   type        = string
+  default     = ""
 }
 
 variable "snowflake_table_prefix" {

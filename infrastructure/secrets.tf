@@ -1,36 +1,56 @@
+// Per-env OIDC config for ALB authenticate-oidc actions. dev/prod manage
+// the secret here; impl reads `ztmf_va_trust_provider_impl` via data source
+// so the operator can pre-seed valid OIDC JSON before first apply (the
+// secret_version data source below would otherwise fail on an empty
+// terraform-created placeholder, blocking every plan).
 resource "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
-  name = "ztmf_va_trust_provider"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_va_trust_provider"
 }
 
 # cert and key are the TLS digicert certificate purchased by Elizabeth S.
-# initially we tried to use them on the Fargate container but decided to 
+# initially we tried to use them on the Fargate container but decided to
 # simplify things by just generating self-signed certs during container builds
 # leaving them here so they arent stored locally in case we need the value again
+#
+# Account-singletons; impl reuses dev's via data sources rather than racing
+# state ownership.
 resource "aws_secretsmanager_secret" "ztmf_tls_cert" {
-  name = "ztmf_tls_cert"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_tls_cert"
 }
 
 resource "aws_secretsmanager_secret" "ztmf_tls_key" {
-  name = "ztmf_tls_key"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_tls_key"
 }
 
-# DB user is only used to create the DB, its value is then copied into the RDS-managed auto-rotated secret
+# DB user is only used to create the DB, its value is then copied into the RDS-managed auto-rotated secret.
+# dev/prod manage here; impl reads `ztmf_db_user_impl` via data source so the
+# operator can pre-seed the DB master username before first apply (the RDS
+# cluster references this value via secret_version, which fails on an empty
+# placeholder).
 resource "aws_secretsmanager_secret" "ztmf_db_user" {
-  name = "ztmf_db_user"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_db_user"
 }
 
-# host, port, and credentials for logging in to CMS SMTP service
+# host, port, and credentials for logging in to CMS SMTP service.
+# Account-singleton; impl reuses dev's CMS SMTP credentials.
 resource "aws_secretsmanager_secret" "ztmf_smtp" {
-  name = "ztmf_smtp"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_smtp"
 }
 
-# CA certs for validating TLS connection to SMTP service
+# CA certs for validating TLS connection to SMTP service. Account-singletons.
 resource "aws_secretsmanager_secret" "ztmf_smtp_ca_root" {
-  name = "ztmf_smtp_ca_root"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_smtp_ca_root"
 }
 
 resource "aws_secretsmanager_secret" "ztmf_smtp_intermediate" {
-  name = "ztmf_smtp_intermediate"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_smtp_intermediate"
 }
 
 # Snowflake credentials for data sync Lambda function (dev environment)
@@ -90,9 +110,11 @@ resource "aws_secretsmanager_secret" "ztmf_kion_prod" {
   }
 }
 
-# Slack webhook URL for data sync alerts (shared across environments)
+# Slack webhook URL for data sync alerts.
+# Suffix-renamed for impl so impl alerts route to a separate channel without
+# noising dev/prod incident response.
 resource "aws_secretsmanager_secret" "ztmf_slack_webhook" {
-  name = "ztmf_slack_webhook"
+  name = "ztmf_slack_webhook${local.underscore_sfx}"
 
   description = "Slack webhook URL for ZTMF data sync alerts and notifications"
 

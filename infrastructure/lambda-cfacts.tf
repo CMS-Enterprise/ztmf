@@ -76,11 +76,12 @@ resource "aws_lambda_function" "cfacts_snowflake_sync" {
   ]
 }
 
-# EventBridge rule - daily at 3AM UTC (initially disabled)
+# EventBridge rule - daily at 3AM UTC.
+# Impl has no Snowflake account; lambda exists for parity but is never fired.
 resource "aws_cloudwatch_event_rule" "cfacts_snowflake_schedule" {
   name        = "ztmf-cfacts-snowflake-schedule-${var.environment}"
   description = "Daily schedule for CFACTS Snowflake sync to PostgreSQL"
-  state       = "ENABLED"
+  state       = local.enable_snowflake_sync ? "ENABLED" : "DISABLED"
 
   schedule_expression = "cron(0 3 * * ? *)"
 

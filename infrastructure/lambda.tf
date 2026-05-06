@@ -83,6 +83,8 @@ resource "aws_cloudwatch_event_rule" "ztmf_sync_schedule" {
 
   # Different schedules per environment (6-field cron format: minutes hours day month day-of-week year)
   schedule_expression = var.environment == "prod" ? "cron(0 2 1 1,4,7,10 ? *)" : "cron(0 9 ? * MON *)"
+  # Impl has no Snowflake account; lambda exists for parity but is never fired.
+  state = local.enable_snowflake_sync ? "ENABLED" : "DISABLED"
 
   tags = {
     Name        = "ZTMF Data Sync Schedule"

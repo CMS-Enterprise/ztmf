@@ -1,7 +1,10 @@
-# CMS already provides a VPC, we just need some endpoints in it
+// CMS already provides a VPC, we just need some endpoints in it.
+// impl shares dev's VPC; the endpoint SG and 9 interface endpoints are
+// gated to dev/prod and looked up via data sources from impl.
 
 resource "aws_security_group" "ztmf_vpc_endpoints" {
-  name        = "ztmf_vpc_endpoints"
+  count       = local.manage_vpc_endpoints ? 1 : 0
+  name        = local.ztmf_vpce_sg_name
   description = "Allow HTTP(S) traffic from private subnets"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -23,12 +26,12 @@ resource "aws_security_group" "ztmf_vpc_endpoints" {
 }
 
 resource "aws_vpc_endpoint" "ztmf" {
-  for_each            = toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"])
+  for_each            = local.manage_vpc_endpoints ? toset(["ec2", "logs", "ecr.api", "ecr.dkr", "secretsmanager", "ssm", "ec2messages", "ssmmessages", "s3"]) : toset([])
   vpc_id              = data.aws_vpc.ztmf.id
   service_name        = "com.amazonaws.us-east-1.${each.value}"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
-  security_group_ids  = [aws_security_group.ztmf_vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.ztmf_vpc_endpoints[0].id]
   private_dns_enabled = true
   dns_options { private_dns_only_for_inbound_resolver_endpoint = false }
 }
@@ -49,7 +52,8 @@ data "aws_eip" "nat_gateway" {
   id    = data.aws_nat_gateway.existing[0].allocation_id
 }
 
-# Security group for Lambda function
+# Security group for Lambda function. Already environment-suffixed in name so
+# impl gets its own SG without colliding with dev's `ztmf-data-sync-lambda-dev`.
 resource "aws_security_group" "ztmf_sync_lambda" {
   name        = "ztmf-data-sync-lambda-${var.environment}"
   description = "Security group for ZTMF Data Sync Lambda function"

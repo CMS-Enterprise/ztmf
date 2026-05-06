@@ -1,5 +1,5 @@
 resource "aws_ecs_cluster" "ztmf" {
-  name = "ztmf"
+  name = local.ztmf_name
 
   setting {
     name  = "containerInsights"
@@ -8,14 +8,14 @@ resource "aws_ecs_cluster" "ztmf" {
 }
 
 module "api_task_execution" {
-  name                = "ztmf_api_task_execution"
+  name                = "ztmf_api_task_execution${local.underscore_sfx}"
   source              = "./modules/role"
   principal           = { Service = "ecs-tasks.amazonaws.com" }
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
 }
 
 module "api_task" {
-  name      = "ztmf_api_task"
+  name      = "ztmf_api_task${local.underscore_sfx}"
   source    = "./modules/role"
   principal = { Service = "ecs-tasks.amazonaws.com" }
 }
@@ -34,9 +34,9 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
         Effect = "Allow"
         Resource = [
           local.db_cred_secret,
-          aws_secretsmanager_secret.ztmf_smtp.arn,
-          aws_secretsmanager_secret.ztmf_smtp_ca_root.arn,
-          aws_secretsmanager_secret.ztmf_smtp_intermediate.arn,
+          local.smtp_secret_arn,
+          local.smtp_ca_root_arn,
+          local.smtp_intermediate_arn,
         ]
       },
     ]
@@ -44,7 +44,7 @@ resource "aws_iam_role_policy" "ztmf_api_task" {
 }
 
 resource "aws_cloudwatch_log_group" "ztmf_api" {
-  name = "ztmf_api"
+  name = local.ztmf_api_log_group
   # Match CMS Cloud loggroups-retention-policy-lambda which resets every
   # log group to 731 days on the 1st of each month. Without this terraform
   # would drift back to "never expire" after every apply.
@@ -54,7 +54,7 @@ resource "aws_cloudwatch_log_group" "ztmf_api" {
 resource "aws_ecs_task_definition" "ztmf_api" {
   execution_role_arn       = module.api_task_execution.role_arn
   task_role_arn            = module.api_task.role_arn
-  family                   = "api"
+  family                   = "api${local.name_suffix}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -64,13 +64,13 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       name             = "ztmfapi"
       command          = ["/usr/local/bin/ztmfapi"]
       workingDirectory = "/api"
-      image            = "${aws_ecr_repository.ztmf_api.repository_url}:${data.aws_ssm_parameter.ztmf_api_tag.insecure_value}"
+      image            = "${local.ecr_api_repo_url}:${data.aws_ssm_parameter.ztmf_api_tag.insecure_value}"
       essential        = true
       portMappings     = [{ containerPort = 443 }]
 
       environment = [
         {
-          name  = "ENVIRONMENT" // only for logging, application code should not depend on any particular value 
+          name  = "ENVIRONMENT" // only for logging, application code should not depend on any particular value
           value = var.environment
         },
         {
@@ -115,21 +115,21 @@ resource "aws_ecs_task_definition" "ztmf_api" {
         },
         {
           name  = "SMTP_CONFIG_SECRET_ID"
-          value = aws_secretsmanager_secret.ztmf_smtp.arn
+          value = local.smtp_secret_arn
         },
         {
           name  = "SMTP_CA_ROOT_SECRET_ID"
-          value = aws_secretsmanager_secret.ztmf_smtp_ca_root.arn
+          value = local.smtp_ca_root_arn
         },
         {
           name  = "SMTP_CA_INT_SECRET_ID"
-          value = aws_secretsmanager_secret.ztmf_smtp_intermediate.arn
+          value = local.smtp_intermediate_arn
         }
       ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "ztmf_api"
+          "awslogs-group"         = aws_cloudwatch_log_group.ztmf_api.name
           "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "api"
         }
@@ -139,7 +139,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
 }
 
 resource "aws_security_group" "ztmf_api_task" {
-  name        = "ztmf-api-task"
+  name        = local.ztmf_api_task_sg
   description = "Allow TLS inbound traffic"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -176,7 +176,7 @@ resource "aws_security_group" "ztmf_api_task" {
 }
 
 resource "aws_ecs_service" "ztmf_api" {
-  name            = "ztmf-api"
+  name            = local.ztmf_api_name
   cluster         = aws_ecs_cluster.ztmf.id
   task_definition = aws_ecs_task_definition.ztmf_api.arn
   launch_type     = "FARGATE"
@@ -202,14 +202,14 @@ resource "aws_ecs_service" "ztmf_api" {
 # operator session ends. Image built from backend/ops/Dockerfile.
 
 module "ops_task_execution" {
-  name                = "ztmf_ops_task_execution"
+  name                = "ztmf_ops_task_execution${local.underscore_sfx}"
   source              = "./modules/role"
   principal           = { Service = "ecs-tasks.amazonaws.com" }
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
 }
 
 module "ops_task" {
-  name      = "ztmf_ops_task"
+  name      = "ztmf_ops_task${local.underscore_sfx}"
   source    = "./modules/role"
   principal = { Service = "ecs-tasks.amazonaws.com" }
 }
@@ -243,12 +243,12 @@ resource "aws_iam_role_policy" "ztmf_ops_task" {
 }
 
 resource "aws_cloudwatch_log_group" "ztmf_ops" {
-  name              = "ztmf_ops"
+  name              = local.ztmf_ops_log_group
   retention_in_days = 30
 }
 
 resource "aws_ssm_parameter" "ztmf_ops_tag" {
-  name  = "ztmf_ops_tag"
+  name  = "ztmf_ops_tag${local.underscore_sfx}"
   type  = "String"
   tier  = "Standard"
   value = "bootstrap"
@@ -261,7 +261,7 @@ resource "aws_ssm_parameter" "ztmf_ops_tag" {
 resource "aws_ecs_task_definition" "ztmf_ops" {
   execution_role_arn       = module.ops_task_execution.role_arn
   task_role_arn            = module.ops_task.role_arn
-  family                   = "ops"
+  family                   = "ops${local.name_suffix}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -269,7 +269,7 @@ resource "aws_ecs_task_definition" "ztmf_ops" {
   container_definitions = jsonencode([
     {
       name      = "ztmfops"
-      image     = "${aws_ecr_repository.ztmf_ops.repository_url}:${data.aws_ssm_parameter.ztmf_ops_tag.insecure_value}"
+      image     = "${local.ecr_ops_repo_url}:${data.aws_ssm_parameter.ztmf_ops_tag.insecure_value}"
       essential = true
 
       environment = [
@@ -294,16 +294,20 @@ resource "aws_ecs_task_definition" "ztmf_ops" {
 }
 
 resource "aws_security_group" "ztmf_ops_task" {
-  name        = "ztmf_ops_task"
+  name        = local.ztmf_ops_task_sg
   description = "on-demand ops task: ECS Exec + Aurora access"
   vpc_id      = data.aws_vpc.ztmf.id
 
   egress {
-    description     = "HTTPS to VPC endpoints (ECR, SSM, Secrets Manager, CloudWatch)"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ztmf_vpc_endpoints.id]
+    description = "HTTPS to VPC endpoints (ECR, SSM, Secrets Manager, CloudWatch)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    security_groups = [
+      local.manage_vpc_endpoints
+      ? aws_security_group.ztmf_vpc_endpoints[0].id
+      : data.aws_security_group.ztmf_vpc_endpoints[0].id
+    ]
   }
 
   egress {
@@ -314,4 +318,3 @@ resource "aws_security_group" "ztmf_ops_task" {
     security_groups = [aws_security_group.ztmf_db.id]
   }
 }
-
