@@ -69,16 +69,6 @@ moved {
 }
 
 moved {
-  from = aws_secretsmanager_secret.ztmf_va_trust_provider
-  to   = aws_secretsmanager_secret.ztmf_va_trust_provider[0]
-}
-
-moved {
-  from = aws_secretsmanager_secret.ztmf_db_user
-  to   = aws_secretsmanager_secret.ztmf_db_user[0]
-}
-
-moved {
   from = aws_s3_bucket.ztmf_logs
   to   = aws_s3_bucket.ztmf_logs[0]
 }

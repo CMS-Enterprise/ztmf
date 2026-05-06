@@ -53,7 +53,4 @@ locals {
   smtp_secret_arn       = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp[0].arn : data.aws_secretsmanager_secret.ztmf_smtp[0].arn
   smtp_ca_root_arn      = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp_ca_root[0].arn : data.aws_secretsmanager_secret.ztmf_smtp_ca_root[0].arn
   smtp_intermediate_arn = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp_intermediate[0].arn : data.aws_secretsmanager_secret.ztmf_smtp_intermediate[0].arn
-
-  va_trust_provider_secret_id = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_va_trust_provider[0].id : data.aws_secretsmanager_secret.ztmf_va_trust_provider_impl[0].id
-  db_user_secret_id           = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_db_user[0].id : data.aws_secretsmanager_secret.ztmf_db_user_impl[0].id
 }

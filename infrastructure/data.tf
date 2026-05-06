@@ -51,25 +51,20 @@ data "aws_ec2_managed_prefix_list" "shared_services" {
   name = "cmscloud-shared-services"
 }
 
-// dev/prod resolve to the resource managed in secrets.tf; impl resolves to
-// the operator-seeded `ztmf_va_trust_provider_impl` secret via the data
-// source below.
-data "aws_secretsmanager_secret" "ztmf_va_trust_provider_impl" {
-  count = local.manage_account_singletons ? 0 : 1
-  name  = "ztmf_va_trust_provider_impl"
+data "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
+  arn = aws_secretsmanager_secret.ztmf_va_trust_provider.arn
 }
 
 data "aws_secretsmanager_secret_version" "ztmf_va_trust_provider_current" {
-  secret_id = local.va_trust_provider_secret_id
+  secret_id = data.aws_secretsmanager_secret.ztmf_va_trust_provider.id
 }
 
-data "aws_secretsmanager_secret" "ztmf_db_user_impl" {
-  count = local.manage_account_singletons ? 0 : 1
-  name  = "ztmf_db_user_impl"
+data "aws_secretsmanager_secret" "ztmf_db_user" {
+  arn = aws_secretsmanager_secret.ztmf_db_user.arn
 }
 
 data "aws_secretsmanager_secret_version" "ztmf_db_user_current" {
-  secret_id = local.db_user_secret_id
+  secret_id = data.aws_secretsmanager_secret.ztmf_db_user.id
 }
 
 data "aws_secretsmanager_secrets" "rds" {

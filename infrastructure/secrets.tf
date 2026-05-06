@@ -1,11 +1,11 @@
-// Per-env OIDC config for ALB authenticate-oidc actions. dev/prod manage
-// the secret here; impl reads `ztmf_va_trust_provider_impl` via data source
-// so the operator can pre-seed valid OIDC JSON before first apply (the
-// secret_version data source below would otherwise fail on an empty
-// terraform-created placeholder, blocking every plan).
+// Per-env OIDC config for ALB authenticate-oidc actions. Suffix-renamed for
+// impl so the dev account holds two distinct secrets (ztmf_va_trust_provider
+// for dev, ztmf_va_trust_provider_impl for impl) without state collision.
+// First apply for any env: terraform creates the empty secret; operator
+// seeds the OIDC JSON; re-apply consumes it via the data source below.
+// Same two-phase bootstrap dev went through.
 resource "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
-  count = local.manage_account_singletons ? 1 : 0
-  name  = "ztmf_va_trust_provider"
+  name = "ztmf_va_trust_provider${local.underscore_sfx}"
 }
 
 # cert and key are the TLS digicert certificate purchased by Elizabeth S.
@@ -25,14 +25,15 @@ resource "aws_secretsmanager_secret" "ztmf_tls_key" {
   name  = "ztmf_tls_key"
 }
 
-# DB user is only used to create the DB, its value is then copied into the RDS-managed auto-rotated secret.
-# dev/prod manage here; impl reads `ztmf_db_user_impl` via data source so the
-# operator can pre-seed the DB master username before first apply (the RDS
-# cluster references this value via secret_version, which fails on an empty
-# placeholder).
+# DB user holds the master_username for the Aurora cluster. The password
+# itself is auto-generated and auto-rotated by RDS via
+# manage_master_user_password=true on the cluster, so this secret is touched
+# once at bootstrap and never again.
+# Suffix-renamed for impl: each env's Aurora cluster has its own seeded
+# username. First apply for any env: terraform creates the empty secret;
+# operator seeds a username string; re-apply creates the cluster.
 resource "aws_secretsmanager_secret" "ztmf_db_user" {
-  count = local.manage_account_singletons ? 1 : 0
-  name  = "ztmf_db_user"
+  name = "ztmf_db_user${local.underscore_sfx}"
 }
 
 # host, port, and credentials for logging in to CMS SMTP service.
