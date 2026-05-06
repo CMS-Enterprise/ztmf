@@ -1,10 +1,10 @@
 resource "aws_db_subnet_group" "ztmf" {
-  name       = "ztmf"
+  name       = local.ztmf_name
   subnet_ids = data.aws_subnets.private.ids
 }
 
 resource "aws_security_group" "ztmf_db" {
-  name        = "ztmf_db"
+  name        = local.ztmf_db_sg_name
   description = "Allow postgresql inbound traffic"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -18,7 +18,7 @@ resource "aws_security_group" "ztmf_db" {
 }
 
 resource "aws_rds_cluster" "ztmf" {
-  cluster_identifier          = "ztmf"
+  cluster_identifier          = local.ztmf_name
   engine                      = "aurora-postgresql"
   engine_mode                 = "provisioned"
   engine_version              = "16.11"

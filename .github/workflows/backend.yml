@@ -203,6 +203,33 @@ jobs:
           done
         
       - name: AWS - SSM Put Parameter
-        run: aws ssm put-parameter --name ${{ secrets.PARAMETER_NAME }} --value ${{ steps.revParse.outputs.shaShort }} --overwrite
+        # Guard against IMPL environment misconfiguration: if PARAMETER_NAME
+        # is copy-pasted from DEV (ztmf_api_tag) into IMPL, every impl CI
+        # run silently overwrites dev's image pointer and dev's next apply
+        # deploys the impl image. Assert per-env expected value before put.
+        env:
+          ENV: ${{ inputs.environment }}
+          PARAMETER_NAME: ${{ secrets.PARAMETER_NAME }}
+        run: |
+          set -e
+          ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
+          case "$ENV_LOWER" in
+            dev|prod)
+              EXPECTED="ztmf_api_tag"
+              ;;
+            impl)
+              EXPECTED="ztmf-impl_api_tag"
+              ;;
+            *)
+              echo "Unrecognized environment: $ENV" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$PARAMETER_NAME" != "$EXPECTED" ]; then
+            echo "PARAMETER_NAME mismatch for $ENV: got '$PARAMETER_NAME', expected '$EXPECTED'." >&2
+            echo "Fix the GitHub repo Environment '$ENV' secret PARAMETER_NAME." >&2
+            exit 1
+          fi
+          aws ssm put-parameter --name "$PARAMETER_NAME" --value "${{ steps.revParse.outputs.shaShort }}" --overwrite
 
       # Deployment of the latest image will happen with terraform apply during infrastructure deploy

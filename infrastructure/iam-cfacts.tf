@@ -62,7 +62,7 @@ resource "aws_iam_policy" "cfacts_sync_lambda_secrets" {
         Resource = [
           local.db_cred_secret,
           "arn:aws:secretsmanager:${data.aws_region.current.id}:*:secret:ztmf_snowflake_${var.environment}*",
-          aws_secretsmanager_secret.ztmf_slack_webhook.arn
+          local.slack_webhook_arn
         ]
       }
     ]

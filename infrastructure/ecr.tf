@@ -1,10 +1,14 @@
+// ECR repos are account-scoped singletons. Created in dev/prod; impl reuses
+// dev's via data.aws_ecr_repository.* so the same image can deploy across envs.
 resource "aws_ecr_repository" "ztmf_api" {
+  count                = local.manage_account_singletons ? 1 : 0
   name                 = "ztmf/api"
   image_tag_mutability = "IMMUTABLE"
 }
 
 resource "aws_ecr_lifecycle_policy" "ztmf_api" {
-  repository = aws_ecr_repository.ztmf_api.name
+  count      = local.manage_account_singletons ? 1 : 0
+  repository = aws_ecr_repository.ztmf_api[0].name
 
   policy = <<EOF
 {
@@ -27,6 +31,7 @@ EOF
 }
 
 resource "aws_ecr_registry_scanning_configuration" "ztmf_api" {
+  count     = local.manage_account_singletons ? 1 : 0
   scan_type = "ENHANCED"
 
   rule {
@@ -39,12 +44,14 @@ resource "aws_ecr_registry_scanning_configuration" "ztmf_api" {
 }
 
 resource "aws_ecr_repository" "ztmf_ops" {
+  count                = local.manage_account_singletons ? 1 : 0
   name                 = "ztmf/ops"
   image_tag_mutability = "IMMUTABLE"
 }
 
 resource "aws_ecr_lifecycle_policy" "ztmf_ops" {
-  repository = aws_ecr_repository.ztmf_ops.name
+  count      = local.manage_account_singletons ? 1 : 0
+  repository = aws_ecr_repository.ztmf_ops[0].name
 
   policy = <<EOF
 {

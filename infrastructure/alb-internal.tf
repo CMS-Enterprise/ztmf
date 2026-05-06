@@ -1,5 +1,5 @@
 resource "aws_security_group" "ztmf_alb" {
-  name        = "ztmf"
+  name        = local.ztmf_alb_sg_name
   description = "Allow TLS inbound traffic"
   vpc_id      = data.aws_vpc.ztmf.id
 
@@ -21,7 +21,7 @@ resource "aws_security_group" "ztmf_alb" {
 }
 
 resource "aws_lb" "ztmf_api" {
-  name                       = "ztmf-api"
+  name                       = local.ztmf_api_name
   internal                   = true
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.ztmf_alb.id]
@@ -58,7 +58,7 @@ resource "aws_lb" "ztmf_api" {
 
 # TARGET GROUPS
 resource "aws_lb_target_group" "ztmf_rest_api" {
-  name        = "ztmf-rest-api"
+  name        = local.ztmf_rest_api_tg
   port        = 443
   protocol    = "HTTPS"
   target_type = "ip"

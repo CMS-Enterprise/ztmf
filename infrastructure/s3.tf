@@ -56,12 +56,16 @@ data "aws_iam_policy_document" "allow_s3_access_from_cloudfront" {
   }
 }
 
+// Account-shared ALB access log bucket. Account ID-keyed name; impl skips
+// creation since dev's bucket already exists in the same account.
 resource "aws_s3_bucket" "ztmf_logs" {
+  count  = local.manage_account_singletons ? 1 : 0
   bucket = "ztmf-logs-${local.account_id}-use1"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "ztmf_logs" {
-  bucket = aws_s3_bucket.ztmf_logs.id
+  count  = local.manage_account_singletons ? 1 : 0
+  bucket = aws_s3_bucket.ztmf_logs[0].id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -70,7 +74,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "ztmf_logs" {
 }
 
 resource "aws_s3_bucket_policy" "ztmf_logs_access" {
-  bucket = aws_s3_bucket.ztmf_logs.id
+  count  = local.manage_account_singletons ? 1 : 0
+  bucket = aws_s3_bucket.ztmf_logs[0].id
   policy = data.aws_iam_policy_document.ztmf_logs_access.json
 }
 
@@ -88,7 +93,7 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
     ]
 
     resources = [
-      "${aws_s3_bucket.ztmf_logs.arn}/rest-api-alb/*"
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb/*"
     ]
   }
 
@@ -106,8 +111,8 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
     ]
 
     resources = [
-      aws_s3_bucket.ztmf_logs.arn,
-      "${aws_s3_bucket.ztmf_logs.arn}/*",
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1",
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/*",
     ]
 
 

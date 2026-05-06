@@ -169,7 +169,7 @@ resource "aws_lambda_function" "cert_rotation" {
       ENV_PREFIXES_JSON = local.cert_rotation_env_prefixes_json
       ARCHIVE_PREFIX    = "processed"
       DRY_RUN           = var.environment != "prod" ? "true" : "false"
-      SLACK_SECRET_ID   = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SLACK_SECRET_ID   = local.slack_webhook_name
     }
   }
 
