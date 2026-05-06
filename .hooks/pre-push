@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-push hook: Run full test suite (unit + E2E) before pushing to remote.
+# Pre-push hook: Run lint and full test suite before pushing to remote.
 # Prevents broken code from reaching GitHub and wasting CI compute.
 #
 # Skip with: git push --no-verify (use sparingly)
@@ -7,6 +7,47 @@
 set -e
 
 echo "Running pre-push checks..."
+
+# --- Infrastructure lint -----------------------------------------------------
+# Run terraform fmt and tflint when any infrastructure/*.tf file is part of
+# the push range. CI's Analysis job runs the same checks; catching them here
+# saves a round-trip and keeps embarrassing fmt/lint diffs out of PRs.
+
+INFRA_CHANGED=""
+# Prefer the actual push range when available (after the upstream is set).
+if git rev-parse --quiet --verify '@{push}' >/dev/null 2>&1; then
+    INFRA_CHANGED=$(git diff --name-only '@{push}' HEAD 2>/dev/null | grep -E '^infrastructure/.*\.tf$' || true)
+fi
+# Fallback for first-push branches: compare against origin/main.
+if [ -z "$INFRA_CHANGED" ] && git rev-parse --quiet --verify origin/main >/dev/null 2>&1; then
+    INFRA_CHANGED=$(git diff --name-only origin/main HEAD 2>/dev/null | grep -E '^infrastructure/.*\.tf$' || true)
+fi
+
+if [ -n "$INFRA_CHANGED" ]; then
+    echo "→ Infrastructure changes detected; running terraform fmt + tflint..."
+
+    if command -v terraform >/dev/null 2>&1; then
+        if ! terraform fmt -check -recursive infrastructure/ >/dev/null 2>&1; then
+            echo "❌ terraform fmt: unformatted files. Run: terraform fmt -recursive infrastructure/"
+            exit 1
+        fi
+        echo "✓ terraform fmt clean"
+    else
+        echo "⚠️  terraform CLI not installed; skipping fmt check"
+    fi
+
+    if command -v tflint >/dev/null 2>&1; then
+        if ! tflint --chdir=infrastructure/ -f compact; then
+            echo "❌ tflint found issues. Fix above, or git push --no-verify (sparingly)."
+            exit 1
+        fi
+        echo "✓ tflint clean"
+    else
+        echo "⚠️  tflint not installed; skipping. Install: https://github.com/terraform-linters/tflint"
+    fi
+fi
+
+# --- Full test suite ---------------------------------------------------------
 echo "→ Running full test suite (unit + E2E)..."
 
 # Source dev.compose.env so tests that read DB_* env (e.g. controller tests
