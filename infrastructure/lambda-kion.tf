@@ -28,7 +28,7 @@ resource "aws_lambda_function" "ztmf_kion_key_rotate" {
     variables = {
       ENVIRONMENT       = var.environment
       KION_SECRET_ID    = "ztmf_kion_${var.environment}"
-      SLACK_SECRET_ID   = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SLACK_SECRET_ID   = local.slack_webhook_name
       ROTATE_AFTER_DAYS = "4"
     }
   }

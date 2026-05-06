@@ -37,7 +37,7 @@ resource "aws_lambda_function" "cfacts_snowflake_sync" {
       DB_ENDPOINT           = aws_rds_cluster.ztmf.endpoint
       DB_PORT               = "5432"
       DB_NAME               = "ztmf"
-      SLACK_SECRET_ID       = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SLACK_SECRET_ID       = local.slack_webhook_name
       CFACTS_SNOWFLAKE_VIEW = var.cfacts_snowflake_view
     }
   }
@@ -145,7 +145,7 @@ resource "aws_lambda_function" "cfacts_s3_sync" {
       DB_ENDPOINT     = aws_rds_cluster.ztmf.endpoint
       DB_PORT         = "5432"
       DB_NAME         = "ztmf"
-      SLACK_SECRET_ID = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SLACK_SECRET_ID = local.slack_webhook_name
     }
   }
 

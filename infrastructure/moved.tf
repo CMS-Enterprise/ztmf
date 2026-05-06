@@ -64,6 +64,11 @@ moved {
 }
 
 moved {
+  from = aws_secretsmanager_secret.ztmf_slack_webhook
+  to   = aws_secretsmanager_secret.ztmf_slack_webhook[0]
+}
+
+moved {
   from = aws_security_group.ztmf_vpc_endpoints
   to   = aws_security_group.ztmf_vpc_endpoints[0]
 }

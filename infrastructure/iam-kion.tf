@@ -87,7 +87,7 @@ resource "aws_iam_policy" "ztmf_kion_key_rotate_secrets" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = [
-          aws_secretsmanager_secret.ztmf_slack_webhook.arn
+          local.slack_webhook_arn
         ]
       }
     ]

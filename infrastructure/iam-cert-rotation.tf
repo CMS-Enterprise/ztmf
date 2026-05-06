@@ -72,7 +72,7 @@ resource "aws_iam_policy" "cert_rotation_lambda_secrets" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = [
-          aws_secretsmanager_secret.ztmf_slack_webhook.arn
+          local.slack_webhook_arn
         ]
       },
       {

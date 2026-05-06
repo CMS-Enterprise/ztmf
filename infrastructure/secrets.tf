@@ -111,21 +111,19 @@ resource "aws_secretsmanager_secret" "ztmf_kion_prod" {
   }
 }
 
-# Slack webhook URL for data sync alerts.
-# Suffix-renamed for impl so impl alerts route to a separate channel without
-# noising dev/prod incident response.
+# Slack webhook URL for data sync alerts. Account-singleton: impl reuses
+# dev's webhook via the data source in data.tf. Single channel covers both
+# environments since the alert source already includes ENVIRONMENT in the
+# message payload.
 resource "aws_secretsmanager_secret" "ztmf_slack_webhook" {
-  name = "ztmf_slack_webhook${local.underscore_sfx}"
+  count = local.manage_account_singletons ? 1 : 0
+  name  = "ztmf_slack_webhook"
 
   description = "Slack webhook URL for ZTMF data sync alerts and notifications"
 
-  # Tag tracks which env the webhook belongs to. dev/prod historically
-  # tagged this "shared" because there was a single webhook secret pre-impl;
-  # preserving that value avoids a no-op tag diff on dev/prod state. impl's
-  # new secret gets tagged accurately.
   tags = {
     Name        = "ZTMF Slack Webhook"
-    Environment = local.manage_account_singletons ? "shared" : var.environment
+    Environment = "shared"
     Purpose     = "Data sync notifications"
   }
 }

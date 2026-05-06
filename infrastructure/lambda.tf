@@ -37,7 +37,7 @@ resource "aws_lambda_function" "ztmf_sync" {
       DB_ENDPOINT            = aws_rds_cluster.ztmf.endpoint
       DB_PORT                = "5432"
       DB_NAME                = "ztmf"
-      SLACK_SECRET_ID        = aws_secretsmanager_secret.ztmf_slack_webhook.name
+      SLACK_SECRET_ID        = local.slack_webhook_name
       SNOWFLAKE_TABLE_PREFIX = var.snowflake_table_prefix
     }
   }

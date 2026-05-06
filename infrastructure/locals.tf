@@ -53,4 +53,7 @@ locals {
   smtp_secret_arn       = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp[0].arn : data.aws_secretsmanager_secret.ztmf_smtp[0].arn
   smtp_ca_root_arn      = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp_ca_root[0].arn : data.aws_secretsmanager_secret.ztmf_smtp_ca_root[0].arn
   smtp_intermediate_arn = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_smtp_intermediate[0].arn : data.aws_secretsmanager_secret.ztmf_smtp_intermediate[0].arn
+
+  slack_webhook_arn  = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_slack_webhook[0].arn : data.aws_secretsmanager_secret.ztmf_slack_webhook[0].arn
+  slack_webhook_name = local.manage_account_singletons ? aws_secretsmanager_secret.ztmf_slack_webhook[0].name : data.aws_secretsmanager_secret.ztmf_slack_webhook[0].name
 }

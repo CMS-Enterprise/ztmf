@@ -110,6 +110,11 @@ data "aws_secretsmanager_secret" "ztmf_smtp_intermediate" {
   name  = "ztmf_smtp_intermediate"
 }
 
+data "aws_secretsmanager_secret" "ztmf_slack_webhook" {
+  count = local.manage_account_singletons ? 0 : 1
+  name  = "ztmf_slack_webhook"
+}
+
 data "aws_security_group" "ztmf_vpc_endpoints" {
   count  = local.manage_vpc_endpoints ? 0 : 1
   name   = "ztmf_vpc_endpoints"
