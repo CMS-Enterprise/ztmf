@@ -10,11 +10,24 @@
 #   SNYK_TOKEN                 = <Snyk API token, can be the same as DEV>
 #
 # Trigger model:
-#   - push to `impl`: deploys to the impl environment. impl is a long-lived
-#     environment branch; direct pushes are the intended deploy mechanism,
-#     mirroring how merges to main drive prod. PR-on-impl is also accepted
-#     so contributors can preview infra/CI changes before merging into the
-#     impl branch.
+#   - pull_request to `impl`: runs Analysis only (lint, security scan, unit
+#     tests). No backend image push, no terraform apply. Gives the PR author
+#     CI feedback without racing other open PRs for shared impl state.
+#   - push to `impl`: runs the full pipeline (analysis -> diff -> backend ->
+#     infrastructure) and deploys. Squash-merge from feature/impl-* into
+#     impl is the intended trigger; the resulting single commit on impl
+#     produces one ordered deploy per merged PR.
+#
+# Required GitHub branch protection on `impl` (configure in Settings -> Branches):
+#   - Require pull request before merging
+#   - Require Analysis status check to pass
+#   - Require linear history (forces squash or rebase merge)
+#   - Require branches up to date before merging
+#   - Required approving reviews: 1
+#   - Allow administrators to bypass (for emergency hotfixes)
+#   - Disallow force pushes and deletions
+# Repo merge policy (Settings -> General -> Pull Requests):
+#   - Allow squash merging only; disable merge commits and rebase merging
 name: Orchestration IMPL
 
 on:
@@ -65,7 +78,9 @@ jobs:
     needs:
       - analysis
       - diff
-    if: ${{ contains(needs.diff.outputs.backend, 'backend/') && !failure() && !cancelled() }}
+    # Deploy steps only run on push (post-merge). PRs get Analysis feedback
+    # without burning a deploy slot or racing other open PRs.
+    if: ${{ github.event_name == 'push' && contains(needs.diff.outputs.backend, 'backend/') && !failure() && !cancelled() }}
     uses: ./.github/workflows/backend.yml
     with:
       environment: IMPL
@@ -77,7 +92,7 @@ jobs:
       - analysis
       - diff
       - backend
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ github.event_name == 'push' && !failure() && !cancelled() }}
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: IMPL
