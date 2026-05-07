@@ -2,8 +2,15 @@ locals {
   // adding reference here to make other references shorter to type "local.account_id" :)
   account_id = data.aws_caller_identity.current.account_id
 
-  // join because terraform is stupid when it comes to sets, lists, and tuples
-  db_cred_secret = join("", data.aws_secretsmanager_secrets.rds.arns)
+  // Aurora's manage_master_user_password=true generates a password and stores
+  // it in a Secrets Manager secret tagged with the cluster ARN. The cluster
+  // resource exposes that secret's ARN directly via master_user_secret, which
+  // is the authoritative reference and avoids a Secrets Manager tag lookup.
+  // The earlier data.aws_secretsmanager_secrets filter returned both dev's
+  // and impl's secrets once both clusters lived in the same account because
+  // tag-value matching is prefix-based ("cluster:ztmf" is a prefix of
+  // "cluster:ztmf-impl").
+  db_cred_secret = aws_rds_cluster.ztmf.master_user_secret[0].secret_arn
 
   domain_name = "${var.domain_name_prefix}ztmf.cms.gov"
 
