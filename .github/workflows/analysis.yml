@@ -48,14 +48,19 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-      
-      - name: test
-        uses: snyk/actions/golang@master
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Install Snyk CLI
+        uses: snyk/actions/setup@master
+
+      - name: Snyk test
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: --print-deps --severity-threshold=high --show-vulnerable-paths=all ./backend
+        run: snyk test --print-deps --severity-threshold=high --show-vulnerable-paths=all ./backend
       
   Snyk-Code-Test:
     name: snyk code test
