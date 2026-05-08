@@ -67,20 +67,14 @@ data "aws_secretsmanager_secret_version" "ztmf_db_user_current" {
   secret_id = data.aws_secretsmanager_secret.ztmf_db_user.id
 }
 
-data "aws_secretsmanager_secrets" "rds" {
-  filter {
-    name   = "tag-key"
-    values = ["aws:rds:primaryDBClusterArn"]
-  }
-
-  filter {
-    name = "tag-value"
-    // Impl runs its own Aurora cluster ztmf-impl in the dev account; use the
-    // env-suffixed cluster identifier so the RDS-managed master password
-    // secret resolves to the right cluster's secret.
-    values = ["arn:aws:rds:us-east-1:${local.account_id}:cluster:${local.ztmf_name}"]
-  }
-}
+// Note: this used to be a `data "aws_secretsmanager_secrets" "rds"` lookup that
+// found the RDS-managed master password secret by tag. The Secrets Manager API
+// `tag-value` filter is prefix-matching, so once impl was provisioned the same
+// filter started matching both dev's "cluster:ztmf" and impl's
+// "cluster:ztmf-impl" tag values, and join("") concatenated the two ARNs into
+// a corrupt DB_SECRET_ID that broke the ECS task definition. The cluster
+// resource's master_user_secret[0].secret_arn is exposed directly, so no
+// Secrets Manager lookup is needed (see locals.tf db_cred_secret).
 
 # Account-singletons that impl reuses from dev's state.
 # count = 1 only when this env doesn't manage them as resources, i.e. impl.

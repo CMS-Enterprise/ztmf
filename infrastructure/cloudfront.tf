@@ -62,6 +62,23 @@ resource "aws_cloudfront_vpc_origin" "internal_alb" {
   }
 }
 
+// CMS Cloud manages CloudFront creation centrally (cloudfront:CreateDistribution
+// is denied by SCP p-q0yh3mfg in this org). The dev/prod distributions were
+// provisioned via the same CMS Cloud intake before the SCP existed; impl's
+// distribution was provisioned via CLDSPT-106119 as an empty shell. We have
+// UpdateDistribution permission, so the import below brings the CMS-created
+// distribution under terraform management and our config below applies the
+// aliases, origins, cache behaviors, cert, and WAF on the next apply.
+//
+// To re-bootstrap a future env that goes through the same intake: file a CMS
+// Cloud "AWS CloudFront - New Distribution" request, capture the returned
+// distribution ID, add a parallel import block here gated on var.environment.
+import {
+  for_each = var.environment == "impl" ? toset(["impl"]) : toset([])
+  to       = aws_cloudfront_distribution.ztmf
+  id       = "E1AO1UMW0EY8PK"
+}
+
 resource "aws_cloudfront_distribution" "ztmf" {
   aliases             = [local.domain_name]
   enabled             = true

@@ -29,7 +29,11 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLEARN }}
-          role-duration-seconds: 900
+          # 1 hour: dev/prod applies normally complete in a few minutes, but
+          # first-time impl bootstrap takes 15+ minutes (Aurora cluster create,
+          # ECS service stabilization, CloudFront propagation) and the previous
+          # 900s window expired mid-apply, leaving an inconsistent state.
+          role-duration-seconds: 3600
           aws-region: us-east-1
 
       - name: Setup Terraform
