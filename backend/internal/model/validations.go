@@ -7,11 +7,22 @@ import (
 
 // use of map enables O(1) vs O(N) as would be the case with slices.Contains([]string)
 // it also avoids the complexity of using constants as enums
+//
+// New multi-OpDiv role constants live alongside the legacy ADMIN /
+// READONLY_ADMIN values during the Stage B -> Stage C transition. The legacy
+// values stay valid so controllers that still recognize them keep working
+// until Stage C flips the predicate logic. Stage D removes ADMIN and
+// READONLY_ADMIN from this map.
 var roles = map[string]interface{}{
-	"ADMIN":          nil, // the value isn't used, only the ok check value is
-	"READONLY_ADMIN": nil,
-	"ISSO":           nil,
-	"ISSM":           nil,
+	"OWNER":                nil, // platform / dev team, unscoped across OpDivs
+	"HHS_ADMIN":            nil, // department tier, all OpDivs
+	"HHS_READONLY_ADMIN":   nil, // department tier, read-only across OpDivs
+	"OPDIV_ADMIN":          nil, // single-OpDiv admin, scoped via users_opdivs
+	"OPDIV_READONLY_ADMIN": nil, // single-OpDiv read-only, scoped via users_opdivs
+	"ISSO":                 nil, // system-scoped via users_fismasystems
+	"ISSM":                 nil, // system-scoped via users_fismasystems
+	"ADMIN":                nil, // legacy; removed in Stage D
+	"READONLY_ADMIN":       nil, // legacy; removed in Stage D
 }
 
 var datacenterenvironments = map[string]interface{}{
