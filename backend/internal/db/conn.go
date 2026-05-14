@@ -8,6 +8,7 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -32,6 +33,14 @@ func Conn(ctx context.Context) (*pgx.Conn, error) {
 	if err != nil {
 		log.Println("could not parse db config", err)
 		return nil, err
+	}
+
+	// Surface PostgreSQL NOTICE messages (e.g. RAISE NOTICE in migration DO
+	// blocks) in the application log instead of the silent default. Without
+	// this, migration diagnostics only land in the RDS PostgreSQL log group
+	// in CloudWatch, which is not where deploys are normally watched.
+	connConfig.OnNotice = func(_ *pgconn.PgConn, n *pgconn.Notice) {
+		log.Printf("pg notice [%s]: %s", n.Severity, n.Message)
 	}
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)

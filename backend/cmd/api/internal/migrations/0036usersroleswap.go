@@ -9,50 +9,20 @@ func init() {
 -- in validations.go continue to recognize the legacy values during transition
 -- so app behavior does not change until Stage C flips the controllers.
 --
--- Elizabeth Schweinsberg (CMS Zero Trust program lead) is promoted to
--- HHS_ADMIN instead of OWNER because she is the day-1 HHS-tier admin per the
--- multi-OpDiv plan. We match by email first, falling back to a tight fullname
--- match, so the migration works across environments without hardcoding a
--- single literal value. The email pattern is anchored to @cms.hhs.gov to
--- avoid an accidental match on an unrelated contractor address; the fullname
--- pattern requires a space between "elizabeth" and "schweinsberg" so phrases
--- like "Elizabeth Smith and Carol Schweinsberg" do not match.
+-- HHS_ADMIN day-1 seed list is empty. Elizabeth Schweinsberg, originally
+-- considered the day-1 HHS_ADMIN, is also the ZTMF product owner, so OWNER
+-- (unscoped platform tier) is the correct mapping. She falls into the bulk
+-- ADMIN -> OWNER update with everyone else. Actual HHS_ADMINs are provisioned
+-- through the admin panel once HHS OpDivs are onboarded.
 --
--- A RAISE NOTICE at the end logs how many rows matched each path so the swap
--- result is easy to verify post-deploy. If no row matches in a given
--- environment (e.g. fresh local DBs without her record), Elizabeth is
--- provisioned later through the admin panel.
---
--- Order matters: Elizabeth's HHS_ADMIN assignment runs first so the bulk
--- ADMIN -> OWNER update below skips her by virtue of her role no longer being
--- ADMIN.
+-- A RAISE NOTICE at the end logs the row counts for each swap so the result
+-- is easy to verify post-deploy.
 
 DO $$
 DECLARE
-    n_email          int := 0;
-    n_name_fallback  int := 0;
-    n_owner          int := 0;
-    n_readonly       int := 0;
-    n_hhs_admin_post int := 0;
+    n_owner    int := 0;
+    n_readonly int := 0;
 BEGIN
-    UPDATE public.users
-       SET role = 'HHS_ADMIN'
-     WHERE role = 'ADMIN'
-       AND LOWER(email) LIKE 'elizabeth.schweinsberg%@cms.hhs.gov';
-    GET DIAGNOSTICS n_email = ROW_COUNT;
-
-    IF n_email = 0 THEN
-        UPDATE public.users
-           SET role = 'HHS_ADMIN'
-         WHERE role = 'ADMIN'
-           AND (
-                LOWER(fullname) LIKE 'elizabeth % schweinsberg'
-             OR LOWER(fullname) LIKE 'elizabeth schweinsberg'
-             OR LOWER(fullname) LIKE 'schweinsberg, elizabeth%'
-               );
-        GET DIAGNOSTICS n_name_fallback = ROW_COUNT;
-    END IF;
-
     UPDATE public.users
        SET role = 'OWNER'
      WHERE role = 'ADMIN';
@@ -63,12 +33,8 @@ BEGIN
      WHERE role = 'READONLY_ADMIN';
     GET DIAGNOSTICS n_readonly = ROW_COUNT;
 
-    SELECT count(*) INTO n_hhs_admin_post
-      FROM public.users
-     WHERE role = 'HHS_ADMIN';
-
-    RAISE NOTICE 'role swap complete: Elizabeth match by email=%, by name fallback=%, ADMIN -> OWNER=%, READONLY_ADMIN -> HHS_READONLY_ADMIN=%, total HHS_ADMIN rows post-swap=%',
-        n_email, n_name_fallback, n_owner, n_readonly, n_hhs_admin_post;
+    RAISE NOTICE 'role swap complete: ADMIN -> OWNER=%, READONLY_ADMIN -> HHS_READONLY_ADMIN=%',
+        n_owner, n_readonly;
 END $$;
         `,
 		`
