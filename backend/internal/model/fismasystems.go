@@ -103,7 +103,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
 				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled,
-				squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS')"),
+				squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1)"),
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {

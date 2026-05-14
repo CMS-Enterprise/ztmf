@@ -112,10 +112,20 @@ func sqlForISSOFismaSystems() squirrel.SelectBuilder {
 }
 
 func sqlForADMIN() squirrel.SelectBuilder {
+	// "ADMIN" recipient group spans every admin tier in the multi-OpDiv role
+	// taxonomy. Read-only admin tiers are intentionally excluded for parity
+	// with the pre-multi-OpDiv behavior (which emailed only ADMIN, not
+	// READONLY_ADMIN). Legacy ADMIN stays in the list as a transition
+	// fallback until Stage D removes it from the role enum entirely.
 	return stmntBuilder.
 		Select("email").
 		From("users").
-		Where("role='ADMIN'")
+		Where(squirrel.Eq{"role": []string{
+			"OWNER",
+			"HHS_ADMIN",
+			"OPDIV_ADMIN",
+			"ADMIN",
+		}})
 }
 
 func sqlForISSM() squirrel.SelectBuilder {
