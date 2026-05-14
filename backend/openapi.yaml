@@ -1471,8 +1471,11 @@ components:
             format: int32
           description: |
             OpDivs the user holds a grant for, sourced from users_opdivs.
-            Populated on per-user detail responses; nil/absent on list
-            responses (where the extra join is not needed).
+            Populated on per-user detail responses (GET /users/current,
+            GET /users/{userid}); always null on the list endpoint
+            (GET /users) because the extra join is skipped there. Frontend
+            list views must not infer "no grants" from a null on the list
+            response - call the detail endpoint to inspect a user's grants.
       required:
         - email
         - fullname

@@ -108,12 +108,8 @@ func (u *User) IsAssignedOpDiv(opdivID int32) bool {
 }
 
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
-	if len(u.AssignedFismaSystems) < 1 {
-		return false
-	}
-
 	for _, fid := range u.AssignedFismaSystems {
-		if *fid == fismasystemid {
+		if fid != nil && *fid == fismasystemid {
 			return true
 		}
 	}
