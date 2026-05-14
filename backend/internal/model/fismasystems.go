@@ -38,11 +38,18 @@ type FismaSystem struct {
 }
 
 type FindFismaSystemsInput struct {
-	FismaSystemID  *int32
-	FismaAcronym   *string
-	UserID         *string
-	OpDivIDs       []int32
-	Decommissioned bool `schema:"decommissioned"`
+	FismaSystemID *int32
+	FismaAcronym  *string
+	UserID        *string
+	OpDivIDs      []int32
+	// RestrictToOpDivIDs is the defense-in-depth flag the controller sets
+	// when the calling user is an OpDiv-scoped admin. With it set, an empty
+	// OpDivIDs slice produces a WHERE FALSE predicate (match no rows) rather
+	// than falling through to no-filter. Prevents a fail-open if an
+	// OPDIV_ADMIN ends up with zero grants in users_opdivs at any point in
+	// their lifecycle (mid-provisioning, all-revoked, etc.).
+	RestrictToOpDivIDs bool
+	Decommissioned     bool `schema:"decommissioned"`
 }
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
@@ -55,14 +62,19 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	sqlb = sqlb.Where("decommissioned=?", input.Decommissioned)
 
 	// Scope:
+	//   - RestrictToOpDivIDs set with an empty slice => fail closed
+	//     (WHERE FALSE). Defense-in-depth for the OPDIV_ADMIN-with-no-grants
+	//     case so the list endpoint never accidentally returns every row.
 	//   - OpDivIDs set => union with system-level assignments via OR. Allows
 	//     OpDiv-scoped admins to see every system in their granted OpDivs,
 	//     and an ISSO/ISSM who also belongs to an OpDiv to see both their
 	//     OpDiv-granted systems and their explicitly-assigned ones.
 	//   - UserID set, OpDivIDs empty => legacy behavior, INNER JOIN to
 	//     users_fismasystems only (ISSO / ISSM in single-OpDiv state).
-	//   - Both empty => no scope filter (unscoped admin tiers).
+	//   - Nothing set => no scope filter (unscoped admin tiers).
 	switch {
+	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
+		sqlb = sqlb.Where("FALSE")
 	case len(input.OpDivIDs) > 0:
 		if input.UserID != nil {
 			sqlb = sqlb.Where(

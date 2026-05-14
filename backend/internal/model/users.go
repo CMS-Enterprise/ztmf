@@ -266,12 +266,12 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
-	// Load the user's system-level assignments (users_fismasystems) and
-	// OpDiv-level memberships (users_opdivs) in one query. Both are
-	// ARRAY_AGG'd into INT[] columns; pgx scans them into the *[]*int32
-	// struct fields. The DISTINCT NULL filter inside ARRAY_AGG turns the
-	// empty-join case into NULL rather than {NULL}, which pgx then maps to
-	// a nil slice on the struct.
+	// Load assignments via correlated subqueries instead of LEFT JOIN +
+	// ARRAY_AGG so the row count stays at one per user. A LEFT JOIN to both
+	// junctions would produce an N*M cross-product (N system grants times
+	// M OpDiv grants) before GROUP BY; harmless today but degrades once
+	// HHS_ADMINs land with grants for all 14 OpDivs. Each junction has a
+	// composite PK so the inner ARRAY_AGG needs no DISTINCT.
 	sqlb := stmntBuilder.
 		Select(
 			"users.userid",
@@ -280,14 +280,11 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 			"users.role",
 			"users.deleted",
 			"users.identity_provider",
-			"ARRAY_REMOVE(ARRAY_AGG(DISTINCT users_fismasystems.fismasystemid), NULL) AS assignedfismasystems",
-			"ARRAY_REMOVE(ARRAY_AGG(DISTINCT users_opdivs.opdiv_id), NULL) AS assignedopdivids",
+			"(SELECT ARRAY_AGG(fismasystemid) FROM users_fismasystems WHERE userid = users.userid) AS assignedfismasystems",
+			"(SELECT ARRAY_AGG(opdiv_id)      FROM users_opdivs       WHERE userid = users.userid) AS assignedopdivids",
 		).
 		From("users").
-		LeftJoin("users_fismasystems ON users_fismasystems.userid = users.userid").
-		LeftJoin("users_opdivs ON users_opdivs.userid = users.userid").
-		Where(where, args...).
-		GroupBy("users.userid")
+		Where(where, args...)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[User])
 }
