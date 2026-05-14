@@ -12,15 +12,29 @@ func TestIsValidRole(t *testing.T) {
 		role string
 		want bool
 	}{
+		// Multi-OpDiv role taxonomy (Stage B and beyond)
+		{"OWNER is valid", "OWNER", true},
+		{"HHS_ADMIN is valid", "HHS_ADMIN", true},
+		{"HHS_READONLY_ADMIN is valid", "HHS_READONLY_ADMIN", true},
+		{"OPDIV_ADMIN is valid", "OPDIV_ADMIN", true},
+		{"OPDIV_READONLY_ADMIN is valid", "OPDIV_READONLY_ADMIN", true},
+
+		// Legacy roles retained through transition; Stage D removes them.
 		{"ADMIN is valid", "ADMIN", true},
 		{"READONLY_ADMIN is valid", "READONLY_ADMIN", true},
+
+		// System-scoped roles, unchanged across the transition.
 		{"ISSO is valid", "ISSO", true},
 		{"ISSM is valid", "ISSM", true},
+
+		// Negative cases.
 		{"lowercase admin is invalid", "admin", false},
+		{"lowercase owner is invalid", "owner", false},
 		{"lowercase readonly_admin is invalid", "readonly_admin", false},
 		{"empty string is invalid", "", false},
 		{"unknown role is invalid", "SUPERADMIN", false},
 		{"partial match is invalid", "READ", false},
+		{"OPDIV_VIEWER not in enum", "OPDIV_VIEWER", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

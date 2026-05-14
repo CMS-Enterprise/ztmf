@@ -17,7 +17,7 @@ var (
 		"ISSO":  sqlForISSO,
 		"ISSM":  sqlForISSM,
 		"DCC":   sqlForDCC,
-		"ALL":   sqlForALL, // except ADMIN
+		"ALL":   sqlForALL, // ISSO, ISSM, DCC; excludes every admin tier
 		"ADMIN": sqlForADMIN,
 	}
 )
