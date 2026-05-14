@@ -21,7 +21,25 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.HasAdminRead() {
+	// Scope predicate by role tier:
+	//   - Unscoped admins (OWNER / HHS_* / legacy ADMIN/READONLY_ADMIN
+	//     through Stage D) see every system, no filter.
+	//   - OPDIV_ADMIN / OPDIV_READONLY_ADMIN see every system in the OpDivs
+	//     they hold a grant for (users_opdivs).
+	//   - ISSO / ISSM see only the specific systems they are assigned to
+	//     (users_fismasystems). They may also carry a CMS OpDiv grant from
+	//     the 0034 seed, but we deliberately do not honor it here so their
+	//     scope stays system-level as it was pre-multi-OpDiv.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivAdmin():
+		for _, id := range user.AssignedOpDivIDs {
+			if id != nil {
+				input.OpDivIDs = append(input.OpDivIDs, *id)
+			}
+		}
+	default:
 		input.UserID = &user.UserID
 	}
 
@@ -46,13 +64,19 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.HasAdminRead() && !user.IsAssignedFismaSystem(*input.FismaSystemID) {
+	// Fetch first, then gate. Need the system's opdiv_id to evaluate
+	// OpDiv-scoped admin access. NotFound stays a NotFound rather than
+	// leaking existence via a 403.
+	fismasystem, err := model.FindFismaSystem(r.Context(), input)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	if fismasystem != nil && !user.CanAccessFismaSystem(fismasystem.OpDivID, fismasystem.FismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
-
-	fismasystem, err := model.FindFismaSystem(r.Context(), input)
-	respond(w, r, fismasystem, err)
+	respond(w, r, fismasystem, nil)
 }
 
 func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
