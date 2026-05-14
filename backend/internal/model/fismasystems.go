@@ -89,11 +89,22 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	}
 
 	if f.FismaSystemID == 0 {
-		// INSERT - exclude decommissioned fields
+		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id is
+		// NOT NULL post-migration 0029. Until the FismaSystem struct exposes
+		// the field (Stage C) and callers can pass it through, default new
+		// systems to CMS so existing CMS provisioning keeps working. HHS OpDiv
+		// systems are seeded via the onboarding workbook importer with the
+		// column set explicitly.
+		insertCols := append(append([]string{}, fismaSystemColumns[1:13]...), "opdiv_id")
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
-			Columns(fismaSystemColumns[1:13]...).
-			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled).
+			Columns(insertCols...).
+			Values(
+				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
+				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
+				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled,
+				squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS')"),
+			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
 		// UPDATE - exclude decommissioned fields

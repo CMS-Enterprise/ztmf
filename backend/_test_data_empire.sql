@@ -538,12 +538,34 @@ INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES
     ('Single Factor (Only)', 'Single Factor Only', 1, 'Single factor authentication only - no MFA capability.')
 ON CONFLICT (idm_name) DO NOTHING;
 
--- Reset sequences past the max explicit IDs to avoid primary key conflicts
-SELECT setval('opdivs_opdiv_id_seq', (SELECT COALESCE(MAX(opdiv_id), 0) FROM public.opdivs));
-SELECT setval('pillars_pillarid_seq', (SELECT COALESCE(MAX(pillarid), 0) FROM public.pillars));
-SELECT setval('datacalls_datacallid_seq', (SELECT COALESCE(MAX(datacallid), 0) FROM public.datacalls));
-SELECT setval('fismasystems_fismasystemid_seq', (SELECT COALESCE(MAX(fismasystemid), 0) FROM public.fismasystems));
-SELECT setval('questions_questionid_seq', (SELECT COALESCE(MAX(questionid), 0) FROM public.questions));
-SELECT setval('functions_functionid_seq', (SELECT COALESCE(MAX(functionid), 0) FROM public.functions));
-SELECT setval('functionoptions_functionoptionid_seq', (SELECT COALESCE(MAX(functionoptionid), 0) FROM public.functionoptions));
-SELECT setval('scores_scoreid_seq', (SELECT COALESCE(MAX(scoreid), 0) FROM public.scores));
+-- Reset every SERIAL sequence to its current table max. Use
+-- pg_get_serial_sequence() so the right name is resolved at runtime: some
+-- environments have historically renamed tables (e.g. functionscores -> scores)
+-- without renaming the auto-created sequence, so the bare default name does
+-- not match across dev (functionscores_scoreid_seq) and freshly-built test
+-- databases (scores_scoreid_seq).
+DO $$
+DECLARE
+    pair record;
+    seq_name text;
+    max_id   bigint;
+BEGIN
+    FOR pair IN
+        SELECT 'opdivs'          AS tbl, 'opdiv_id'         AS col UNION ALL
+        SELECT 'pillars',         'pillarid'                       UNION ALL
+        SELECT 'datacalls',       'datacallid'                     UNION ALL
+        SELECT 'fismasystems',    'fismasystemid'                  UNION ALL
+        SELECT 'questions',       'questionid'                     UNION ALL
+        SELECT 'functions',       'functionid'                     UNION ALL
+        SELECT 'functionoptions', 'functionoptionid'               UNION ALL
+        SELECT 'scores',          'scoreid'
+    LOOP
+        seq_name := pg_get_serial_sequence('public.' || pair.tbl, pair.col);
+        IF seq_name IS NULL THEN
+            CONTINUE;
+        END IF;
+        EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM public.%I', pair.col, pair.tbl)
+            INTO max_id;
+        PERFORM setval(seq_name, GREATEST(max_id, 1), max_id > 0);
+    END LOOP;
+END $$;

@@ -54,10 +54,15 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
 	// it must be set via explicit delete. See DeleteUser below
 	if creating {
+		// identity_provider is NOT NULL post-migration 0032. Until the User
+		// struct exposes the field (Stage C) and callers can pass it through,
+		// default new users to okta so existing CMS provisioning keeps working.
+		// HHS OpDiv users are seeded via the onboarding workbook importer with
+		// the column set explicitly.
 		sqlb = stmntBuilder.
 			Insert("users").
-			Columns("email", "fullname", "role").
-			Values(u.Email, u.FullName, u.Role).
+			Columns("email", "fullname", "role", "identity_provider").
+			Values(u.Email, u.FullName, u.Role, "okta").
 			Suffix("RETURNING userid, email, fullname, role, deleted")
 	} else {
 		sqlb = stmntBuilder.
@@ -137,8 +142,12 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 		return nil, err
 	}
 
+	// Explicit column list (vs SELECT *) so new schema columns added in
+	// migration steps that have no corresponding User struct field do not
+	// break pgx struct scans. identity_provider lives on the table now but
+	// surfaces through the model in Stage C, not here.
 	sqlb := stmntBuilder.
-		Select("*").
+		Select("users.userid", "email", "fullname", "role", "deleted").
 		From("public.users").
 		Where("deleted=?", fui.Deleted)
 
