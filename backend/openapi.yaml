@@ -503,6 +503,41 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /opdivs:
+    get:
+      summary: List OpDivs
+      description: |
+        Returns the reference list of HHS Operating Divisions plus the HHS
+        parent row. Used by the admin panel for OpDiv selectors and by the
+        onboarding workbook importer to validate opdiv codes. Open to any
+        authenticated user; contains no sensitive data.
+      operationId: listOpDivs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: active_only
+          in: query
+          required: false
+          description: When true (default), only returns rows with active=true.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: OpDiv list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OpDiv'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /users:
     get:
       summary: List users
@@ -1380,6 +1415,16 @@ components:
           type: string
           nullable: true
           description: Notes about why the system was reactivated
+        opdiv_id:
+          type: integer
+          format: int32
+          nullable: true
+          description: |
+            OpDiv that owns this system. References opdivs.opdiv_id. Defaults
+            to CMS when a request body omits the field (transitional behavior
+            for existing CMS provisioning paths). HHS OpDiv systems are
+            provisioned with this set explicitly via the onboarding workbook
+            importer.
       required:
         - fismauid
         - fismaacronym
@@ -1396,13 +1441,70 @@ components:
           type: string
         role:
           type: string
-          enum: [ADMIN, READONLY_ADMIN, ISSO, ISSM]
+          description: |
+            Multi-OpDiv role taxonomy. Legacy values ADMIN and READONLY_ADMIN
+            remain valid through Stage D of the multi-OpDiv migration to
+            preserve back-compat; they are removed in a follow-up release.
+          enum:
+            - OWNER
+            - HHS_ADMIN
+            - HHS_READONLY_ADMIN
+            - OPDIV_ADMIN
+            - OPDIV_READONLY_ADMIN
+            - ISSO
+            - ISSM
+            - ADMIN
+            - READONLY_ADMIN
         deleted:
           type: boolean
+        identity_provider:
+          type: string
+          description: |
+            IdP that authenticates this user. okta for CMS, entra for
+            HHS / OpDiv users. Managed by the application; not user-editable.
+          enum: [okta, entra]
+        assignedopdivids:
+          type: array
+          nullable: true
+          items:
+            type: integer
+            format: int32
+          description: |
+            OpDivs the user holds a grant for, sourced from users_opdivs.
+            Populated on per-user detail responses (GET /users/current,
+            GET /users/{userid}); always null on the list endpoint
+            (GET /users) because the extra join is skipped there. Frontend
+            list views must not infer "no grants" from a null on the list
+            response - call the detail endpoint to inspect a user's grants.
       required:
         - email
         - fullname
         - role
+    OpDiv:
+      type: object
+      properties:
+        opdiv_id:
+          type: integer
+          format: int32
+          description: Surrogate primary key.
+        code:
+          type: string
+          description: Short code (e.g. HHS, CMS, CDC, FDA, NIH).
+        name:
+          type: string
+          description: Official division name.
+        is_parent:
+          type: boolean
+          description: TRUE only for the HHS parent row.
+        active:
+          type: boolean
+          description: Inactive OpDivs are retained for historical references but hidden from default queries.
+      required:
+        - opdiv_id
+        - code
+        - name
+        - is_parent
+        - active
     UserFismaSystem:
       type: object
       properties:

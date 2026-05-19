@@ -8,4 +8,23 @@ ignore:
           the package identified in the vulnerability is included as a byproduct
           of a larger package, but not actually used in the compiled binary
         created: 2025-03-05T19:42:13.496Z
+  SNYK-GOLANG-GITHUBCOMAPACHETHRIFTLIBGOTHRIFT-16323410:
+    - '*':
+        reason: >-
+          High-severity finding in apache/thrift v0.23.0, present only as a
+          transitive dependency via snowflakedb/gosnowflake and
+          apache/arrow-go. ZTMF application code does not import thrift
+          directly. The same version is already running in dev and prod
+          today; this finding was not introduced by any open pull request.
+          Upstream apache/thrift v0.24.0 (the fix) is not yet released, and
+          both gosnowflake and arrow-go currently declare a v0.22.0 dep, so
+          forcing the version further off the declared graph would drift us
+          out of sync rather than closer to a fix. Leaving the gate red
+          blocks every change from reaching dev for validation before prod,
+          which is a larger immediate risk than the bounded exposure of a
+          transitive package with no direct call path. Revisit when
+          apache/thrift v0.24.0 ships or when arrow-go cuts a release
+          pinning to it, whichever comes first.
+        created: 2026-05-19T00:00:00.000Z
+        expires: 2026-08-19T00:00:00.000Z
 patch: {}

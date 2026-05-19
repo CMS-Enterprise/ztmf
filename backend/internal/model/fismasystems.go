@@ -11,20 +11,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id"}
 
 type FismaSystem struct {
-	FismaSystemID         int32   `json:"fismasystemid"`
-	FismaUID              string  `json:"fismauid"`
-	FismaAcronym          string  `json:"fismaacronym"`
-	FismaName             string  `json:"fismaname"`
-	FismaSubsystem        *string `json:"fismasubsystem"`
-	Component             *string `json:"component"`
-	Groupacronym          *string `json:"groupacronym"`
-	GroupName             *string `json:"groupname"`
-	DivisionName          *string `json:"divisionname"`
-	DataCenterEnvironment *string `json:"datacenterenvironment"`
-	DataCallContact       *string `json:"datacallcontact"`
+	FismaSystemID         int32      `json:"fismasystemid"`
+	FismaUID              string     `json:"fismauid"`
+	FismaAcronym          string     `json:"fismaacronym"`
+	FismaName             string     `json:"fismaname"`
+	FismaSubsystem        *string    `json:"fismasubsystem"`
+	Component             *string    `json:"component"`
+	Groupacronym          *string    `json:"groupacronym"`
+	GroupName             *string    `json:"groupname"`
+	DivisionName          *string    `json:"divisionname"`
+	DataCenterEnvironment *string    `json:"datacenterenvironment"`
+	DataCallContact       *string    `json:"datacallcontact"`
 	ISSOEmail             *string    `json:"issoemail"`
 	SDLSyncEnabled        bool       `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
 	Decommissioned        bool       `json:"decommissioned"`
@@ -34,13 +34,22 @@ type FismaSystem struct {
 	ReactivatedBy         *string    `json:"reactivated_by"`
 	ReactivatedDate       *time.Time `json:"reactivated_date"`
 	ReactivationNotes     *string    `json:"reactivation_notes"`
+	OpDivID               *int32     `json:"opdiv_id" db:"opdiv_id"`
 }
 
 type FindFismaSystemsInput struct {
-	FismaSystemID  *int32
-	FismaAcronym   *string
-	UserID         *string
-	Decommissioned bool `schema:"decommissioned"`
+	FismaSystemID *int32
+	FismaAcronym  *string
+	UserID        *string
+	OpDivIDs      []int32
+	// RestrictToOpDivIDs is the defense-in-depth flag the controller sets
+	// when the calling user is an OpDiv-scoped admin. With it set, an empty
+	// OpDivIDs slice produces a WHERE FALSE predicate (match no rows) rather
+	// than falling through to no-filter. Prevents a fail-open if an
+	// OPDIV_ADMIN ends up with zero grants in users_opdivs at any point in
+	// their lifecycle (mid-provisioning, all-revoked, etc.).
+	RestrictToOpDivIDs bool
+	Decommissioned     bool `schema:"decommissioned"`
 }
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
@@ -52,7 +61,30 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	// Filter decommissioned systems
 	sqlb = sqlb.Where("decommissioned=?", input.Decommissioned)
 
-	if input.UserID != nil {
+	// Scope:
+	//   - RestrictToOpDivIDs set with an empty slice => fail closed
+	//     (WHERE FALSE). Defense-in-depth for the OPDIV_ADMIN-with-no-grants
+	//     case so the list endpoint never accidentally returns every row.
+	//   - OpDivIDs set => union with system-level assignments via OR. Allows
+	//     OpDiv-scoped admins to see every system in their granted OpDivs,
+	//     and an ISSO/ISSM who also belongs to an OpDiv to see both their
+	//     OpDiv-granted systems and their explicitly-assigned ones.
+	//   - UserID set, OpDivIDs empty => legacy behavior, INNER JOIN to
+	//     users_fismasystems only (ISSO / ISSM in single-OpDiv state).
+	//   - Nothing set => no scope filter (unscoped admin tiers).
+	switch {
+	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
+		sqlb = sqlb.Where("FALSE")
+	case len(input.OpDivIDs) > 0:
+		if input.UserID != nil {
+			sqlb = sqlb.Where(
+				"(fismasystems.opdiv_id = ANY(?) OR fismasystems.fismasystemid IN (SELECT fismasystemid FROM users_fismasystems WHERE userid = ?))",
+				input.OpDivIDs, *input.UserID,
+			)
+		} else {
+			sqlb = sqlb.Where("fismasystems.opdiv_id = ANY(?)", input.OpDivIDs)
+		}
+	case input.UserID != nil:
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
 	}
 
@@ -89,11 +121,27 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 	}
 
 	if f.FismaSystemID == 0 {
-		// INSERT - exclude decommissioned fields
+		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id
+		// is NOT NULL on the table. Callers may pass an explicit OpDivID; if
+		// they do not, default to CMS via subquery so existing CMS admin-panel
+		// provisioning keeps working unchanged. HHS OpDiv systems come in via
+		// the onboarding workbook importer with OpDivID set explicitly.
+		var opdivVal any
+		if f.OpDivID != nil {
+			opdivVal = *f.OpDivID
+		} else {
+			opdivVal = squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1)")
+		}
+		insertCols := append(append([]string{}, fismaSystemColumns[1:13]...), "opdiv_id")
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
-			Columns(fismaSystemColumns[1:13]...).
-			Values(f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component, f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment, f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled).
+			Columns(insertCols...).
+			Values(
+				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
+				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
+				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled,
+				opdivVal,
+			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
 		// UPDATE - exclude decommissioned fields

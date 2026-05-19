@@ -15,28 +15,109 @@ type User struct {
 	FullName             string   `json:"fullname"`
 	Role                 string   `json:"role"`
 	Deleted              bool     `json:"deleted"`
+	IdentityProvider     string   `json:"identity_provider" db:"identity_provider"`
 	AssignedFismaSystems []*int32 `json:"-"`
+	AssignedOpDivIDs     []*int32 `json:"assignedopdivids" db:"assignedopdivids"`
 }
 
+// Role helpers. The multi-OpDiv migration kept the legacy ADMIN /
+// READONLY_ADMIN values valid during transition (removed in Stage D), so the
+// checks below match both the new tier names and the legacy values. Callers
+// gate access with IsAdmin / HasAdminRead at the top of a controller, then
+// the query layer narrows by OpDiv scope using the helpers further down.
+
+func (u *User) IsOwner() bool { return u.Role == "OWNER" }
+
+// IsHHSTier reports membership in the HHS tier, covering both the write tier
+// (HHS_ADMIN) and the read-only tier (HHS_READONLY_ADMIN). It is a tier-
+// membership check, not a write-access gate. Use IsAdmin / HasAdminRead when
+// gating write versus read endpoints.
+func (u *User) IsHHSTier() bool {
+	return u.Role == "HHS_ADMIN" || u.Role == "HHS_READONLY_ADMIN"
+}
+
+// IsOpDivTier reports membership in the per-OpDiv tier, covering both the
+// write tier (OPDIV_ADMIN) and the read-only tier (OPDIV_READONLY_ADMIN).
+// Tier-membership check, not a write gate. Pair with IsAssignedOpDiv to
+// confirm the user actually holds a grant for the OpDiv in question.
+func (u *User) IsOpDivTier() bool {
+	return u.Role == "OPDIV_ADMIN" || u.Role == "OPDIV_READONLY_ADMIN"
+}
+
+// HasUnscopedRead is true for tiers that see across every OpDiv without an
+// OpDiv predicate (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN). OpDiv-scoped admins
+// and system-scoped users do not get unscoped reads. Legacy ADMIN and
+// READONLY_ADMIN are treated as unscoped for back-compat through Stage D
+// (they map to the unscoped tiers when their owners log in, and the test
+// fixtures still hardcode role='ADMIN' on the auto-created E2E user).
+func (u *User) HasUnscopedRead() bool {
+	switch u.Role {
+	case "OWNER", "HHS_ADMIN", "HHS_READONLY_ADMIN", "ADMIN", "READONLY_ADMIN":
+		return true
+	}
+	return false
+}
+
+// CanAccessFismaSystem reports whether the user is allowed to read the given
+// system. Combines the three scope dimensions:
+//   - unscoped admin tiers see every system
+//   - OPDIV_ADMIN / OPDIV_READONLY_ADMIN see systems in their granted OpDivs
+//   - ISSO / ISSM users see systems they are explicitly assigned to
+//
+// The OpDiv check is gated on IsOpDivTier so an ISSO/ISSM who carries a
+// CMS grant from the 0034 seed does not accidentally inherit OpDiv-wide
+// visibility - their scope stays system-level as it was pre-multi-OpDiv.
+func (u *User) CanAccessFismaSystem(opdivID *int32, fismasystemID int32) bool {
+	if u.HasUnscopedRead() {
+		return true
+	}
+	if u.IsOpDivTier() && opdivID != nil && u.IsAssignedOpDiv(*opdivID) {
+		return true
+	}
+	return u.IsAssignedFismaSystem(fismasystemID)
+}
+
+// IsAdmin returns true for any tier that historically had write access to
+// admin endpoints. Spans the new admin tiers (OWNER, HHS_ADMIN, OPDIV_ADMIN)
+// plus legacy ADMIN. Read-only tiers do not count as admins.
 func (u *User) IsAdmin() bool {
-	return u.Role == "ADMIN"
+	switch u.Role {
+	case "OWNER", "HHS_ADMIN", "OPDIV_ADMIN", "ADMIN":
+		return true
+	}
+	return false
 }
 
+// IsReadOnlyAdmin returns true for the read-only counterparts of the admin
+// tiers, plus the legacy READONLY_ADMIN.
 func (u *User) IsReadOnlyAdmin() bool {
-	return u.Role == "READONLY_ADMIN"
+	switch u.Role {
+	case "HHS_READONLY_ADMIN", "OPDIV_READONLY_ADMIN", "READONLY_ADMIN":
+		return true
+	}
+	return false
 }
 
+// HasAdminRead is true for any admin tier (write or read-only).
 func (u *User) HasAdminRead() bool {
-	return u.Role == "ADMIN" || u.Role == "READONLY_ADMIN"
+	return u.IsAdmin() || u.IsReadOnlyAdmin()
+}
+
+// IsAssignedOpDiv reports whether the user has a grant in users_opdivs for
+// the given OpDiv id. Used in scope predicates that need to confirm an
+// OpDiv-scoped admin owns the resource they are touching.
+func (u *User) IsAssignedOpDiv(opdivID int32) bool {
+	for _, id := range u.AssignedOpDivIDs {
+		if id != nil && *id == opdivID {
+			return true
+		}
+	}
+	return false
 }
 
 func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
-	if len(u.AssignedFismaSystems) < 1 {
-		return false
-	}
-
 	for _, fid := range u.AssignedFismaSystems {
-		if *fid == fismasystemid {
+		if fid != nil && *fid == fismasystemid {
 			return true
 		}
 	}
@@ -54,19 +135,32 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
 	// it must be set via explicit delete. See DeleteUser below
 	if creating {
+		// identity_provider is NOT NULL on the table. Caller may pass an
+		// explicit value (HHS users from the onboarding workbook get 'entra';
+		// CMS contractor exceptions can be set explicitly). Falls back to
+		// 'okta' so the existing CMS admin-panel create-user flow keeps
+		// working without a forced column add on the request body.
+		idp := u.IdentityProvider
+		if idp == "" {
+			idp = "okta"
+		}
 		sqlb = stmntBuilder.
 			Insert("users").
-			Columns("email", "fullname", "role").
-			Values(u.Email, u.FullName, u.Role).
-			Suffix("RETURNING userid, email, fullname, role, deleted")
+			Columns("email", "fullname", "role", "identity_provider").
+			Values(u.Email, u.FullName, u.Role, idp).
+			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider")
 	} else {
+		// identity_provider is intentionally not updatable through Save() in
+		// Stage C. A user's IdP is set at provisioning time and only changes
+		// through a deliberate admin action that does not exist yet. When
+		// that path lands (Stage C+) it will be a separate model function.
 		sqlb = stmntBuilder.
 			Update("users").
 			Set("email", u.Email).
 			Set("fullname", u.FullName).
 			Set("role", u.Role).
 			Where("userid=?", u.UserID).
-			Suffix("RETURNING userid, email, fullname, role, deleted")
+			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
@@ -137,8 +231,13 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 		return nil, err
 	}
 
+	// Explicit column list (vs SELECT *) so new schema columns that do not
+	// have a corresponding User struct field do not break pgx struct scans.
+	// AssignedFismaSystems and AssignedOpDivIDs are populated on a per-user
+	// detail lookup (findUser), not on the list view where they would force
+	// extra joins for no UI benefit.
 	sqlb := stmntBuilder.
-		Select("*").
+		Select("users.userid", "email", "fullname", "role", "deleted", "identity_provider").
 		From("public.users").
 		Where("deleted=?", fui.Deleted)
 
@@ -171,12 +270,25 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
+	// Load assignments via correlated subqueries instead of LEFT JOIN +
+	// ARRAY_AGG so the row count stays at one per user. A LEFT JOIN to both
+	// junctions would produce an N*M cross-product (N system grants times
+	// M OpDiv grants) before GROUP BY; harmless today but degrades once
+	// HHS_ADMINs land with grants for all 14 OpDivs. Each junction has a
+	// composite PK so the inner ARRAY_AGG needs no DISTINCT.
 	sqlb := stmntBuilder.
-		Select("users.userid, email, fullname, role, deleted, ARRAY_AGG(fismasystemid) AS assignedfismasystems").
+		Select(
+			"users.userid",
+			"users.email",
+			"users.fullname",
+			"users.role",
+			"users.deleted",
+			"users.identity_provider",
+			"(SELECT ARRAY_AGG(fismasystemid) FROM users_fismasystems WHERE userid = users.userid) AS assignedfismasystems",
+			"(SELECT ARRAY_AGG(opdiv_id)      FROM users_opdivs       WHERE userid = users.userid) AS assignedopdivids",
+		).
 		From("users").
-		LeftJoin("users_fismasystems on users_fismasystems.userid=users.userid").
-		Where(where, args...).
-		GroupBy("users.userid")
+		Where(where, args...)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[User])
 }

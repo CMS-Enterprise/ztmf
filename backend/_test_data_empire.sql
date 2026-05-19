@@ -5,33 +5,79 @@
 -- NOTE: Schema is created by migrations - this file only contains test data INSERTs
 -- Migrations run first, then this file populates data via DB_POPULATE
 
+-- EMPIRE OpDiv (test-only, not in real opdivs seed). Used to scope empire
+-- test data once the multi-OpDiv predicates flip in Stage C.
+INSERT INTO public.opdivs (code, name, is_parent, active)
+    VALUES ('EMPIRE', 'Galactic Empire (test fixture)', FALSE, TRUE)
+    ON CONFLICT DO NOTHING;
+
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
-INSERT INTO public.users VALUES (DEFAULT, 'Test.User@nowhere.xyz', 'Admin User', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (email, fullname, role, identity_provider)
+    VALUES ('Test.User@nowhere.xyz', 'Admin User', 'ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Test ADMIN User (Death Star Commander - full administrative access)
-INSERT INTO public.users VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'Grand.Moff@DeathStar.Empire', 'Grand Moff Tarkin', 'ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Test ISSO Users (Imperial Officers)
-INSERT INTO public.users VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
-INSERT INTO public.users VALUES ('33333333-3333-3333-3333-333333333333', 'Commander.Veers@hoth.empire', 'General Veers', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
-INSERT INTO public.users VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('22222222-2222-2222-2222-222222222222', 'Admiral.Piett@executor.empire', 'Admiral Piett', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('33333333-3333-3333-3333-333333333333', 'Commander.Veers@hoth.empire', 'General Veers', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Test READONLY_ADMIN User (Emperor - can observe everything but not modify)
-INSERT INTO public.users VALUES ('55555555-5555-5555-5555-555555555555', 'Emperor.Palpatine@coruscant.empire', 'Emperor Palpatine', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('55555555-5555-5555-5555-555555555555', 'Emperor.Palpatine@coruscant.empire', 'Emperor Palpatine', 'READONLY_ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Test READONLY_ADMIN for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
-INSERT INTO public.users VALUES (DEFAULT, 'Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (email, fullname, role, identity_provider)
+    VALUES ('Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Test ISSO for Emberfall E2E tests (verifies ISSO role restrictions).
 -- Email uses mixed case ("Isso.User") while the JWT contains lowercase ("isso.user")
 -- to verify that findByEmail is case-insensitive — same pattern as _test_data.sql.
 -- Fixed UUID so we can assign to fismasystems for CFACTS access testing.
-INSERT INTO public.users VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', DEFAULT) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
 
 -- Pre-deleted user fixture for RestoreUser tests.
 -- UUID is v4-conforming (4 at position 14, 8 at position 19) so it satisfies
 -- isValidUUID's strict regex when used as a path param.
-INSERT INTO public.users VALUES ('77777777-7777-4777-8777-777777777777', 'Captain.Needa@executor.empire', 'Captain Needa', 'ISSO', TRUE) ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provider)
+    VALUES ('77777777-7777-4777-8777-777777777777', 'Captain.Needa@executor.empire', 'Captain Needa', 'ISSO', TRUE, 'okta')
+    ON CONFLICT DO NOTHING;
+
+-- Grant EMPIRE OpDiv membership to every test user. Migration 0034 only seeded
+-- users that existed at migration time; populate adds users after migrations
+-- run, so we attach OpDiv grants here. All empire-themed users get EMPIRE;
+-- the e2e fixtures (Test.User, Readonly.Admin, Isso.User) that mirror
+-- _test_data.sql also get EMPIRE so they can access empire-scoped fismasystems
+-- once predicates flip in Stage C.
+INSERT INTO public.users_opdivs (userid, opdiv_id)
+SELECT u.userid, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
+  FROM public.users u
+ WHERE u.email IN (
+        'Test.User@nowhere.xyz',
+        'Readonly.Admin@nowhere.xyz',
+        'Isso.User@nowhere.xyz',
+        'Grand.Moff@DeathStar.Empire',
+        'Admiral.Piett@executor.empire',
+        'Commander.Veers@hoth.empire',
+        'Director.Krennic@scarif.empire',
+        'Emperor.Palpatine@coruscant.empire',
+        'Captain.Needa@executor.empire'
+       )
+ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
 INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
@@ -47,7 +93,7 @@ INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
     1001,
     'DEA75100-1977-4A1F-8B2E-A1DE0AA00404',
     'DS-1',
@@ -64,10 +110,11 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     TRUE,
     '1977-05-25 00:00:00+00',
     '11111111-1111-1111-1111-111111111111',
-    'Destroyed by Rebel Alliance at Battle of Yavin'
+    'Destroyed by Rebel Alliance at Battle of Yavin',
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
     1002,
     'E0EC0100-1980-4C3D-9A7B-00F020240000',
     'SSD-EX',
@@ -84,10 +131,11 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     FALSE,
     NULL,
     NULL,
-    NULL
+    NULL,
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
 ) ON CONFLICT DO NOTHING;
 
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
     1003,
     'E1D00198-36D4-4EAB-8C00-501E1D000999',
     'SLD-GEN',
@@ -104,11 +152,12 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     FALSE,
     NULL,
     NULL,
-    NULL
+    NULL,
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
 ) ON CONFLICT DO NOTHING;
 
 -- Pre-decommissioned fixture for ReactivateFismaSystem tests
-INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes) VALUES (
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
     1004,
     'BC1B3100-1980-4D5E-AB8C-D1FE0BB00808',
     'SD-TYR',
@@ -125,7 +174,8 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     TRUE,
     '1980-05-21 00:00:00+00',
     '11111111-1111-1111-1111-111111111111',
-    'Decommissioned to provide a reactivation test target'
+    'Decommissioned to provide a reactivation test target',
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)
@@ -488,11 +538,34 @@ INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES
     ('Single Factor (Only)', 'Single Factor Only', 1, 'Single factor authentication only - no MFA capability.')
 ON CONFLICT (idm_name) DO NOTHING;
 
--- Reset sequences past the max explicit IDs to avoid primary key conflicts
-SELECT setval('pillars_pillarid_seq', (SELECT COALESCE(MAX(pillarid), 0) FROM public.pillars));
-SELECT setval('datacalls_datacallid_seq', (SELECT COALESCE(MAX(datacallid), 0) FROM public.datacalls));
-SELECT setval('fismasystems_fismasystemid_seq', (SELECT COALESCE(MAX(fismasystemid), 0) FROM public.fismasystems));
-SELECT setval('questions_questionid_seq', (SELECT COALESCE(MAX(questionid), 0) FROM public.questions));
-SELECT setval('functions_functionid_seq', (SELECT COALESCE(MAX(functionid), 0) FROM public.functions));
-SELECT setval('functionoptions_functionoptionid_seq', (SELECT COALESCE(MAX(functionoptionid), 0) FROM public.functionoptions));
-SELECT setval('scores_scoreid_seq', (SELECT COALESCE(MAX(scoreid), 0) FROM public.scores));
+-- Reset every SERIAL sequence to its current table max. Use
+-- pg_get_serial_sequence() so the right name is resolved at runtime: some
+-- environments have historically renamed tables (e.g. functionscores -> scores)
+-- without renaming the auto-created sequence, so the bare default name does
+-- not match across dev (functionscores_scoreid_seq) and freshly-built test
+-- databases (scores_scoreid_seq).
+DO $$
+DECLARE
+    pair record;
+    seq_name text;
+    max_id   bigint;
+BEGIN
+    FOR pair IN
+        SELECT 'opdivs'          AS tbl, 'opdiv_id'         AS col UNION ALL
+        SELECT 'pillars',         'pillarid'                       UNION ALL
+        SELECT 'datacalls',       'datacallid'                     UNION ALL
+        SELECT 'fismasystems',    'fismasystemid'                  UNION ALL
+        SELECT 'questions',       'questionid'                     UNION ALL
+        SELECT 'functions',       'functionid'                     UNION ALL
+        SELECT 'functionoptions', 'functionoptionid'               UNION ALL
+        SELECT 'scores',          'scoreid'
+    LOOP
+        seq_name := pg_get_serial_sequence('public.' || pair.tbl, pair.col);
+        IF seq_name IS NULL THEN
+            CONTINUE;
+        END IF;
+        EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM public.%I', pair.col, pair.tbl)
+            INTO max_id;
+        PERFORM setval(seq_name, GREATEST(max_id, 1), max_id > 0);
+    END LOOP;
+END $$;
