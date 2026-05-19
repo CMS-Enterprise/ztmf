@@ -730,51 +730,17 @@ tests:
           data:
             <<: *restoredUserData
 
-  # # Scores Endpoints
-  # - id: createScore
-  #   url: http://localhost:8080/api/v1/scores
-  #   method: POST
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *scoreData
-  #   expect:
-  #     status: 201
-  #     headers:
-  #       content-type: "application/json"
-  
-  # # Note: There's no GET by ID endpoint for scores in the router
-  
-  # - url: "http://localhost:8080/api/v1/scores/{{.createScore.Response.data.scoreid}}"
-  #   method: PUT
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *updatedScoreData
-  #   expect:
-  #     status: 204
-  
-  # - url: http://localhost:8080/api/v1/scores
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  
-  # - url: http://localhost:8080/api/v1/scores/aggregate
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  # Scores: HHS-aligned aggregate smoke test (ztmf-misc#175). Math is
+  # asserted in unit tests at internal/model/scores_test.go; this confirms
+  # the endpoint serves a parseable 200 response with the new shape.
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
 
   # Questions Endpoints
   - id: createQuestion
