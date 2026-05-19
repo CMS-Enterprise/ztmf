@@ -14,8 +14,8 @@ import (
 type roleMatrixRow struct {
 	role               string
 	isOwner            bool
-	isHHSAdmin         bool
-	isOpDivAdmin       bool
+	isHHSTier          bool
+	isOpDivTier        bool
 	hasUnscopedRead    bool
 	isAdmin            bool
 	isReadOnlyAdmin    bool
@@ -25,10 +25,10 @@ type roleMatrixRow struct {
 var roleMatrix = []roleMatrixRow{
 	// New multi-OpDiv tiers
 	{role: "OWNER", isOwner: true, hasUnscopedRead: true, isAdmin: true, hasAdminRead: true},
-	{role: "HHS_ADMIN", isHHSAdmin: true, hasUnscopedRead: true, isAdmin: true, hasAdminRead: true},
-	{role: "HHS_READONLY_ADMIN", isHHSAdmin: true, hasUnscopedRead: true, isReadOnlyAdmin: true, hasAdminRead: true},
-	{role: "OPDIV_ADMIN", isOpDivAdmin: true, isAdmin: true, hasAdminRead: true},
-	{role: "OPDIV_READONLY_ADMIN", isOpDivAdmin: true, isReadOnlyAdmin: true, hasAdminRead: true},
+	{role: "HHS_ADMIN", isHHSTier: true, hasUnscopedRead: true, isAdmin: true, hasAdminRead: true},
+	{role: "HHS_READONLY_ADMIN", isHHSTier: true, hasUnscopedRead: true, isReadOnlyAdmin: true, hasAdminRead: true},
+	{role: "OPDIV_ADMIN", isOpDivTier: true, isAdmin: true, hasAdminRead: true},
+	{role: "OPDIV_READONLY_ADMIN", isOpDivTier: true, isReadOnlyAdmin: true, hasAdminRead: true},
 	// Legacy values retained through Stage D
 	{role: "ADMIN", hasUnscopedRead: true, isAdmin: true, hasAdminRead: true},
 	{role: "READONLY_ADMIN", hasUnscopedRead: true, isReadOnlyAdmin: true, hasAdminRead: true},
@@ -45,8 +45,8 @@ func TestUser_RoleHelpers(t *testing.T) {
 		t.Run(tt.role, func(t *testing.T) {
 			u := &User{Role: tt.role}
 			assert.Equal(t, tt.isOwner, u.IsOwner(), "IsOwner")
-			assert.Equal(t, tt.isHHSAdmin, u.IsHHSAdmin(), "IsHHSAdmin")
-			assert.Equal(t, tt.isOpDivAdmin, u.IsOpDivAdmin(), "IsOpDivAdmin")
+			assert.Equal(t, tt.isHHSTier, u.IsHHSTier(), "IsHHSTier")
+			assert.Equal(t, tt.isOpDivTier, u.IsOpDivTier(), "IsOpDivTier")
 			assert.Equal(t, tt.hasUnscopedRead, u.HasUnscopedRead(), "HasUnscopedRead")
 			assert.Equal(t, tt.isAdmin, u.IsAdmin(), "IsAdmin")
 			assert.Equal(t, tt.isReadOnlyAdmin, u.IsReadOnlyAdmin(), "IsReadOnlyAdmin")

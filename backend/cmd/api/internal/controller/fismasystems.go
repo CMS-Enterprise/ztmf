@@ -35,7 +35,7 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case user.HasUnscopedRead():
 		// no scope filter
-	case user.IsOpDivAdmin():
+	case user.IsOpDivTier():
 		input.RestrictToOpDivIDs = true
 		for _, id := range user.AssignedOpDivIDs {
 			if id != nil {
@@ -109,7 +109,7 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	// for an OPDIV_ADMIN is almost certainly a mistake - fail closed and ask
 	// them to set it explicitly. Update path of Save() is already immutable
 	// on opdiv_id, so this check only matters on create.
-	if f.FismaSystemID == 0 && !authdUser.HasUnscopedRead() && authdUser.IsOpDivAdmin() {
+	if f.FismaSystemID == 0 && !authdUser.HasUnscopedRead() && authdUser.IsOpDivTier() {
 		if f.OpDivID == nil {
 			respond(w, r, nil, ErrForbidden)
 			return

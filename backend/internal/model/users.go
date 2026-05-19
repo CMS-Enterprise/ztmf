@@ -28,11 +28,19 @@ type User struct {
 
 func (u *User) IsOwner() bool { return u.Role == "OWNER" }
 
-func (u *User) IsHHSAdmin() bool {
+// IsHHSTier reports membership in the HHS tier, covering both the write tier
+// (HHS_ADMIN) and the read-only tier (HHS_READONLY_ADMIN). It is a tier-
+// membership check, not a write-access gate. Use IsAdmin / HasAdminRead when
+// gating write versus read endpoints.
+func (u *User) IsHHSTier() bool {
 	return u.Role == "HHS_ADMIN" || u.Role == "HHS_READONLY_ADMIN"
 }
 
-func (u *User) IsOpDivAdmin() bool {
+// IsOpDivTier reports membership in the per-OpDiv tier, covering both the
+// write tier (OPDIV_ADMIN) and the read-only tier (OPDIV_READONLY_ADMIN).
+// Tier-membership check, not a write gate. Pair with IsAssignedOpDiv to
+// confirm the user actually holds a grant for the OpDiv in question.
+func (u *User) IsOpDivTier() bool {
 	return u.Role == "OPDIV_ADMIN" || u.Role == "OPDIV_READONLY_ADMIN"
 }
 
@@ -56,14 +64,14 @@ func (u *User) HasUnscopedRead() bool {
 //   - OPDIV_ADMIN / OPDIV_READONLY_ADMIN see systems in their granted OpDivs
 //   - ISSO / ISSM users see systems they are explicitly assigned to
 //
-// The OpDiv check is gated on IsOpDivAdmin so an ISSO/ISSM who carries a
+// The OpDiv check is gated on IsOpDivTier so an ISSO/ISSM who carries a
 // CMS grant from the 0034 seed does not accidentally inherit OpDiv-wide
 // visibility - their scope stays system-level as it was pre-multi-OpDiv.
 func (u *User) CanAccessFismaSystem(opdivID *int32, fismasystemID int32) bool {
 	if u.HasUnscopedRead() {
 		return true
 	}
-	if u.IsOpDivAdmin() && opdivID != nil && u.IsAssignedOpDiv(*opdivID) {
+	if u.IsOpDivTier() && opdivID != nil && u.IsAssignedOpDiv(*opdivID) {
 		return true
 	}
 	return u.IsAssignedFismaSystem(fismasystemID)
