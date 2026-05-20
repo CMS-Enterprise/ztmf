@@ -24,6 +24,35 @@ var validTiers = map[string]bool{
 	"Not Assessed": true,
 }
 
+// integrationTestPrefix is the marker every test-synthesized datacall
+// carries in its name. Used to identify rows for cleanup, including a
+// defensive sweep at test entry that catches anything a previous
+// interrupted run left behind. Keep it underscore-separated so a LIKE
+// pattern is unambiguous.
+const integrationTestPrefix = "integration_test_"
+
+// purgeIntegrationTestRows wipes any datacalls (and their cascaded
+// scores via FK ON DELETE CASCADE) whose name carries the integration
+// test prefix. Run at the start of each integration test as a defensive
+// belt-and-suspenders against cleanup that failed to run on a previous
+// invocation. Cheap.
+func purgeIntegrationTestRows(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("purge: db.Conn: %v", err)
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx,
+		`DELETE FROM datacalls WHERE datacall LIKE $1`,
+		integrationTestPrefix+"%",
+	)
+	if err != nil {
+		t.Fatalf("purge: delete: %v", err)
+	}
+}
+
 // TestFindScoresAggregateIntegration runs the real SQL against the
 // configured database and verifies the response shape and per-row
 // invariants. Catches SQL math regressions (wrong +1 shift, wrong AVG
@@ -136,13 +165,17 @@ func TestFindScoresAggregateIntegration(t *testing.T) {
 }
 
 // TestScoreSaveValidationIntegration covers the validate() guards on
-// the write path: notes length and past-deadline rules. Inserts a
-// score then rolls back any state via direct DELETE so test pollution
-// stays bounded.
+// the write path: notes length and past-deadline rules. Any synthesized
+// datacalls carry the integrationTestPrefix and are removed by both a
+// startup sweep and explicit cleanup using a fresh connection so a
+// pre-closed test connection cannot silently swallow the delete.
 func TestScoreSaveValidationIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test")
 	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
 
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
@@ -164,19 +197,17 @@ func TestScoreSaveValidationIntegration(t *testing.T) {
 		WHERE deadline > NOW() ORDER BY deadline ASC LIMIT 1
 	`).Scan(&futureDataCallID)
 	if err != nil {
-		// If no future-deadline datacall exists, create one and clean it up.
-		// Most seed data only carries historical datacalls, so this path is
-		// the common one in CI.
+		// If no future-deadline datacall exists, create one. The
+		// integration test prefix makes it discoverable by the
+		// startup/teardown sweep regardless of how the test exits.
 		t.Log("no future-deadline datacall present; using a synthesized one for this test")
+		name := fmt.Sprintf("%sfuture_%d", integrationTestPrefix, time.Now().UnixNano())
 		err = conn.QueryRow(ctx, `
 			INSERT INTO datacalls (datacall, datecreated, deadline)
-			VALUES ('integration test datacall ' || NOW()::text, NOW(), NOW() + INTERVAL '7 days')
+			VALUES ($1, NOW(), NOW() + INTERVAL '7 days')
 			RETURNING datacallid
-		`).Scan(&futureDataCallID)
+		`, name).Scan(&futureDataCallID)
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			_, _ = conn.Exec(ctx, `DELETE FROM datacalls WHERE datacallid = $1`, futureDataCallID)
-		})
 	}
 
 	t.Run("NotesTooLong_ReturnsErr", func(t *testing.T) {
@@ -242,6 +273,9 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 		t.Skip("Skipping database integration test")
 	}
 
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
@@ -250,7 +284,8 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	// Insert two datacalls explicitly ordered so copyPreviousScores'
 	// "latest-1 is previous" logic finds the right one. Each row gets
 	// a unique nano-precision suffix so reruns don't collide on the
-	// UNIQUE(datacall) constraint.
+	// UNIQUE(datacall) constraint, and the integrationTestPrefix makes
+	// them discoverable by the sweep no matter how the test exits.
 	var prevDC, newDC int32
 	prevTimestamp := time.Now().Add(-2 * time.Hour)
 	newTimestamp := time.Now().Add(-1 * time.Hour)
@@ -260,21 +295,15 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 		INSERT INTO datacalls (datacall, datecreated, deadline)
 		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
 		RETURNING datacallid
-	`, fmt.Sprintf("integration_test_prev_%d", suffix), prevTimestamp).Scan(&prevDC)
+	`, fmt.Sprintf("%sprev_%d", integrationTestPrefix, suffix), prevTimestamp).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
 		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
 		RETURNING datacallid
-	`, fmt.Sprintf("integration_test_new_%d", suffix), newTimestamp).Scan(&newDC)
+	`, fmt.Sprintf("%snew_%d", integrationTestPrefix, suffix), newTimestamp).Scan(&newDC)
 	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		// Order matters: scores reference datacalls via FK ON DELETE CASCADE,
-		// so dropping the datacalls also drops any test scores attached.
-		_, _ = conn.Exec(ctx, `DELETE FROM datacalls WHERE datacallid IN ($1, $2)`, prevDC, newDC)
-	})
 
 	// Pick a (fismasystemid, functionoptionid) that already references
 	// a real function so the FK constraint is satisfied. Any active
