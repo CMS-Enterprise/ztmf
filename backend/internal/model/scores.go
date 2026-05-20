@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -100,25 +101,33 @@ type PillarScore struct {
 }
 
 // Tier returns the HHS-aligned maturity tier label for a 1.0-5.0 score.
-// Boundaries:
+// Boundaries (on the score rounded to two decimal places, matching the
+// frontend display):
 //
-//	>= 4.1   -> Optimal
-//	>= 3.1   -> Advanced
-//	>= 2.1   -> Initial
+//	>= 4.10  -> Optimal
+//	>= 3.10  -> Advanced
+//	>= 2.10  -> Initial
 //	>= 1.01  -> Traditional
 //	otherwise -> Not Assessed (a pillar with zero answered questions lands
-//	             at exactly 1.0 under the +1 shift aggregation, so the
-//	             Traditional floor uses 1.01 rather than == 1.0 to keep
-//	             the predicate safe under float drift).
+//	             at exactly 1.0 under the +1 shift aggregation).
+//
+// The comparison happens in integer space (score * 100 rounded to int)
+// so a system whose float64 representation is, e.g., 3.099999... but
+// displays to the user as "3.10" via toFixed(2) is correctly classified
+// the same way the user sees it. IEEE 754 cannot represent 4.1, 3.1, or
+// 2.1 exactly, so a direct `score >= 4.1` comparison would mis-tier
+// inputs that are arithmetically at the boundary but stored a few ulps
+// low. Integer comparison removes that ambiguity entirely.
 func Tier(score float64) string {
+	hundredths := int(math.Round(score * 100))
 	switch {
-	case score >= 4.1:
+	case hundredths >= 410:
 		return "Optimal"
-	case score >= 3.1:
+	case hundredths >= 310:
 		return "Advanced"
-	case score >= 2.1:
+	case hundredths >= 210:
 		return "Initial"
-	case score >= 1.01:
+	case hundredths >= 101:
 		return "Traditional"
 	default:
 		return "Not Assessed"

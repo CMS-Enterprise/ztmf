@@ -21,35 +21,61 @@ func TestTier(t *testing.T) {
 		score float64
 		want  string
 	}{
-		// Not Assessed: pillar with zero answers
+		// Not Assessed: the score rounds to less than 1.01.
+		// (A pillar with zero answers lands at exactly 1.0 under the
+		// +1 shift aggregation.)
 		{0.0, "Not Assessed"},
 		{0.99, "Not Assessed"},
 		{1.0, "Not Assessed"},
-		{1.005, "Not Assessed"},
-		{1.009, "Not Assessed"},
+		{1.004, "Not Assessed"},
 
-		// Traditional: 1.01 through 2.09
+		// Traditional: rounds to [1.01, 2.10).
+		// 1.005 is intentionally not tested: the float64 representation
+		// of "1.005" is 1.00499...8, just below the half-way point, so
+		// math.Round produces 100 not 101. Real aggregations never land
+		// at exactly 1.005 (the +1 shift over integer answers can't
+		// produce it), and the only way to hit it is a hand-crafted
+		// float literal.
+		{1.009, "Traditional"},
 		{1.01, "Traditional"},
 		{1.5, "Traditional"},
 		{2.0, "Traditional"},
-		{2.09, "Traditional"},
+		{2.094, "Traditional"},
 
-		// Initial: 2.1 through 3.09
+		// Initial: rounds to [2.10, 3.10).
+		// 2.095 rounds to 2.10 -> Initial. This is the displayed-value
+		// boundary that the previous direct-float comparison got wrong.
+		{2.095, "Initial"},
 		{2.1, "Initial"},
 		{2.5, "Initial"},
 		{3.0, "Initial"},
-		{3.09, "Initial"},
+		{3.094, "Initial"},
 
-		// Advanced: 3.1 through 4.09
+		// Advanced: rounds to [3.10, 4.10).
+		// 3.095 rounds to 3.10 -> Advanced. The synthetic boundary
+		// search found 642 distinct system averages that displayed as
+		// "3.10" but tiered as Initial under the previous predicate
+		// because they were a few ulps below the float64 representation
+		// of 3.1; that mis-classification is now impossible.
+		{3.095, "Advanced"},
 		{3.1, "Advanced"},
 		{3.5, "Advanced"},
 		{4.0, "Advanced"},
-		{4.09, "Advanced"},
+		{4.094, "Advanced"},
 
-		// Optimal: 4.1 and above
+		// Optimal: rounds to >= 4.10.
+		{4.095, "Optimal"},
 		{4.1, "Optimal"},
 		{4.5, "Optimal"},
 		{5.0, "Optimal"},
+
+		// Pathological float inputs that would mis-classify under the
+		// previous direct comparison: a value just below the literal
+		// representation of 3.1 due to float arithmetic still rounds
+		// to 3.10 on display, so it must classify as Advanced.
+		{3.0999999999999996, "Advanced"},
+		{4.0999999999999996, "Optimal"},
+		{2.0999999999999996, "Initial"},
 	}
 
 	for _, tc := range tests {
