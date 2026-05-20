@@ -1554,6 +1554,23 @@ components:
         systemscore:
           type: number
           format: double
+          description: >-
+            Overall system maturity score on the HHS-aligned 1.0 to 5.0 scale.
+            Computed as the simple average of the per-pillar scores. A system
+            whose every question is unanswered lands at exactly 1.0
+            (Not Assessed).
+        systemtier:
+          type: string
+          description: >-
+            Tier label derived from systemscore. Boundaries: Optimal >= 4.1,
+            Advanced >= 3.1, Initial >= 2.1, Traditional >= 1.01, otherwise
+            Not Assessed.
+          enum:
+            - Optimal
+            - Advanced
+            - Initial
+            - Traditional
+            - Not Assessed
         pillarscores:
           type: array
           description: Optional pillar breakdown (only present when include_pillars=true)
@@ -1571,7 +1588,21 @@ components:
         score:
           type: number
           format: double
-          description: Average score for this pillar
+          description: >-
+            Pillar maturity score on the HHS-aligned 1.0 to 5.0 scale. A
+            pillar with no answered questions lands at exactly 1.0; a pillar
+            with every question at Optimal lands at 5.0.
+        tier:
+          type: string
+          description: >-
+            Tier label derived from score, using the same thresholds as
+            systemtier.
+          enum:
+            - Optimal
+            - Advanced
+            - Initial
+            - Traditional
+            - Not Assessed
     Question:
       type: object
       properties:

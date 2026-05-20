@@ -299,19 +299,22 @@ test-build:
 test-full:
 	@echo "Running comprehensive test suite..."
 	@echo ""
-	@echo "1/4 Building all binaries (API + Lambdas)..."
+	@echo "1/5 Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
 	@cd backend && go build ./cmd/lambda/...
 	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
 	@cd backend && go build ./cmd/lambda-cfacts-s3/...
 	@echo ""
-	@echo "2/4 Running unit tests..."
+	@echo "2/5 Running unit tests..."
 	@cd backend && go test -short ./...
 	@echo ""
-	@echo "3/4 Generating coverage report..."
+	@echo "3/5 Generating coverage report..."
 	@cd backend && go test -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
 	@echo ""
-	@echo "4/4 Running Emberfall E2E tests (isolated containers)..."
+	@echo "4/5 Running integration tests (require DB_* env from backend/dev.compose.env)..."
+	@cd backend && go test -run Integration ./... -count=1
+	@echo ""
+	@echo "5/5 Running Emberfall E2E tests (isolated containers)..."
 	@make test-e2e
 	@echo ""
 	@echo "✅ All tests complete"

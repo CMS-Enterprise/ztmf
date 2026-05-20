@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -11,6 +13,22 @@ import (
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
+
+// rawQuery wraps a hand-built SQL string and its arguments so it can flow
+// through the existing query helper. Used for the pillar aggregation query
+// where the derived subqueries and conditional joins exceed squirrel's
+// ergonomics and a parameterized string is the clearer expression.
+//
+// SELECT-only. The model package's queryRow helper records events derived
+// from the SqlBuilder shape, so write-path callers must not use rawQuery.
+type rawQuery struct {
+	sql  string
+	args []any
+}
+
+func (r rawQuery) ToSql() (string, []any, error) {
+	return r.sql, r.args, nil
+}
 
 type Score struct {
 	ScoreID          int32           `json:"scoreid"`
@@ -71,6 +89,7 @@ type ScoreAggregate struct {
 	DataCallID    int32          `json:"datacallid"`
 	FismaSystemID int32          `json:"fismasystemid"`
 	SystemScore   float64        `json:"systemscore"`
+	SystemTier    string         `json:"systemtier"`
 	PillarScores  []*PillarScore `json:"pillarscores,omitempty" db:"-"`
 }
 
@@ -78,6 +97,41 @@ type PillarScore struct {
 	PillarID int32   `json:"pillarid"`
 	Pillar   string  `json:"pillar"`
 	Score    float64 `json:"score"`
+	Tier     string  `json:"tier"`
+}
+
+// Tier returns the HHS-aligned maturity tier label for a 1.0-5.0 score.
+// Boundaries (on the score rounded to two decimal places, matching the
+// frontend display):
+//
+//	>= 4.10  -> Optimal
+//	>= 3.10  -> Advanced
+//	>= 2.10  -> Initial
+//	>= 1.01  -> Traditional
+//	otherwise -> Not Assessed (a pillar with zero answered questions lands
+//	             at exactly 1.0 under the +1 shift aggregation).
+//
+// The comparison happens in integer space (score * 100 rounded to int)
+// so a system whose float64 representation is, e.g., 3.099999... but
+// displays to the user as "3.10" via toFixed(2) is correctly classified
+// the same way the user sees it. IEEE 754 cannot represent 4.1, 3.1, or
+// 2.1 exactly, so a direct `score >= 4.1` comparison would mis-tier
+// inputs that are arithmetically at the boundary but stored a few ulps
+// low. Integer comparison removes that ambiguity entirely.
+func Tier(score float64) string {
+	hundredths := int(math.Round(score * 100))
+	switch {
+	case hundredths >= 410:
+		return "Optimal"
+	case hundredths >= 310:
+		return "Advanced"
+	case hundredths >= 210:
+		return "Initial"
+	case hundredths >= 101:
+		return "Traditional"
+	default:
+		return "Not Assessed"
+	}
 }
 
 type FindScoresInput struct {
@@ -125,69 +179,247 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 	})
 }
 
+// pillarScoreRow is the wire shape returned by findPillarScoresAll. One row
+// per (datacall, system, pillar). Both pillar Score and the carry-along
+// SystemScore are computed in Postgres and emerge on the HHS 1.0-5.0 scale,
+// so the Go aggregation step never re-computes them and float precision is
+// consistent across boundaries.
+//
+// Field tagging: pgx.RowToAddrOfStructByName reads the `db` struct tag (and
+// falls back to case-insensitive name match), not the `json` tag. The wire
+// names here intentionally match the SQL select aliases via `db`; do not
+// switch to `json` tags by reflex when refactoring.
+type pillarScoreRow struct {
+	DataCallID    int32   `db:"datacallid"`
+	FismaSystemID int32   `db:"fismasystemid"`
+	PillarID      int32   `db:"pillarid"`
+	Pillar        string  `db:"pillar"`
+	Score         float64 `db:"score"`
+	SystemScore   float64 `db:"system_score"`
+}
+
+// FindScoresAggregate returns one ScoreAggregate per (datacall, system) pair
+// matching the input filters. Both the system score and the per-pillar scores
+// are computed on the HHS-aligned 1.0-5.0 scale via the +1 shift aggregation
+// described in ztmf-misc#175. The system score is the simple AVG of pillar
+// scores; the divisor follows the actual pillar count rather than being
+// hardcoded, so adding or removing a pillar does not silently change the
+// math. Pillar scores are populated on the aggregate when IncludePillars is
+// true.
 func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {
-	// Convert single FismaSystemID to FismaSystemIDs array if needed
+	// Convert single FismaSystemID to FismaSystemIDs array if needed so the
+	// scoping rules below see a consistent shape. This mirrors prior behavior
+	// so an admin requesting a specific system still flows through the same
+	// IN-list path that ISSOs use for their assigned-system scope.
 	if input.FismaSystemID != nil && len(input.FismaSystemIDs) == 0 {
 		input.FismaSystemIDs = []*int32{input.FismaSystemID}
 	}
 
-	subSqlb := squirrel.Select("datacallid, fismasystemid, AVG(score) OVER (PARTITION BY datacallid, fismasystemid) as systemscore").
-		From("scores").
-		InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid")
-
-	if input.DataCallID != nil {
-		subSqlb = subSqlb.Where("datacallid=?", input.DataCallID)
-	}
-
-	if len(input.FismaSystemIDs) > 0 {
-		subSqlb = subSqlb.Where(squirrel.Eq{"fismasystemid": input.FismaSystemIDs})
-	}
-
-	// When a specific system is requested alongside a pre-populated FismaSystemIDs
-	// (e.g. ISSO scope), further narrow to just that system. Using >= 1 ensures
-	// consistent behaviour for single-system ISSOs; the extra predicate is
-	// redundant with the IN clause but harmless.
-	if input.FismaSystemID != nil && len(input.FismaSystemIDs) >= 1 {
-		subSqlb = subSqlb.Where("fismasystemid=?", *input.FismaSystemID)
-	}
-
-	sqlb := squirrel.Select("*").
-		FromSelect(subSqlb, "avg_by_datacall_fismasystem").
-		GroupBy("datacallid, fismasystemid, systemscore").
-		PlaceholderFormat(squirrel.Dollar)
-
-	aggregates, err := query(ctx, sqlb, pgx.RowToAddrOfStructByName[ScoreAggregate])
+	pillarRows, err := findPillarScoresAll(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	// If pillar scores are requested, fetch and populate them
-	if input.IncludePillars != nil && *input.IncludePillars {
-		for _, aggregate := range aggregates {
-			pillarScores, err := findPillarScores(ctx, aggregate.DataCallID, aggregate.FismaSystemID)
-			if err != nil {
-				return nil, err
+	includePillars := input.IncludePillars != nil && *input.IncludePillars
+	return aggregatePillarRows(pillarRows, includePillars), nil
+}
+
+// aggregatePillarRows is the pure-Go rollup step extracted so unit tests can
+// pin the response shape without spinning up a database. It collapses the
+// per-(datacall, system, pillar) rows produced by findPillarScoresAll into
+// one ScoreAggregate per (datacall, system) pair, attaches the Tier label
+// derived from each pillar score, and reads the carry-along SystemScore that
+// the underlying SQL already averaged via a window function.
+//
+// All score math happens in Postgres. This function does no arithmetic on
+// pillar scores beyond reading the system_score field on the first row of
+// each (datacall, system) group; that keeps float precision consistent
+// across the SQL/Go boundary and removes any chance of a tier flip from
+// recomputing the same average in a different runtime.
+//
+// The input slice is assumed to be ordered by (datacallid, fismasystemid,
+// pillarid), which is the canonical ordering emitted by the underlying SQL
+// in findPillarScoresAll. The output preserves that order.
+func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAggregate {
+	type key struct {
+		dataCallID    int32
+		fismaSystemID int32
+	}
+
+	aggByKey := map[key]*ScoreAggregate{}
+	order := []key{}
+
+	for _, r := range rows {
+		k := key{r.DataCallID, r.FismaSystemID}
+		agg, seen := aggByKey[k]
+		if !seen {
+			agg = &ScoreAggregate{
+				DataCallID:    r.DataCallID,
+				FismaSystemID: r.FismaSystemID,
+				SystemScore:   r.SystemScore,
+				SystemTier:    Tier(r.SystemScore),
 			}
-			aggregate.PillarScores = pillarScores
+			aggByKey[k] = agg
+			order = append(order, k)
+		}
+		if includePillars {
+			agg.PillarScores = append(agg.PillarScores, &PillarScore{
+				PillarID: r.PillarID,
+				Pillar:   r.Pillar,
+				Score:    r.Score,
+				Tier:     Tier(r.Score),
+			})
 		}
 	}
 
-	return aggregates, nil
+	aggregates := make([]*ScoreAggregate, 0, len(order))
+	for _, k := range order {
+		aggregates = append(aggregates, aggByKey[k])
+	}
+	return aggregates
 }
 
-func findPillarScores(ctx context.Context, dataCallID, fismaSystemID int32) ([]*PillarScore, error) {
-	sqlb := squirrel.Select("pillars.pillarid", "pillars.pillar", "AVG(functionoptions.score) as score").
-		From("scores").
-		InnerJoin("functionoptions on functionoptions.functionoptionid=scores.functionoptionid").
-		InnerJoin("functions on functions.functionid=functionoptions.functionid").
-		InnerJoin("pillars on pillars.pillarid=functions.pillarid").
-		Where("scores.datacallid=?", dataCallID).
-		Where("scores.fismasystemid=?", fismaSystemID).
-		GroupBy("pillars.pillarid", "pillars.pillar").
-		OrderBy("pillars.pillarid").
-		PlaceholderFormat(squirrel.Dollar)
+// findPillarScoresAll returns one row per (datacall, system, pillar) for every
+// combination matching the input filters. Pillar scores are computed by
+// enumerating every expected question for each (system, datacall, pillar)
+// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 0,
+// applying the +1 shift, and averaging.
+//
+// The query is built as parameterized raw SQL because the derived subqueries
+// and conditional joins exceed what squirrel expresses cleanly. Filters are
+// pushed into the `expected` subquery so the LEFT JOIN only operates on the
+// scoped set.
+func findPillarScoresAll(ctx context.Context, input FindScoresInput) ([]*pillarScoreRow, error) {
+	sql, args := buildPillarScoresSQL(input)
+	return query(ctx, rawQuery{sql: sql, args: args}, pgx.RowToAddrOfStructByName[pillarScoreRow])
+}
 
-	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[PillarScore])
+// buildPillarScoresSQL assembles the parameterized SQL for the pillar
+// aggregation. Extracted so unit tests can verify the filter and scope
+// shaping without a database connection.
+func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
+	var conds []string
+	var args []any
+	argN := 1
+
+	// No implicit decommissioned filter. The legacy aggregate query had none,
+	// so historical scoring for systems that have since been decommissioned
+	// stayed reachable through this endpoint. Re-applying that filter here
+	// would regress audit / history use cases. Callers that want only active
+	// systems should filter at the controller layer.
+	conds = append(conds, "TRUE")
+
+	if input.DataCallID != nil {
+		conds = append(conds, fmt.Sprintf("dc.datacallid = $%d", argN))
+		args = append(args, *input.DataCallID)
+		argN++
+	}
+
+	if input.FismaSystemID != nil {
+		conds = append(conds, fmt.Sprintf("fs.fismasystemid = $%d", argN))
+		args = append(args, *input.FismaSystemID)
+		argN++
+	}
+
+	if len(input.FismaSystemIDs) > 0 {
+		placeholders := make([]string, len(input.FismaSystemIDs))
+		for i, id := range input.FismaSystemIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argN)
+			args = append(args, id)
+			argN++
+		}
+		conds = append(conds, fmt.Sprintf("fs.fismasystemid IN (%s)", strings.Join(placeholders, ",")))
+	}
+
+	var userJoin string
+	if input.UserID != nil {
+		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = fs.fismasystemid AND ufs.userid = $%d", argN)
+		args = append(args, *input.UserID)
+		argN++
+	}
+
+	// The (system, datacall) universe is the set of pairs that appear at
+	// least once in the scores table. This preserves the legacy aggregate
+	// contract: a system that was never scored for a given data call did
+	// not appear in /scores/aggregate before this change, and still does
+	// not after. The frontend already cross-references /fismasystems to
+	// render "No Score" tiles for systems that have not started, so a
+	// blanket cartesian over every active system would double-count.
+	//
+	// Pillar-level "Not Assessed" is still reachable for partial systems:
+	// once a (system, datacall) pair enters the universe via any score,
+	// every pillar for that system gets enumerated through the expected
+	// CTE. Pillars where every function is unanswered COALESCE to 0,
+	// shift to 1.0, average to exactly 1.0, and emit Not Assessed.
+	//
+	// The datacalls_fismasystems junction looks like the natural fit here
+	// but is misleading: per backend/internal/model/datacallsfismasystems.go,
+	// rows are written only when an ISSO marks a data call as complete,
+	// not when systems are enrolled. Production data confirms this — the
+	// junction is empty for live data calls that have thousands of score
+	// rows. Using it as the universe filter returns nothing.
+	//
+	// Question catalog drift is intentionally not handled. Functions are
+	// keyed by datacenterenvironment, not by datacall. A retroactive
+	// recompute of a closed historical cycle uses the current question set
+	// for that environment, which matches the legacy AVG-over-scored-rows
+	// behavior (it only averaged whatever functionoptions were referenced
+	// in the scores table). If question versioning becomes a real
+	// requirement, both paths would need the same treatment.
+	//
+	// Both pillar score and system score are computed in Postgres so the
+	// float math is consistent. System score is AVG of pillar scores
+	// (equal weighting per the locked plan); the divisor follows the
+	// actual pillar count via the inner AVG, so adding or removing a
+	// pillar does not silently shift the math. system_score is carried on
+	// every pillar row via a window function so callers that want only
+	// the system roll-up read it from any row without a second query.
+	sql := fmt.Sprintf(`
+WITH scored_pairs AS (
+    SELECT DISTINCT fismasystemid, datacallid FROM scores
+),
+expected AS (
+    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, f.functionid
+    FROM scored_pairs sp
+    INNER JOIN fismasystems fs ON fs.fismasystemid = sp.fismasystemid
+    INNER JOIN datacalls dc    ON dc.datacallid    = sp.datacallid
+    INNER JOIN functions f ON f.datacenterenvironment = fs.datacenterenvironment
+    INNER JOIN questions q ON q.questionid = f.questionid
+    INNER JOIN pillars p   ON p.pillarid   = q.pillarid
+    %s
+    WHERE %s
+),
+answers AS (
+    SELECT s.fismasystemid, s.datacallid, fo.functionid, fo.score
+    FROM scores s
+    INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+),
+pillar_scores AS (
+    SELECT
+        e.datacallid,
+        e.fismasystemid,
+        e.pillarid,
+        e.pillar,
+        AVG(COALESCE(a.score, 0) + 1.0)::float8 AS pillar_score
+    FROM expected e
+    LEFT JOIN answers a
+      ON a.fismasystemid = e.fismasystemid
+     AND a.datacallid    = e.datacallid
+     AND a.functionid    = e.functionid
+    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar
+)
+SELECT
+    ps.datacallid,
+    ps.fismasystemid,
+    ps.pillarid,
+    ps.pillar,
+    ps.pillar_score AS score,
+    AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
+FROM pillar_scores ps
+ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
+`, userJoin, strings.Join(conds, " AND "))
+
+	return sql, args
 }
 
 // dataCallID is meant to be passed the *latest* datacall most recently created so the previous can be selected

@@ -730,51 +730,47 @@ tests:
           data:
             <<: *restoredUserData
 
-  # # Scores Endpoints
-  # - id: createScore
-  #   url: http://localhost:8080/api/v1/scores
-  #   method: POST
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *scoreData
-  #   expect:
-  #     status: 201
-  #     headers:
-  #       content-type: "application/json"
-  
-  # # Note: There's no GET by ID endpoint for scores in the router
-  
-  # - url: "http://localhost:8080/api/v1/scores/{{.createScore.Response.data.scoreid}}"
-  #   method: PUT
-  #   headers:
-  #     <<: *commonHeaders
-  #     content-type: "application/json"
-  #   body:
-  #     json:
-  #       <<: *updatedScoreData
-  #   expect:
-  #     status: 204
-  
-  # - url: http://localhost:8080/api/v1/scores
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
-  
-  # - url: http://localhost:8080/api/v1/scores/aggregate
-  #   method: GET
-  #   headers:
-  #     <<: *commonHeaders
-  #   expect:
-  #     status: 200
-  #     headers:
-  #       content-type: "application/json"
+  # Scores: HHS-aligned aggregate smoke battery (ztmf-misc#175).
+  #
+  # Math correctness, response field presence, and Tier(score)==tier
+  # consistency are all pinned in internal/model/scores_integration_test.go,
+  # which runs against the real schema as part of `make test-full`.
+  # Emberfall's body assertion is exact-match (body.text is full-body
+  # equality, body.json equality fails on array-typed responses due to
+  # aquia-inc/emberfall#36), so these HTTP-layer smokes cover what we
+  # can express cleanly: cardinality contract, auth gates, and content
+  # type. Anything that survives unit + integration but breaks at the
+  # HTTP boundary still shows up here.
+  #
+  # The DS-1 seed (fismasystemid=1001) has 24 score rows across datacalls
+  # 1 and 2 in _test_data_empire.sql, guaranteeing a non-empty response.
+
+  # 1. Scored system returns a populated aggregate via the full HTTP
+  #    path. Regression target: 5xx anywhere in the new aggregation SQL,
+  #    JSON serialization of the new tier fields, content negotiation.
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # 2. Unscored system returns an empty data array. Regression target:
+  #    an accidental cartesian fismasystems x datacalls join that
+  #    synthesizes Not Assessed rows for every system in every cycle.
+  #    Emberfall handles the empty-array body exactly.
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=999999
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        text: "{\"data\":[]}"
 
   # Questions Endpoints
   - id: createQuestion
