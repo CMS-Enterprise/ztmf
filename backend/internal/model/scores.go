@@ -56,6 +56,42 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		return nil, err
 	}
 
+	// Audit-preserving no-op: on an UPDATE that does not actually change
+	// any answer field, skip the write entirely. The questionnaire UI
+	// PUTs on every Next click regardless of whether the user touched
+	// the answer, so without this guard a read-through user gets stamped
+	// as the new editor and the prior cycle's real editor is overwritten.
+	// The product rule is "save on real change, not on read-through" so
+	// we enforce it here as defense in depth even if the client adds its
+	// own dirty check.
+	//
+	// Treats nil notes and empty-string notes as the same value, since the
+	// FE may submit either for an unanswered notes box. Returns the
+	// current row through the same lookupScoreAudit path the normal write
+	// uses, so the caller cannot tell a no-op apart from a successful
+	// write -- only the events table (unchanged) reveals the truth.
+	//
+	// On a no-op match we carry the incoming.FunctionOption (if any)
+	// onto the returned current row so callers that requested
+	// ?include=functionoption still get a fully-shaped response, matching
+	// the populated-write path through queryRow + FindScores. The PUT
+	// controller writes 204 today but still encodes the body, so the
+	// response is observable to clients that parse 204 bodies.
+	if s.ScoreID != 0 {
+		if same, current, err := scoreUpdateIsNoOp(ctx, s); err != nil {
+			return nil, err
+		} else if same {
+			if s.FunctionOption != nil {
+				current.FunctionOption = s.FunctionOption
+			}
+			if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
+				current.LastEditedAt = at
+				current.LastEditedBy = by
+			}
+			return current, nil
+		}
+	}
+
 	if s.ScoreID == 0 {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
@@ -101,6 +137,77 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		}
 	}
 	return saved, nil
+}
+
+// scoreUpdateIsNoOp reports whether the incoming Score's answer fields
+// match the existing row exactly. Used by Save to short-circuit the
+// "Next click without editing" path so the prior editor is not
+// overwritten by a read-through. Returns the existing row alongside the
+// boolean so callers can return it as the response without a second
+// round trip.
+//
+// notes is compared as a string with nil normalized to "" -- the FE may
+// submit either for an unanswered notes box and we treat them as the
+// same value. Whitespace-only notes intentionally do NOT normalize to
+// empty; the FE trims before submitting today, so reaching this layer
+// with " " means a caller is sending whitespace deliberately and the
+// stored value should reflect that. See TestScoresEqualForUpdate's
+// WhitespaceNotesNotEqualEmpty case for the pinned contract.
+// fismasystemid and datacallid are included in the comparison because
+// a PUT that moves a score across systems or cycles is a real change
+// even if notes and option are unchanged.
+//
+// Concurrency: this SELECT precedes the (skipped) UPDATE outside any
+// transaction, so a concurrent writer could land a real change in the
+// gap. The window is small and the practical consequence is "the next
+// GET corrects the audit fields" -- there is no data loss, only a
+// brief response that lags the latest write. Wrapping Save in a
+// transaction would close the window but rework every model that
+// relies on queryRow's auto-event hook, which is out of scope for the
+// audit-fields branch.
+//
+// Returns ErrNotData when the row is missing so the caller can fail
+// cleanly without paying a second round trip through the UPDATE that
+// would also fail.
+func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, nil, trapError(err)
+	}
+
+	current := &Score{}
+	err = conn.QueryRow(ctx, `
+		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
+		       notes, functionoptionid, datacallid
+		FROM scores WHERE scoreid = $1
+	`, incoming.ScoreID).Scan(
+		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
+		&current.Notes, &current.FunctionOptionID, &current.DataCallID,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil, ErrNoData
+		}
+		return false, nil, trapError(err)
+	}
+
+	return scoresEqualForUpdate(current, incoming), current, nil
+}
+
+// scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
+// extracted so unit tests can pin the equality rules without spinning up
+// a database. Returns true when the incoming Score would produce no
+// observable change to the answer fields on the current row.
+func scoresEqualForUpdate(current, incoming *Score) bool {
+	if current == nil || incoming == nil {
+		return false
+	}
+	if current.FismaSystemID != incoming.FismaSystemID ||
+		current.DataCallID != incoming.DataCallID ||
+		current.FunctionOptionID != incoming.FunctionOptionID {
+		return false
+	}
+	return derefString(current.Notes) == derefString(incoming.Notes)
 }
 
 // lookupScoreAudit fetches the most recent event for the given scoreid

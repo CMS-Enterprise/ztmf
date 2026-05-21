@@ -306,6 +306,95 @@ func TestScoreAuditInfo(t *testing.T) {
 	var _ Auditable = (*Score)(nil)
 }
 
+// TestScoresEqualForUpdate covers the no-op detection used by Save to
+// short-circuit a PUT that did not change any answer field. Without this
+// guard a read-through user (clicking Next through a questionnaire
+// without editing) would overwrite the prior cycle's editor in the
+// audit trail. The rule we pin: equal iff all answer fields match,
+// with nil and empty-string notes treated as the same value because the
+// FE may submit either for an unanswered notes box.
+func TestScoresEqualForUpdate(t *testing.T) {
+	base := func() *Score {
+		notes := "the same"
+		return &Score{
+			ScoreID:          42,
+			FismaSystemID:    1001,
+			DataCallID:       3,
+			FunctionOptionID: 1,
+			Notes:            &notes,
+		}
+	}
+
+	t.Run("Identical", func(t *testing.T) {
+		assert.True(t, scoresEqualForUpdate(base(), base()))
+	})
+
+	t.Run("DifferentNotes", func(t *testing.T) {
+		incoming := base()
+		other := "different"
+		incoming.Notes = &other
+		assert.False(t, scoresEqualForUpdate(base(), incoming))
+	})
+
+	t.Run("DifferentFunctionOption", func(t *testing.T) {
+		incoming := base()
+		incoming.FunctionOptionID = 99
+		assert.False(t, scoresEqualForUpdate(base(), incoming))
+	})
+
+	t.Run("DifferentFismaSystem", func(t *testing.T) {
+		incoming := base()
+		incoming.FismaSystemID = 1002
+		assert.False(t, scoresEqualForUpdate(base(), incoming))
+	})
+
+	t.Run("DifferentDataCall", func(t *testing.T) {
+		incoming := base()
+		incoming.DataCallID = 4
+		assert.False(t, scoresEqualForUpdate(base(), incoming))
+	})
+
+	t.Run("NilNotesEqualsEmptyString", func(t *testing.T) {
+		current := base()
+		current.Notes = nil
+		incoming := base()
+		empty := ""
+		incoming.Notes = &empty
+		assert.True(t, scoresEqualForUpdate(current, incoming),
+			"nil and empty-string notes must compare equal because the FE may submit either")
+	})
+
+	t.Run("BothNotesNil", func(t *testing.T) {
+		current := base()
+		current.Notes = nil
+		incoming := base()
+		incoming.Notes = nil
+		assert.True(t, scoresEqualForUpdate(current, incoming))
+	})
+
+	t.Run("NilInputsReturnFalse", func(t *testing.T) {
+		assert.False(t, scoresEqualForUpdate(nil, base()))
+		assert.False(t, scoresEqualForUpdate(base(), nil))
+	})
+
+	// Pinned contract: whitespace-only notes do NOT normalize to empty.
+	// The FE trims before submitting today, so reaching this comparison
+	// with " " on one side means a caller is deliberately sending
+	// whitespace and the stored value should reflect that. If a future
+	// change wants to add whitespace tolerance, this test will fail and
+	// force an intentional update to the rule rather than silent drift.
+	t.Run("WhitespaceNotesNotEqualEmpty", func(t *testing.T) {
+		current := base()
+		empty := ""
+		current.Notes = &empty
+		incoming := base()
+		space := " "
+		incoming.Notes = &space
+		assert.False(t, scoresEqualForUpdate(current, incoming),
+			"whitespace-only notes must be treated as a real value distinct from empty until the FE/BE agree to trim on both sides")
+	})
+}
+
 // TestDerefString covers the nil-safe string deref used when building an
 // AuditRef from nullable scan targets. The LEFT JOIN can return all-nulls
 // for the editor block when a score row has no event; the helper turns

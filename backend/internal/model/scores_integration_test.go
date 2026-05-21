@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -532,6 +533,128 @@ func TestFindScoresIncludesAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, "Admiral Piett", found.LastEditedBy.Name)
 	assert.Equal(t, "Admiral.Piett@executor.empire", found.LastEditedBy.Email)
 	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
+}
+
+// TestScoreSaveNoOpPreservesPriorEditorIntegration pins the
+// audit-preservation rule: re-saving a score with identical answer
+// fields must NOT overwrite the prior editor in the events trail.
+//
+// Product rule (per dashboard owner): "save on real change, not on
+// read-through." The questionnaire UI PUTs unconditionally on every
+// Next click, so without this guard a user who walks past a question
+// already answered by someone else gets stamped as the new editor.
+//
+// Scenario:
+//  1. Krennic writes notes "X" on a score, his event is the latest.
+//  2. Tarkin re-saves with the same notes and same functionoption.
+//  3. lookupScoreAudit must still point at Krennic; no new event row
+//     must have appeared for Tarkin.
+func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
+	dataCallID := ensureFutureDataCall(t, ctx)
+
+	// Step 1: Krennic creates the score with notes "X".
+	notesOriginal := "krennic original answer"
+	s := &Score{
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesOriginal,
+	}
+	krennicCtx := UserToContext(ctx, &User{
+		UserID:   "44444444-4444-4444-4444-444444444444",
+		Email:    "Director.Krennic@scarif.empire",
+		FullName: "Orson Krennic",
+		Role:     "ISSO",
+	})
+	saved, err := s.Save(krennicCtx)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	scoreID := saved.ScoreID
+	defer func() { _, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid=$1`, scoreID) }()
+
+	// Capture the event count for this scoreid before the no-op re-save.
+	eventsBefore := countScoreEvents(t, ctx, conn, scoreID)
+	require.Equal(t, 1, eventsBefore, "Krennic's initial Save should record exactly one event")
+
+	// Step 2: Tarkin re-saves with identical fields. The FE does this on
+	// every Next click; the BE must treat it as a no-op.
+	tarkinCtx := UserToContext(ctx, &User{
+		UserID:   "11111111-1111-1111-1111-111111111111",
+		Email:    "Grand.Moff@DeathStar.Empire",
+		FullName: "Grand Moff Tarkin",
+		Role:     "ADMIN",
+	})
+	resave := &Score{
+		ScoreID:          scoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesOriginal,
+	}
+	tarkinResult, err := resave.Save(tarkinCtx)
+	require.NoError(t, err)
+	require.NotNil(t, tarkinResult)
+
+	// Step 3: events count unchanged; lookupScoreAudit still points at
+	// Krennic.
+	eventsAfter := countScoreEvents(t, ctx, conn, scoreID)
+	assert.Equal(t, eventsBefore, eventsAfter,
+		"no-op Save must NOT insert a new event row (Tarkin's read-through PUT must not overwrite history)")
+
+	require.NotNil(t, tarkinResult.LastEditedBy,
+		"no-op Save response should still carry the canonical audit (Krennic), not nil")
+	assert.Equal(t, "44444444-4444-4444-4444-444444444444",
+		tarkinResult.LastEditedBy.UserID,
+		"no-op Save response must report Krennic as the editor, not Tarkin who issued the PUT")
+	assert.Equal(t, "ISSO", tarkinResult.LastEditedBy.Role)
+
+	// Step 4: A real change DOES record a new event. Confirms the no-op
+	// guard is not over-broad.
+	notesChanged := "tarkin actually edited"
+	realChange := &Score{
+		ScoreID:          scoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesChanged,
+	}
+	realResult, err := realChange.Save(tarkinCtx)
+	require.NoError(t, err)
+	require.NotNil(t, realResult)
+
+	eventsAfterRealChange := countScoreEvents(t, ctx, conn, scoreID)
+	assert.Equal(t, eventsBefore+1, eventsAfterRealChange,
+		"genuine notes change must record a new event row")
+	require.NotNil(t, realResult.LastEditedBy)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111",
+		realResult.LastEditedBy.UserID,
+		"after a real change, the editor must be the user who made it")
+}
+
+// countScoreEvents is a small helper used by the no-op preservation test
+// to assert that read-through Saves do not append event rows.
+func countScoreEvents(t *testing.T, ctx context.Context, conn *pgx.Conn, scoreID int32) int {
+	t.Helper()
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE resource='public.scores'
+		  AND (payload->>'scoreid')::int = $1
+	`, scoreID).Scan(&n))
+	return n
 }
 
 // TestFindScoresISSOScopeRetainsAuditFieldsIntegration verifies that the
