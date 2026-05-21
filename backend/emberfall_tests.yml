@@ -772,6 +772,165 @@ tests:
       body:
         text: "{\"data\":[]}"
 
+  # Per-row audit fields on Score response (ztmf-ui#310).
+  #
+  # Every Save of a score records an event via recordEvent; FindScores joins
+  # the latest event laterally and resolves the editor identity from users.
+  # Save also stamps the just-performed edit onto its return value so the
+  # POST/PUT response body is self-consistent with subsequent GETs. The
+  # frontend dashboard footer ("Last edited <when> by <who>") reads these
+  # fields directly off the score row.
+  #
+  # body.json on emberfall is a subset match: listed keys must be present
+  # with the listed values; unlisted keys (scoreid, last_edited_at,
+  # datecalculated) are ignored. Same pattern as createUser above.
+  #
+  # commonHeaders maps to test.user@nowhere.xyz (the ADMIN fixture); the
+  # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
+  # Both saves target datacallid=3 ("Audit Fields Smoke Cycle"), seeded in
+  # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
+  # trip the past-deadline guard on the ISSO path. (Admin bypasses the
+  # guard, but routing both paths through the same fixture keeps the
+  # regression honest if the admin bypass is ever tightened.)
+  #
+  # The literal "datacallid: 3" appears in this block four times plus
+  # once in a query string. If you renumber the seed row, update all
+  # five references in lockstep -- see the NOTE at the seed INSERT in
+  # backend/_test_data_empire.sql.
+  - id: createScoreForAudit
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 1
+        datacallid: 3
+        notes: "Audit field smoke - created by Emberfall"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1001
+            functionoptionid: 1
+            datacallid: 3
+            notes: "Audit field smoke - created by Emberfall"
+            last_edited_by:
+              email: "Test.User@nowhere.xyz"
+              role: "ADMIN"
+
+  # GET the score list back through the same lateral-join path. Array
+  # response so no body.json assertion (aquia-inc/emberfall#36); status +
+  # content-type are the regression target here. The POST above carries
+  # the per-field audit assertion against the single-object response.
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=3"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # PUT returns 204 (No Content) per controller.respond; assert the write
+  # path completes cleanly. Audit-on-write is covered by the POST assertion
+  # above.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForAudit.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 1
+        datacallid: 3
+        notes: "Audit field smoke - updated by Emberfall"
+    expect:
+      status: 204
+
+  # ISSO authz on audit-bearing writes (ztmf-ui#310 / ZT contract).
+  #
+  # The whole point of putting audit fields on the score row (vs gating
+  # them behind admin-only /events) is "if you can read the row, you see
+  # who touched it last." These three cases pin that contract from both
+  # sides:
+  #
+  #   1. ISSO write to an assigned system succeeds AND the response
+  #      carries last_edited_by with the ISSO's own email + role. No
+  #      escalation, no missing audit.
+  #   2. ISSO write to an unassigned system is rejected at the controller
+  #      authz gate (403) -- the audit fields don't even come into play.
+  #   3. ISSO list scoping still resolves audit fields for rows the ISSO
+  #      can see. Status assertion only because /scores returns an array
+  #      and body.json on arrays is broken (aquia-inc/emberfall#36); the
+  #      ISSO scope + audit join is covered by the integration test
+  #      TestFindScoresISSOScopeRetainsAuditFieldsIntegration in
+  #      backend/internal/model/scores_integration_test.go.
+  #
+  # Emberfall ISSO fixture (isso.user@nowhere.xyz, uuid 6666...) is
+  # assigned to fismasystemid=1003 in _test_data_empire.sql.
+  - id: issoCreateScoreOwnSystem
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        functionoptionid: 1
+        datacallid: 3
+        notes: "ISSO audit smoke - own system"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1003
+            functionoptionid: 1
+            notes: "ISSO audit smoke - own system"
+            last_edited_by:
+              email: "Isso.User@nowhere.xyz"
+              role: "ISSO"
+
+  # ISSO write to a system they are NOT assigned to: controller rejects
+  # at the authz gate before any audit logic runs. Regression target:
+  # a refactor that pushes audit population earlier in the handler and
+  # accidentally leaks editor info into the 403 response body.
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 1
+        datacallid: 3
+        notes: "ISSO write to unassigned system - should be blocked"
+    expect:
+      status: 403
+
+  # ISSO GET /scores reaches the scoped list path. Audit fields on each
+  # returned row are validated by the integration test referenced above;
+  # this case pins the HTTP-layer status + content-type contract.
+  - url: http://localhost:8080/api/v1/scores
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
   # Questions Endpoints
   - id: createQuestion
     url: http://localhost:8080/api/v1/questions

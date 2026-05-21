@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -266,5 +267,60 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 		assert.Contains(t, sql, "fs.fismasystemid IN", "should scope to assigned systems")
 		assert.NotContains(t, sql, "fs.fismasystemid = $", "should not have equality filter when no specific system requested")
 		assert.Len(t, args, 2, "should have 2 args for IN list only")
+	})
+}
+
+// TestScoreAuditInfo verifies the Auditable contract: AuditInfo returns the
+// two pointers exactly as set on the struct. Pure accessor, no logic, but
+// the contract is what generic consumers (exports, admin views) will rely
+// on so a regression here would silently break any future Auditable user.
+func TestScoreAuditInfo(t *testing.T) {
+	t.Run("PopulatedRow", func(t *testing.T) {
+		ts := time.Date(2026, 4, 14, 22, 12, 40, 0, time.UTC)
+		ref := &AuditRef{
+			UserID: "11111111-1111-1111-1111-111111111111",
+			Name:   "Grand Moff Tarkin",
+			Email:  "Grand.Moff@DeathStar.Empire",
+			Role:   "ADMIN",
+		}
+		s := &Score{LastEditedAt: &ts, LastEditedBy: ref}
+
+		gotAt, gotBy := s.AuditInfo()
+		assert.Equal(t, &ts, gotAt, "AuditInfo must return the same time pointer")
+		assert.Equal(t, ref, gotBy, "AuditInfo must return the same AuditRef pointer")
+	})
+
+	t.Run("UnseededRow", func(t *testing.T) {
+		// A row inserted outside the event-tracking write path (seed data)
+		// has no recorded edit. AuditInfo returns (nil, nil) and the
+		// JSON encoder drops both fields via omitempty.
+		s := &Score{}
+		gotAt, gotBy := s.AuditInfo()
+		assert.Nil(t, gotAt)
+		assert.Nil(t, gotBy)
+	})
+
+	// Static interface conformance: if Score ever stops satisfying
+	// Auditable, this file fails to compile. Cheaper signal than a runtime
+	// assertion.
+	var _ Auditable = (*Score)(nil)
+}
+
+// TestDerefString covers the nil-safe string deref used when building an
+// AuditRef from nullable scan targets. The LEFT JOIN can return all-nulls
+// for the editor block when a score row has no event; the helper turns
+// those into zero values without panicking.
+func TestDerefString(t *testing.T) {
+	t.Run("Nil", func(t *testing.T) {
+		assert.Equal(t, "", derefString(nil))
+	})
+	t.Run("Value", func(t *testing.T) {
+		v := "ADMIN"
+		assert.Equal(t, "ADMIN", derefString(&v))
+	})
+	t.Run("EmptyStringPointer", func(t *testing.T) {
+		v := ""
+		assert.Equal(t, "", derefString(&v),
+			"pointer to empty string is distinct from nil and must round-trip")
 	})
 }

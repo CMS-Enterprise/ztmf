@@ -36,7 +36,16 @@ type FindEventsInput struct {
 
 // recordEvent uses the provided SqlBuilder to determin what write operation was performed (create, update, delete), and
 // records that along with current user ID, the resource being acted upon, and the payload for the event.
-// The event payload is essentially the row that was inserted or updated, but in this case stored as JSONB
+// The event payload is essentially the row that was inserted or updated, but in this case stored as JSONB.
+//
+// Error handling: the inner queryRow call logs but does not return its
+// error to recordEvent's caller. The outer write that triggered this
+// hook (e.g. scores INSERT) has already succeeded by the time we get
+// here, so failing the response would lie about what is in the DB.
+// Callers that need to confirm an event was actually written (for
+// example, before stamping audit fields onto a response) must read
+// back from the events table rather than trust this side-channel - see
+// lookupScoreAudit in scores.go for the canonical pattern.
 func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 
 	e := Event{
