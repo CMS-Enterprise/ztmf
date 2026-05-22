@@ -10,6 +10,10 @@ backend/.dccache
 backend/compose-fixed.yml
 backend/compose-dev.yml
 backend/dev.compose.env
+
+# Per-worktree Makefile overrides (env fragments Makefile.main/Makefile.impl
+# are checked in; Makefile.local is for ad-hoc local tweaks).
+Makefile.local
 tmp/
 backend/lambda
 

@@ -10,11 +10,11 @@ services:
       POSTGRES_PASSWORD: testpass
     network_mode: host  # Use host network like CI
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d ztmf -p 54399"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d ztmf -p ${TEST_DB_PORT:-54399}"]
       interval: 2s
       timeout: 5s
       retries: 10
-    command: -p 54399  # Run on different port from dev (54321)
+    command: -p ${TEST_DB_PORT:-54399}  # Run on different port from dev (54321)
     # NO VOLUMES - fresh database every time
 
   test-api:
@@ -22,9 +22,9 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      PORT: 8090
+      PORT: ${TEST_API_PORT:-8090}
       DB_ENDPOINT: localhost
-      DB_PORT: 54399
+      DB_PORT: ${TEST_DB_PORT:-54399}
       DB_NAME: ztmf
       DB_USER: admin
       DB_PASS: testpass

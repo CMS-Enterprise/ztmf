@@ -1,7 +1,29 @@
 # ZTMF Development Environment Makefile
 
-# Single source of truth for the local API port
+# Select per-environment overrides. Auto-detects from current git branch:
+#   impl, feature/impl-* -> Makefile.impl
+#   anything else        -> Makefile.main
+# Override explicitly: make ZTMF_ENV=impl dev-setup
+ZTMF_ENV ?= $(shell git branch --show-current 2>/dev/null | grep -qE '^(impl|feature/impl-)' && echo impl || echo main)
+-include Makefile.$(ZTMF_ENV)
+
+# Local-only overrides (gitignored), loaded last so they win over env fragments
+-include Makefile.local
+
+# Default ports (Makefile.main keeps these; Makefile.impl shifts them so both
+# worktrees can run side-by-side on the same host)
 API_PORT ?= 8080
+DB_PORT ?= 54321
+TEST_API_PORT ?= 8090
+TEST_DB_PORT ?= 54399
+FRONTEND_PORT ?= 5174
+COMPOSE_PROJECT_NAME ?= ztmf
+
+# Exported so docker compose picks them up for ${VAR} interpolation in
+# compose-test.yml and so child shells inherit COMPOSE_PROJECT_NAME.
+export COMPOSE_PROJECT_NAME
+export TEST_API_PORT
+export TEST_DB_PORT
 
 .PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
 
@@ -51,7 +73,7 @@ dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	cd backend && docker compose -f compose-dev.yml up -d --build
 	@echo "✅ Development environment ready!"
 	@echo "📡 API available at: http://localhost:$(API_PORT)"
-	@echo "🗄️  Database available at: localhost:54321"
+	@echo "🗄️  Database available at: localhost:$(DB_PORT)"
 	@echo ""
 	@echo "🧪 Ready to test! Run:"
 	@echo "  make test-empire-data    # Get JWT tokens for all test users"
@@ -68,7 +90,8 @@ dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	@echo ""
 	@echo "💡 Replace TOKEN with output from 'make test-empire-data'"
 
-# Generate the compose-dev.yml file
+# Generate the compose-dev.yml file (PHONY so port changes always re-render)
+.PHONY: backend/compose-dev.yml
 backend/compose-dev.yml:
 	@echo "📝 Creating compose-dev.yml..."
 	@echo "# Generated development docker-compose file" > backend/compose-dev.yml
@@ -82,9 +105,9 @@ backend/compose-dev.yml:
 	@echo "    network_mode: host" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
-	@echo "    command: -p 54321" >> backend/compose-dev.yml
+	@echo "    command: -p $(DB_PORT)" >> backend/compose-dev.yml
 	@echo "    healthcheck:" >> backend/compose-dev.yml
-	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf -p 54321\"]" >> backend/compose-dev.yml
+	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf -p $(DB_PORT)\"]" >> backend/compose-dev.yml
 	@echo "      interval: 5s" >> backend/compose-dev.yml
 	@echo "      timeout: 5s" >> backend/compose-dev.yml
 	@echo "      retries: 5" >> backend/compose-dev.yml
@@ -121,7 +144,7 @@ backend/dev.compose.env:
 	@echo "" >> backend/dev.compose.env
 	@echo "# for api container" >> backend/dev.compose.env
 	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
-	@echo "DB_PORT=54321" >> backend/dev.compose.env
+	@echo "DB_PORT=$(DB_PORT)" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
 	@echo "DB_USER=admin" >> backend/dev.compose.env
 	@echo "DB_PASS=localdevpassword" >> backend/dev.compose.env
@@ -276,12 +299,12 @@ test-e2e:
 	fi
 	@echo "🧹 Cleaning up any existing test containers..."
 	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
-	@echo "🚀 Starting fresh test environment (port 8090)..."
+	@echo "🚀 Starting fresh test environment (port $(TEST_API_PORT))..."
 	@cd backend && docker compose -f compose-test.yml up -d --build
 	@echo "⏳ Waiting for API to be ready..."
 	@sleep 15
 	@echo "🔥 Running Emberfall tests..."
-	@sed 's/localhost:8080/localhost:8090/g' backend/emberfall_tests.yml > /tmp/emberfall_test_isolated.yml
+	@sed 's|localhost:8080|localhost:$(TEST_API_PORT)|g' backend/emberfall_tests.yml > /tmp/emberfall_test_isolated.yml
 	@emberfall --tests /tmp/emberfall_test_isolated.yml || (echo "❌ Emberfall tests failed"; cd backend && docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🧹 Cleaning up test environment..."
 	@cd backend && docker compose -f compose-test.yml down -v
@@ -345,6 +368,9 @@ frontend-env:
 	echo "# Backend API running locally" >> ../ztmf-ui/.env.development.local; \
 	echo "VITE_CF_DOMAIN=http://localhost:$(API_PORT)" >> ../ztmf-ui/.env.development.local; \
 	echo "" >> ../ztmf-ui/.env.development.local; \
+	echo "# Vite dev server port (per ZTMF_ENV)" >> ../ztmf-ui/.env.development.local; \
+	echo "VITE_DEV_PORT=$(FRONTEND_PORT)" >> ../ztmf-ui/.env.development.local; \
+	echo "" >> ../ztmf-ui/.env.development.local; \
 	echo "# Disable IDP for local dev" >> ../ztmf-ui/.env.development.local; \
 	echo "VITE_IDP_ENABLED=false" >> ../ztmf-ui/.env.development.local; \
 	echo "" >> ../ztmf-ui/.env.development.local; \
@@ -384,9 +410,9 @@ full-stack-up:
 	@echo "✅ Full stack started!"
 	@echo ""
 	@echo "Services:"
-	@echo "  Frontend UI:  http://localhost:5174"
+	@echo "  Frontend UI:  http://localhost:$(FRONTEND_PORT)"
 	@echo "  Backend API:  http://localhost:$(API_PORT)"
-	@echo "  Database:     localhost:54321"
+	@echo "  Database:     localhost:$(DB_PORT)"
 	@echo ""
 	@echo "Logged in as: Grand Moff Tarkin (ADMIN)"
 	@echo "To switch user: make frontend-env EMAIL=Admiral.Piett@executor.empire"
