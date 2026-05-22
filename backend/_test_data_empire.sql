@@ -90,6 +90,13 @@ INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 -- Test DataCalls (Imperial Audits)
 INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+-- Future-deadline cycle used by audit-field smoke tests (ISSO writes need
+-- a non-expired datacall so validate() does not trip the deadline guard).
+-- NOTE: backend/emberfall_tests.yml references datacallid=3 literally in
+-- the audit-fields block; if you reorder or renumber this row, update the
+-- four "datacallid: 3" references and the "?datacallid=3" query string
+-- in that file in lockstep.
+INSERT INTO public.datacalls VALUES (3, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema

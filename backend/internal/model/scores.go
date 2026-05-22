@@ -38,6 +38,15 @@ type Score struct {
 	FunctionOptionID int32           `json:"functionoptionid"`
 	DataCallID       int32           `json:"datacallid"`
 	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
+	LastEditedAt     *time.Time      `json:"last_edited_at,omitempty"`
+	LastEditedBy     *AuditRef       `json:"last_edited_by,omitempty"`
+}
+
+// AuditInfo satisfies Auditable. Returned pointers may be nil if the row has
+// no recorded edit (e.g. a seed row inserted outside the event-tracking write
+// path).
+func (s *Score) AuditInfo() (*time.Time, *AuditRef) {
+	return s.LastEditedAt, s.LastEditedBy
 }
 
 func (s *Score) Save(ctx context.Context) (*Score, error) {
@@ -45,6 +54,42 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 
 	if err := s.validate(ctx); err != nil {
 		return nil, err
+	}
+
+	// Audit-preserving no-op: on an UPDATE that does not actually change
+	// any answer field, skip the write entirely. The questionnaire UI
+	// PUTs on every Next click regardless of whether the user touched
+	// the answer, so without this guard a read-through user gets stamped
+	// as the new editor and the prior cycle's real editor is overwritten.
+	// The product rule is "save on real change, not on read-through" so
+	// we enforce it here as defense in depth even if the client adds its
+	// own dirty check.
+	//
+	// Treats nil notes and empty-string notes as the same value, since the
+	// FE may submit either for an unanswered notes box. Returns the
+	// current row through the same lookupScoreAudit path the normal write
+	// uses, so the caller cannot tell a no-op apart from a successful
+	// write -- only the events table (unchanged) reveals the truth.
+	//
+	// On a no-op match we carry the incoming.FunctionOption (if any)
+	// onto the returned current row so callers that requested
+	// ?include=functionoption still get a fully-shaped response, matching
+	// the populated-write path through queryRow + FindScores. The PUT
+	// controller writes 204 today but still encodes the body, so the
+	// response is observable to clients that parse 204 bodies.
+	if s.ScoreID != 0 {
+		if same, current, err := scoreUpdateIsNoOp(ctx, s); err != nil {
+			return nil, err
+		} else if same {
+			if s.FunctionOption != nil {
+				current.FunctionOption = s.FunctionOption
+			}
+			if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
+				current.LastEditedAt = at
+				current.LastEditedBy = by
+			}
+			return current, nil
+		}
 	}
 
 	if s.ScoreID == 0 {
@@ -63,7 +108,158 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Where("scoreid=?", s.ScoreID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
 	}
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+
+	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+	if err != nil {
+		return saved, err
+	}
+
+	// Stamp the just-performed edit onto the response so the POST/PUT body
+	// is consistent with what a subsequent GET will return. We read back
+	// the canonical row that recordEvent (fired from queryRow above) just
+	// wrote, rather than synthesizing from time.Now() + ctx user. Two
+	// reasons:
+	//   1) recordEvent currently logs-and-swallows errors. If the event
+	//      INSERT failed (FK, JSONB issue, transient), no event row
+	//      exists. Reading back means we leave audit fields nil instead
+	//      of advertising a phantom editor the next GET cannot confirm.
+	//   2) Postgres CURRENT_TIMESTAMP is the authoritative source. Using
+	//      time.Now().UTC() invites sub-second clock skew between the
+	//      stamped response and the canonical events.createdat that
+	//      subsequent reads project. Same source = no drift.
+	if saved != nil {
+		// Both-or-neither: only stamp when the lateral lookup resolved
+		// both the event timestamp AND the editor identity. See the
+		// matching scan logic in FindScores below for the same rule.
+		if at, by := lookupScoreAudit(ctx, saved.ScoreID); at != nil && by != nil {
+			saved.LastEditedAt = at
+			saved.LastEditedBy = by
+		}
+	}
+	return saved, nil
+}
+
+// scoreUpdateIsNoOp reports whether the incoming Score's answer fields
+// match the existing row exactly. Used by Save to short-circuit the
+// "Next click without editing" path so the prior editor is not
+// overwritten by a read-through. Returns the existing row alongside the
+// boolean so callers can return it as the response without a second
+// round trip.
+//
+// notes is compared as a string with nil normalized to "" -- the FE may
+// submit either for an unanswered notes box and we treat them as the
+// same value. Whitespace-only notes intentionally do NOT normalize to
+// empty; the FE trims before submitting today, so reaching this layer
+// with " " means a caller is sending whitespace deliberately and the
+// stored value should reflect that. See TestScoresEqualForUpdate's
+// WhitespaceNotesNotEqualEmpty case for the pinned contract.
+// fismasystemid and datacallid are included in the comparison because
+// a PUT that moves a score across systems or cycles is a real change
+// even if notes and option are unchanged.
+//
+// Concurrency: this SELECT precedes the (skipped) UPDATE outside any
+// transaction, so a concurrent writer could land a real change in the
+// gap. The window is small and the practical consequence is "the next
+// GET corrects the audit fields" -- there is no data loss, only a
+// brief response that lags the latest write. Wrapping Save in a
+// transaction would close the window but rework every model that
+// relies on queryRow's auto-event hook, which is out of scope for the
+// audit-fields branch.
+//
+// Returns ErrNotData when the row is missing so the caller can fail
+// cleanly without paying a second round trip through the UPDATE that
+// would also fail.
+func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, nil, trapError(err)
+	}
+
+	current := &Score{}
+	err = conn.QueryRow(ctx, `
+		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
+		       notes, functionoptionid, datacallid
+		FROM scores WHERE scoreid = $1
+	`, incoming.ScoreID).Scan(
+		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
+		&current.Notes, &current.FunctionOptionID, &current.DataCallID,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil, ErrNoData
+		}
+		return false, nil, trapError(err)
+	}
+
+	return scoresEqualForUpdate(current, incoming), current, nil
+}
+
+// scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
+// extracted so unit tests can pin the equality rules without spinning up
+// a database. Returns true when the incoming Score would produce no
+// observable change to the answer fields on the current row.
+func scoresEqualForUpdate(current, incoming *Score) bool {
+	if current == nil || incoming == nil {
+		return false
+	}
+	if current.FismaSystemID != incoming.FismaSystemID ||
+		current.DataCallID != incoming.DataCallID ||
+		current.FunctionOptionID != incoming.FunctionOptionID {
+		return false
+	}
+	return derefString(current.Notes) == derefString(incoming.Notes)
+}
+
+// lookupScoreAudit fetches the most recent event for the given scoreid
+// and resolves the editor identity from users. Returns (nil, nil) when
+// no event row exists -- the caller MUST treat that as the "do not
+// stamp" signal rather than substituting synthetic values, otherwise
+// the POST/PUT response will diverge from what subsequent FindScores
+// reads return through the same lateral join (see [[scores.FindScores]]).
+//
+// Resource literal 'public.scores' mirrors the legacy writer in Save
+// above; bare-name normalization is tracked as a separate follow-up.
+func lookupScoreAudit(ctx context.Context, scoreID int32) (*time.Time, *AuditRef) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		log.Println("lookupScoreAudit: db.Conn:", err)
+		return nil, nil
+	}
+
+	const q = `
+		SELECT e.createdat, u.userid, u.fullname, u.email, u.role
+		FROM events e
+		LEFT JOIN users u ON u.userid = e.userid
+		WHERE e.resource = 'public.scores'
+		  AND (e.payload->>'scoreid')::int = $1
+		ORDER BY e.createdat DESC
+		LIMIT 1
+	`
+	var (
+		at    time.Time
+		uid   *string
+		name  *string
+		email *string
+		role  *string
+	)
+	if err := conn.QueryRow(ctx, q, scoreID).Scan(&at, &uid, &name, &email, &role); err != nil {
+		// No row is the expected outcome when recordEvent skipped/failed.
+		// Anything else is genuinely unexpected; log it for forensics but
+		// stay on the "do not stamp" path so the response cannot lie.
+		return nil, nil
+	}
+	if uid == nil {
+		// Event exists but editor was nil at write time (no user in ctx).
+		// Surface the timestamp; leave LastEditedBy nil so the caller can
+		// decide whether to clear both (see Save).
+		return &at, nil
+	}
+	return &at, &AuditRef{
+		UserID: *uid,
+		Name:   derefString(name),
+		Email:  derefString(email),
+		Role:   derefString(role),
+	}
 }
 
 func (s *Score) validate(ctx context.Context) error {
@@ -167,6 +363,29 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 		sqlb = sqlb.Where("datacallid=?", *input.DataCallID)
 	}
 
+	// Attach last-edit audit info. The lateral subquery picks the most recent
+	// write event for the row; the outer left join resolves the editor's
+	// identity. Both joins are LEFT so a score row missing an event (seed
+	// data) still returns. The 'public.scores' literal matches the value
+	// recordEvent writes from scores.Save; see follow-up to normalize.
+	sqlb = sqlb.
+		JoinClause(`LEFT JOIN LATERAL (
+			SELECT createdat, userid
+			FROM events
+			WHERE resource = 'public.scores'
+			  AND (payload->>'scoreid')::int = scores.scoreid
+			ORDER BY createdat DESC
+			LIMIT 1
+		) last_edit ON TRUE`).
+		LeftJoin("users last_edited_user ON last_edited_user.userid = last_edit.userid").
+		Columns(
+			"last_edit.createdat AS last_edited_at",
+			"last_edited_user.userid AS last_edited_by_userid",
+			"last_edited_user.fullname AS last_edited_by_name",
+			"last_edited_user.email AS last_edited_by_email",
+			"last_edited_user.role AS last_edited_by_role",
+		)
+
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
 		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID}
@@ -174,9 +393,43 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 			score.FunctionOption = &FunctionOption{}
 			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)
 		}
-		err := row.Scan(fields...)
-		return &score, err
+		var (
+			lastEditedAt *time.Time
+			editorUserID *string
+			editorName   *string
+			editorEmail  *string
+			editorRole   *string
+		)
+		fields = append(fields, &lastEditedAt, &editorUserID, &editorName, &editorEmail, &editorRole)
+		if err := row.Scan(fields...); err != nil {
+			return &score, err
+		}
+		// Both-or-neither: a populated audit pair means both fields
+		// resolved cleanly from the lateral join. If either side is
+		// missing (no event row for this scoreid, or an event row whose
+		// editor userid no longer resolves through the users join), we
+		// emit nothing rather than half a record. Lets the frontend
+		// treat "absent" as a single state instead of branching on each
+		// field independently. Encoded in OpenAPI as both nullable +
+		// omitempty.
+		if lastEditedAt != nil && editorUserID != nil {
+			score.LastEditedAt = lastEditedAt
+			score.LastEditedBy = &AuditRef{
+				UserID: *editorUserID,
+				Name:   derefString(editorName),
+				Email:  derefString(editorEmail),
+				Role:   derefString(editorRole),
+			}
+		}
+		return &score, nil
 	})
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // pillarScoreRow is the wire shape returned by findPillarScoresAll. One row

@@ -1538,10 +1538,61 @@ components:
         datacallid:
           type: integer
           format: int32
+        last_edited_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            RFC3339 timestamp of the most recent write to this score row.
+            Null only for rows inserted outside the event-tracking write path
+            (seed data); every API-driven save records an event.
+        last_edited_by:
+          allOf:
+            - $ref: '#/components/schemas/AuditRef'
+          nullable: true
+          description: >-
+            Identifies the user who performed the most recent write. Authz
+            for these fields follows the score row itself; if you can read
+            the score, you can read its editor.
       required:
         - fismasystemid
         - functionoptionid
         - datacallid
+    AuditRef:
+      type: object
+      description: >-
+        Standard "who touched this row" reference embedded on per-resource
+        audit fields (last_edited_by, future created_by/decommissioned_by).
+        Inherits authz from the resource that carries it.
+      properties:
+        userid:
+          type: string
+          format: uuid
+          description: User UUID. Stable identifier even if name/email/role change.
+        name:
+          type: string
+          description: Display name from users.fullname.
+        email:
+          type: string
+        role:
+          type: string
+          # Canonical role taxonomy lives in backend/internal/model/users.go
+          # (IsAdmin / IsOwner / IsHHSAdmin / IsOpDivAdmin role predicates).
+          # When a new role is added there, update this enum AND
+          # validations.go in lockstep -- openapi has drifted from code
+          # twice in this repo, so this comment is the canary.
+          enum:
+            - ADMIN
+            - READONLY_ADMIN
+            - OWNER
+            - HHS_ADMIN
+            - HHS_READONLY_ADMIN
+            - OPDIV_ADMIN
+            - OPDIV_READONLY_ADMIN
+            - ISSM
+            - ISSO
+      required:
+        - userid
     ScoreAggregate:
       type: object
       properties:

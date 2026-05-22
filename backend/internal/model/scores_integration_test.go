@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -350,3 +351,388 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// ensureFutureDataCall returns a datacallid whose deadline is in the
+// future, synthesizing one (marked with integrationTestPrefix so the
+// sweep cleans it up) if none exists in seed data. Shared by the audit
+// field tests below so each one does not redo the discovery dance.
+//
+// In the default empire seed this resolves to datacallid=3 ("Audit
+// Fields Smoke Cycle", deadline 2099-12-31), which is also the cycle
+// the emberfall audit-fields block writes to. That is intentional
+// reuse, not a fixture collision: scores written by these integration
+// tests carry their own scoreid and are cleaned up by the per-test
+// defer, so they cannot leak into the emberfall HTTP-layer pass.
+func ensureFutureDataCall(t *testing.T, ctx context.Context) int32 {
+	t.Helper()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	var dataCallID int32
+	err = conn.QueryRow(ctx, `
+		SELECT datacallid FROM datacalls WHERE deadline > NOW() ORDER BY deadline ASC LIMIT 1
+	`).Scan(&dataCallID)
+	if err == nil {
+		return dataCallID
+	}
+
+	name := fmt.Sprintf("%saudit_future_%d", integrationTestPrefix, time.Now().UnixNano())
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), NOW() + INTERVAL '7 days')
+		RETURNING datacallid
+	`, name).Scan(&dataCallID))
+	return dataCallID
+}
+
+// anyExistingFunctionOption returns a (fismasystemid, functionoptionid)
+// pair drawn from existing scores so the FK constraints hold without
+// requiring those rows to be associated with any specific datacall.
+func anyExistingFunctionOption(t *testing.T, ctx context.Context) (int32, int32) {
+	t.Helper()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	var fismaSystemID, functionOptionID int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT s.fismasystemid, s.functionoptionid
+		FROM scores s LIMIT 1
+	`).Scan(&fismaSystemID, &functionOptionID),
+		"need at least one existing score to derive an FK-safe (system, functionoption) pair")
+	return fismaSystemID, functionOptionID
+}
+
+// TestScoreSaveStampsAuditFieldsIntegration verifies the write-side audit
+// contract: Save with a user in context returns a Score whose
+// LastEditedAt and LastEditedBy reflect that user. This is what the
+// frontend reads off the POST/PUT response without a follow-up GET.
+//
+// Empire fixtures only (see [[feedback_no_real_pii_in_tests]]); never
+// substitute real CMS users.
+func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
+	dataCallID := ensureFutureDataCall(t, ctx)
+
+	notes := "audit stamp integration test"
+	s := &Score{
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notes,
+	}
+
+	tarkinCtx := UserToContext(ctx, &User{
+		UserID:   "11111111-1111-1111-1111-111111111111",
+		Email:    "Grand.Moff@DeathStar.Empire",
+		FullName: "Grand Moff Tarkin",
+		Role:     "ADMIN",
+	})
+
+	before := time.Now().UTC()
+	saved, err := s.Save(tarkinCtx)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	defer func() {
+		// Cleanup regardless of assertion outcome.
+		_, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, saved.ScoreID)
+	}()
+
+	assert.Greater(t, saved.ScoreID, int32(0), "Save returned a scoreid")
+	require.NotNil(t, saved.LastEditedAt, "LastEditedAt populated on write response")
+	assert.False(t, saved.LastEditedAt.Before(before),
+		"LastEditedAt at or after the moment of Save")
+	require.NotNil(t, saved.LastEditedBy, "LastEditedBy populated on write response")
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111", saved.LastEditedBy.UserID)
+	assert.Equal(t, "Grand Moff Tarkin", saved.LastEditedBy.Name)
+	assert.Equal(t, "Grand.Moff@DeathStar.Empire", saved.LastEditedBy.Email)
+	assert.Equal(t, "ADMIN", saved.LastEditedBy.Role)
+}
+
+// TestFindScoresIncludesAuditFieldsIntegration verifies the read-side
+// audit contract: after a Save through the model, a subsequent
+// FindScores returns the same row with LastEditedAt + LastEditedBy
+// populated via the LATERAL join on events. This is what the dashboard
+// list view consumes.
+//
+// Pairs with TestScoreSaveStampsAuditFieldsIntegration: write-side
+// stamps the response in the same call; read-side resolves it from the
+// recorded event. Both must agree on the same user.
+func TestFindScoresIncludesAuditFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
+	dataCallID := ensureFutureDataCall(t, ctx)
+
+	notes := "audit read integration test"
+	s := &Score{
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notes,
+	}
+
+	piettCtx := UserToContext(ctx, &User{
+		UserID:   "22222222-2222-2222-2222-222222222222",
+		Email:    "Admiral.Piett@executor.empire",
+		FullName: "Admiral Piett",
+		Role:     "ISSO",
+	})
+
+	saved, err := s.Save(piettCtx)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	defer func() {
+		_, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, saved.ScoreID)
+	}()
+
+	// FindScores via the same filters; the saved row must be present and
+	// carry audit fields resolved from the events table.
+	scores, err := FindScores(ctx, FindScoresInput{
+		FismaSystemID: &fismaSystemID,
+		DataCallID:    &dataCallID,
+	})
+	require.NoError(t, err)
+
+	var found *Score
+	for _, sc := range scores {
+		if sc.ScoreID == saved.ScoreID {
+			found = sc
+			break
+		}
+	}
+	require.NotNil(t, found, "FindScores must return the row we just Saved")
+
+	require.NotNil(t, found.LastEditedAt, "lateral join populated LastEditedAt")
+	require.NotNil(t, found.LastEditedBy, "lateral join resolved editor")
+	assert.Equal(t, "22222222-2222-2222-2222-222222222222", found.LastEditedBy.UserID,
+		"editor identity must match the user-in-context that performed the Save")
+	assert.Equal(t, "Admiral Piett", found.LastEditedBy.Name)
+	assert.Equal(t, "Admiral.Piett@executor.empire", found.LastEditedBy.Email)
+	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
+}
+
+// TestScoreSaveNoOpPreservesPriorEditorIntegration pins the
+// audit-preservation rule: re-saving a score with identical answer
+// fields must NOT overwrite the prior editor in the events trail.
+//
+// Product rule (per dashboard owner): "save on real change, not on
+// read-through." The questionnaire UI PUTs unconditionally on every
+// Next click, so without this guard a user who walks past a question
+// already answered by someone else gets stamped as the new editor.
+//
+// Scenario:
+//  1. Krennic writes notes "X" on a score, his event is the latest.
+//  2. Tarkin re-saves with the same notes and same functionoption.
+//  3. lookupScoreAudit must still point at Krennic; no new event row
+//     must have appeared for Tarkin.
+func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
+	dataCallID := ensureFutureDataCall(t, ctx)
+
+	// Step 1: Krennic creates the score with notes "X".
+	notesOriginal := "krennic original answer"
+	s := &Score{
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesOriginal,
+	}
+	krennicCtx := UserToContext(ctx, &User{
+		UserID:   "44444444-4444-4444-4444-444444444444",
+		Email:    "Director.Krennic@scarif.empire",
+		FullName: "Orson Krennic",
+		Role:     "ISSO",
+	})
+	saved, err := s.Save(krennicCtx)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	scoreID := saved.ScoreID
+	defer func() { _, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid=$1`, scoreID) }()
+
+	// Capture the event count for this scoreid before the no-op re-save.
+	eventsBefore := countScoreEvents(t, ctx, conn, scoreID)
+	require.Equal(t, 1, eventsBefore, "Krennic's initial Save should record exactly one event")
+
+	// Step 2: Tarkin re-saves with identical fields. The FE does this on
+	// every Next click; the BE must treat it as a no-op.
+	tarkinCtx := UserToContext(ctx, &User{
+		UserID:   "11111111-1111-1111-1111-111111111111",
+		Email:    "Grand.Moff@DeathStar.Empire",
+		FullName: "Grand Moff Tarkin",
+		Role:     "ADMIN",
+	})
+	resave := &Score{
+		ScoreID:          scoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesOriginal,
+	}
+	tarkinResult, err := resave.Save(tarkinCtx)
+	require.NoError(t, err)
+	require.NotNil(t, tarkinResult)
+
+	// Step 3: events count unchanged; lookupScoreAudit still points at
+	// Krennic.
+	eventsAfter := countScoreEvents(t, ctx, conn, scoreID)
+	assert.Equal(t, eventsBefore, eventsAfter,
+		"no-op Save must NOT insert a new event row (Tarkin's read-through PUT must not overwrite history)")
+
+	require.NotNil(t, tarkinResult.LastEditedBy,
+		"no-op Save response should still carry the canonical audit (Krennic), not nil")
+	assert.Equal(t, "44444444-4444-4444-4444-444444444444",
+		tarkinResult.LastEditedBy.UserID,
+		"no-op Save response must report Krennic as the editor, not Tarkin who issued the PUT")
+	assert.Equal(t, "ISSO", tarkinResult.LastEditedBy.Role)
+
+	// Step 4: A real change DOES record a new event. Confirms the no-op
+	// guard is not over-broad.
+	notesChanged := "tarkin actually edited"
+	realChange := &Score{
+		ScoreID:          scoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notesChanged,
+	}
+	realResult, err := realChange.Save(tarkinCtx)
+	require.NoError(t, err)
+	require.NotNil(t, realResult)
+
+	eventsAfterRealChange := countScoreEvents(t, ctx, conn, scoreID)
+	assert.Equal(t, eventsBefore+1, eventsAfterRealChange,
+		"genuine notes change must record a new event row")
+	require.NotNil(t, realResult.LastEditedBy)
+	assert.Equal(t, "11111111-1111-1111-1111-111111111111",
+		realResult.LastEditedBy.UserID,
+		"after a real change, the editor must be the user who made it")
+}
+
+// countScoreEvents is a small helper used by the no-op preservation test
+// to assert that read-through Saves do not append event rows.
+func countScoreEvents(t *testing.T, ctx context.Context, conn *pgx.Conn, scoreID int32) int {
+	t.Helper()
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE resource='public.scores'
+		  AND (payload->>'scoreid')::int = $1
+	`, scoreID).Scan(&n))
+	return n
+}
+
+// TestFindScoresISSOScopeRetainsAuditFieldsIntegration verifies that the
+// ISSO scope predicate (users_fismasystems join via input.UserID) still
+// produces populated audit fields. Regression target: a future
+// refactor that drops the LATERAL join when the users_fismasystems join
+// is present would silently strip last-edited info from the ISSO list
+// view -- the primary consumer of #310.
+//
+// Uses Director Krennic (assigned to fismasystemid 1003 in
+// _test_data_empire.sql) as the scoped ISSO; saves a score as Krennic
+// to confirm the lateral join resolves to him from his own write.
+func TestFindScoresISSOScopeRetainsAuditFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	const krennicUUID = "44444444-4444-4444-4444-444444444444"
+	const krennicFisma = int32(1003)
+
+	// Pick any functionoption that exists; FK to functionoptions is what
+	// matters. The functionoptionid space is dense from seed data, so the
+	// first row will do.
+	var functionOptionID int32
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT functionoptionid FROM functionoptions LIMIT 1`).Scan(&functionOptionID))
+
+	dataCallID := ensureFutureDataCall(t, ctx)
+
+	notes := "ISSO scope audit retention test"
+	s := &Score{
+		FismaSystemID:    krennicFisma,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       dataCallID,
+		Notes:            &notes,
+	}
+	krennicCtx := UserToContext(ctx, &User{
+		UserID:   krennicUUID,
+		Email:    "Director.Krennic@scarif.empire",
+		FullName: "Orson Krennic",
+		Role:     "ISSO",
+	})
+	saved, err := s.Save(krennicCtx)
+	require.NoError(t, err)
+	defer func() {
+		_, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, saved.ScoreID)
+	}()
+
+	// Same scope the controller applies for an ISSO: UserID set, no
+	// FismaSystemID filter -- the users_fismasystems join scopes to
+	// Krennic's assigned systems.
+	krennicUID := krennicUUID
+	scores, err := FindScores(ctx, FindScoresInput{
+		UserID: &krennicUID,
+	})
+	require.NoError(t, err)
+
+	var found *Score
+	for _, sc := range scores {
+		if sc.ScoreID == saved.ScoreID {
+			found = sc
+			break
+		}
+		// Every row returned must be a system Krennic is assigned to;
+		// the seeded assignment is fismasystemid=1003 only.
+		assert.Equal(t, krennicFisma, sc.FismaSystemID,
+			"ISSO scope leaked: row for unassigned system in Krennic's list")
+	}
+	require.NotNil(t, found, "Krennic's just-saved row must appear in his scoped list")
+	require.NotNil(t, found.LastEditedBy, "ISSO scope must not strip the audit join")
+	assert.Equal(t, krennicUUID, found.LastEditedBy.UserID)
+	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
+}
