@@ -1,0 +1,15 @@
+# Makefile.impl - impl branch (experimental) port allocation.
+#
+# Loaded automatically when the current branch matches impl or feature/impl-*.
+# Ports are offset from Makefile.main so an impl worktree can run side-by-side
+# with a main worktree on the same host without docker / network collisions.
+#
+# Adding a new env? Copy this file to Makefile.<env>, shift the ports, and
+# extend the ZTMF_ENV detection in the top-level Makefile.
+
+API_PORT       ?= 8081
+DB_PORT        ?= 54322
+TEST_API_PORT  ?= 8091
+TEST_DB_PORT   ?= 54398
+FRONTEND_PORT  ?= 5175
+COMPOSE_PROJECT_NAME ?= ztmf-impl

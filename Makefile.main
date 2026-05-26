@@ -1,0 +1,16 @@
+# Makefile.main - default (main branch) port allocation.
+#
+# Loaded automatically by the top-level Makefile when the current branch is not
+# impl / feature/impl-*. Values match the historical defaults so existing
+# tooling, docs, and CI keep working.
+#
+# Override per-env in Makefile.impl (and any future Makefile.<env>). For ad-hoc
+# tweaks in a single worktree, drop a (gitignored) Makefile.local instead of
+# editing this file.
+
+API_PORT       ?= 8080
+DB_PORT        ?= 54321
+TEST_API_PORT  ?= 8090
+TEST_DB_PORT   ?= 54399
+FRONTEND_PORT  ?= 5174
+COMPOSE_PROJECT_NAME ?= ztmf
