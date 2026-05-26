@@ -174,6 +174,7 @@ func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, erro
 	if err != nil {
 		return false, nil, trapError(err)
 	}
+	defer conn.Close(ctx)
 
 	current := &Score{}
 	err = conn.QueryRow(ctx, `
@@ -225,6 +226,7 @@ func lookupScoreAudit(ctx context.Context, scoreID int32) (*time.Time, *AuditRef
 		log.Println("lookupScoreAudit: db.Conn:", err)
 		return nil, nil
 	}
+	defer conn.Close(ctx)
 
 	const q = `
 		SELECT e.createdat, u.userid, u.fullname, u.email, u.role
