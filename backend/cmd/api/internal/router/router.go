@@ -73,6 +73,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/cfactssystems", controller.ListCfactsSystems).Methods("GET")
 	router.HandleFunc("/api/v1/cfactssystems/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetCfactsSystem).Methods("GET")
 
+	router.HandleFunc("/api/v1/systemenrichment/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetSystemEnrichment).Methods("GET")
+
 	// massemails resource only supports a single verb as there are no records to get list and details for, but the operation is non-idempotent
 	router.HandleFunc("/api/v1/massemails", controller.SaveMassEmail).Methods("POST")
 

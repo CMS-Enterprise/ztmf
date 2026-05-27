@@ -1045,6 +1045,28 @@ tests:
     expect:
       status: 404
 
+  # System Enrichment endpoint (generic enrichment payload, admin access)
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
+
+  # System with no enrichment row returns 404
+  - url: http://localhost:8080/api/v1/systemenrichment/nonexistent-uuid-does-not-exist
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
   # massemails only supports this one route
   # test that it errors on invalid input
   - url: http://localhost:8080/api/v1/massemails
@@ -1355,6 +1377,28 @@ tests:
 
   # ISSO gets 403 on GET /api/v1/cfactssystems/<uuid> for unassigned system
   - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # ISSO can GET /api/v1/systemenrichment/<uuid> for an assigned system
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
+
+  # ISSO gets 403 on GET /api/v1/systemenrichment/<uuid> for unassigned system
+  - url: http://localhost:8080/api/v1/systemenrichment/12345678-ABCD-4321-AFAB-123456789ABC
     method: GET
     headers:
       <<: *issoHeaders

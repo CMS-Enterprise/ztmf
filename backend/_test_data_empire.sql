@@ -545,6 +545,16 @@ INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES
     ('Single Factor (Only)', 'Single Factor Only', 1, 'Single factor authentication only - no MFA capability.')
 ON CONFLICT (idm_name) DO NOTHING;
 
+-- Generic system_enrichment row (issue #211), keyed on fismasystems.fismauid for
+-- Shield Gen (1003), which the Emberfall ISSO is assigned to. Gives the
+-- /systemenrichment endpoint E2E coverage via the same access join as CFACTS.
+-- The payload is opaque to ztmf core (owned by the enrichment pipeline).
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'E1D00198-36D4-4EAB-8C00-501E1D000999',
+    '{"fisma_acronym":"SLD-GEN","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
 -- Reset every SERIAL sequence to its current table max. Use
 -- pg_get_serial_sequence() so the right name is resolved at runtime: some
 -- environments have historically renamed tables (e.g. functionscores -> scores)

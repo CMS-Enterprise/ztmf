@@ -1296,6 +1296,35 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /systemenrichment/{fisma_uuid}:
+    get:
+      summary: Get system enrichment payload by FISMA UUID
+      description: Returns the generic enrichment payload for a FISMA system by its UUID. Admins and READONLY_ADMINs can access any system; ISSOs can only access systems they are assigned to. The payload is an opaque JSON document owned by the enrichment pipeline; systems with no enrichment data return 404.
+      operationId: getSystemEnrichment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: fisma_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: System enrichment payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SystemEnrichment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /massemails:
     post:
       summary: Send mass email
@@ -1798,6 +1827,23 @@ components:
       required:
         - fisma_uuid
         - fisma_acronym
+        - synced_at
+    SystemEnrichment:
+      type: object
+      description: Generic per-system enrichment payload. The payload shape is opaque to the core API and owned by the enrichment pipeline.
+      properties:
+        fisma_uuid:
+          type: string
+        payload:
+          type: object
+          description: Opaque JSON document produced by the enrichment pipeline; returned verbatim.
+          additionalProperties: true
+        synced_at:
+          type: string
+          format: date-time
+      required:
+        - fisma_uuid
+        - payload
         - synced_at
     Event:
       type: object
