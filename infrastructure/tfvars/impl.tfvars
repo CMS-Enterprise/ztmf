@@ -7,10 +7,6 @@ environment            = "impl"
 domain_name_prefix     = "impl."
 ecs_service_task_count = 1
 
-# CFACTS / Snowflake sync configuration
-# Impl has no Snowflake account; left blank, schedule disabled via locals.
-cfacts_snowflake_view  = ""
-snowflake_table_prefix = "ZTMF"
 
 # Kion rotation: impl has no ztmf_kion_impl secret yet; keep schedule off
 kion_rotate_schedule_enabled = false

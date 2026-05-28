@@ -90,67 +90,24 @@ The infrastructure is deployed using Terraform and GitHub Actions. The GitHub Ac
 
 ## Data Synchronization
 
-### Lambda Function for Snowflake Sync
-
-The ZTMF application includes automated data synchronization from PostgreSQL to Snowflake using AWS Lambda:
-
-#### Architecture
-- **Function**: `ztmf-data-sync-${environment}` 
-- **Runtime**: Go (`provided.al2`) with 1GB memory, 15-minute timeout
-- **VPC**: Deployed in private subnets with access to Aurora PostgreSQL
-- **Scheduling**: EventBridge rules for automated execution
-- **Monitoring**: CloudWatch logs, metrics, and alarms
-
-#### Execution Schedule
-- **Production**: Quarterly on 1st of every 3rd month at 2 AM UTC
-- **Development**: Weekly on Mondays at 9 AM UTC (dry-run mode only)
-
-#### Data Flow
-```mermaid
-graph TD
-    A[EventBridge Schedule] --> B[Lambda Function]
-    B --> C[Aurora PostgreSQL]
-    B --> D[Snowflake]
-    C --> E[Extract 12 ZTMF Tables]
-    E --> F[Transform & Load to Snowflake]
-    F --> D
-    B --> G[CloudWatch Logs]
-    B --> H[Dead Letter Queue]
-```
-
-#### Tables Synchronized
-The Lambda synchronizes 10 core ZTMF business tables:
-- `datacalls` → `ZTMF_DATACALLS`
-- `fismasystems` → `ZTMF_FISMASYSTEMS` 
-- `users` → `ZTMF_USERS`
-- `scores` → `ZTMF_SCORES`
-- `questions` → `ZTMF_QUESTIONS`
-- `functions` → `ZTMF_FUNCTIONS`
-- `functionoptions` → `ZTMF_FUNCTIONOPTIONS`
-- `pillars` → `ZTMF_PILLARS`
-- `datacalls_fismasystems` → `ZTMF_DATACALLS_FISMASYSTEMS`
-- `users_fismasystems` → `ZTMF_USERS_FISMASYSTEMS`
-
-*Note: events and massemails tables excluded (not required for ZTMF business operations)*
-
-#### Security & Configuration
-- **Secrets Manager**: Environment-specific Snowflake credentials with RSA authentication
-- **IAM Roles**: Least privilege access to database, secrets, and VPC
-- **Error Handling**: Dead letter queue and CloudWatch alarms
-- **Environment Isolation**: Dry-run in dev, real sync in production
-- **Test Events**: Standardized test events stored as SSM parameters
+PostgreSQL to Snowflake enrichment sync and the CFACTS pipeline live in the
+private `CMS-Enterprise/ztmf-insights` repo. The insights stack writes the
+generic `public.system_enrichment` table that ztmf core owns; ztmf exposes the
+read endpoint at `GET /api/v1/systemenrichment/{fisma_uuid}`. The ztmf account
+no longer hosts enrichment compute.
 
 ## Infrastructure Organization
 
 The Terraform configuration follows a logical service-based organization:
 
-- **`lambda.tf`**: Core Lambda function and EventBridge scheduling
-- **`iam.tf`**: IAM roles and policies for Lambda execution
-- **`monitoring.tf`**: CloudWatch logs, alarms, and SQS dead letter queue
-- **`s3.tf`**: S3 buckets including Lambda deployment packages
-- **`vpc.tf`**: Network resources including Lambda security group
-- **`secrets.tf`**: Secrets Manager resources for credentials
-- **`outputs.tf`**: Terraform outputs and SSM test event parameters
+- **`lambda-cert-rotation.tf`**: TLS cert rotation Lambda for the ALB cert
+- **`lambda-kion.tf`**: Kion API key rotation Lambda
+- **`iam-cert-rotation.tf`**, **`iam-kion.tf`**: per-Lambda IAM roles and policies
+- **`monitoring-cert-rotation.tf`**, **`monitoring-kion.tf`**: per-Lambda log groups, alarms, DLQs
+- **`s3.tf`**: S3 buckets (web assets, logs, lambda deployment packages, cert rotation archive)
+- **`vpc.tf`**: Network resources including the shared Lambda security group
+- **`secrets.tf`**: Secrets Manager resources for ALB OIDC, TLS, SMTP, Aurora master user, Kion API key
+- **`outputs.tf`**: Terraform outputs (NAT egress IP, CloudFront distribution, ALB DNS)
 
 ## Database Access
 
