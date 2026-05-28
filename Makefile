@@ -1,5 +1,9 @@
 # ZTMF Development Environment Makefile
 
+# Use bash (not the default /bin/sh, which on macOS is bash in POSIX mode and
+# treats `echo -n` as a literal argument, breaking JWT generation).
+SHELL := /bin/bash
+
 # Single source of truth for the local API port
 API_PORT ?= 8080
 
@@ -79,7 +83,8 @@ backend/compose-dev.yml:
 	@echo "    image: postgres:16.8" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    network_mode: host" >> backend/compose-dev.yml
+	@echo "    ports:" >> backend/compose-dev.yml
+	@echo "      - \"54321:54321\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
 	@echo "    command: -p 54321" >> backend/compose-dev.yml
@@ -96,7 +101,8 @@ backend/compose-dev.yml:
 	@echo "    command: [\"/usr/local/bin/ztmfapi\"]" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    network_mode: host" >> backend/compose-dev.yml
+	@echo "    ports:" >> backend/compose-dev.yml
+	@echo "      - \"$(API_PORT):$(API_PORT)\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro" >> backend/compose-dev.yml
 	@echo "    depends_on:" >> backend/compose-dev.yml
@@ -120,7 +126,7 @@ backend/dev.compose.env:
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# for api container" >> backend/dev.compose.env
-	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
+	@echo "DB_ENDPOINT=postgre" >> backend/dev.compose.env
 	@echo "DB_PORT=54321" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
 	@echo "DB_USER=admin" >> backend/dev.compose.env
