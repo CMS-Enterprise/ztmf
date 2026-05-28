@@ -121,7 +121,7 @@ func UserCanAccessFismaSystemByUUID(ctx context.Context, userID string, fismaUUI
 		Select("1").
 		From("users_fismasystems").
 		InnerJoin("fismasystems ON fismasystems.fismasystemid = users_fismasystems.fismasystemid").
-		Where("fismasystems.fismauid = ? AND users_fismasystems.userid = ?", fismaUUID, userID).
+		Where("LOWER(fismasystems.fismauid) = LOWER(?) AND users_fismasystems.userid = ?", fismaUUID, userID).
 		Limit(1)
 
 	_, err := queryRow(ctx, sqlb, pgx.RowTo[int])
@@ -370,8 +370,8 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 func (f *FismaSystem) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
-	if !isValidUUID(f.FismaUID) {
-		err.data["fismauid"] = f.FismaUID
+	if f.FismaUID == "" {
+		err.data["fismauid"] = "required"
 	}
 
 	if f.DataCallContact != nil && !isValidEmail(*f.DataCallContact) {
