@@ -1256,6 +1256,21 @@ tests:
       headers:
         content-type: "application/json"
 
+  # READONLY_ADMIN can GET /api/v1/systemenrichment/<uuid> (read access; bypasses the
+  # per-system assignment check via HasAdminRead, same branch as ADMIN).
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
+
   # ISSO Tests
   # Verify ISSO can authenticate
   - url: http://localhost:8080/api/v1/users/current

@@ -33,5 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_cfacts_fisma_acronym ON cfacts_systems(fisma_acro
 CREATE INDEX IF NOT EXISTS idx_cfacts_is_active ON cfacts_systems(is_active);
 CREATE INDEX IF NOT EXISTS idx_cfacts_is_retired ON cfacts_systems(is_retired);
 CREATE INDEX IF NOT EXISTS idx_cfacts_synced_at ON cfacts_systems(synced_at);
+
+COMMENT ON TABLE public.cfacts_systems IS 'Daily sync of CFACTS authorization package data for comparison with ZTMF fismasystems';
 		`)
 }
