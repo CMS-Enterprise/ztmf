@@ -175,6 +175,6 @@ If a CMS Security Hub scan flags this secret for missing native rotation, route 
 ## Related
 
 - Issue: https://github.com/CMS-Enterprise/ztmf-misc/issues/167
-- Prior art: `backend/cmd/lambda-cfacts-snowflake/` for the Lambda pattern.
+- Prior art: `backend/cmd/lambda-cert-rotation/` for the Lambda pattern (same notifications package, same VPC SG).
 - Secrets helper: `backend/internal/secrets/secrets.go` (`Put` was added for this Lambda).
 - Slack helper: `backend/internal/notifications/slack.go` (`SendRotationNotification` was added for this Lambda).

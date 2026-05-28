@@ -101,6 +101,11 @@ backend/compose-dev.yml:
 	@echo "    command: [\"/usr/local/bin/ztmfapi\"]" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
+	@echo "    environment:" >> backend/compose-dev.yml
+	@echo "      # Override dev.compose.env's host-facing DB_ENDPOINT (localhost)" >> backend/compose-dev.yml
+	@echo "      # with the docker-compose service name so the api container can" >> backend/compose-dev.yml
+	@echo "      # reach postgres over the internal docker network." >> backend/compose-dev.yml
+	@echo "      DB_ENDPOINT: postgre" >> backend/compose-dev.yml
 	@echo "    ports:" >> backend/compose-dev.yml
 	@echo "      - \"$(API_PORT):$(API_PORT)\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
@@ -125,8 +130,10 @@ backend/dev.compose.env:
 	@echo "POSTGRES_USER=admin" >> backend/dev.compose.env
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
-	@echo "# for api container" >> backend/dev.compose.env
-	@echo "DB_ENDPOINT=postgre" >> backend/dev.compose.env
+	@echo "# Shared by api container (docker compose) and host shell (make test-full, pre-push hook)." >> backend/dev.compose.env
+	@echo "# Host needs localhost:54321 (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
+	@echo "# to the docker service name 'postgre' in compose-dev.yml's environment: block." >> backend/dev.compose.env
+	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
 	@echo "DB_PORT=54321" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
 	@echo "DB_USER=admin" >> backend/dev.compose.env
@@ -297,9 +304,8 @@ test-e2e:
 test-build:
 	@echo "Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
-	@cd backend && go build ./cmd/lambda/...
-	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
-	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@cd backend && go build ./cmd/lambda-cert-rotation/...
+	@cd backend && go build ./cmd/lambda-kion-key-rotate/...
 	@echo "✅ All binaries build successfully"
 
 test-full:
@@ -307,9 +313,8 @@ test-full:
 	@echo ""
 	@echo "1/5 Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
-	@cd backend && go build ./cmd/lambda/...
-	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
-	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@cd backend && go build ./cmd/lambda-cert-rotation/...
+	@cd backend && go build ./cmd/lambda-kion-key-rotate/...
 	@echo ""
 	@echo "2/5 Running unit tests..."
 	@cd backend && go test -short ./...
