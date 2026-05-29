@@ -22,7 +22,7 @@ func GetSystemEnrichment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !user.HasAdminRead() {
-		canAccess, err := model.UserCanAccessCfactsSystem(r.Context(), user.UserID, fismaUUID)
+		canAccess, err := model.UserCanAccessFismaSystemByUUID(r.Context(), user.UserID, fismaUUID)
 		if err != nil {
 			respond(w, r, nil, err)
 			return
