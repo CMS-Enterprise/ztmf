@@ -162,9 +162,9 @@ func TestFismaSystem_Validate(t *testing.T) {
 		description string
 	}{
 		{
-			name: "ValidSystem",
+			name: "ValidSystemUUID",
 			system: FismaSystem{
-				FismaUID:              "12345678-1234-4abc-8def-123456789abc", // Valid UUID v4
+				FismaUID:              "12345678-1234-4abc-8def-123456789abc",
 				FismaAcronym:          "TEST",
 				FismaName:             "Test System",
 				DataCenterEnvironment: stringPtr("AWS"),
@@ -172,12 +172,25 @@ func TestFismaSystem_Validate(t *testing.T) {
 				ISSOEmail:             stringPtr("isso@example.com"),
 			},
 			wantErr:     false,
-			description: "A valid FISMA system should not return an error",
+			description: "A FISMA system with a UUID fismauid should not return an error",
+		},
+		{
+			name: "ValidSystemNonUUID",
+			system: FismaSystem{
+				FismaUID:              "CDC8767221",
+				FismaAcronym:          "CDC",
+				FismaName:             "CDC Test System",
+				DataCenterEnvironment: stringPtr("AWS"),
+				DataCallContact:       stringPtr("test@example.com"),
+				ISSOEmail:             stringPtr("isso@example.com"),
+			},
+			wantErr:     false,
+			description: "A FISMA system with a non-UUID fismauid (e.g. CDC-style) should not return an error",
 		},
 		{
 			name: "InvalidEmail",
 			system: FismaSystem{
-				FismaUID:              "12345678-1234-1234-1234-123456789abc",
+				FismaUID:              "CDC8767221",
 				FismaAcronym:          "TEST",
 				FismaName:             "Test System",
 				DataCenterEnvironment: stringPtr("AWS"),
@@ -188,9 +201,9 @@ func TestFismaSystem_Validate(t *testing.T) {
 			description: "Invalid email should return validation error",
 		},
 		{
-			name: "InvalidUUID",
+			name: "EmptyFismaUID",
 			system: FismaSystem{
-				FismaUID:              "not-a-uuid",
+				FismaUID:              "",
 				FismaAcronym:          "TEST",
 				FismaName:             "Test System",
 				DataCenterEnvironment: stringPtr("AWS"),
@@ -198,7 +211,7 @@ func TestFismaSystem_Validate(t *testing.T) {
 				ISSOEmail:             stringPtr("isso@example.com"),
 			},
 			wantErr:     true,
-			description: "Invalid UUID should return validation error",
+			description: "Empty fismauid should return validation error",
 		},
 	}
 
