@@ -42,7 +42,7 @@ func Run() {
 	// volume. ENVIRONMENT is host- and platform-agnostic: "local" for dev, "test" for
 	// the Emberfall E2E stack. Deployed envs default to "production" and never set
 	// DB_POPULATE, so the PopulateSql != nil clause is the primary safety gate.
-	if cfg.Db.PopulateSql != nil && (cfg.Env == "local" || cfg.Env == "test") {
+	if cfg.Db.PopulateSql != nil && cfg.IsLocalOrTest() {
 		err := populate(*cfg.Db.PopulateSql)
 		if err != nil {
 			log.Fatal(err)
