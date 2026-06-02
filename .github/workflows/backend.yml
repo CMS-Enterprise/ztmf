@@ -53,6 +53,11 @@ jobs:
           POSTGRES_PASSWORD: localDev
 
           # for api container and debug launch config
+          # ENVIRONMENT=test marks this as the ephemeral E2E stack so the api
+          # seeds _test_data_empire.sql (the seed gate keys off ENVIRONMENT, not
+          # the DB host) while leaving local-only behavior such as JIT user
+          # creation disabled.
+          ENVIRONMENT: test
           PORT: 8080
           DB_ENDPOINT: localhost
           DB_PORT: 5432
