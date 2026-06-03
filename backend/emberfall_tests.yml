@@ -164,7 +164,7 @@ tests:
         json:
           data:
             email: "Test.User@nowhere.xyz"
-            role: "ADMIN"
+            role: "OWNER"
             identity_provider: "okta"
 
   # OpDivs Endpoint - reference list used by frontend selectors
@@ -641,7 +641,7 @@ tests:
         content-type: "application/json"
   
   # list users with correct role should return a list of users
-  - url: http://localhost:8080/api/v1/users?role=ADMIN
+  - url: http://localhost:8080/api/v1/users?role=OWNER
     method: GET
     headers:
       <<: *commonHeaders
@@ -764,7 +764,7 @@ tests:
   # with the listed values; unlisted keys (scoreid, last_edited_at,
   # datecalculated) are ignored. Same pattern as createUser above.
   #
-  # commonHeaders maps to test.user@nowhere.xyz (the ADMIN fixture); the
+  # commonHeaders maps to test.user@nowhere.xyz (the OWNER fixture); the
   # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
   # Both saves target datacallid=3 ("Audit Fields Smoke Cycle"), seeded in
   # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
@@ -801,7 +801,7 @@ tests:
             notes: "Audit field smoke - created by Emberfall"
             last_edited_by:
               email: "Test.User@nowhere.xyz"
-              role: "ADMIN"
+              role: "OWNER"
 
   # GET the score list back through the same lateral-join path. Array
   # response so no body.json assertion (aquia-inc/emberfall#36); status +
@@ -1026,8 +1026,8 @@ tests:
             body: null
             group: "ADNIM"
 
-  # READONLY_ADMIN Tests
-  # Verify READONLY_ADMIN can authenticate
+  # HHS_READONLY_ADMIN Tests
+  # Verify HHS_READONLY_ADMIN can authenticate
   - url: http://localhost:8080/api/v1/users/current
     method: GET
     headers:
@@ -1040,9 +1040,9 @@ tests:
         json:
           data:
             email: "Readonly.Admin@nowhere.xyz"
-            role: "READONLY_ADMIN"
+            role: "HHS_READONLY_ADMIN"
 
-  # READONLY_ADMIN can GET /api/v1/users (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/users (read access)
   - url: http://localhost:8080/api/v1/users
     method: GET
     headers:
@@ -1052,7 +1052,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/fismasystems (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/fismasystems (read access)
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
     headers:
@@ -1062,7 +1062,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/users (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/users (write blocked)
   - url: http://localhost:8080/api/v1/users
     method: POST
     headers:
@@ -1076,7 +1076,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/fismasystems (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/fismasystems (write blocked)
   - url: http://localhost:8080/api/v1/fismasystems
     method: POST
     headers:
@@ -1088,7 +1088,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/datacalls (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/datacalls (write blocked)
   - url: http://localhost:8080/api/v1/datacalls
     method: POST
     headers:
@@ -1100,7 +1100,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/questions (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/questions (write blocked)
   - url: http://localhost:8080/api/v1/questions
     method: POST
     headers:
@@ -1112,7 +1112,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/functions (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/functions (write blocked)
   - url: http://localhost:8080/api/v1/functions
     method: POST
     headers:
@@ -1139,7 +1139,7 @@ tests:
     expect:
       status: 400
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/scores (write blocked - key fix)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/scores (write blocked - key fix)
   - url: http://localhost:8080/api/v1/scores
     method: POST
     headers:
@@ -1154,7 +1154,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT datacalls/{id}/fismasystems/{id} (write blocked - key fix)
+  # HHS_READONLY_ADMIN gets 403 on PUT datacalls/{id}/fismasystems/{id} (write blocked - key fix)
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -1162,7 +1162,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on DELETE /api/v1/users (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on DELETE /api/v1/users (write blocked)
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: DELETE
     headers:
@@ -1170,7 +1170,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on DELETE /api/v1/fismasystems (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on DELETE /api/v1/fismasystems (write blocked)
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: DELETE
     headers:
@@ -1182,7 +1182,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}/restore"
     method: PUT
     headers:
@@ -1190,7 +1190,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
     method: PUT
     headers:
@@ -1202,7 +1202,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
   - url: http://localhost:8080/api/v1/massemails
     method: POST
     headers:
@@ -1216,7 +1216,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN can GET /api/v1/scores (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/scores (read access)
   - url: http://localhost:8080/api/v1/scores
     method: GET
     headers:
@@ -1226,7 +1226,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/scores/aggregate (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/scores/aggregate (read access)
   - url: http://localhost:8080/api/v1/scores/aggregate
     method: GET
     headers:
@@ -1236,7 +1236,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/datacalls (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/datacalls (read access)
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:
@@ -1246,7 +1246,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/events (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/events (read access)
   - url: http://localhost:8080/api/v1/events
     method: GET
     headers:
@@ -1256,8 +1256,8 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/systemenrichment/<uuid> (read access; bypasses the
-  # per-system assignment check via HasAdminRead, same branch as ADMIN).
+  # HHS_READONLY_ADMIN can GET /api/v1/systemenrichment/<uuid> (read access; bypasses the
+  # per-system assignment check via HasAdminRead, same branch as the admin tiers).
   - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
     method: GET
     headers:

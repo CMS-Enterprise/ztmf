@@ -19,7 +19,7 @@ func TestUserToContext_RoundTrip(t *testing.T) {
 		UserID:   "test-id",
 		Email:    "test@example.com",
 		FullName: "Test User",
-		Role:     "ADMIN",
+		Role:     "OWNER",
 	}
 
 	ctx = UserToContext(ctx, original)
@@ -34,13 +34,13 @@ func TestUserToContext_RoundTrip(t *testing.T) {
 func TestUserToContext_Overwrite(t *testing.T) {
 	ctx := context.Background()
 
-	first := &User{UserID: "first", Role: "ADMIN"}
+	first := &User{UserID: "first", Role: "OWNER"}
 	ctx = UserToContext(ctx, first)
 
-	second := &User{UserID: "second", Role: "READONLY_ADMIN"}
+	second := &User{UserID: "second", Role: "HHS_READONLY_ADMIN"}
 	ctx = UserToContext(ctx, second)
 
 	retrieved := UserFromContext(ctx)
 	assert.Equal(t, "second", retrieved.UserID)
-	assert.Equal(t, "READONLY_ADMIN", retrieved.Role)
+	assert.Equal(t, "HHS_READONLY_ADMIN", retrieved.Role)
 }

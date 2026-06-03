@@ -29,9 +29,9 @@ var roleMatrix = []roleMatrixRow{
 	{role: "HHS_READONLY_ADMIN", isHHSTier: true, hasUnscopedRead: true, isReadOnlyAdmin: true, hasAdminRead: true},
 	{role: "OPDIV_ADMIN", isOpDivTier: true, isAdmin: true, hasAdminRead: true},
 	{role: "OPDIV_READONLY_ADMIN", isOpDivTier: true, isReadOnlyAdmin: true, hasAdminRead: true},
-	// Legacy values retained through Stage D
-	{role: "ADMIN", hasUnscopedRead: true, isAdmin: true, hasAdminRead: true},
-	{role: "READONLY_ADMIN", hasUnscopedRead: true, isReadOnlyAdmin: true, hasAdminRead: true},
+	// Legacy values removed in Stage D - no helper recognizes them anymore.
+	{role: "ADMIN"},
+	{role: "READONLY_ADMIN"},
 	// System-scoped tiers (unchanged)
 	{role: "ISSO"},
 	{role: "ISSM"},
@@ -100,8 +100,8 @@ func TestUser_CanAccessFismaSystem(t *testing.T) {
 		{"OWNER sees everything", withGrants("OWNER", nil, nil), &opdivCDC, system101, true},
 		{"HHS_ADMIN sees everything", withGrants("HHS_ADMIN", nil, nil), &opdivCDC, system101, true},
 		{"HHS_READONLY_ADMIN sees everything", withGrants("HHS_READONLY_ADMIN", nil, nil), &opdivCDC, system101, true},
-		{"legacy ADMIN sees everything (Stage D pending)", withGrants("ADMIN", nil, nil), &opdivCDC, system101, true},
-		{"legacy READONLY_ADMIN sees everything (Stage D pending)", withGrants("READONLY_ADMIN", nil, nil), &opdivCDC, system101, true},
+		{"legacy ADMIN no longer sees everything (removed in Stage D)", withGrants("ADMIN", nil, nil), &opdivCDC, system101, false},
+		{"legacy READONLY_ADMIN no longer sees everything (removed in Stage D)", withGrants("READONLY_ADMIN", nil, nil), &opdivCDC, system101, false},
 
 		{"OPDIV_ADMIN with matching OpDiv grant", withGrants("OPDIV_ADMIN", []int32{opdivCMS}, nil), &opdivCMS, system101, true},
 		{"OPDIV_ADMIN with non-matching OpDiv grant", withGrants("OPDIV_ADMIN", []int32{opdivCMS}, nil), &opdivCDC, system101, false},
@@ -161,13 +161,13 @@ func TestUser_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "valid ADMIN",
-			user:    User{Email: "test@example.com", Role: "ADMIN"},
+			name:    "valid OWNER",
+			user:    User{Email: "test@example.com", Role: "OWNER"},
 			wantErr: false,
 		},
 		{
-			name:    "valid READONLY_ADMIN",
-			user:    User{Email: "test@example.com", Role: "READONLY_ADMIN"},
+			name:    "valid HHS_READONLY_ADMIN",
+			user:    User{Email: "test@example.com", Role: "HHS_READONLY_ADMIN"},
 			wantErr: false,
 		},
 		{
@@ -181,8 +181,13 @@ func TestUser_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "legacy ADMIN is now invalid",
+			user:    User{Email: "test@example.com", Role: "ADMIN"},
+			wantErr: true,
+		},
+		{
 			name:    "invalid email",
-			user:    User{Email: "not-an-email", Role: "ADMIN"},
+			user:    User{Email: "not-an-email", Role: "OWNER"},
 			wantErr: true,
 		},
 	}

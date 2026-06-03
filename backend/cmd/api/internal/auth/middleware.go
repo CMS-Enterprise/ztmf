@@ -39,11 +39,11 @@ func Middleware(next http.Handler) http.Handler {
 			user, err := model.FindUserByEmail(r.Context(), claims.Email)
 
 			if err != nil && cfg.Env == "local" {
-				log.Printf("Local dev: auto-creating ADMIN user for %s\n", claims.Email)
+				log.Printf("Local dev: auto-creating OWNER user for %s\n", claims.Email)
 				user = &model.User{
 					Email:    claims.Email,
 					FullName: claims.Name,
-					Role:     "ADMIN",
+					Role:     "OWNER",
 				}
 				if user.FullName == "" {
 					user.FullName = claims.Email
