@@ -133,3 +133,19 @@ func GetInstance() *config {
 
 	return cfg
 }
+
+// IsLocal reports whether the API is running in the local development
+// environment (ENVIRONMENT=local). Used to gate dev-only behavior such as
+// just-in-time user creation, which must not happen in any other environment.
+func (c *config) IsLocal() bool {
+	return c.Env == "local"
+}
+
+// IsLocalOrTest reports whether the API is running in an ephemeral local or
+// E2E test environment (ENVIRONMENT=local or test). Used to gate test-data
+// seeding, which is safe in both but must never run against a deployed
+// environment. Kept distinct from IsLocal because seeding applies to the E2E
+// test stack while just-in-time user creation deliberately does not.
+func (c *config) IsLocalOrTest() bool {
+	return c.Env == "local" || c.Env == "test"
+}

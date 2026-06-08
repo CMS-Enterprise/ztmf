@@ -33,8 +33,16 @@ func Run() {
 
 	cfg := config.GetInstance()
 
-	// only populate local databases to prevent accidental overwrite of higher environments
-	if cfg.Db.PopulateSql != nil && cfg.Db.Host == "localhost" {
+	// Only populate ephemeral local/test databases, never a deployed environment.
+	// Gate on ENVIRONMENT (which defaults to "production") rather than the database
+	// host. The dev api container reaches Postgres over the "postgre" compose service
+	// name (compose-dev.yml overrides DB_ENDPOINT), while dev.compose.env advertises
+	// "localhost" only for host-side tooling, so the old DB_ENDPOINT == "localhost"
+	// check never matched inside the container and silently skipped seeding on a fresh
+	// volume. ENVIRONMENT is host- and platform-agnostic: "local" for dev, "test" for
+	// the Emberfall E2E stack. Deployed envs default to "production" and never set
+	// DB_POPULATE, so the PopulateSql != nil clause is the primary safety gate.
+	if cfg.Db.PopulateSql != nil && cfg.IsLocalOrTest() {
 		err := populate(*cfg.Db.PopulateSql)
 		if err != nil {
 			log.Fatal(err)

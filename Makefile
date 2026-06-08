@@ -72,7 +72,9 @@ dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	@echo ""
 	@echo "💡 Replace TOKEN with output from 'make test-empire-data'"
 
-# Generate the compose-dev.yml file
+# Generate the compose-dev.yml file (PHONY so it always regenerates and devs
+# never run a stale on-disk copy that predates Makefile changes)
+.PHONY: backend/compose-dev.yml
 backend/compose-dev.yml:
 	@echo "📝 Creating compose-dev.yml..."
 	@echo "# Generated development docker-compose file" > backend/compose-dev.yml

@@ -38,7 +38,7 @@ func Middleware(next http.Handler) http.Handler {
 
 			user, err := model.FindUserByEmail(r.Context(), claims.Email)
 
-			if err != nil && cfg.Env == "local" {
+			if err != nil && cfg.IsLocal() {
 				log.Printf("Local dev: auto-creating OWNER user for %s\n", claims.Email)
 				user = &model.User{
 					Email:    claims.Email,
