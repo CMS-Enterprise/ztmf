@@ -247,7 +247,7 @@ func TestScoreSaveValidationIntegration(t *testing.T) {
 		}
 		adminCtx := UserToContext(ctx, &User{
 			UserID: "00000000-0000-4000-8000-000000000000",
-			Role:   "ADMIN",
+			Role:   "OWNER",
 		})
 		// Admin bypasses the deadline guard. The save itself may fail
 		// for unrelated reasons (FK violation if system 1 / option 1
@@ -439,7 +439,7 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 		UserID:   "11111111-1111-1111-1111-111111111111",
 		Email:    "Grand.Moff@DeathStar.Empire",
 		FullName: "Grand Moff Tarkin",
-		Role:     "ADMIN",
+		Role:     "OWNER",
 	})
 
 	before := time.Now().UTC()
@@ -459,7 +459,7 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111", saved.LastEditedBy.UserID)
 	assert.Equal(t, "Grand Moff Tarkin", saved.LastEditedBy.Name)
 	assert.Equal(t, "Grand.Moff@DeathStar.Empire", saved.LastEditedBy.Email)
-	assert.Equal(t, "ADMIN", saved.LastEditedBy.Role)
+	assert.Equal(t, "OWNER", saved.LastEditedBy.Role)
 }
 
 // TestFindScoresIncludesAuditFieldsIntegration verifies the read-side
@@ -601,7 +601,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 		UserID:   "11111111-1111-1111-1111-111111111111",
 		Email:    "Grand.Moff@DeathStar.Empire",
 		FullName: "Grand Moff Tarkin",
-		Role:     "ADMIN",
+		Role:     "OWNER",
 	})
 	resave := &Score{
 		ScoreID:          scoreID,

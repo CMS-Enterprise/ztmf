@@ -22,8 +22,8 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scope predicate by role tier:
-	//   - Unscoped admins (OWNER / HHS_* / legacy ADMIN/READONLY_ADMIN
-	//     through Stage D) see every system, no filter.
+	//   - Unscoped admins (OWNER / HHS_ADMIN / HHS_READONLY_ADMIN) see every
+	//     system, no filter.
 	//   - OPDIV_ADMIN / OPDIV_READONLY_ADMIN see every system in the OpDivs
 	//     they hold a grant for (users_opdivs). RestrictToOpDivIDs is set
 	//     unconditionally so a user with zero grants fails closed (returns

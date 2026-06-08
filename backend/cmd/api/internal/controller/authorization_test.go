@@ -31,12 +31,12 @@ var (
 	adminUser = &model.User{
 		UserID: "11111111-1111-1111-1111-111111111111",
 		Email:  "admin@test.com",
-		Role:   "ADMIN",
+		Role:   "OWNER",
 	}
 	readonlyAdmin = &model.User{
 		UserID: "22222222-2222-2222-2222-222222222222",
 		Email:  "readonly@test.com",
-		Role:   "READONLY_ADMIN",
+		Role:   "HHS_READONLY_ADMIN",
 	}
 	issoUser = &model.User{
 		UserID: "33333333-3333-3333-3333-333333333333",
@@ -139,7 +139,7 @@ func TestListUsers_ReadonlyAdminAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	ListUsers(w, r)
-	// READONLY_ADMIN should get read access (not 403)
+	// HHS_READONLY_ADMIN should get read access (not 403)
 	assert.NotEqual(t, http.StatusForbidden, w.Code)
 }
 
@@ -191,11 +191,11 @@ func TestSaveScore_ReadonlyAdminForbidden(t *testing.T) {
 }
 
 func TestSaveScore_ReadonlyAdminForbiddenEvenIfAssigned(t *testing.T) {
-	// A READONLY_ADMIN assigned to a FISMA system should still be forbidden from saving
+	// An HHS_READONLY_ADMIN assigned to a FISMA system should still be forbidden from saving
 	assignedReadonly := &model.User{
 		UserID:               "22222222-2222-2222-2222-222222222222",
 		Email:                "readonly@test.com",
-		Role:                 "READONLY_ADMIN",
+		Role:                 "HHS_READONLY_ADMIN",
 		AssignedFismaSystems: []*int32{int32Ptr(1)},
 	}
 	body := jsonBody(t, map[string]any{
@@ -266,7 +266,7 @@ func TestSaveDataCallFismaSystem_ReadonlyAdminForbiddenEvenIfAssigned(t *testing
 	assignedReadonly := &model.User{
 		UserID:               "22222222-2222-2222-2222-222222222222",
 		Email:                "readonly@test.com",
-		Role:                 "READONLY_ADMIN",
+		Role:                 "HHS_READONLY_ADMIN",
 		AssignedFismaSystems: []*int32{int32Ptr(1)},
 	}
 	r := httptest.NewRequest("PUT", "/api/v1/datacalls/1/fismasystems/1", nil)

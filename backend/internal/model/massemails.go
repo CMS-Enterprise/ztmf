@@ -115,8 +115,9 @@ func sqlForADMIN() squirrel.SelectBuilder {
 	// "ADMIN" recipient group spans every admin tier in the multi-OpDiv role
 	// taxonomy. Read-only admin tiers are intentionally excluded for parity
 	// with the pre-multi-OpDiv behavior (which emailed only ADMIN, not
-	// READONLY_ADMIN). Legacy ADMIN stays in the list as a transition
-	// fallback until Stage D removes it from the role enum entirely.
+	// READONLY_ADMIN). The "ADMIN" key in massEmailGroups is an audience
+	// selector in the API contract, not a user role; the legacy ADMIN role
+	// value was removed from the role enum in Stage D.
 	return stmntBuilder.
 		Select("email").
 		From("users").
@@ -124,7 +125,6 @@ func sqlForADMIN() squirrel.SelectBuilder {
 			"OWNER",
 			"HHS_ADMIN",
 			"OPDIV_ADMIN",
-			"ADMIN",
 		}})
 }
 

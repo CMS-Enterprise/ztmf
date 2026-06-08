@@ -1167,7 +1167,7 @@ paths:
   /events:
     get:
       summary: Get events
-      description: Returns the audit trail of write operations (ADMIN and READONLY_ADMIN only)
+      description: Returns the audit trail of write operations (admin tiers only)
       operationId: getEvents
       security:
         - bearerAuth: []
@@ -1211,7 +1211,7 @@ paths:
   /systemenrichment/{fisma_uuid}:
     get:
       summary: Get system enrichment payload by FISMA UUID
-      description: Returns the generic enrichment payload for a FISMA system by its UUID. Admins and READONLY_ADMINs can access any system; ISSOs can only access systems they are assigned to. The payload is an opaque JSON document owned by the enrichment pipeline; systems with no enrichment data return 404.
+      description: Returns the generic enrichment payload for a FISMA system by its UUID. Admin and read-only admin tiers can access any system; ISSOs can only access systems they are assigned to. The payload is an opaque JSON document owned by the enrichment pipeline; systems with no enrichment data return 404.
       operationId: getSystemEnrichment
       security:
         - bearerAuth: []
@@ -1383,9 +1383,9 @@ components:
         role:
           type: string
           description: |
-            Multi-OpDiv role taxonomy. Legacy values ADMIN and READONLY_ADMIN
-            remain valid through Stage D of the multi-OpDiv migration to
-            preserve back-compat; they are removed in a follow-up release.
+            Multi-OpDiv role taxonomy. The legacy values ADMIN and
+            READONLY_ADMIN were removed in Stage D of the multi-OpDiv
+            migration; they map to OWNER and HHS_READONLY_ADMIN respectively.
           enum:
             - OWNER
             - HHS_ADMIN
@@ -1394,8 +1394,6 @@ components:
             - OPDIV_READONLY_ADMIN
             - ISSO
             - ISSM
-            - ADMIN
-            - READONLY_ADMIN
         deleted:
           type: boolean
         identity_provider:
@@ -1523,8 +1521,6 @@ components:
           # validations.go in lockstep -- openapi has drifted from code
           # twice in this repo, so this comment is the canary.
           enum:
-            - ADMIN
-            - READONLY_ADMIN
             - OWNER
             - HHS_ADMIN
             - HHS_READONLY_ADMIN

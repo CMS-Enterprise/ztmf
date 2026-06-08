@@ -281,7 +281,7 @@ func TestScoreAuditInfo(t *testing.T) {
 			UserID: "11111111-1111-1111-1111-111111111111",
 			Name:   "Grand Moff Tarkin",
 			Email:  "Grand.Moff@DeathStar.Empire",
-			Role:   "ADMIN",
+			Role:   "OWNER",
 		}
 		s := &Score{LastEditedAt: &ts, LastEditedBy: ref}
 
@@ -404,8 +404,8 @@ func TestDerefString(t *testing.T) {
 		assert.Equal(t, "", derefString(nil))
 	})
 	t.Run("Value", func(t *testing.T) {
-		v := "ADMIN"
-		assert.Equal(t, "ADMIN", derefString(&v))
+		v := "OWNER"
+		assert.Equal(t, "OWNER", derefString(&v))
 	})
 	t.Run("EmptyStringPointer", func(t *testing.T) {
 		v := ""

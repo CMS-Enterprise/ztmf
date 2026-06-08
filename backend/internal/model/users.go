@@ -20,11 +20,11 @@ type User struct {
 	AssignedOpDivIDs     []*int32 `json:"assignedopdivids" db:"assignedopdivids"`
 }
 
-// Role helpers. The multi-OpDiv migration kept the legacy ADMIN /
-// READONLY_ADMIN values valid during transition (removed in Stage D), so the
-// checks below match both the new tier names and the legacy values. Callers
-// gate access with IsAdmin / HasAdminRead at the top of a controller, then
-// the query layer narrows by OpDiv scope using the helpers further down.
+// Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
+// READONLY_ADMIN values were removed in Stage D, so the checks below only
+// match the new tier names. Callers gate access with IsAdmin / HasAdminRead at
+// the top of a controller, then the query layer narrows by OpDiv scope using
+// the helpers further down.
 
 func (u *User) IsOwner() bool { return u.Role == "OWNER" }
 
@@ -46,13 +46,10 @@ func (u *User) IsOpDivTier() bool {
 
 // HasUnscopedRead is true for tiers that see across every OpDiv without an
 // OpDiv predicate (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN). OpDiv-scoped admins
-// and system-scoped users do not get unscoped reads. Legacy ADMIN and
-// READONLY_ADMIN are treated as unscoped for back-compat through Stage D
-// (they map to the unscoped tiers when their owners log in, and the test
-// fixtures still hardcode role='ADMIN' on the auto-created E2E user).
+// and system-scoped users do not get unscoped reads.
 func (u *User) HasUnscopedRead() bool {
 	switch u.Role {
-	case "OWNER", "HHS_ADMIN", "HHS_READONLY_ADMIN", "ADMIN", "READONLY_ADMIN":
+	case "OWNER", "HHS_ADMIN", "HHS_READONLY_ADMIN":
 		return true
 	}
 	return false
@@ -77,22 +74,22 @@ func (u *User) CanAccessFismaSystem(opdivID *int32, fismasystemID int32) bool {
 	return u.IsAssignedFismaSystem(fismasystemID)
 }
 
-// IsAdmin returns true for any tier that historically had write access to
-// admin endpoints. Spans the new admin tiers (OWNER, HHS_ADMIN, OPDIV_ADMIN)
-// plus legacy ADMIN. Read-only tiers do not count as admins.
+// IsAdmin returns true for any tier that has write access to admin endpoints:
+// the admin tiers OWNER, HHS_ADMIN, and OPDIV_ADMIN. Read-only tiers do not
+// count as admins.
 func (u *User) IsAdmin() bool {
 	switch u.Role {
-	case "OWNER", "HHS_ADMIN", "OPDIV_ADMIN", "ADMIN":
+	case "OWNER", "HHS_ADMIN", "OPDIV_ADMIN":
 		return true
 	}
 	return false
 }
 
 // IsReadOnlyAdmin returns true for the read-only counterparts of the admin
-// tiers, plus the legacy READONLY_ADMIN.
+// tiers (HHS_READONLY_ADMIN, OPDIV_READONLY_ADMIN).
 func (u *User) IsReadOnlyAdmin() bool {
 	switch u.Role {
-	case "HHS_READONLY_ADMIN", "OPDIV_READONLY_ADMIN", "READONLY_ADMIN":
+	case "HHS_READONLY_ADMIN", "OPDIV_READONLY_ADMIN":
 		return true
 	}
 	return false
