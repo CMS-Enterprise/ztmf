@@ -121,6 +121,39 @@ func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
 	return false
 }
 
+// EffectiveOpDivScope describes the OpDiv visibility a query should grant this
+// user. unscoped is true for tiers that see every OpDiv (OWNER, HHS_ADMIN,
+// HHS_READONLY_ADMIN); for OpDiv-scoped tiers it returns the concrete OpDiv ids
+// the user holds grants for. Callers pass these straight into a Find*Input so
+// the scope predicate lives in one place. A scoped user with no grants yields
+// (false, nil) which the query layer treats as "match nothing" (fail closed).
+func (u *User) EffectiveOpDivScope() (unscoped bool, opdivIDs []int32) {
+	if u.HasUnscopedRead() {
+		return true, nil
+	}
+	for _, id := range u.AssignedOpDivIDs {
+		if id != nil {
+			opdivIDs = append(opdivIDs, *id)
+		}
+	}
+	return false, opdivIDs
+}
+
+// CanManageFismaSystem is the write-side counterpart to CanAccessFismaSystem.
+// A user may modify a system only if they hold an admin (write) tier AND either
+// see every OpDiv (OWNER, HHS_ADMIN) or hold a grant for the system's OpDiv
+// (OPDIV_ADMIN). Read-only admins and system-scoped ISSO/ISSM are not write
+// managers of a system regardless of OpDiv.
+func (u *User) CanManageFismaSystem(opdivID *int32) bool {
+	if !u.IsAdmin() {
+		return false
+	}
+	if u.HasUnscopedRead() {
+		return true
+	}
+	return opdivID != nil && u.IsAssignedOpDiv(*opdivID)
+}
+
 func (u *User) Save(ctx context.Context) (*User, error) {
 	if err := u.validate(); err != nil {
 		return nil, err

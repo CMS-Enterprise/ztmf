@@ -12,14 +12,14 @@ import (
 // added to the enum surfaces here first (or fails compile when the column
 // shape changes).
 type roleMatrixRow struct {
-	role               string
-	isOwner            bool
-	isHHSTier          bool
-	isOpDivTier        bool
-	hasUnscopedRead    bool
-	isAdmin            bool
-	isReadOnlyAdmin    bool
-	hasAdminRead       bool
+	role            string
+	isOwner         bool
+	isHHSTier       bool
+	isOpDivTier     bool
+	hasUnscopedRead bool
+	isAdmin         bool
+	isReadOnlyAdmin bool
+	hasAdminRead    bool
 }
 
 var roleMatrix = []roleMatrixRow{
@@ -91,11 +91,11 @@ func TestUser_CanAccessFismaSystem(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		user       *User
+		name        string
+		user        *User
 		systemOpDiv *int32
-		systemID   int32
-		want       bool
+		systemID    int32
+		want        bool
 	}{
 		{"OWNER sees everything", withGrants("OWNER", nil, nil), &opdivCDC, system101, true},
 		{"HHS_ADMIN sees everything", withGrants("HHS_ADMIN", nil, nil), &opdivCDC, system101, true},
@@ -123,6 +123,66 @@ func TestUser_CanAccessFismaSystem(t *testing.T) {
 			assert.Equal(t, tt.want, tt.user.CanAccessFismaSystem(tt.systemOpDiv, tt.systemID))
 		})
 	}
+}
+
+func TestUser_CanManageFismaSystem(t *testing.T) {
+	cms := int32(2)
+	cdc := int32(3)
+	grant := func(role string, opdivs ...int32) *User {
+		u := &User{Role: role}
+		for i := range opdivs {
+			u.AssignedOpDivIDs = append(u.AssignedOpDivIDs, &opdivs[i])
+		}
+		return u
+	}
+
+	tests := []struct {
+		name  string
+		user  *User
+		opdiv *int32
+		want  bool
+	}{
+		{"OWNER manages any", grant("OWNER"), &cdc, true},
+		{"OWNER manages even nil opdiv", grant("OWNER"), nil, true},
+		{"HHS_ADMIN manages any", grant("HHS_ADMIN"), &cdc, true},
+		{"HHS_READONLY_ADMIN cannot manage (not write tier)", grant("HHS_READONLY_ADMIN"), &cdc, false},
+		{"OPDIV_ADMIN manages own opdiv", grant("OPDIV_ADMIN", cdc), &cdc, true},
+		{"OPDIV_ADMIN cannot manage other opdiv", grant("OPDIV_ADMIN", cdc), &cms, false},
+		{"OPDIV_ADMIN with no grant manages nothing", grant("OPDIV_ADMIN"), &cms, false},
+		{"OPDIV_ADMIN nil opdiv denied", grant("OPDIV_ADMIN", cdc), nil, false},
+		{"OPDIV_READONLY_ADMIN cannot manage", grant("OPDIV_READONLY_ADMIN", cdc), &cdc, false},
+		{"ISSO cannot manage", grant("ISSO"), &cdc, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.user.CanManageFismaSystem(tt.opdiv))
+		})
+	}
+}
+
+func TestUser_EffectiveOpDivScope(t *testing.T) {
+	a, b := int32(3), int32(7)
+
+	t.Run("unscoped tiers see all", func(t *testing.T) {
+		for _, role := range []string{"OWNER", "HHS_ADMIN", "HHS_READONLY_ADMIN"} {
+			unscoped, ids := (&User{Role: role}).EffectiveOpDivScope()
+			assert.True(t, unscoped, role)
+			assert.Nil(t, ids, role)
+		}
+	})
+
+	t.Run("opdiv admin returns granted ids", func(t *testing.T) {
+		u := &User{Role: "OPDIV_ADMIN", AssignedOpDivIDs: []*int32{&a, nil, &b}}
+		unscoped, ids := u.EffectiveOpDivScope()
+		assert.False(t, unscoped)
+		assert.Equal(t, []int32{3, 7}, ids)
+	})
+
+	t.Run("opdiv admin with no grants is fail-closed empty", func(t *testing.T) {
+		unscoped, ids := (&User{Role: "OPDIV_ADMIN"}).EffectiveOpDivScope()
+		assert.False(t, unscoped)
+		assert.Empty(t, ids)
+	})
 }
 
 func TestUser_IsAssignedFismaSystem(t *testing.T) {
