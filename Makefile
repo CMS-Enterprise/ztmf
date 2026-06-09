@@ -254,10 +254,6 @@ test-unit:
 	@echo "🧪 Running unit tests (fast)..."
 	cd backend && go test -short ./...
 
-test-integration:
-	@echo "🧪 Running integration tests..."
-	cd backend && go test -run Integration ./...
-
 test-coverage:
 	@echo "Running tests with coverage..."
 	cd backend && go test -coverprofile=coverage.out ./...
