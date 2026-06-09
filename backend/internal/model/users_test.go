@@ -185,6 +185,64 @@ func TestUser_EffectiveOpDivScope(t *testing.T) {
 	})
 }
 
+func TestUser_CanAssignRole(t *testing.T) {
+	tests := []struct {
+		actor, target string
+		want          bool
+	}{
+		{"OWNER", "OWNER", true},
+		{"OWNER", "HHS_ADMIN", true},
+		{"OWNER", "ISSO", true},
+		{"HHS_ADMIN", "OWNER", false}, // cannot mint platform tier
+		{"HHS_ADMIN", "HHS_ADMIN", true},
+		{"HHS_ADMIN", "OPDIV_ADMIN", true},
+		{"HHS_ADMIN", "ISSM", true},
+		{"OPDIV_ADMIN", "OWNER", false},
+		{"OPDIV_ADMIN", "HHS_ADMIN", false},
+		{"OPDIV_ADMIN", "HHS_READONLY_ADMIN", false},
+		{"OPDIV_ADMIN", "OPDIV_ADMIN", true},
+		{"OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", true},
+		{"OPDIV_ADMIN", "ISSO", true},
+		{"OPDIV_ADMIN", "ISSM", true},
+		{"OPDIV_READONLY_ADMIN", "ISSO", false}, // read-only cannot assign at all
+		{"ISSO", "ISSO", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.actor+"->"+tt.target, func(t *testing.T) {
+			assert.Equal(t, tt.want, (&User{Role: tt.actor}).CanAssignRole(tt.target))
+		})
+	}
+}
+
+func TestUser_CanManageUser(t *testing.T) {
+	cdc, nih := int32(3), int32(4)
+	target := func(opdivs ...int32) *User {
+		u := &User{Role: "ISSO"}
+		for i := range opdivs {
+			u.AssignedOpDivIDs = append(u.AssignedOpDivIDs, &opdivs[i])
+		}
+		return u
+	}
+	opdivAdmin := &User{Role: "OPDIV_ADMIN", AssignedOpDivIDs: []*int32{&cdc}}
+
+	assert.True(t, (&User{Role: "OWNER"}).CanManageUser(target(nih)), "OWNER manages anyone")
+	assert.True(t, (&User{Role: "HHS_ADMIN"}).CanManageUser(target(nih)), "HHS_ADMIN manages anyone")
+	assert.False(t, (&User{Role: "HHS_READONLY_ADMIN"}).CanManageUser(target(nih)), "read-only is not a manager")
+	assert.True(t, opdivAdmin.CanManageUser(target(cdc)), "opdiv admin manages a user in their opdiv")
+	assert.True(t, opdivAdmin.CanManageUser(target(cdc, nih)), "manages a user sharing one opdiv")
+	assert.False(t, opdivAdmin.CanManageUser(target(nih)), "cannot manage a user outside their opdiv")
+	assert.False(t, opdivAdmin.CanManageUser(target()), "cannot manage a user with no opdiv overlap")
+	assert.False(t, opdivAdmin.CanManageUser(nil), "nil target denied")
+
+	// Tier ceiling: a shared OpDiv does NOT let an OPDIV_ADMIN act on a
+	// higher-tier account, and an HHS_ADMIN cannot act on an OWNER.
+	superiorInOpDiv := &User{Role: "HHS_ADMIN", AssignedOpDivIDs: []*int32{&cdc}}
+	assert.False(t, opdivAdmin.CanManageUser(superiorInOpDiv), "shared opdiv must not bypass the tier ceiling")
+	ownerTarget := &User{Role: "OWNER", AssignedOpDivIDs: []*int32{&cdc}}
+	assert.False(t, (&User{Role: "HHS_ADMIN"}).CanManageUser(ownerTarget), "HHS_ADMIN cannot manage an OWNER")
+	assert.True(t, (&User{Role: "OWNER"}).CanManageUser(ownerTarget), "OWNER can manage an OWNER")
+}
+
 func TestUser_IsAssignedFismaSystem(t *testing.T) {
 	id1 := int32(100)
 	id2 := int32(200)

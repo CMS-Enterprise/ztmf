@@ -154,6 +154,54 @@ func (u *User) CanManageFismaSystem(opdivID *int32) bool {
 	return opdivID != nil && u.IsAssignedOpDiv(*opdivID)
 }
 
+// CanAssignRole reports whether this user may assign the given role to another
+// user. Prevents tier escalation: an OPDIV_ADMIN can only mint roles at or below
+// the OpDiv tier, an HHS_ADMIN can mint anything except the platform OWNER tier,
+// and only an OWNER can mint another OWNER.
+func (u *User) CanAssignRole(role string) bool {
+	switch u.Role {
+	case "OWNER":
+		return true
+	case "HHS_ADMIN":
+		return role != "OWNER"
+	case "OPDIV_ADMIN":
+		switch role {
+		case "OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", "ISSO", "ISSM":
+			return true
+		}
+	}
+	return false
+}
+
+// CanManageUser reports whether this user may modify the target user.
+// OWNER/HHS_ADMIN manage anyone; an OPDIV_ADMIN may only manage a user who
+// shares at least one of the admin's granted OpDivs. Used for update/delete of
+// an existing user (create is gated by CanAssignRole plus the scoped grant step,
+// since a brand-new user has no OpDiv yet).
+func (u *User) CanManageUser(target *User) bool {
+	if !u.IsAdmin() || target == nil {
+		return false
+	}
+	// Tier ceiling: you may only manage a user whose current role is within your
+	// assignable set. This stops an OPDIV_ADMIN from acting on a higher-tier
+	// account (e.g. HHS_ADMIN/OWNER) even if an OpDiv is shared, and stops an
+	// HHS_ADMIN from acting on an OWNER. Without this, granting one's own OpDiv
+	// onto a superior account would manufacture the overlap and bypass the tier.
+	if !u.CanAssignRole(target.Role) {
+		return false
+	}
+	if u.HasUnscopedRead() {
+		return true
+	}
+	// OPDIV_ADMIN: must also share an OpDiv with the target.
+	for _, t := range target.AssignedOpDivIDs {
+		if t != nil && u.IsAssignedOpDiv(*t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (u *User) Save(ctx context.Context) (*User, error) {
 	if err := u.validate(); err != nil {
 		return nil, err

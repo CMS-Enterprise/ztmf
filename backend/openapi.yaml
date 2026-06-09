@@ -895,6 +895,122 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /users/{userid}/assignedopdivs:
+    get:
+      summary: List a user's OpDiv grants
+      description: |
+        Returns the OpDiv ids a user holds grants for. Unscoped admins may view
+        any user; an OpDiv-scoped admin may only view a user who shares one of
+        their OpDivs.
+      operationId: listUserOpDivs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      responses:
+        '200':
+          description: A list of OpDiv ids
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: integer
+                      format: int32
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Grant a user OpDiv membership
+      description: |
+        Grants the user membership in an OpDiv (idempotent). Unscoped admins may
+        grant any OpDiv; an OPDIV_ADMIN may only grant an OpDiv they themselves
+        hold and only onto a user whose tier is within their assignable set.
+        Granting recomputes the user's identity_provider from their OpDiv set
+        (CMS -> okta, otherwise entra).
+      operationId: grantUserOpDiv
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                opdiv_id:
+                  type: integer
+                  format: int32
+              required:
+                - opdiv_id
+      responses:
+        '201':
+          description: OpDiv granted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserOpDiv'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /users/{userid}/assignedopdivs/{opdiv_id}:
+    delete:
+      summary: Revoke a user's OpDiv grant
+      description: |
+        Revokes a user's OpDiv membership (idempotent). Same scope as granting:
+        an OPDIV_ADMIN may only revoke an OpDiv they hold. Recomputes the user's
+        identity_provider afterward.
+      operationId: revokeUserOpDiv
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
+        - name: opdiv_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '204':
+          description: OpDiv grant revoked
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /scores:
     get:
       summary: List scores
@@ -1543,6 +1659,21 @@ components:
       required:
         - userid
         - fismasystemid
+    UserOpDiv:
+      type: object
+      properties:
+        userid:
+          type: string
+        opdiv_id:
+          type: integer
+          format: int32
+        granted_by:
+          type: string
+          nullable: true
+          description: userid of the admin who granted the membership.
+      required:
+        - userid
+        - opdiv_id
     Score:
       type: object
       properties:
