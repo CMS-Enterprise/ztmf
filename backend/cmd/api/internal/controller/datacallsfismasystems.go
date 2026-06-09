@@ -34,6 +34,15 @@ func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpDiv write-scope: an admin-tier writer may only mark completion for a
+	// system in an OpDiv they manage. ISSO/ISSM keep their assigned-system path.
+	if authdUser.IsAdmin() {
+		if _, err := guardManageFismaSystem(r.Context(), authdUser, fismasystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
 	df := &model.DataCallFismaSystem{
 		Datacallid:    datacallID,
 		Fismasystemid: fismasystemID,

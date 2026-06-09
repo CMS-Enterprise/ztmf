@@ -54,6 +54,16 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpDiv write-scope: an admin-tier writer may only score a system in an
+	// OpDiv they manage (OWNER/HHS_ADMIN any; OPDIV_ADMIN only their grants).
+	// ISSO/ISSM keep the per-system assignment path checked above.
+	if user.IsAdmin() {
+		if _, err := guardManageFismaSystem(r.Context(), user, score.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
 	vars := mux.Vars(r)
 
 	if v, ok := vars["scoreid"]; ok {
