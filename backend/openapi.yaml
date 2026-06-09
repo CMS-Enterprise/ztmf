@@ -606,7 +606,7 @@ paths:
   /users:
     get:
       summary: List users
-      description: Returns a list of users
+      description: Returns a list of users. Unscoped admins (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN) see all users; OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) see only users holding a grant in one of their OpDivs (fail-closed - a scoped admin with no grants gets an empty list).
       operationId: listUsers
       security:
         - bearerAuth: []
@@ -1014,7 +1014,7 @@ paths:
   /scores:
     get:
       summary: List scores
-      description: Returns a list of scores
+      description: Returns a list of scores. Unscoped admins see all; OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) see only scores for systems in their granted OpDivs (fail-closed); ISSO/ISSM see only their assigned systems' scores.
       operationId: listScores
       parameters:
         - name: fismasystemid
@@ -1348,7 +1348,7 @@ paths:
   /events:
     get:
       summary: Get events
-      description: Returns the audit trail of write operations (admin tiers only)
+      description: Returns the audit trail of write operations. Restricted to the unscoped admin tiers (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN); OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) receive 403 because audit events carry no OpDiv to scope the log on.
       operationId: getEvents
       security:
         - bearerAuth: []
@@ -1421,7 +1421,7 @@ paths:
   /massemails:
     post:
       summary: Send mass email
-      description: Sends a mass email
+      description: Sends a mass email to recipients across every OpDiv. Restricted to the unscoped write-admin tiers (OWNER, HHS_ADMIN); read-only admins and OpDiv-scoped tiers receive 403 (there is no per-OpDiv recipient scoping).
       operationId: sendMassEmail
       security:
         - bearerAuth: []

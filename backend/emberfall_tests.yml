@@ -12,6 +12,16 @@ readonlyAdminHeaders: &readonlyAdminHeaders
 issoHeaders: &issoHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imlzc28udXNlckBub3doZXJlLnh5eiJ9.vVrud1ADntR8wUdRZ2vah7EFTgcGXMTVDPzfs84uorI"
 
+# OpDiv-scoped admin (EMPIRE grant only). Manages EMPIRE systems (1001-1004),
+# must 403 on REBELLION systems (1005-1006). Email claim opdiv.admin@empire.test.
+opDivAdminHeaders: &opDivAdminHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LmFkbWluQGVtcGlyZS50ZXN0In0.P9vXfhtjDxOOpdqDfWSqLrBPYeneiFl1V7TT0oWxlRY"
+
+# OpDiv-scoped read-only admin (EMPIRE grant only). All writes 403; reads scoped
+# to EMPIRE. Email claim opdiv.readonly@empire.test.
+opDivReadonlyHeaders: &opDivReadonlyHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
+
 # Data definitions using YAML anchors
 dataCallData: &dataCallData
   datacall: "FY2025 Q1"
@@ -1165,7 +1175,10 @@ tests:
     expect:
       status: 403
 
-  # Notes exceeding 2000 characters should return 400
+  # Notes exceeding 2000 characters should return 400.
+  # Uses a real, in-scope system (1002): SaveScore now fetches the system to
+  # evaluate OpDiv write-scope before Save validates the body, so a nonexistent
+  # fismasystemid would 404 before the notes-length check is ever reached.
   - url: http://localhost:8080/api/v1/scores
     method: POST
     headers:
@@ -1173,7 +1186,7 @@ tests:
       content-type: "application/json"
     body:
       json:
-        fismasystemid: 1
+        fismasystemid: 1002
         functionoptionid: 1
         notes: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         datacallid: 1
@@ -1423,4 +1436,212 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # ==========================================================================
+  # OpDiv-scoped RBAC enforcement (feature/opdiv-rbac-enforcement)
+  # Fixtures: EMPIRE OpDiv systems 1001-1004, REBELLION OpDiv systems 1005-1006.
+  # opDivAdminHeaders / opDivReadonlyHeaders hold the EMPIRE grant only, so every
+  # REBELLION touch must 403 (writes) or be excluded (reads). Uses known fixture
+  # ids rather than captured ids - Emberfall cannot template underscore keys.
+  # ==========================================================================
+
+  # OPDIV_ADMIN authenticates and is reported as the scoped tier.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Opdiv.Admin@empire.test"
+            role: "OPDIV_ADMIN"
+
+  # OPDIV_ADMIN can list systems (scoped server-side to their OpDivs).
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_ADMIN can read an in-scope EMPIRE system (1002).
+  - url: http://localhost:8080/api/v1/fismasystems/1002
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_ADMIN gets 403 reading an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 editing an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 decommissioning an out-of-scope REBELLION system (1006).
+  - url: http://localhost:8080/api/v1/fismasystems/1006
+    method: DELETE
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 reactivating an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005/reactivate
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 scoring an out-of-scope REBELLION system (1006).
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1006
+        functionoptionid: 1
+        datacallid: 3
+        notes: "cross-OpDiv score attempt - must be blocked"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 marking an out-of-scope REBELLION system (1006) complete.
+  - url: http://localhost:8080/api/v1/datacalls/2/fismasystems/1006
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN may NOT mint an OWNER (tier escalation blocked).
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "escalation.attempt@empire.test"
+        fullname: "Should Be Forbidden"
+        role: "OWNER"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN may NOT mint an HHS_ADMIN either.
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "escalation.attempt2@empire.test"
+        fullname: "Should Be Forbidden"
+        role: "HHS_ADMIN"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 on the cross-OpDiv audit trail (/events unscoped-only).
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 sending mass email (unscoped write admins only).
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "blocked"
+        body: "blocked"
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN can read (scoped) but every write is blocked.
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_READONLY_ADMIN gets 403 editing even an in-scope EMPIRE system (1002).
+  - url: http://localhost:8080/api/v1/fismasystems/1002
+    method: PUT
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN gets 403 scoring any system.
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1002
+        functionoptionid: 1
+        datacallid: 3
+        notes: "readonly write attempt - must be blocked"
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN gets 403 on /events and mass email too.
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "blocked"
+        body: "blocked"
+    expect:
+      status: 403
 
