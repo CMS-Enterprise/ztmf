@@ -40,6 +40,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
 
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
+	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
+	router.HandleFunc("/api/v1/opdivs/{opdiv_id:[0-9]+}", controller.SaveOpDiv).Methods("PUT")
 
 	router.HandleFunc("/api/v1/users", controller.ListUsers).Methods("GET")
 	router.HandleFunc("/api/v1/users", controller.SaveUser).Methods("POST")

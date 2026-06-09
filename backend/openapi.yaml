@@ -538,6 +538,71 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/ServerError'
+    post:
+      summary: Create an OpDiv
+      description: |
+        Creates a new Operating Division. OWNER only - the OpDiv list is the
+        tenant boundary. A new OpDiv is always created active. Returns 400 with
+        a field-level message (data.code) if the code is missing/too long or
+        already in use by another active OpDiv.
+      operationId: createOpDiv
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpDivInput'
+      responses:
+        '201':
+          description: Created OpDiv
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OpDiv'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /opdivs/{opdiv_id}:
+    put:
+      summary: Update or deactivate an OpDiv
+      description: |
+        Updates an OpDiv's code/name/is_parent/active. OWNER only. Set
+        active=false to deactivate (soft) rather than delete. Returns 204.
+      operationId: updateOpDiv
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: opdiv_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpDivInput'
+      responses:
+        '204':
+          description: Updated (no body)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /users:
     get:
       summary: List users
@@ -1444,6 +1509,29 @@ components:
         - name
         - is_parent
         - active
+    OpDivInput:
+      type: object
+      description: Request body for creating or updating an OpDiv (OWNER only).
+      properties:
+        code:
+          type: string
+          maxLength: 16
+          description: Short code, 1-16 chars, unique among active OpDivs.
+        name:
+          type: string
+          maxLength: 128
+          description: Official division name, 1-128 chars.
+        is_parent:
+          type: boolean
+          description: TRUE only for a department/parent row.
+        active:
+          type: boolean
+          description: >-
+            Honored on update only (set false to deactivate). Ignored on create;
+            a new OpDiv is always created active.
+      required:
+        - code
+        - name
     UserFismaSystem:
       type: object
       properties:

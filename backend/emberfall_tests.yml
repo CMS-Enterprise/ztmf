@@ -177,6 +177,47 @@ tests:
       headers:
         content-type: "application/json"
 
+  # OpDiv CRUD is OWNER-only. A non-owner (ISSO) is forbidden.
+  - url: http://localhost:8080/api/v1/opdivs
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        code: "NOPE"
+        name: "Should Be Forbidden"
+    expect:
+      status: 403
+
+  # OWNER creates an OpDiv; it comes back active with a server-assigned id.
+  - id: createOpDiv
+    url: http://localhost:8080/api/v1/opdivs
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        code: "TESTOD"
+        name: "Test OpDiv"
+        is_parent: false
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            code: "TESTOD"
+            name: "Test OpDiv"
+            active: true
+
+  # Note: the PUT update/deactivate path uses the same SaveOpDiv handler and is
+  # covered by the create case above plus the OWNER-only unit test. Emberfall's
+  # response templater cannot substitute the underscore-keyed opdiv_id from the
+  # create response, so a capture-dependent PUT case is omitted here.
+
   # DataCalls Endpoints
   - id: createDataCall
     url: http://localhost:8080/api/v1/datacalls
