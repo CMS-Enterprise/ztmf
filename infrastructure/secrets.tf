@@ -15,7 +15,7 @@ resource "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
   }
 }
 
-// HHS Entra ID OIDC config for the second identity provider. Same operator-seed
+// Entra ID OIDC config for the second identity provider. Same operator-seed
 // bootstrap as the Okta secret above: terraform creates the empty container,
 // the operator seeds the JSON out of band with `aws secretsmanager
 // put-secret-value` (scripts/bootstrap-entra-secrets.sh), and the value is

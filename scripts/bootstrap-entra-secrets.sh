@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Seed the HHS Entra OIDC config and the application session signing key into
+# Seed the Entra OIDC config and the application session signing key into
 # AWS Secrets Manager for one ZTMF environment.
 #
 # Terraform owns the secret CONTAINERS (ztmf_entra_oidc, ztmf_session_signing_key
@@ -11,7 +11,7 @@
 #
 # Required environment (provided by the operator, never committed):
 #   AWS_PROFILE / AWS credentials for the target account (ztmf-dev or ztmf-prod)
-#   ENTRA_TENANT_ID       HHS Entra tenant GUID
+#   ENTRA_TENANT_ID       Entra tenant GUID
 #   ENTRA_CLIENT_ID       ZTMF app registration client id
 #   ENTRA_CLIENT_SECRET   ZTMF app registration client secret
 #

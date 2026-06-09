@@ -215,7 +215,7 @@ resource "aws_lb_listener_rule" "lookup" {
   }
 }
 
-# Priority 2: HHS Entra login. Distinct session cookie name so it cannot
+# Priority 2: Entra login. Distinct session cookie name so it cannot
 # collide with the Okta rule's default ALB session cookie. Forwards to the
 # backend, which reads the forwarded IdP token and mints the app session.
 resource "aws_lb_listener_rule" "entra_login" {

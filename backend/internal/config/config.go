@@ -43,12 +43,12 @@ type config struct {
 		// are rejected. Left empty in local dev (HS256) where no issuer is asserted.
 		OktaIssuer string `env:"AUTH_OKTA_ISSUER"`
 
-		// Entra* configure the second (HHS) OIDC provider. EntraIssuer is the
-		// exact iss claim (the /v2.0 suffix is part of the issuer, not optional).
+		// Entra* configure the second OIDC provider. EntraIssuer is the exact
+		// iss claim (the /v2.0 suffix is part of the issuer, not optional).
 		// EntraJWKSUrl is the key set used to verify RS256 signatures.
 		// EntraTenantID is pinned against the token tid claim so that only the
-		// HHS tenant can authenticate, even if another Entra tenant presents a
-		// validly-signed token.
+		// configured tenant can authenticate, even if another Entra tenant
+		// presents a validly-signed token.
 		EntraIssuer   string `env:"AUTH_ENTRA_ISSUER"`
 		EntraJWKSUrl  string `env:"AUTH_ENTRA_JWKS_URL"`
 		EntraTenantID string `env:"AUTH_ENTRA_TENANT_ID"`
