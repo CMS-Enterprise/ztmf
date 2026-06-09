@@ -16,13 +16,13 @@ func opdivPtr(v int32) *int32 { return &v }
 var (
 	opdivAdmin = &model.User{
 		UserID:           "88888888-8888-4888-8888-888888888888",
-		Email:            "opdiv.admin@test.com",
+		Email:            "Opdiv.Admin@empire.test",
 		Role:             "OPDIV_ADMIN",
 		AssignedOpDivIDs: []*int32{opdivPtr(1)},
 	}
 	opdivReadonly = &model.User{
 		UserID:           "99999999-9999-4999-8999-999999999999",
-		Email:            "opdiv.readonly@test.com",
+		Email:            "Opdiv.Readonly@empire.test",
 		Role:             "OPDIV_READONLY_ADMIN",
 		AssignedOpDivIDs: []*int32{opdivPtr(1)},
 	}
