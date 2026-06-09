@@ -503,6 +503,43 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /auth/lookup:
+    get:
+      summary: Look up identity provider by email (pre-auth)
+      description: |
+        Unauthenticated pre-auth endpoint that resolves which identity provider
+        should authenticate a given email, so the landing page can route the
+        browser to the correct ALB login path before any session exists.
+
+        The response is deliberately minimal and identical for a provisioned
+        user we decline to route and an unknown email (both return a null idp),
+        so the endpoint cannot be used to enumerate accounts. It is rate-limited
+        at the WAF and in-process.
+      operationId: lookupIdentityProvider
+      parameters:
+        - name: email
+          in: query
+          required: true
+          description: Exact email address to resolve (matched case-insensitively).
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: Identity provider lookup result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IdPLookup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Too many requests - rate limit exceeded
+        '500':
+          $ref: '#/components/responses/ServerError'
   /opdivs:
     get:
       summary: List OpDivs
@@ -1271,6 +1308,19 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    IdPLookup:
+      type: object
+      properties:
+        idp:
+          type: string
+          enum: [okta, entra]
+          nullable: true
+          description: >-
+            Identity provider that authenticates the email, or null when the
+            email is not provisioned (or is provisioned but not routable). A
+            null result is intentionally indistinguishable from "not found".
+      required:
+        - idp
     DataCall:
       type: object
       properties:

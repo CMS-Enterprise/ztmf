@@ -32,6 +32,13 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
 
+-- Test Entra-authenticated user (HHS/OpDiv side of the dual-IdP split).
+-- Exercises the pre-auth lookup returning idp="entra" and, later, the
+-- multi-issuer login path. Empire persona only - no real identities.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('88888888-8888-4888-8888-888888888888', 'Grand.Admiral.Thrawn@chiss.empire', 'Grand Admiral Thrawn', 'ISSO', 'entra')
+    ON CONFLICT DO NOTHING;
+
 -- Test HHS_READONLY_ADMIN User (Emperor - can observe everything but not modify)
 INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('55555555-5555-5555-5555-555555555555', 'Emperor.Palpatine@coruscant.empire', 'Emperor Palpatine', 'HHS_READONLY_ADMIN', 'okta')

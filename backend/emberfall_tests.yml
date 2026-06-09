@@ -167,6 +167,57 @@ tests:
             role: "OWNER"
             identity_provider: "okta"
 
+  # Pre-auth IdP lookup - unauthenticated; routes the landing page to the
+  # correct ALB login path. No Authorization header on these by design.
+  - url: "http://localhost:8080/api/v1/auth/lookup?email=Test.User@nowhere.xyz"
+    method: GET
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            idp: "okta"
+
+  - url: "http://localhost:8080/api/v1/auth/lookup?email=Grand.Admiral.Thrawn@chiss.empire"
+    method: GET
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            idp: "entra"
+
+  # Case-insensitive match: lowercased input resolves the mixed-case fixture.
+  - url: "http://localhost:8080/api/v1/auth/lookup?email=test.user@nowhere.xyz"
+    method: GET
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            idp: "okta"
+
+  # Unknown email returns a null idp - identical shape to a provisioned user we
+  # decline to route, so the endpoint is not an account-enumeration oracle.
+  - url: "http://localhost:8080/api/v1/auth/lookup?email=nobody@nowhere.xyz"
+    method: GET
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            idp: null
+
+  # Missing email is a malformed request, rejected before any lookup.
+  - url: "http://localhost:8080/api/v1/auth/lookup"
+    method: GET
+    expect:
+      status: 400
+
   # OpDivs Endpoint - reference list used by frontend selectors
   - url: http://localhost:8080/api/v1/opdivs
     method: GET
