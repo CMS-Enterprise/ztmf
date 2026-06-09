@@ -18,7 +18,15 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.HasAdminRead() {
+	// Scope by tier: unscoped admins see all; OPDIV tiers fail-closed to their
+	// granted OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		findScoresInput.RestrictToOpDivIDs = true
+		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
+	default:
 		findScoresInput.UserID = &user.UserID
 	}
 
@@ -85,7 +93,15 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.HasAdminRead() {
+	// Same tier scoping as ListScores: unscoped admins see all; OPDIV tiers
+	// fail-closed to their OpDivs; ISSO/ISSM keep the assigned-systems path.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		findScoresInput.RestrictToOpDivIDs = true
+		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
+	default:
 		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 

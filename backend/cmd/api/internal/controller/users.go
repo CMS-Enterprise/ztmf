@@ -22,6 +22,15 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	findUsersInput := &model.FindUsersInput{}
 	err = decoder.Decode(findUsersInput, r.URL.Query())
+
+	// OpDiv scope: an OpDiv-scoped admin (OPDIV_ADMIN / OPDIV_READONLY_ADMIN)
+	// only lists users in their granted OpDivs. Set after decode so a client
+	// cannot widen scope via query params. Unscoped admins leave it unset.
+	if unscoped, ids := authdUser.EffectiveOpDivScope(); !unscoped {
+		findUsersInput.RestrictToOpDivIDs = true
+		findUsersInput.OpDivIDs = ids
+	}
+
 	if err == nil {
 		users, err = model.FindUsers(r.Context(), findUsersInput)
 	}
@@ -44,8 +53,20 @@ func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := model.FindUserByID(r.Context(), ID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
 
-	respond(w, r, user, err)
+	// OpDiv read scope: an OpDiv-scoped admin may only read a user who shares
+	// one of their OpDivs. Unscoped admins read anyone. Fetch-then-gate keeps a
+	// not-found from leaking as a 403.
+	if !authdUser.HasUnscopedRead() && !sharesOpDiv(authdUser, user) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	respond(w, r, user, nil)
 }
 
 func GetCurrentUser(w http.ResponseWriter, r *http.Request) {

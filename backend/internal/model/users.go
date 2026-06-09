@@ -287,6 +287,13 @@ type FindUsersInput struct {
 	FullName *string `schema:"fullname"`
 	Role     *string `schema:"role"`
 	Deleted  bool    `schema:"deleted"`
+	// OpDivIDs / RestrictToOpDivIDs scope the list to users holding a grant in
+	// one of the acting admin's OpDivs. Mirror of FindFismaSystemsInput: when
+	// RestrictToOpDivIDs is set with an empty slice the query fails closed
+	// (WHERE FALSE) rather than returning every user. Not schema-tagged so a
+	// client cannot inject scope via query params - the controller sets them.
+	OpDivIDs           []int32
+	RestrictToOpDivIDs bool
 }
 
 func (fui *FindUsersInput) validate() error {
@@ -329,6 +336,16 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 
 	if fui.Role != nil {
 		sqlb = sqlb.Where("role=?", fui.Role)
+	}
+
+	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold
+	// a grant in one of their OpDivs. Empty grants under RestrictToOpDivIDs ->
+	// no rows. Unscoped admins set neither field and see everyone.
+	switch {
+	case fui.RestrictToOpDivIDs && len(fui.OpDivIDs) == 0:
+		sqlb = sqlb.Where("FALSE")
+	case len(fui.OpDivIDs) > 0:
+		sqlb = sqlb.Where("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
