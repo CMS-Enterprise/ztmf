@@ -43,13 +43,17 @@ func FindOpDivs(ctx context.Context, input FindOpDivsInput) ([]*OpDiv, error) {
 }
 
 func (o *OpDiv) validate() error {
-	inputErr := InvalidInputError{data: map[string]any{}}
+	// Canonicalize before checking AND storing so the length bound can't be
+	// bypassed with padding and the active-code uniqueness index (LOWER(code),
+	// not trimmed) cannot be defeated by leading/trailing whitespace.
+	o.Code = strings.TrimSpace(o.Code)
+	o.Name = strings.TrimSpace(o.Name)
 
-	code := strings.TrimSpace(o.Code)
-	if code == "" || len(code) > 16 {
+	inputErr := InvalidInputError{data: map[string]any{}}
+	if o.Code == "" || len(o.Code) > 16 {
 		inputErr.data["code"] = "1-16 characters required"
 	}
-	if name := strings.TrimSpace(o.Name); name == "" || len(name) > 128 {
+	if o.Name == "" || len(o.Name) > 128 {
 		inputErr.data["name"] = "1-128 characters required"
 	}
 

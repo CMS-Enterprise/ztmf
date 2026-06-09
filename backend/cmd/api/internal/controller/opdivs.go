@@ -43,6 +43,11 @@ func SaveOpDiv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Trust only the path-derived id. POST has no {opdiv_id} path var, so any
+	// opdiv_id in the request body is ignored and the operation is always a
+	// create - a body-supplied id must not turn a POST into an update of an
+	// existing OpDiv.
+	o.OpDivID = 0
 	if v, ok := mux.Vars(r)["opdiv_id"]; ok {
 		fmt.Sscan(v, &o.OpDivID)
 	}
