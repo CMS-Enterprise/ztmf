@@ -42,6 +42,14 @@ func LookupIdP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A soft-deleted user must look identical to a non-existent one: returning
+	// its idp would both leak that the account existed and route it into a
+	// login the session handler is required to reject anyway.
+	if user.Deleted {
+		respondOK(w, idpLookupResponse{IdP: nil})
+		return
+	}
+
 	idp := user.IdentityProvider
 	respondOK(w, idpLookupResponse{IdP: &idp})
 }

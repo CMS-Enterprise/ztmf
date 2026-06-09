@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
@@ -27,9 +28,17 @@ var keys = make(map[string]jwt.VerificationKey)
 // the legacy Okta path, a single JWKS fetch populates many kids at once and the
 // map may be written from concurrent requests.
 var (
-	entraKeys = make(map[string]*rsa.PublicKey)
-	entraMu   sync.RWMutex
+	entraKeys        = make(map[string]*rsa.PublicKey)
+	entraLastRefresh time.Time
+	entraMu          sync.RWMutex
 )
+
+// minEntraRefreshInterval throttles JWKS refreshes triggered by cache misses.
+// Without it, an attacker presenting tokens with random kids (valid issuer,
+// bogus kid) could force one outbound JWKS fetch per request. Entra publishes
+// rotated keys well ahead of use, so a few minutes of staleness on a genuinely
+// new kid is an acceptable trade for closing that amplification vector.
+const minEntraRefreshInterval = 5 * time.Minute
 
 var (
 	ErrUntrustedIssuer = errors.New("token issuer is not trusted")
@@ -53,7 +62,13 @@ func decodeJWT(tokenString string) (*jwt.Token, error) {
 	// AWS ELB does not conform to JWT standards!
 	// encoded data includes illegal padding (as = chars)
 	// thus making signature verification impossible with standards-conforming packages
-	tkn, err := jwt.ParseWithClaims(tokenString, &Claims{}, getKey, jwt.WithPaddingAllowed())
+	// Pin the accepted signing methods so algorithm choice can never be driven
+	// by the attacker-supplied header alone: HS256 (local dev), ES256 (Okta),
+	// RS256 (Entra). Anything else is rejected before getKey runs.
+	tkn, err := jwt.ParseWithClaims(tokenString, &Claims{}, getKey,
+		jwt.WithPaddingAllowed(),
+		jwt.WithValidMethods([]string{"ES256", "RS256", "HS256"}),
+	)
 	if err != nil {
 		return tkn, err
 	}
@@ -119,9 +134,12 @@ func getKey(token *jwt.Token) (interface{}, error) {
 }
 
 // oktaKey retrieves an Okta ECDSA key via the per-kid PEM endpoint and caches
-// it. This is the original behavior, unchanged.
+// it.
 func oktaKey(token *jwt.Token) (interface{}, error) {
-	kid := token.Header["kid"].(string)
+	kid, ok := token.Header["kid"].(string)
+	if !ok {
+		return nil, errors.New("token missing kid")
+	}
 
 	// if not already cached, request it
 	if _, ok := keys[kid]; !ok {
@@ -131,12 +149,16 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Printf("client: error making http request: %s\n", err)
+			return nil, err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return nil, errors.New("key endpoint returned non-200")
 		}
 
 		resBody, err := io.ReadAll(res.Body)
 		if err != nil {
-			log.Printf("client: could not read response body: %s\n", err)
+			return nil, err
 		}
 
 		block, _ := pem.Decode(resBody)
@@ -149,7 +171,10 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 			return nil, err
 		}
 
-		pk := genericPublicKey.(*ecdsa.PublicKey)
+		pk, ok := genericPublicKey.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, errors.New("Okta key is not ECDSA")
+		}
 		// cache it!
 		keys[kid] = pk
 	}
@@ -162,9 +187,17 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 func entraKey(kid string) (*rsa.PublicKey, error) {
 	entraMu.RLock()
 	pk, ok := entraKeys[kid]
+	fresh := time.Since(entraLastRefresh) < minEntraRefreshInterval
 	entraMu.RUnlock()
 	if ok {
 		return pk, nil
+	}
+
+	// Unknown kid. Only reach out to the JWKS endpoint if we have not refreshed
+	// recently, so a burst of bogus-kid tokens cannot amplify into a burst of
+	// outbound fetches.
+	if fresh {
+		return nil, errors.New("no Entra signing key for kid")
 	}
 
 	if err := refreshEntraKeys(); err != nil {
@@ -226,6 +259,7 @@ func refreshEntraKeys() error {
 
 	entraMu.Lock()
 	entraKeys = parsed
+	entraLastRefresh = time.Now()
 	entraMu.Unlock()
 	return nil
 }
@@ -244,8 +278,19 @@ func rsaPublicKeyFromJWK(k jwk) (*rsa.PublicKey, error) {
 	if len(nBytes) == 0 || len(eBytes) == 0 {
 		return nil, errors.New("empty modulus or exponent")
 	}
+	// Reject implausible parameters: a >4-byte exponent would truncate through
+	// int, and a modulus shorter than 2048 bits is too weak to honor.
+	if len(eBytes) > 4 {
+		return nil, errors.New("RSA exponent too large")
+	}
+	if len(nBytes) < 256 {
+		return nil, errors.New("RSA modulus shorter than 2048 bits")
+	}
 
 	e := new(big.Int).SetBytes(eBytes)
+	if !e.IsInt64() || e.Int64() < 2 {
+		return nil, errors.New("invalid RSA exponent")
+	}
 	return &rsa.PublicKey{
 		N: new(big.Int).SetBytes(nBytes),
 		E: int(e.Int64()),

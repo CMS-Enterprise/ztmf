@@ -69,8 +69,24 @@ func TestRSAPublicKeyFromJWK(t *testing.T) {
 }
 
 func TestRSAPublicKeyFromJWK_Malformed(t *testing.T) {
-	_, err := rsaPublicKeyFromJWK(jwk{Kty: "RSA", N: "!!!not-base64!!!", E: "AQAB"})
-	assert.Error(t, err)
+	b64 := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+	bigModulus := b64(make([]byte, 256)) // 2048-bit, content irrelevant for these checks
+
+	tests := []struct {
+		name string
+		k    jwk
+	}{
+		{"non-base64 modulus", jwk{Kty: "RSA", N: "!!!not-base64!!!", E: "AQAB"}},
+		{"oversized exponent truncates", jwk{Kty: "RSA", N: bigModulus, E: b64([]byte{1, 0, 0, 0, 0})}},
+		{"modulus under 2048 bits", jwk{Kty: "RSA", N: b64(make([]byte, 128)), E: "AQAB"}},
+		{"exponent too small", jwk{Kty: "RSA", N: bigModulus, E: b64([]byte{1})}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := rsaPublicKeyFromJWK(tt.k)
+			assert.Error(t, err)
+		})
+	}
 }
 
 func TestDecodeJWT_HS256(t *testing.T) {

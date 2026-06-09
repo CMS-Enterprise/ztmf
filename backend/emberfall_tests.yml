@@ -212,6 +212,18 @@ tests:
           data:
             idp: null
 
+  # A soft-deleted user must look identical to an unknown email (null idp),
+  # so the endpoint cannot reveal that a deactivated account existed.
+  # Captain.Needa is seeded with deleted=true.
+  - url: "http://localhost:8080/api/v1/auth/lookup?email=Captain.Needa@executor.empire"
+    method: GET
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            idp: null
+
   # Missing email is a malformed request, rejected before any lookup.
   - url: "http://localhost:8080/api/v1/auth/lookup"
     method: GET
