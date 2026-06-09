@@ -73,7 +73,7 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 	uf, err = uf.Save(r.Context())
 	if err != nil {
 		respond(w, r, nil, err)
-
+		return
 	}
 
 	respond(w, r, uf, nil)
