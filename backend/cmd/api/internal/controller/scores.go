@@ -18,8 +18,11 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	// Scope by tier: unscoped admins see all; OPDIV tiers fail-closed to their
-	// granted OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+
+	// Scope by tier AFTER decode so a client cannot widen scope via query
+	// params: unscoped admins see all; OPDIV tiers fail-closed to their granted
+	// OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
 	switch {
 	case user.HasUnscopedRead():
 		// no scope filter
@@ -30,7 +33,6 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 		findScoresInput.UserID = &user.UserID
 	}
 
-	err = decoder.Decode(&findScoresInput, r.URL.Query())
 	if err == nil {
 		scores, err = model.FindScores(r.Context(), findScoresInput)
 	}
@@ -93,8 +95,11 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	// Same tier scoping as ListScores: unscoped admins see all; OPDIV tiers
-	// fail-closed to their OpDivs; ISSO/ISSM keep the assigned-systems path.
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+
+	// Same tier scoping as ListScores, applied AFTER decode: unscoped admins see
+	// all; OPDIV tiers fail-closed to their OpDivs; ISSO/ISSM keep the
+	// assigned-systems path.
 	switch {
 	case user.HasUnscopedRead():
 		// no scope filter
@@ -105,7 +110,6 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 
-	err = decoder.Decode(&findScoresInput, r.URL.Query())
 	if err == nil {
 		aggregate, err = model.FindScoresAggregate(r.Context(), findScoresInput)
 	}
