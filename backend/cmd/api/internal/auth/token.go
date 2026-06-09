@@ -121,6 +121,10 @@ func getKey(token *jwt.Token) (interface{}, error) {
 	case "none":
 		return nil, errors.New("unsupported jwt signing algorithm")
 	case "HS256":
+		if cfg.Auth.HS256_SECRET == "" {
+			// Fail closed: never verify an HS256 token against an empty key.
+			return nil, errors.New("HS256 secret not configured")
+		}
 		return []byte(cfg.Auth.HS256_SECRET), nil
 	case "RS256":
 		kid, ok := token.Header["kid"].(string)

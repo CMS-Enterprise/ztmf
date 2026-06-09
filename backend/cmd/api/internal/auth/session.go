@@ -45,6 +45,14 @@ func IdentifierFromClaims(c *Claims) string {
 // requests are gated by this app-owned token, not by re-validating the IdP.
 func MintSession(user *model.User) (string, error) {
 	cfg := config.GetInstance()
+
+	secret := cfg.SessionSecret()
+	if len(secret) == 0 {
+		// Fail closed: an empty HMAC key produces a deterministic, publicly
+		// forgeable signature. Never mint a session we cannot trust.
+		return "", errors.New("session signing secret not configured")
+	}
+
 	now := time.Now()
 
 	claims := &Claims{
@@ -57,7 +65,7 @@ func MintSession(user *model.User) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(cfg.Auth.SessionTTL) * time.Second)),
 		},
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(cfg.SessionSecret())
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(secret)
 }
 
 // ParseSession validates an application session token and returns its claims.
@@ -66,7 +74,14 @@ func MintSession(user *model.User) (string, error) {
 func ParseSession(tokenString string) (*Claims, error) {
 	cfg := config.GetInstance()
 	tkn, err := jwt.ParseWithClaims(tokenString, &Claims{},
-		func(t *jwt.Token) (interface{}, error) { return cfg.SessionSecret(), nil },
+		func(t *jwt.Token) (interface{}, error) {
+			secret := cfg.SessionSecret()
+			if len(secret) == 0 {
+				// Fail closed rather than verify against an empty key.
+				return nil, errors.New("session signing secret not configured")
+			}
+			return secret, nil
+		},
 		jwt.WithValidMethods([]string{"HS256"}),
 		jwt.WithIssuer(sessionIssuer),
 	)
