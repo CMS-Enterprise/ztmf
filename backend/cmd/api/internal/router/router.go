@@ -22,6 +22,12 @@ func Handler() http.Handler {
 	lookupLimiter := auth.NewRateLimiter(rate.Limit(5), 10, 10*time.Minute)
 	root.Handle("/api/v1/auth/lookup", lookupLimiter.Middleware(http.HandlerFunc(controller.LookupIdP))).Methods("GET")
 
+	// Post-OIDC login. The ALB authenticates /login* per IdP and forwards here
+	// with the IdP token in the auth header; SessionHandler mints the app
+	// session cookie. These live outside auth.Middleware because no app session
+	// cookie exists yet - the ALB OIDC handshake is the gate for these paths.
+	root.PathPrefix("/login").HandlerFunc(auth.SessionHandler).Methods("GET")
+
 	// Every other route requires authentication. Registering them on a subrouter
 	// keeps auth.Middleware off the public lookup route above.
 	router := root.PathPrefix("/").Subrouter()

@@ -20,6 +20,7 @@ const testHS256Secret = "zeroTrust"
 // the local-dev decode path has a key to verify against.
 func TestMain(m *testing.M) {
 	os.Setenv("AUTH_HS256_SECRET", testHS256Secret)
+	os.Setenv("AUTH_HEADER_FIELD", "Authorization")
 	os.Exit(m.Run())
 }
 
