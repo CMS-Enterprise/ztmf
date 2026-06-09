@@ -20,8 +20,13 @@ import (
 )
 
 // keys caches Okta verification keys by key id (kid). Okta exposes one PEM per
-// kid at TokenKeyUrl+kid, so the cache is keyed by kid alone.
-var keys = make(map[string]jwt.VerificationKey)
+// kid at TokenKeyUrl+kid, so the cache is keyed by kid alone. Guarded by keysMu
+// because Go maps are not safe for concurrent read+write and this runs per
+// request on concurrent logins.
+var (
+	keys   = make(map[string]jwt.VerificationKey)
+	keysMu sync.RWMutex
+)
 
 // entraKeys caches Entra (Microsoft) RSA signing keys by kid, parsed from the
 // standard JWKS document at EntraJWKSUrl. Guarded by entraMu because, unlike
@@ -145,45 +150,50 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 		return nil, errors.New("token missing kid")
 	}
 
-	// if not already cached, request it
-	if _, ok := keys[kid]; !ok {
-		cfg := config.GetInstance()
-		url := cfg.Auth.TokenKeyUrl + kid
-		req, _ := http.NewRequest("GET", url, nil)
-
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			return nil, errors.New("key endpoint returned non-200")
-		}
-
-		resBody, err := io.ReadAll(res.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		block, _ := pem.Decode(resBody)
-		if block == nil {
-			return nil, errors.New("no PEM data found in public key")
-		}
-
-		genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-
-		pk, ok := genericPublicKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, errors.New("Okta key is not ECDSA")
-		}
-		// cache it!
-		keys[kid] = pk
+	keysMu.RLock()
+	cached, ok := keys[kid]
+	keysMu.RUnlock()
+	if ok {
+		return cached, nil
 	}
 
-	return keys[kid], nil
+	cfg := config.GetInstance()
+	url := cfg.Auth.TokenKeyUrl + kid
+	req, _ := http.NewRequest("GET", url, nil)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New("key endpoint returned non-200")
+	}
+
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	block, _ := pem.Decode(resBody)
+	if block == nil {
+		return nil, errors.New("no PEM data found in public key")
+	}
+
+	genericPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	pk, ok := genericPublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("Okta key is not ECDSA")
+	}
+
+	keysMu.Lock()
+	keys[kid] = pk
+	keysMu.Unlock()
+	return pk, nil
 }
 
 // entraKey returns the cached Entra RSA key for kid, fetching and parsing the

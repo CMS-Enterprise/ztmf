@@ -2,7 +2,9 @@ package auth
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
@@ -26,6 +28,16 @@ func Middleware(next http.Handler) http.Handler {
 		claims, isSession, ok := claimsFromRequest(r)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// CSRF defense for the cookie-borne session: SameSite=Strict already
+		// blocks cross-site cookie attachment, and this adds an origin check on
+		// state-changing requests as belt-and-suspenders. Only the session
+		// cookie path is browser-driven; the bearer path is for API clients and
+		// is not subject to CSRF.
+		if isSession && !isSafeMethod(r.Method) && !sameOrigin(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -75,6 +87,51 @@ func Middleware(next http.Handler) http.Handler {
 		ctx := model.UserToContext(r.Context(), user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// isSafeMethod reports whether the HTTP method is read-only and therefore not
+// a CSRF concern.
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// sameOrigin checks that a state-changing request originated from our own site.
+// It compares the Origin (then Referer) host against the configured cookie
+// domain, falling back to the request Host. A request with neither header is
+// allowed: SameSite=Strict already prevents a cross-site context from sending
+// the session cookie, so this header check is additive, not the sole gate.
+func sameOrigin(r *http.Request) bool {
+	expected := config.GetInstance().Auth.CookieDomain
+	if expected == "" {
+		expected = hostOnly(r.Host)
+	}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = r.Header.Get("Referer")
+	}
+	if origin == "" {
+		return true
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return hostOnly(u.Host) == hostOnly(expected)
+}
+
+// hostOnly strips any port from a host[:port] string.
+func hostOnly(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }
 
 // claimsFromRequest extracts validated claims. It returns the claims, whether

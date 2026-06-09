@@ -163,15 +163,20 @@ func GetInstance() *config {
 }
 
 // SessionSecret returns the secret used to sign and verify the application
-// session token. It prefers AUTH_SESSION_SIGNING_SECRET and falls back to the
-// HS256 secret so that local dev and the E2E suite, which present an HS256
-// bearer directly rather than going through the ALB OIDC login, continue to
-// authenticate without extra configuration.
+// session token. It prefers AUTH_SESSION_SIGNING_SECRET. The fallback to the
+// HS256 secret is allowed ONLY in local/test, where that secret is the
+// well-known dev value and sessions are minted from HS256 bearers anyway. In a
+// deployed environment the fallback is refused: if AUTH_SESSION_SIGNING_SECRET
+// is unset the function returns nil so MintSession/ParseSession fail closed,
+// rather than silently signing production sessions with a shared HS256 key.
 func (c *config) SessionSecret() []byte {
 	if c.Auth.SessionSigningSecret != "" {
 		return []byte(c.Auth.SessionSigningSecret)
 	}
-	return []byte(c.Auth.HS256_SECRET)
+	if c.IsLocalOrTest() {
+		return []byte(c.Auth.HS256_SECRET)
+	}
+	return nil
 }
 
 // IsLocal reports whether the API is running in the local development

@@ -19,6 +19,7 @@ const testHS256Secret = "zeroTrust"
 // TestMain seeds the HS256 secret before the config singleton initializes so
 // the local-dev decode path has a key to verify against.
 func TestMain(m *testing.M) {
+	os.Setenv("ENVIRONMENT", "test")
 	os.Setenv("AUTH_HS256_SECRET", testHS256Secret)
 	os.Setenv("AUTH_HEADER_FIELD", "Authorization")
 	os.Exit(m.Run())

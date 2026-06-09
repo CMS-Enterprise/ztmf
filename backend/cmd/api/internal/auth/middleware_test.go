@@ -66,3 +66,44 @@ func TestClaimsFromRequest(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestIsSafeMethod(t *testing.T) {
+	for _, m := range []string{"GET", "HEAD", "OPTIONS"} {
+		assert.True(t, isSafeMethod(m), m)
+	}
+	for _, m := range []string{"POST", "PUT", "DELETE", "PATCH"} {
+		assert.False(t, isSafeMethod(m), m)
+	}
+}
+
+func TestSameOrigin(t *testing.T) {
+	// CookieDomain is unset in the test env, so sameOrigin falls back to the
+	// request Host.
+	tests := []struct {
+		name    string
+		host    string
+		origin  string
+		referer string
+		want    bool
+	}{
+		{"origin matches host", "ztmf.example.gov", "https://ztmf.example.gov", "", true},
+		{"origin host:port matches", "ztmf.example.gov", "https://ztmf.example.gov:443", "", true},
+		{"origin mismatch", "ztmf.example.gov", "https://evil.example.com", "", false},
+		{"referer used when origin absent", "ztmf.example.gov", "", "https://ztmf.example.gov/page", true},
+		{"referer mismatch", "ztmf.example.gov", "", "https://evil.example.com/x", false},
+		{"no origin or referer is allowed (SameSite covers it)", "ztmf.example.gov", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/api/v1/users", nil)
+			r.Host = tt.host
+			if tt.origin != "" {
+				r.Header.Set("Origin", tt.origin)
+			}
+			if tt.referer != "" {
+				r.Header.Set("Referer", tt.referer)
+			}
+			assert.Equal(t, tt.want, sameOrigin(r))
+		})
+	}
+}
