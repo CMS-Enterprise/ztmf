@@ -13,6 +13,11 @@
 INSERT INTO public.opdivs (code, name, is_parent, active)
     VALUES ('EMPIRE', 'Galactic Empire (test fixture)', TRUE, TRUE)
     ON CONFLICT DO NOTHING;
+-- Converge the parent flag explicitly: the INSERT above no-ops on a DB that
+-- already seeded EMPIRE as a non-parent (persistent dev volumes), so set it
+-- here. There is no plain unique constraint on code (only a partial expression
+-- index), hence an UPDATE rather than ON CONFLICT DO UPDATE.
+UPDATE public.opdivs SET is_parent = TRUE WHERE LOWER(code) = 'empire';
 
 -- 13 sister divisions of the Empire.
 INSERT INTO public.opdivs (code, name, is_parent, active) VALUES

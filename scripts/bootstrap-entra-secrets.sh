@@ -24,6 +24,7 @@
 
 set -euo pipefail
 
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 : "${ENTRA_TENANT_ID:?set ENTRA_TENANT_ID}"
 : "${ENTRA_CLIENT_ID:?set ENTRA_CLIENT_ID}"
 : "${ENTRA_CLIENT_SECRET:?set ENTRA_CLIENT_SECRET}"
@@ -31,39 +32,57 @@ SUFFIX="${SECRET_SUFFIX:-}"
 
 base="https://login.microsoftonline.com/${ENTRA_TENANT_ID}"
 
-# Microsoft v2.0 endpoints are derived from the tenant id, so only the tenant
-# and client credentials are operator input. The /v2.0 suffix on the issuer is
-# significant and must match the iss claim the backend pins.
-entra_json=$(cat <<JSON
-{
-  "authorization_endpoint": "${base}/oauth2/v2.0/authorize",
-  "token_endpoint": "${base}/oauth2/v2.0/token",
-  "user_info_endpoint": "https://graph.microsoft.com/oidc/userinfo",
-  "issuer": "${base}/v2.0",
-  "jwks_uri": "${base}/discovery/v2.0/keys",
-  "tenant_id": "${ENTRA_TENANT_ID}",
-  "client_id": "${ENTRA_CLIENT_ID}",
-  "client_secret": "${ENTRA_CLIENT_SECRET}"
-}
-JSON
-)
+# Secret values are written to a locked-down temp file and passed to the AWS CLI
+# via file://, never on the argv (where they would be visible in `ps`). The
+# trap wipes the file even on error.
+workdir=$(mktemp -d)
+chmod 700 "$workdir"
+trap 'rm -rf "$workdir"' EXIT
+
+entra_file="$workdir/entra.json"
+
+# jq --arg escapes every value correctly, so a client secret containing quotes
+# or backslashes cannot corrupt the JSON. Microsoft v2.0 endpoints are derived
+# from the tenant id; the /v2.0 issuer suffix is significant and must match the
+# iss claim the backend pins.
+jq -n \
+  --arg base "$base" \
+  --arg tid "$ENTRA_TENANT_ID" \
+  --arg cid "$ENTRA_CLIENT_ID" \
+  --arg secret "$ENTRA_CLIENT_SECRET" \
+  '{
+    authorization_endpoint: ($base + "/oauth2/v2.0/authorize"),
+    token_endpoint:         ($base + "/oauth2/v2.0/token"),
+    user_info_endpoint:     "https://graph.microsoft.com/oidc/userinfo",
+    issuer:                 ($base + "/v2.0"),
+    jwks_uri:               ($base + "/discovery/v2.0/keys"),
+    tenant_id:              $tid,
+    client_id:              $cid,
+    client_secret:          $secret
+  }' > "$entra_file"
 
 echo "Seeding ztmf_entra_oidc${SUFFIX}..."
 aws secretsmanager put-secret-value \
   --secret-id "ztmf_entra_oidc${SUFFIX}" \
-  --secret-string "${entra_json}" >/dev/null
+  --secret-string "file://${entra_file}" >/dev/null
 
-# Generate a high-entropy session signing key only if one is not already set,
-# so re-running this script does not rotate live sessions by accident.
-if aws secretsmanager get-secret-value --secret-id "ztmf_session_signing_key${SUFFIX}" \
-    --query SecretString --output text >/dev/null 2>&1; then
+# Generate a high-entropy session signing key only if a non-empty one is not
+# already set, so re-running does not rotate live sessions. A present-but-empty
+# value is treated as unset (an empty HMAC key is unsafe and the backend fails
+# closed on it).
+existing=$(aws secretsmanager get-secret-value \
+  --secret-id "ztmf_session_signing_key${SUFFIX}" \
+  --query SecretString --output text 2>/dev/null || true)
+
+if [ -n "$existing" ] && [ "$existing" != "None" ]; then
   echo "ztmf_session_signing_key${SUFFIX} already has a value, leaving it as-is."
 else
   echo "Generating and seeding ztmf_session_signing_key${SUFFIX}..."
-  signing_key=$(openssl rand -base64 48)
+  key_file="$workdir/signing.key"
+  openssl rand -base64 48 | tr -d '\n' > "$key_file"
   aws secretsmanager put-secret-value \
     --secret-id "ztmf_session_signing_key${SUFFIX}" \
-    --secret-string "${signing_key}" >/dev/null
+    --secret-string "file://${key_file}" >/dev/null
 fi
 
 echo "Done. Set entra_enabled = true in the target tfvars and re-apply."
