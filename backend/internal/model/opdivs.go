@@ -13,8 +13,13 @@ type OpDiv struct {
 	OpDivID  int32  `json:"opdiv_id" db:"opdiv_id"`
 	Code     string `json:"code"`
 	Name     string `json:"name"`
-	IsParent bool   `json:"is_parent" db:"is_parent"`
-	Active   bool   `json:"active"`
+	// IsParent and Active are pointers so an update can distinguish "not supplied"
+	// (nil, leave the column untouched) from an explicit false. With a non-pointer
+	// bool, any update that omits the field defaults to false: omitting is_parent
+	// would demote the HHS parent OpDiv (which drives HHS-wide authorization), and
+	// omitting active would silently deactivate an active OpDiv.
+	IsParent *bool `json:"is_parent" db:"is_parent"`
+	Active   *bool `json:"active"`
 }
 
 // FindOpDivsInput holds optional filters for listing OpDivs.
@@ -74,18 +79,28 @@ func (o *OpDiv) Save(ctx context.Context) (*OpDiv, error) {
 
 	var sqlb SqlBuilder
 	if o.OpDivID == 0 {
+		// Create: a new OpDiv is always active; is_parent defaults to false when
+		// the optional field is omitted.
+		isParent := o.IsParent != nil && *o.IsParent
 		sqlb = stmntBuilder.
 			Insert("public.opdivs").
 			Columns("code", "name", "is_parent", "active").
-			Values(o.Code, o.Name, o.IsParent, true).
+			Values(o.Code, o.Name, isParent, true).
 			Suffix("RETURNING opdiv_id, code, name, is_parent, active")
 	} else {
-		sqlb = stmntBuilder.
+		ub := stmntBuilder.
 			Update("public.opdivs").
 			Set("code", o.Code).
-			Set("name", o.Name).
-			Set("is_parent", o.IsParent).
-			Set("active", o.Active).
+			Set("name", o.Name)
+		// Only touch is_parent / active when the caller explicitly supplied them;
+		// omitting a field (nil) must leave the current value intact.
+		if o.IsParent != nil {
+			ub = ub.Set("is_parent", *o.IsParent)
+		}
+		if o.Active != nil {
+			ub = ub.Set("active", *o.Active)
+		}
+		sqlb = ub.
 			Where("opdiv_id=?", o.OpDivID).
 			Suffix("RETURNING opdiv_id, code, name, is_parent, active")
 	}
