@@ -12,7 +12,12 @@ import (
 // see model/massemails
 func SaveMassEmail(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// Mass email is a write action that targets recipients across every OpDiv
+	// with no per-OpDiv recipient scoping, so it is restricted to the unscoped
+	// WRITE admins (OWNER / HHS_ADMIN): IsAdmin excludes the read-only tiers and
+	// HasUnscopedRead excludes OPDIV_ADMIN. An OPDIV_ADMIN must not be able to
+	// blast users outside their OpDiv; read-only admins must not send at all.
+	if !user.IsAdmin() || !user.HasUnscopedRead() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

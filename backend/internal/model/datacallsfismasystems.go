@@ -21,15 +21,27 @@ func (df *DataCallFismaSystem) Save(ctx context.Context) (*DataCallFismaSystem, 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCallFismaSystem])
 }
 
-// FindDataCallFismaSystems returns all FISMA systems that have marked a specific data call as complete
-func FindDataCallFismaSystems(ctx context.Context, datacallID int32) ([]*FismaSystem, error) {
+// FindDataCallFismaSystems returns all FISMA systems that have marked a specific
+// data call as complete. opdivIDs/restrictToOpDivIDs scope the completion list
+// for an OpDiv-scoped admin to systems in their granted OpDivs (fail-closed:
+// restricted with an empty slice returns no rows). Unscoped callers pass
+// (nil, false) for the legacy department-wide view.
+func FindDataCallFismaSystems(ctx context.Context, datacallID int32, opdivIDs []int32, restrictToOpDivIDs bool) ([]*FismaSystem, error) {
 	cols := append(fismaSystemColumns[1:], "fs.fismasystemid")
 	sqlb := stmntBuilder.
 		Select(cols...).
 		From("fismasystems fs").
 		InnerJoin("datacalls_fismasystems dcfs ON fs.fismasystemid = dcfs.fismasystemid").
-		Where("dcfs.datacallid = ?", datacallID).
-		OrderBy("fs.fismaacronym ASC")
+		Where("dcfs.datacallid = ?", datacallID)
+
+	switch {
+	case restrictToOpDivIDs && len(opdivIDs) == 0:
+		sqlb = sqlb.Where("FALSE")
+	case len(opdivIDs) > 0:
+		sqlb = sqlb.Where("fs.opdiv_id = ANY(?)", opdivIDs)
+	}
+
+	sqlb = sqlb.OrderBy("fs.fismaacronym ASC")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[FismaSystem])
 }
