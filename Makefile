@@ -254,10 +254,6 @@ test-unit:
 	@echo "🧪 Running unit tests (fast)..."
 	cd backend && go test -short ./...
 
-test-integration:
-	@echo "🧪 Running integration tests..."
-	cd backend && go test -run Integration ./...
-
 test-coverage:
 	@echo "Running tests with coverage..."
 	cd backend && go test -coverprofile=coverage.out ./...
@@ -303,6 +299,23 @@ test-e2e:
 	@rm /tmp/emberfall_test_isolated.yml
 	@echo "✅ E2E tests passed!"
 
+test-integration:
+	@echo "🧪 Running Go integration tests against an isolated, freshly-seeded DB..."
+	@echo "   (never the dev DB on :54321 - that volume holds real data on purpose)"
+	@echo "🧹 Cleaning up any existing test containers..."
+	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
+	@echo "🚀 Starting fresh test environment (db :54399; test-api applies migrations + seed)..."
+	@cd backend && docker compose -f compose-test.yml up -d --build
+	@echo "⏳ Waiting for migrations + empire seed to apply..."
+	@sleep 15
+	@echo "🔬 Running integration tests against :54399..."
+	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=54399 DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
+		go test -run Integration ./... -count=1 \
+		|| (echo "❌ Integration tests failed"; docker compose -f compose-test.yml down -v; exit 1)
+	@echo "🧹 Cleaning up test environment..."
+	@cd backend && docker compose -f compose-test.yml down -v
+	@echo "✅ Integration tests passed!"
+
 test-build:
 	@echo "Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
@@ -321,11 +334,11 @@ test-full:
 	@echo "2/5 Running unit tests..."
 	@cd backend && go test -short ./...
 	@echo ""
-	@echo "3/5 Generating coverage report..."
-	@cd backend && go test -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
+	@echo "3/5 Generating coverage report (unit only; integration runs isolated in step 4)..."
+	@cd backend && go test -short -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
 	@echo ""
-	@echo "4/5 Running integration tests (require DB_* env from backend/dev.compose.env)..."
-	@cd backend && go test -run Integration ./... -count=1
+	@echo "4/5 Running integration tests (isolated, freshly-seeded container)..."
+	@$(MAKE) test-integration
 	@echo ""
 	@echo "5/5 Running Emberfall E2E tests (isolated containers)..."
 	@make test-e2e

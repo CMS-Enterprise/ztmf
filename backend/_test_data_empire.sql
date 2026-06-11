@@ -11,6 +11,13 @@ INSERT INTO public.opdivs (code, name, is_parent, active)
     VALUES ('EMPIRE', 'Galactic Empire (test fixture)', FALSE, TRUE)
     ON CONFLICT DO NOTHING;
 
+-- REBELLION OpDiv (test-only). A second OpDiv distinct from EMPIRE so the
+-- OpDiv-scoped RBAC negative cases are exercisable: an EMPIRE OPDIV_ADMIN must
+-- get 403 on REBELLION systems and must not see them in scoped read lists.
+INSERT INTO public.opdivs (code, name, is_parent, active)
+    VALUES ('REBELLION', 'Rebel Alliance (test fixture)', FALSE, TRUE)
+    ON CONFLICT DO NOTHING;
+
 -- Test user for Emberfall E2E tests (matches _test_data.sql for CI/CD compatibility)
 INSERT INTO public.users (email, fullname, role, identity_provider)
     VALUES ('Test.User@nowhere.xyz', 'Admin User', 'OWNER', 'okta')
@@ -57,6 +64,18 @@ INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provi
     VALUES ('77777777-7777-4777-8777-777777777777', 'Captain.Needa@executor.empire', 'Captain Needa', 'ISSO', TRUE, 'okta')
     ON CONFLICT DO NOTHING;
 
+-- OpDiv-scoped admin fixtures for the RBAC enforcement tests. Both are granted
+-- ONLY the EMPIRE OpDiv (see the EMPIRE grant block below), never REBELLION, so
+-- they can manage / read EMPIRE systems but get 403 / empty on REBELLION ones.
+-- HS256 tokens (secret "zeroTrust", lowercase email claim) live as anchors in
+-- emberfall_tests.yml. UUIDs are v4-conforming for isValidUUID path params.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('88888888-8888-4888-8888-888888888888', 'Opdiv.Admin@empire.test', 'Empire OpDiv Admin', 'OPDIV_ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('99999999-9999-4999-8999-999999999999', 'Opdiv.Readonly@empire.test', 'Empire OpDiv Readonly', 'OPDIV_READONLY_ADMIN', 'okta')
+    ON CONFLICT DO NOTHING;
+
 -- Grant EMPIRE OpDiv membership to every test user. Migration 0034 only seeded
 -- users that existed at migration time; populate adds users after migrations
 -- run, so we attach OpDiv grants here. All empire-themed users get EMPIRE;
@@ -75,7 +94,9 @@ SELECT u.userid, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
         'Commander.Veers@hoth.empire',
         'Director.Krennic@scarif.empire',
         'Emperor.Palpatine@coruscant.empire',
-        'Captain.Needa@executor.empire'
+        'Captain.Needa@executor.empire',
+        'Opdiv.Admin@empire.test',
+        'Opdiv.Readonly@empire.test'
        )
 ON CONFLICT DO NOTHING;
 
@@ -183,6 +204,51 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     '11111111-1111-1111-1111-111111111111',
     'Decommissioned to provide a reactivation test target',
     (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
+) ON CONFLICT DO NOTHING;
+
+-- REBELLION-OpDiv systems. Out of scope for the EMPIRE OpDiv admins: used to
+-- assert cross-OpDiv 403 on write paths (score/edit/decommission/reactivate/
+-- assign/datacall-complete) and exclusion from EMPIRE-scoped read lists.
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
+    1005,
+    'A1B2C300-1977-4E5F-9D0A-1234567890AB',
+    'RB-1',
+    'Yavin 4 Massassi Base Network',
+    'Rebel Command Operations',
+    'ALLIANCE-(OPS)',
+    'RBLCOM',
+    'Alliance Command',
+    'Operations Division',
+    'Jungle-Moon',
+    'mon.mothma@chandrila.alliance',
+    'general.dodonna@yavin.alliance',
+    FALSE,
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION')
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, sdl_sync_enabled, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, opdiv_id) VALUES (
+    1006,
+    'C4D5E600-1980-4A7B-8C1D-234567890ABC',
+    'RB-2',
+    'Hoth Echo Base Defense Grid',
+    'Planetary Defense Systems',
+    'ALLIANCE-(DEF)',
+    'ECHO',
+    'Alliance Defense Corps',
+    'Planetary Defense Division',
+    'Ice-Planet',
+    'general.rieekan@hoth.alliance',
+    'commander.skywalker@hoth.alliance',
+    FALSE,
+    FALSE,
+    NULL,
+    NULL,
+    NULL,
+    (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION')
 ) ON CONFLICT DO NOTHING;
 
 -- User-System Assignments (Officers assigned to their systems)

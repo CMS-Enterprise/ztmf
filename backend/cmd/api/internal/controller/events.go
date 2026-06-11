@@ -8,7 +8,11 @@ import (
 
 func GetEvents(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.HasAdminRead() {
+	// The audit trail spans every OpDiv and events carry no opdiv_id to scope
+	// on, so it is restricted to unscoped admins (OWNER / HHS_ADMIN /
+	// HHS_READONLY_ADMIN). OpDiv-scoped tiers get 403 rather than a cross-OpDiv
+	// audit view.
+	if !user.HasUnscopedRead() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
