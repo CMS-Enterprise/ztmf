@@ -535,6 +535,57 @@ func TestFindScoresIncludesAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
 }
 
+// TestFindScoresResolvesSeededAuditFieldsIntegration covers the historical
+// read path that the other audit tests do not: a score whose edit event was
+// recorded by seed data (not written in-test) must still resolve LastEditedBy
+// through the LATERAL join on events. This is exactly what a fresh local dev
+// environment and the dashboard "Last edited <when> by <who>" footer rely on
+// when nothing has been edited in the current session.
+//
+// The fixture is the expanded empire seed: system 1110 (Tarkin Initiative
+// Superweapon R&D), scored in datacall 2 (FY2025) with one seeded "updated"
+// event per score attributed to its assigned officer, Bevel Lemelisk. If the
+// seed audit events go missing or the join regresses, last_edited_by silently
+// returns to blank in the UI and this test fails.
+//
+// Empire fixtures only (see [[feedback_no_real_pii_in_tests]]); never
+// substitute real CMS users.
+func TestFindScoresResolvesSeededAuditFieldsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+
+	// Tarkin Initiative R&D system and the FY2025 cycle, both from the seed.
+	fismaSystemID := int32(1110)
+	dataCallID := int32(2)
+
+	scores, err := FindScores(ctx, FindScoresInput{
+		FismaSystemID: &fismaSystemID,
+		DataCallID:    &dataCallID,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, scores,
+		"expanded empire seed must score system 1110 in datacall 2 (FY2025)")
+
+	// Every seeded score for this system+cycle carries an event attributed to
+	// the system's assigned officer, so each row must resolve the same editor.
+	for _, sc := range scores {
+		require.NotNil(t, sc.LastEditedAt,
+			"lateral join must populate LastEditedAt from the seeded event")
+		require.NotNil(t, sc.LastEditedBy,
+			"lateral join must resolve the editor from the seeded event")
+		assert.Equal(t, "f0000002-0002-4002-8002-000000000002", sc.LastEditedBy.UserID)
+		assert.Equal(t, "Bevel Lemelisk", sc.LastEditedBy.Name)
+		assert.Equal(t, "Bevel.Lemelisk@sienar.empire", sc.LastEditedBy.Email)
+		assert.Equal(t, "ISSO", sc.LastEditedBy.Role)
+	}
+}
+
 // TestScoreSaveNoOpPreservesPriorEditorIntegration pins the
 // audit-preservation rule: re-saving a score with identical answer
 // fields must NOT overwrite the prior editor in the events trail.
