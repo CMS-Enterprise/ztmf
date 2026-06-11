@@ -1,4 +1,4 @@
-FROM golang:1.25.10-bookworm AS builder
+FROM golang:1.25.11-bookworm AS builder
 
 WORKDIR /src
 
@@ -13,13 +13,9 @@ COPY ./internal/ /src/internal/
 
 RUN go build -o ./ ./cmd/api/...
 
-FROM scratch
+FROM gcr.io/distroless/base-debian12
 
 WORKDIR /src
 
 COPY --from=builder /src/api /usr/local/bin/ztmfapi
 COPY --from=builder /src/*.pem /src/
-COPY --from=builder /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libc.so.6 /usr/lib/x86_64-linux-gnu/libc.so.6
-COPY --from=builder /etc/ssl/certs /etc/ssl/certs
-COPY --from=builder /etc/ca-certificates.conf /etc/ca-certificates.conf

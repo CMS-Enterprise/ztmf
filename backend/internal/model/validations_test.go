@@ -19,9 +19,9 @@ func TestIsValidRole(t *testing.T) {
 		{"OPDIV_ADMIN is valid", "OPDIV_ADMIN", true},
 		{"OPDIV_READONLY_ADMIN is valid", "OPDIV_READONLY_ADMIN", true},
 
-		// Legacy roles retained through transition; Stage D removes them.
-		{"ADMIN is valid", "ADMIN", true},
-		{"READONLY_ADMIN is valid", "READONLY_ADMIN", true},
+		// Legacy roles removed in Stage D; now rejected.
+		{"legacy ADMIN is invalid", "ADMIN", false},
+		{"legacy READONLY_ADMIN is invalid", "READONLY_ADMIN", false},
 
 		// System-scoped roles, unchanged across the transition.
 		{"ISSO is valid", "ISSO", true},

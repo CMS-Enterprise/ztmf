@@ -12,6 +12,16 @@ readonlyAdminHeaders: &readonlyAdminHeaders
 issoHeaders: &issoHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imlzc28udXNlckBub3doZXJlLnh5eiJ9.vVrud1ADntR8wUdRZ2vah7EFTgcGXMTVDPzfs84uorI"
 
+# OpDiv-scoped admin (EMPIRE grant only). Manages EMPIRE systems (1001-1004),
+# must 403 on REBELLION systems (1005-1006). Email claim opdiv.admin@empire.test.
+opDivAdminHeaders: &opDivAdminHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LmFkbWluQGVtcGlyZS50ZXN0In0.P9vXfhtjDxOOpdqDfWSqLrBPYeneiFl1V7TT0oWxlRY"
+
+# OpDiv-scoped read-only admin (EMPIRE grant only). All writes 403; reads scoped
+# to EMPIRE. Email claim opdiv.readonly@empire.test.
+opDivReadonlyHeaders: &opDivReadonlyHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
+
 # Data definitions using YAML anchors
 dataCallData: &dataCallData
   datacall: "FY2025 Q1"
@@ -135,27 +145,6 @@ updatedQuestionData: &updatedQuestionData
   order: 2
   pillarid: 1
 
-cfactsSystemData: &cfactsSystemData
-  fisma_uuid: "12345678-ABCD-4321-AFAB-123456789ABC"
-  fisma_acronym: "ZTMF"
-  authorization_package_name: "Zero Trust Maturity Framework Security Package"
-  primary_isso_name: "Test ISSO"
-  primary_isso_email: "isso@example.com"
-  is_active: true
-  is_retired: false
-  is_decommissioned: false
-  lifecycle_phase: "Operations & Maintenance"
-  component_acronym: "Security"
-  division_name: "IT Division"
-  group_acronym: "SEC"
-  group_name: "Security Group"
-  ato_expiration_date: "2026-12-31T00:00:00Z"
-  decommission_date: null
-  last_modified_date: "2025-01-01T00:00:00Z"
-  auth_methods: "Imperial-SSO"
-  fips_impact_level: "High"
-  synced_at: "2025-01-15T00:00:00Z"
-
 scoreData: &scoreData
   functionoptionid: 1
   notes: "Test score created by Emberfall"
@@ -185,7 +174,7 @@ tests:
         json:
           data:
             email: "Test.User@nowhere.xyz"
-            role: "ADMIN"
+            role: "OWNER"
             identity_provider: "okta"
 
   # OpDivs Endpoint - reference list used by frontend selectors
@@ -197,6 +186,47 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # OpDiv CRUD is OWNER-only. A non-owner (ISSO) is forbidden.
+  - url: http://localhost:8080/api/v1/opdivs
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        code: "NOPE"
+        name: "Should Be Forbidden"
+    expect:
+      status: 403
+
+  # OWNER creates an OpDiv; it comes back active with a server-assigned id.
+  - id: createOpDiv
+    url: http://localhost:8080/api/v1/opdivs
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        code: "TESTOD"
+        name: "Test OpDiv"
+        is_parent: false
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            code: "TESTOD"
+            name: "Test OpDiv"
+            active: true
+
+  # Note: the PUT update/deactivate path uses the same SaveOpDiv handler and is
+  # covered by the create case above plus the OWNER-only unit test. Emberfall's
+  # response templater cannot substitute the underscore-keyed opdiv_id from the
+  # create response, so a capture-dependent PUT case is omitted here.
 
   # DataCalls Endpoints
   - id: createDataCall
@@ -662,7 +692,7 @@ tests:
         content-type: "application/json"
   
   # list users with correct role should return a list of users
-  - url: http://localhost:8080/api/v1/users?role=ADMIN
+  - url: http://localhost:8080/api/v1/users?role=OWNER
     method: GET
     headers:
       <<: *commonHeaders
@@ -785,7 +815,7 @@ tests:
   # with the listed values; unlisted keys (scoreid, last_edited_at,
   # datecalculated) are ignored. Same pattern as createUser above.
   #
-  # commonHeaders maps to test.user@nowhere.xyz (the ADMIN fixture); the
+  # commonHeaders maps to test.user@nowhere.xyz (the OWNER fixture); the
   # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
   # Both saves target datacallid=3 ("Audit Fields Smoke Cycle"), seeded in
   # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
@@ -822,7 +852,7 @@ tests:
             notes: "Audit field smoke - created by Emberfall"
             last_edited_by:
               email: "Test.User@nowhere.xyz"
-              role: "ADMIN"
+              role: "OWNER"
 
   # GET the score list back through the same lateral-join path. Array
   # response so no body.json assertion (aquia-inc/emberfall#36); status +
@@ -1006,17 +1036,8 @@ tests:
       headers:
         content-type: "application/json"
 
-  # CFACTS Systems Endpoints (read-only, admin access)
-  - url: http://localhost:8080/api/v1/cfactssystems
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-
-  - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
+  # System Enrichment endpoint (generic enrichment payload, admin access)
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
     method: GET
     headers:
       <<: *commonHeaders
@@ -1027,18 +1048,10 @@ tests:
       body:
         json:
           data:
-            <<: *cfactsSystemData
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
 
-  - url: http://localhost:8080/api/v1/cfactssystems?is_active=true
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-
-  - url: http://localhost:8080/api/v1/cfactssystems/nonexistent-uuid-does-not-exist
+  # System with no enrichment row returns 404
+  - url: http://localhost:8080/api/v1/systemenrichment/nonexistent-uuid-does-not-exist
     method: GET
     headers:
       <<: *commonHeaders
@@ -1064,8 +1077,8 @@ tests:
             body: null
             group: "ADNIM"
 
-  # READONLY_ADMIN Tests
-  # Verify READONLY_ADMIN can authenticate
+  # HHS_READONLY_ADMIN Tests
+  # Verify HHS_READONLY_ADMIN can authenticate
   - url: http://localhost:8080/api/v1/users/current
     method: GET
     headers:
@@ -1078,9 +1091,9 @@ tests:
         json:
           data:
             email: "Readonly.Admin@nowhere.xyz"
-            role: "READONLY_ADMIN"
+            role: "HHS_READONLY_ADMIN"
 
-  # READONLY_ADMIN can GET /api/v1/users (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/users (read access)
   - url: http://localhost:8080/api/v1/users
     method: GET
     headers:
@@ -1090,7 +1103,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/fismasystems (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/fismasystems (read access)
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
     headers:
@@ -1100,7 +1113,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/users (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/users (write blocked)
   - url: http://localhost:8080/api/v1/users
     method: POST
     headers:
@@ -1114,7 +1127,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/fismasystems (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/fismasystems (write blocked)
   - url: http://localhost:8080/api/v1/fismasystems
     method: POST
     headers:
@@ -1126,7 +1139,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/datacalls (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/datacalls (write blocked)
   - url: http://localhost:8080/api/v1/datacalls
     method: POST
     headers:
@@ -1138,7 +1151,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/questions (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/questions (write blocked)
   - url: http://localhost:8080/api/v1/questions
     method: POST
     headers:
@@ -1150,7 +1163,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/functions (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/functions (write blocked)
   - url: http://localhost:8080/api/v1/functions
     method: POST
     headers:
@@ -1162,7 +1175,10 @@ tests:
     expect:
       status: 403
 
-  # Notes exceeding 2000 characters should return 400
+  # Notes exceeding 2000 characters should return 400.
+  # Uses a real, in-scope system (1002): SaveScore now fetches the system to
+  # evaluate OpDiv write-scope before Save validates the body, so a nonexistent
+  # fismasystemid would 404 before the notes-length check is ever reached.
   - url: http://localhost:8080/api/v1/scores
     method: POST
     headers:
@@ -1170,14 +1186,14 @@ tests:
       content-type: "application/json"
     body:
       json:
-        fismasystemid: 1
+        fismasystemid: 1002
         functionoptionid: 1
         notes: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         datacallid: 1
     expect:
       status: 400
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/scores (write blocked - key fix)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/scores (write blocked - key fix)
   - url: http://localhost:8080/api/v1/scores
     method: POST
     headers:
@@ -1192,7 +1208,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT datacalls/{id}/fismasystems/{id} (write blocked - key fix)
+  # HHS_READONLY_ADMIN gets 403 on PUT datacalls/{id}/fismasystems/{id} (write blocked - key fix)
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -1200,7 +1216,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on DELETE /api/v1/users (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on DELETE /api/v1/users (write blocked)
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: DELETE
     headers:
@@ -1208,7 +1224,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on DELETE /api/v1/fismasystems (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on DELETE /api/v1/fismasystems (write blocked)
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: DELETE
     headers:
@@ -1220,7 +1236,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on PUT /api/v1/users/{id}/restore (write blocked)
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}/restore"
     method: PUT
     headers:
@@ -1228,7 +1244,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on PUT /api/v1/fismasystems/{id}/reactivate (write blocked)
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
     method: PUT
     headers:
@@ -1240,7 +1256,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
+  # HHS_READONLY_ADMIN gets 403 on POST /api/v1/massemails (write blocked)
   - url: http://localhost:8080/api/v1/massemails
     method: POST
     headers:
@@ -1254,7 +1270,7 @@ tests:
     expect:
       status: 403
 
-  # READONLY_ADMIN can GET /api/v1/scores (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/scores (read access)
   - url: http://localhost:8080/api/v1/scores
     method: GET
     headers:
@@ -1264,7 +1280,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/scores/aggregate (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/scores/aggregate (read access)
   - url: http://localhost:8080/api/v1/scores/aggregate
     method: GET
     headers:
@@ -1274,7 +1290,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/datacalls (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/datacalls (read access)
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:
@@ -1284,7 +1300,7 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/events (read access)
+  # HHS_READONLY_ADMIN can GET /api/v1/events (read access)
   - url: http://localhost:8080/api/v1/events
     method: GET
     headers:
@@ -1294,8 +1310,9 @@ tests:
       headers:
         content-type: "application/json"
 
-  # READONLY_ADMIN can GET /api/v1/cfactssystems (read access)
-  - url: http://localhost:8080/api/v1/cfactssystems
+  # HHS_READONLY_ADMIN can GET /api/v1/systemenrichment/<uuid> (read access; bypasses the
+  # per-system assignment check via HasAdminRead, same branch as the admin tiers).
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
     method: GET
     headers:
       <<: *readonlyAdminHeaders
@@ -1303,6 +1320,10 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        json:
+          data:
+            fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
 
   # ISSO Tests
   # Verify ISSO can authenticate
@@ -1328,18 +1349,8 @@ tests:
     expect:
       status: 403
 
-  # ISSO can GET /api/v1/cfactssystems (returns only assigned systems via join)
-  - url: http://localhost:8080/api/v1/cfactssystems
-    method: GET
-    headers:
-      <<: *issoHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-
-  # ISSO can GET /api/v1/cfactssystems/<uuid> for an assigned system
-  - url: http://localhost:8080/api/v1/cfactssystems/E1D00198-36D4-4EAB-8C00-501E1D000999
+  # ISSO can GET /api/v1/systemenrichment/<uuid> for an assigned system
+  - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
     method: GET
     headers:
       <<: *issoHeaders
@@ -1351,10 +1362,9 @@ tests:
         json:
           data:
             fisma_uuid: "E1D00198-36D4-4EAB-8C00-501E1D000999"
-            fisma_acronym: "SLD-GEN"
 
-  # ISSO gets 403 on GET /api/v1/cfactssystems/<uuid> for unassigned system
-  - url: http://localhost:8080/api/v1/cfactssystems/12345678-ABCD-4321-AFAB-123456789ABC
+  # ISSO gets 403 on GET /api/v1/systemenrichment/<uuid> for unassigned system
+  - url: http://localhost:8080/api/v1/systemenrichment/12345678-ABCD-4321-AFAB-123456789ABC
     method: GET
     headers:
       <<: *issoHeaders
@@ -1426,4 +1436,212 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # ==========================================================================
+  # OpDiv-scoped RBAC enforcement (feature/opdiv-rbac-enforcement)
+  # Fixtures: EMPIRE OpDiv systems 1001-1004, REBELLION OpDiv systems 1005-1006.
+  # opDivAdminHeaders / opDivReadonlyHeaders hold the EMPIRE grant only, so every
+  # REBELLION touch must 403 (writes) or be excluded (reads). Uses known fixture
+  # ids rather than captured ids - Emberfall cannot template underscore keys.
+  # ==========================================================================
+
+  # OPDIV_ADMIN authenticates and is reported as the scoped tier.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Opdiv.Admin@empire.test"
+            role: "OPDIV_ADMIN"
+
+  # OPDIV_ADMIN can list systems (scoped server-side to their OpDivs).
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_ADMIN can read an in-scope EMPIRE system (1002).
+  - url: http://localhost:8080/api/v1/fismasystems/1002
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_ADMIN gets 403 reading an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 editing an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 decommissioning an out-of-scope REBELLION system (1006).
+  - url: http://localhost:8080/api/v1/fismasystems/1006
+    method: DELETE
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 reactivating an out-of-scope REBELLION system (1005).
+  - url: http://localhost:8080/api/v1/fismasystems/1005/reactivate
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 scoring an out-of-scope REBELLION system (1006).
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1006
+        functionoptionid: 1
+        datacallid: 3
+        notes: "cross-OpDiv score attempt - must be blocked"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 marking an out-of-scope REBELLION system (1006) complete.
+  - url: http://localhost:8080/api/v1/datacalls/2/fismasystems/1006
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN may NOT mint an OWNER (tier escalation blocked).
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "escalation.attempt@empire.test"
+        fullname: "Should Be Forbidden"
+        role: "OWNER"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN may NOT mint an HHS_ADMIN either.
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "escalation.attempt2@empire.test"
+        fullname: "Should Be Forbidden"
+        role: "HHS_ADMIN"
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 on the cross-OpDiv audit trail (/events unscoped-only).
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN gets 403 sending mass email (unscoped write admins only).
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "blocked"
+        body: "blocked"
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN can read (scoped) but every write is blocked.
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # OPDIV_READONLY_ADMIN gets 403 editing even an in-scope EMPIRE system (1002).
+  - url: http://localhost:8080/api/v1/fismasystems/1002
+    method: PUT
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN gets 403 scoring any system.
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1002
+        functionoptionid: 1
+        datacallid: 3
+        notes: "readonly write attempt - must be blocked"
+    expect:
+      status: 403
+
+  # OPDIV_READONLY_ADMIN gets 403 on /events and mass email too.
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "blocked"
+        body: "blocked"
+    expect:
+      status: 403
 

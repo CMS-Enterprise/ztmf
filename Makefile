@@ -1,5 +1,9 @@
 # ZTMF Development Environment Makefile
 
+# Use bash (not the default /bin/sh, which on macOS is bash in POSIX mode and
+# treats `echo -n` as a literal argument, breaking JWT generation).
+SHELL := /bin/bash
+
 # Select per-environment overrides. Auto-detects from current git branch:
 #   impl, feature/impl-* -> Makefile.impl
 #   anything else        -> Makefile.main
@@ -90,7 +94,9 @@ dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	@echo ""
 	@echo "💡 Replace TOKEN with output from 'make test-empire-data'"
 
-# Generate the compose-dev.yml file (PHONY so port changes always re-render)
+# Generate the compose-dev.yml file (PHONY so it always regenerates: port
+# changes re-render, and devs never run a stale on-disk copy that predates
+# Makefile changes)
 .PHONY: backend/compose-dev.yml
 backend/compose-dev.yml:
 	@echo "📝 Creating compose-dev.yml..."
@@ -102,7 +108,8 @@ backend/compose-dev.yml:
 	@echo "    image: postgres:16.8" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    network_mode: host" >> backend/compose-dev.yml
+	@echo "    ports:" >> backend/compose-dev.yml
+	@echo "      - \"54321:54321\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
 	@echo "    command: -p $(DB_PORT)" >> backend/compose-dev.yml
@@ -119,7 +126,13 @@ backend/compose-dev.yml:
 	@echo "    command: [\"/usr/local/bin/ztmfapi\"]" >> backend/compose-dev.yml
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
-	@echo "    network_mode: host" >> backend/compose-dev.yml
+	@echo "    environment:" >> backend/compose-dev.yml
+	@echo "      # Override dev.compose.env's host-facing DB_ENDPOINT (localhost)" >> backend/compose-dev.yml
+	@echo "      # with the docker-compose service name so the api container can" >> backend/compose-dev.yml
+	@echo "      # reach postgres over the internal docker network." >> backend/compose-dev.yml
+	@echo "      DB_ENDPOINT: postgre" >> backend/compose-dev.yml
+	@echo "    ports:" >> backend/compose-dev.yml
+	@echo "      - \"$(API_PORT):$(API_PORT)\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro" >> backend/compose-dev.yml
 	@echo "    depends_on:" >> backend/compose-dev.yml
@@ -142,7 +155,9 @@ backend/dev.compose.env:
 	@echo "POSTGRES_USER=admin" >> backend/dev.compose.env
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
-	@echo "# for api container" >> backend/dev.compose.env
+	@echo "# Shared by api container (docker compose) and host shell (make test-full, pre-push hook)." >> backend/dev.compose.env
+	@echo "# Host needs localhost:54321 (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
+	@echo "# to the docker service name 'postgre' in compose-dev.yml's environment: block." >> backend/dev.compose.env
 	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
 	@echo "DB_PORT=$(DB_PORT)" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
@@ -262,10 +277,6 @@ test-unit:
 	@echo "🧪 Running unit tests (fast)..."
 	cd backend && go test -short ./...
 
-test-integration:
-	@echo "🧪 Running integration tests..."
-	cd backend && go test -run Integration ./...
-
 test-coverage:
 	@echo "Running tests with coverage..."
 	cd backend && go test -coverprofile=coverage.out ./...
@@ -311,12 +322,28 @@ test-e2e:
 	@rm /tmp/emberfall_test_isolated.yml
 	@echo "✅ E2E tests passed!"
 
+test-integration:
+	@echo "🧪 Running Go integration tests against an isolated, freshly-seeded DB..."
+	@echo "   (never the dev DB on :54321 - that volume holds real data on purpose)"
+	@echo "🧹 Cleaning up any existing test containers..."
+	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
+	@echo "🚀 Starting fresh test environment (db :54399; test-api applies migrations + seed)..."
+	@cd backend && docker compose -f compose-test.yml up -d --build
+	@echo "⏳ Waiting for migrations + empire seed to apply..."
+	@sleep 15
+	@echo "🔬 Running integration tests against :54399..."
+	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=54399 DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
+		go test -run Integration ./... -count=1 \
+		|| (echo "❌ Integration tests failed"; docker compose -f compose-test.yml down -v; exit 1)
+	@echo "🧹 Cleaning up test environment..."
+	@cd backend && docker compose -f compose-test.yml down -v
+	@echo "✅ Integration tests passed!"
+
 test-build:
 	@echo "Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
-	@cd backend && go build ./cmd/lambda/...
-	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
-	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@cd backend && go build ./cmd/lambda-cert-rotation/...
+	@cd backend && go build ./cmd/lambda-kion-key-rotate/...
 	@echo "✅ All binaries build successfully"
 
 test-full:
@@ -324,18 +351,17 @@ test-full:
 	@echo ""
 	@echo "1/5 Building all binaries (API + Lambdas)..."
 	@cd backend && go build ./cmd/api/...
-	@cd backend && go build ./cmd/lambda/...
-	@cd backend && go build ./cmd/lambda-cfacts-snowflake/...
-	@cd backend && go build ./cmd/lambda-cfacts-s3/...
+	@cd backend && go build ./cmd/lambda-cert-rotation/...
+	@cd backend && go build ./cmd/lambda-kion-key-rotate/...
 	@echo ""
 	@echo "2/5 Running unit tests..."
 	@cd backend && go test -short ./...
 	@echo ""
-	@echo "3/5 Generating coverage report..."
-	@cd backend && go test -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
+	@echo "3/5 Generating coverage report (unit only; integration runs isolated in step 4)..."
+	@cd backend && go test -short -cover $$(go list ./... | xargs -I{} sh -c 'test -n "$$(find $$(go list -f "{{.Dir}}" {}) -maxdepth 1 -name "*_test.go" 2>/dev/null)" && echo {}' | tr "\n" " ")
 	@echo ""
-	@echo "4/5 Running integration tests (require DB_* env from backend/dev.compose.env)..."
-	@cd backend && go test -run Integration ./... -count=1
+	@echo "4/5 Running integration tests (isolated, freshly-seeded container)..."
+	@$(MAKE) test-integration
 	@echo ""
 	@echo "5/5 Running Emberfall E2E tests (isolated containers)..."
 	@make test-e2e

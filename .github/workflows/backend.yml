@@ -53,6 +53,11 @@ jobs:
           POSTGRES_PASSWORD: localDev
 
           # for api container and debug launch config
+          # ENVIRONMENT=test marks this as the ephemeral E2E stack so the api
+          # seeds _test_data_empire.sql (the seed gate keys off ENVIRONMENT, not
+          # the DB host) while leaving local-only behavior such as JIT user
+          # creation disabled.
+          ENVIRONMENT: test
           PORT: 8080
           DB_ENDPOINT: localhost
           DB_PORT: 5432
@@ -88,36 +93,6 @@ jobs:
         with:
           go-version: '1.24.1'
 
-      - name: Lambda - Build (Data Sync)
-        run: |
-          set -e
-          cd backend
-          echo "Building Data Sync Lambda..."
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda/.
-          zip lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
-          rm bootstrap
-          ls -la lambda-deployment-${{ steps.revParse.outputs.shaShort }}.zip
-
-      - name: Lambda - Build (CFACTS Snowflake)
-        run: |
-          set -e
-          cd backend
-          echo "Building CFACTS Snowflake Sync Lambda..."
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-cfacts-snowflake/.
-          zip cfacts-snowflake-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
-          rm bootstrap
-          ls -la cfacts-snowflake-deployment-${{ steps.revParse.outputs.shaShort }}.zip
-
-      - name: Lambda - Build (CFACTS S3)
-        run: |
-          set -e
-          cd backend
-          echo "Building CFACTS S3 CSV Sync Lambda..."
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o bootstrap ./cmd/lambda-cfacts-s3/.
-          zip cfacts-s3-deployment-${{ steps.revParse.outputs.shaShort }}.zip bootstrap
-          rm bootstrap
-          ls -la cfacts-s3-deployment-${{ steps.revParse.outputs.shaShort }}.zip
-
       - name: Lambda - Build (Kion Key Rotate)
         # Kion rotate Lambda runs on Graviton (arm64) with provided.al2023 runtime.
         # The other Lambdas in this workflow are still x86_64/al2; those are tracked
@@ -149,18 +124,6 @@ jobs:
           SHA="${{ steps.revParse.outputs.shaShort }}"
           echo "Uploading Lambda packages to bucket: $LAMBDA_BUCKET"
 
-          # Data Sync Lambda
-          aws s3 cp backend/lambda-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/lambda-deployment-${SHA}.zip
-          aws s3 cp backend/lambda-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/lambda-deployment-latest.zip
-
-          # CFACTS Snowflake Lambda
-          aws s3 cp backend/cfacts-snowflake-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-snowflake-deployment-${SHA}.zip
-          aws s3 cp backend/cfacts-snowflake-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-snowflake-deployment-latest.zip
-
-          # CFACTS S3 Lambda
-          aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-${SHA}.zip
-          aws s3 cp backend/cfacts-s3-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/cfacts-s3-deployment-latest.zip
-
           # Kion Key Rotate Lambda
           aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-${SHA}.zip
           aws s3 cp backend/kion-key-rotate-deployment-${SHA}.zip s3://$LAMBDA_BUCKET/kion-key-rotate-deployment-latest.zip
@@ -180,9 +143,6 @@ jobs:
 
           # Update each Lambda function if it exists
           for FUNC_PAIR in \
-            "ztmf-data-sync-${ENV_LOWER}:lambda-deployment-${SHA}.zip" \
-            "ztmf-cfacts-snowflake-sync-${ENV_LOWER}:cfacts-snowflake-deployment-${SHA}.zip" \
-            "ztmf-cfacts-s3-sync-${ENV_LOWER}:cfacts-s3-deployment-${SHA}.zip" \
             "ztmf-kion-key-rotate-${ENV_LOWER}:kion-key-rotate-deployment-${SHA}.zip" \
             "ztmf-cert-rotation-${ENV_LOWER}:cert-rotation-deployment-${SHA}.zip"; do
 

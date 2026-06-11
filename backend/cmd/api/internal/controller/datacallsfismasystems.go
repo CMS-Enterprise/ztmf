@@ -34,6 +34,15 @@ func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpDiv write-scope: an admin-tier writer may only mark completion for a
+	// system in an OpDiv they manage. ISSO/ISSM keep their assigned-system path.
+	if authdUser.IsAdmin() {
+		if _, err := guardManageFismaSystem(r.Context(), authdUser, fismasystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
 	df := &model.DataCallFismaSystem{
 		Datacallid:    datacallID,
 		Fismasystemid: fismasystemID,
@@ -48,6 +57,7 @@ func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 // ListDataCallFismaSystems handles the GET request to list all FISMA systems that have marked a specific data call as complete
 func ListDataCallFismaSystems(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
 	vars := mux.Vars(r)
 
 	var (
@@ -63,8 +73,21 @@ func ListDataCallFismaSystems(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Sscan(v, &datacallID)
 
+	// OpDiv scope: only the OpDiv-scoped admin tiers are narrowed to their
+	// granted OpDivs (fail-closed). Unscoped admins see the full list; ISSO/ISSM
+	// keep the legacy department-wide completion view (their scope is per-system
+	// elsewhere, and a stray CMS grant must not silently filter this list).
+	var (
+		opdivIDs []int32
+		restrict bool
+	)
+	if authdUser.IsOpDivTier() {
+		restrict = true
+		_, opdivIDs = authdUser.EffectiveOpDivScope()
+	}
+
 	// Get the list of FISMA systems that have completed this data call
-	fismaSystems, err := model.FindDataCallFismaSystems(r.Context(), datacallID)
+	fismaSystems, err := model.FindDataCallFismaSystems(r.Context(), datacallID, opdivIDs, restrict)
 
 	// Respond with the result
 	respond(w, r, fismaSystems, err)

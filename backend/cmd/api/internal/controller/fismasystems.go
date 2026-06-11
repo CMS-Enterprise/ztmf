@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -22,8 +23,8 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scope predicate by role tier:
-	//   - Unscoped admins (OWNER / HHS_* / legacy ADMIN/READONLY_ADMIN
-	//     through Stage D) see every system, no filter.
+	//   - Unscoped admins (OWNER / HHS_ADMIN / HHS_READONLY_ADMIN) see every
+	//     system, no filter.
 	//   - OPDIV_ADMIN / OPDIV_READONLY_ADMIN see every system in the OpDivs
 	//     they hold a grant for (users_opdivs). RestrictToOpDivIDs is set
 	//     unconditionally so a user with zero grants fails closed (returns
@@ -82,6 +83,24 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystem, nil)
 }
 
+// guardManageFismaSystem fetches the target system and verifies the acting user
+// may write it: OWNER/HHS_ADMIN manage any system, an OPDIV_ADMIN only systems
+// in an OpDiv they hold a grant for. A missing system stays a NotFound (it does
+// not leak existence via a 403). Returns the system so callers can reuse it.
+func guardManageFismaSystem(ctx context.Context, user *model.User, id int32) (*model.FismaSystem, error) {
+	sys, err := model.FindFismaSystem(ctx, model.FindFismaSystemsInput{FismaSystemID: &id})
+	if err != nil {
+		return nil, err
+	}
+	if sys == nil {
+		return nil, ErrNotFound
+	}
+	if !user.CanManageFismaSystem(sys.OpDivID) {
+		return nil, ErrForbidden
+	}
+	return sys, nil
+}
+
 func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -120,6 +139,16 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Update path: an OpDiv-scoped admin may only edit a system in an OpDiv they
+	// hold a grant for. opdiv_id is immutable on update, so the existing row's
+	// OpDiv is authoritative.
+	if f.FismaSystemID != 0 {
+		if _, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
 	f, err = f.Save(r.Context())
 
 	if err != nil {
@@ -153,6 +182,11 @@ func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	var fismaSystemID int32
 	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
+
+	if _, err := guardManageFismaSystem(r.Context(), authdUser, fismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
 
 	// Parse optional request body
 	var req DecommissionRequest
@@ -215,6 +249,11 @@ func ReactivateFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	var fismaSystemID int32
 	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
+
+	if _, err := guardManageFismaSystem(r.Context(), authdUser, fismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
 
 	var req ReactivateRequest
 	if r.ContentLength > 0 {
