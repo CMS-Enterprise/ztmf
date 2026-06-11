@@ -47,7 +47,15 @@ func Conn(ctx context.Context) (*pgx.Conn, error) {
 		return nil, err
 	}
 
-	return connect(ctx)
+	conn, err = connect(ctx)
+	if err != nil {
+		// Distinct from connect()'s generic "could not connect to db" so a
+		// rotation-boundary incident is legible in CloudWatch: the refresh
+		// happened but the retry still failed (wrong credentials, or the new
+		// secret has not propagated to the cluster yet).
+		log.Println("db connection still failing after credential refresh", err)
+	}
+	return conn, err
 }
 
 // connect builds the connection config from the current credentials and opens a
@@ -116,15 +124,21 @@ func getDbCreds() (*dbCreds, error) {
 		return &dbCreds{cfg.Db.User, cfg.Db.Pass}, nil
 	}
 
-	// otherwise pull user/pass from the secret
+	// otherwise pull user/pass from the secret. Call once.Do unconditionally (no
+	// bare dbSecret nil-check first): once.Do is what establishes the happens-
+	// before for the dbSecret write, so reading the pointer outside it - from
+	// concurrent request goroutines at startup - would be an unsynchronized read.
+	// err is set only on the goroutine that ran the init, so re-check dbSecret
+	// afterward to surface a failed init to every caller.
 	var err error
+	once.Do(func() {
+		dbSecret, err = secrets.NewSecret(cfg.Db.SecretId)
+	})
+	if err != nil {
+		return nil, err
+	}
 	if dbSecret == nil {
-		once.Do(func() {
-			dbSecret, err = secrets.NewSecret(cfg.Db.SecretId)
-		})
-		if err != nil {
-			return nil, err
-		}
+		return nil, errors.New("db secret initialization failed")
 	}
 
 	creds := &dbCreds{}
