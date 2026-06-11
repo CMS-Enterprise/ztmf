@@ -6,8 +6,6 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
 
-// GetEvents godoc
-//
 //	@Summary	List audit-trail events
 //	@Tags		events
 //	@Produce	json

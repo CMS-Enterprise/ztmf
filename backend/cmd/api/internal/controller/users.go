@@ -8,8 +8,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListUsers godoc
-//
 //	@Summary	List all users
 //	@Tags		users
 //	@Produce	json
@@ -52,8 +50,6 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, users, err)
 }
 
-// GetUserByID godoc
-//
 //	@Summary	Get a user by ID
 //	@Tags		users
 //	@Produce	json
@@ -95,8 +91,6 @@ func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, user, nil)
 }
 
-// GetCurrentUser godoc
-//
 //	@Summary	Get the currently authenticated user
 //	@Tags		users
 //	@Produce	json
@@ -111,8 +105,6 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // SaveUser is for admin management
-//
-// SaveUser godoc
 //
 //	@Summary	Create or update a user
 //	@Tags		users
@@ -191,8 +183,6 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUser handles the deletion of a user
 //
-// DeleteUser godoc
-//
 //	@Summary	Delete a user
 //	@Tags		users
 //	@Produce	json
@@ -239,8 +229,6 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // RestoreUser clears the deleted flag on a soft-deleted user (admin only).
-//
-// RestoreUser godoc
 //
 //	@Summary	Restore a soft-deleted user
 //	@Tags		users

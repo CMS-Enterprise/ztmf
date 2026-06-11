@@ -11,8 +11,6 @@ import (
 // by its fisma_uuid. Access control mirrors the FISMA-system assignment check:
 // admins (and read-only admins) may read any system; an ISSO may read only
 // systems they are assigned to. A system with no enrichment row yields 404.
-// GetSystemEnrichment godoc
-//
 //	@Summary	Get enrichment payload for a FISMA system
 //	@Tags		systemenrichment
 //	@Produce	json

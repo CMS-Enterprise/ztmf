@@ -9,8 +9,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListFunctions godoc
-//
 //	@Summary	List all functions
 //	@Tags		functions
 //	@Produce	json
@@ -33,8 +31,6 @@ func ListFunctions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, functions, err)
 }
 
-// GetFunctionByID godoc
-//
 //	@Summary	Get a function by ID
 //	@Tags		functions
 //	@Produce	json
@@ -59,8 +55,6 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, f, err)
 }
 
-// SaveFunction godoc
-//
 //	@Summary	Create or update a function
 //	@Tags		functions
 //	@Accept		json

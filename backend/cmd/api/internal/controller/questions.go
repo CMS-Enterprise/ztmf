@@ -11,8 +11,6 @@ import (
 
 // TODO: deprecate this in favor of non-nested URIs
 //
-// ListFismaSystemQuestions godoc
-//
 //	@Summary	List questions relevant to a FISMA system
 //	@Tags		fismasystems
 //	@Produce	json
@@ -35,8 +33,6 @@ func ListFismaSystemQuestions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, questions, err)
 }
 
-// ListQuestions godoc
-//
 //	@Summary	List all questions
 //	@Tags		questions
 //	@Produce	json
@@ -49,8 +45,6 @@ func ListQuestions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, questions, err)
 }
 
-// GetQuestionByID godoc
-//
 //	@Summary	Get a question by ID
 //	@Tags		questions
 //	@Produce	json
@@ -73,8 +67,6 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, question, err)
 }
 
-// SaveQuestion godoc
-//
 //	@Summary	Create or update a question
 //	@Tags		questions
 //	@Accept		json

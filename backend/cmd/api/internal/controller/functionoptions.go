@@ -8,8 +8,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListFunctionOptions godoc
-//
 //	@Summary	List options for a function
 //	@Tags		functions
 //	@Produce	json

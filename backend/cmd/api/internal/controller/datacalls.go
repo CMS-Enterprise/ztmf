@@ -11,8 +11,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListDataCalls godoc
-//
 //	@Summary	List all data calls
 //	@Tags		datacalls
 //	@Produce	json
@@ -25,8 +23,6 @@ func ListDataCalls(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, datacalls, err)
 }
 
-// GetDataCallByID godoc
-//
 //	@Summary	Get a data call by ID
 //	@Tags		datacalls
 //	@Produce	json
@@ -51,8 +47,6 @@ func GetDataCallByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, dc, err)
 }
 
-// GetDatacallExport godoc
-//
 //	@Summary	Export a data call's answers as an xlsx spreadsheet
 //	@Tags		datacalls
 //	@Produce	application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
@@ -115,8 +109,6 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SaveDataCall godoc
-//
 //	@Summary	Create or update a data call
 //	@Tags		datacalls
 //	@Accept		json
@@ -161,8 +153,6 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, d, nil)
 }
 
-// GetLatestDataCall godoc
-//
 //	@Summary	Get the latest data call
 //	@Tags		datacalls
 //	@Produce	json

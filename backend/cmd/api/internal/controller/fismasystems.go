@@ -10,8 +10,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListFismaSystems godoc
-//
 //	@Summary	List all FISMA systems
 //	@Tags		fismasystems
 //	@Produce	json
@@ -62,8 +60,6 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystems, err)
 }
 
-// GetFismaSystem godoc
-//
 //	@Summary	Get a FISMA system by ID
 //	@Tags		fismasystems
 //	@Produce	json
@@ -123,8 +119,6 @@ func guardManageFismaSystem(ctx context.Context, user *model.User, id int32) (*m
 	return sys, nil
 }
 
-// SaveFismaSystem godoc
-//
 //	@Summary	Create or update a FISMA system
 //	@Tags		fismasystems
 //	@Accept		json
@@ -206,8 +200,6 @@ type DecommissionRequest struct {
 
 // DeleteFismaSystem handles the decommissioning of a fismasystem
 //
-// DeleteFismaSystem godoc
-//
 //	@Summary	Decommission a FISMA system
 //	@Tags		fismasystems
 //	@Accept		json
@@ -287,8 +279,6 @@ type ReactivateRequest struct {
 
 // ReactivateFismaSystem clears the decommissioned flag and stamps reactivation
 // audit columns (admin only).
-//
-// ReactivateFismaSystem godoc
 //
 //	@Summary	Reactivate a decommissioned FISMA system
 //	@Tags		fismasystems

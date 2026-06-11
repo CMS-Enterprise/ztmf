@@ -10,8 +10,6 @@ import (
 
 // SaveMassEmail only responds to a PUT request so as to update a single item table
 // see model/massemails
-// SaveMassEmail godoc
-//
 //	@Summary	Send a mass email to a recipient group
 //	@Tags		massemails
 //	@Accept		json

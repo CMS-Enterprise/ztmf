@@ -26,8 +26,6 @@ func sharesOpDiv(actor, target *model.User) bool {
 // ListUserOpDivs returns the OpDiv ids a user holds grants for. Unscoped admins
 // may view any user; an OpDiv-scoped admin may only view a user who shares one
 // of their OpDivs.
-// ListUserOpDivs godoc
-//
 //	@Summary	List the OpDiv ids a user holds grants for
 //	@Tags		users
 //	@Produce	json
@@ -70,8 +68,6 @@ func ListUserOpDivs(w http.ResponseWriter, r *http.Request) {
 // CreateUserOpDiv grants a user OpDiv membership. Unscoped admins may grant any
 // OpDiv; an OPDIV_ADMIN may only grant an OpDiv they themselves hold (so they
 // can add users to their own OpDiv but not place users into another OpDiv).
-// CreateUserOpDiv godoc
-//
 //	@Summary	Grant a user OpDiv membership
 //	@Tags		users
 //	@Accept		json
@@ -134,8 +130,6 @@ func CreateUserOpDiv(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUserOpDiv revokes a user's OpDiv grant. Same scope as granting: an
 // OPDIV_ADMIN may only revoke an OpDiv they hold.
-// DeleteUserOpDiv godoc
-//
 //	@Summary	Revoke a user's OpDiv grant
 //	@Tags		users
 //	@Produce	json

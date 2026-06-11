@@ -9,8 +9,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListUserFismaSystems godoc
-//
 //	@Summary	List the FISMA system ids assigned to a user
 //	@Tags		users
 //	@Produce	json
@@ -40,8 +38,6 @@ func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystemids, err)
 }
 
-// CreateUserFismaSystem godoc
-//
 //	@Summary	Assign a FISMA system to a user
 //	@Tags		users
 //	@Accept		json
@@ -106,8 +102,6 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, uf, nil)
 }
 
-// DeleteUserFismaSystem godoc
-//
 //	@Summary	Unassign a FISMA system from a user
 //	@Tags		users
 //	@Produce	json

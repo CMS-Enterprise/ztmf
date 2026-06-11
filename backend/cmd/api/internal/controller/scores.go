@@ -9,8 +9,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ListScores godoc
-//
 //	@Summary	List all scores
 //	@Tags		scores
 //	@Produce	json
@@ -51,8 +49,6 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, scores, err)
 }
 
-// SaveScore godoc
-//
 //	@Summary	Create or update a score
 //	@Tags		scores
 //	@Accept		json
@@ -114,8 +110,6 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, score, err)
 }
 
-// GetScoresAggregate godoc
-//
 //	@Summary	Get aggregated scores
 //	@Tags		scores
 //	@Produce	json
