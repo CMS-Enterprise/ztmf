@@ -112,6 +112,28 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
+// UserCanAccessFismaSystemByUUID checks whether a user is assigned to the
+// FISMA system identified by fismaUUID (fismasystems.fismauid), via the
+// users_fismasystems junction table. Returns (false, nil) when the user has
+// no assignment to that system.
+func UserCanAccessFismaSystemByUUID(ctx context.Context, userID string, fismaUUID string) (bool, error) {
+	sqlb := stmntBuilder.
+		Select("1").
+		From("users_fismasystems").
+		InnerJoin("fismasystems ON fismasystems.fismasystemid = users_fismasystems.fismasystemid").
+		Where("LOWER(fismasystems.fismauid) = LOWER(?) AND users_fismasystems.userid = ?", fismaUUID, userID).
+		Limit(1)
+
+	_, err := queryRow(ctx, sqlb, pgx.RowTo[int])
+	if err != nil {
+		if err == ErrNoData {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 
 	var sqlb SqlBuilder
@@ -348,8 +370,8 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 func (f *FismaSystem) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
-	if !isValidUUID(f.FismaUID) {
-		err.data["fismauid"] = f.FismaUID
+	if f.FismaUID == "" {
+		err.data["fismauid"] = "required"
 	}
 
 	if f.DataCallContact != nil && !isValidEmail(*f.DataCallContact) {

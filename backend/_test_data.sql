@@ -4,10 +4,10 @@
 -- new columns in the multi-OpDiv migration and the positional form would
 -- silently shift values across columns on future schema bumps.
 INSERT INTO public.users (email, fullname, role, identity_provider)
-    VALUES ('Test.User@nowhere.xyz', 'Admin User', 'ADMIN', 'okta')
+    VALUES ('Test.User@nowhere.xyz', 'Admin User', 'OWNER', 'okta')
     ON CONFLICT DO NOTHING;
 INSERT INTO public.users (email, fullname, role, identity_provider)
-    VALUES ('Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'READONLY_ADMIN', 'okta')
+    VALUES ('Readonly.Admin@nowhere.xyz', 'Readonly Admin User', 'HHS_READONLY_ADMIN', 'okta')
     ON CONFLICT DO NOTHING;
 INSERT INTO public.users (email, fullname, role, identity_provider)
     VALUES ('Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')

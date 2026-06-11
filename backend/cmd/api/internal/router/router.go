@@ -40,6 +40,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
 
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
+	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
+	router.HandleFunc("/api/v1/opdivs/{opdiv_id:[0-9]+}", controller.SaveOpDiv).Methods("PUT")
 
 	router.HandleFunc("/api/v1/users", controller.ListUsers).Methods("GET")
 	router.HandleFunc("/api/v1/users", controller.SaveUser).Methods("POST")
@@ -52,6 +54,10 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.ListUserFismaSystems).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.CreateUserFismaSystem).Methods("POST")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems/{fismasystemid:[0-9]+}", controller.DeleteUserFismaSystem).Methods("DELETE")
+
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs", controller.ListUserOpDivs).Methods("GET")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs", controller.CreateUserOpDiv).Methods("POST")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs/{opdiv_id:[0-9]+}", controller.DeleteUserOpDiv).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Methods("GET")
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun
@@ -70,8 +76,7 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
 
-	router.HandleFunc("/api/v1/cfactssystems", controller.ListCfactsSystems).Methods("GET")
-	router.HandleFunc("/api/v1/cfactssystems/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetCfactsSystem).Methods("GET")
+	router.HandleFunc("/api/v1/systemenrichment/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetSystemEnrichment).Methods("GET")
 
 	// massemails resource only supports a single verb as there are no records to get list and details for, but the operation is non-idempotent
 	router.HandleFunc("/api/v1/massemails", controller.SaveMassEmail).Methods("POST")

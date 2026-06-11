@@ -31,19 +31,6 @@ type SlackNotifier struct {
 	environment string
 }
 
-// SyncResult represents the results of a data sync operation for notifications
-type SyncResult struct {
-	Environment   string
-	TriggerType   string
-	DryRun        bool
-	SuccessCount  int
-	FailureCount  int
-	TotalRows     int64
-	Duration      time.Duration
-	FailedTables  []string
-	ErrorMessages []string
-}
-
 // NewSlackNotifier creates a new Slack notifier
 func NewSlackNotifier(ctx context.Context) (*SlackNotifier, error) {
 	cfg := config.GetInstance()
@@ -70,17 +57,6 @@ func NewSlackNotifier(ctx context.Context) (*SlackNotifier, error) {
 		webhookURL:  webhook.Primary,
 		environment: cfg.Env,
 	}, nil
-}
-
-// SendSyncNotification sends a notification about sync results
-func (s *SlackNotifier) SendSyncNotification(ctx context.Context, result SyncResult) error {
-	message := s.buildSyncMessage(result)
-
-	payload := map[string]interface{}{
-		"text": message,
-	}
-
-	return s.sendToSlack(ctx, payload)
 }
 
 // RotationResult represents the outcome of a credential rotation job for notifications.
@@ -257,67 +233,6 @@ func (s *SlackNotifier) buildCertRotationMessage(r CertRotationResult) string {
 		r.S3Location)
 }
 
-// getSyncLabel returns a human-readable label for the sync direction
-func getSyncLabel(triggerType string) string {
-	if strings.HasPrefix(triggerType, "cfacts-snowflake") {
-		return "CFACTS Import (SDL → ZTMF)"
-	}
-	return "Data Export (ZTMF → SDL)"
-}
-
-// buildSyncMessage creates formatted Slack message based on sync results
-func (s *SlackNotifier) buildSyncMessage(result SyncResult) string {
-	quarter := getCurrentQuarter()
-	scheduleType := getScheduleType(result.Environment)
-	envUpper := strings.ToUpper(result.Environment)
-	syncLabel := getSyncLabel(result.TriggerType)
-
-	if result.FailureCount == 0 {
-		var dataMessage string
-		if result.DryRun {
-			dataMessage = fmt.Sprintf("🧪 %s dry-run validation completed successfully", quarter)
-		} else if result.Environment == "prod" {
-			dataMessage = fmt.Sprintf("📅 %s data now available", quarter)
-		} else {
-			dataMessage = fmt.Sprintf("📅 %s data synced to %s", quarter, strings.ToLower(result.Environment))
-		}
-
-		return fmt.Sprintf(`✅ %s SUCCESS (%s - %s)
-📊 %d tables synced: %s rows
-⏱️ Duration: %s
-%s`,
-			syncLabel,
-			envUpper,
-			scheduleType,
-			result.SuccessCount,
-			formatNumber(result.TotalRows),
-			formatDuration(result.Duration),
-			dataMessage)
-	} else {
-		failedTablesStr := strings.Join(result.FailedTables, ", ")
-		errorSummary := ""
-		if len(result.ErrorMessages) > 0 {
-			errorSummary = result.ErrorMessages[0]
-			if len(errorSummary) > 100 {
-				errorSummary = errorSummary[:100] + "..."
-			}
-		}
-
-		return fmt.Sprintf(`🚨 %s FAILURE (%s - %s)
-❌ %d table(s) failed: %s
-✅ %d tables successful: %s rows
-🔧 Action Required: %s`,
-			syncLabel,
-			envUpper,
-			scheduleType,
-			result.FailureCount,
-			failedTablesStr,
-			result.SuccessCount,
-			formatNumber(result.TotalRows),
-			errorSummary)
-	}
-}
-
 // sendToSlack sends payload to Slack webhook
 func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]interface{}) error {
 	jsonData, err := json.Marshal(payload)
@@ -343,53 +258,6 @@ func (s *SlackNotifier) sendToSlack(ctx context.Context, payload map[string]inte
 	}
 
 	return nil
-}
-
-// getCurrentQuarter returns the current quarter (e.g., "Q3 2025")
-func getCurrentQuarter() string {
-	now := time.Now()
-	year := now.Year()
-	month := int(now.Month())
-
-	var quarter string
-	switch {
-	case month >= 1 && month <= 3:
-		quarter = "Q1"
-	case month >= 4 && month <= 6:
-		quarter = "Q2"
-	case month >= 7 && month <= 9:
-		quarter = "Q3"
-	case month >= 10 && month <= 12:
-		quarter = "Q4"
-	}
-
-	return fmt.Sprintf("%s %d", quarter, year)
-}
-
-// getScheduleType returns schedule description based on environment
-func getScheduleType(env string) string {
-	if env == "prod" {
-		return "Quarterly"
-	}
-	return "Weekly"
-}
-
-// formatNumber formats large numbers with commas
-func formatNumber(n int64) string {
-	str := fmt.Sprintf("%d", n)
-	if len(str) <= 3 {
-		return str
-	}
-
-	var result []byte
-	for i, char := range str {
-		if i > 0 && (len(str)-i)%3 == 0 {
-			result = append(result, ',')
-		}
-		result = append(result, byte(char))
-	}
-
-	return string(result)
 }
 
 // formatDuration formats duration in human-readable format

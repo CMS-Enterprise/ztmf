@@ -270,6 +270,54 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 	})
 }
 
+// TestBuildPillarScoresSQL_OpDivScope verifies the OpDiv read-scope predicate
+// added for the OPDIV_ADMIN / OPDIV_READONLY_ADMIN tiers: a non-empty grant set
+// emits fs.opdiv_id = ANY($N) and binds the slice; a restricted-but-empty set
+// fails closed by emitting FALSE so a scoped admin with zero grants matches no
+// rows rather than every row.
+func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
+	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
+		input := normalizeInput(FindScoresInput{
+			RestrictToOpDivIDs: true,
+			OpDivIDs:           []int32{7, 9},
+		})
+
+		sql, args := buildPillarScoresSQL(input)
+
+		assert.Contains(t, sql, "fs.opdiv_id = ANY($", "should scope the expected CTE by OpDiv")
+		assert.NotContains(t, sql, "FALSE", "non-empty grants should not fail closed")
+		found := false
+		for _, a := range args {
+			if ids, ok := a.([]int32); ok && len(ids) == 2 && ids[0] == 7 && ids[1] == 9 {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "the OpDiv id slice should be bound as a single ANY() arg")
+	})
+
+	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
+		input := normalizeInput(FindScoresInput{
+			RestrictToOpDivIDs: true,
+			OpDivIDs:           nil,
+		})
+
+		sql, _ := buildPillarScoresSQL(input)
+
+		assert.Contains(t, sql, "FALSE", "a scoped admin with no grants must match nothing")
+		assert.NotContains(t, sql, "fs.opdiv_id = ANY($", "should not bind an OpDiv predicate when there are no grants")
+	})
+
+	t.Run("UnscopedEmitsNoOpDivPredicate", func(t *testing.T) {
+		input := normalizeInput(FindScoresInput{})
+
+		sql, _ := buildPillarScoresSQL(input)
+
+		assert.NotContains(t, sql, "fs.opdiv_id = ANY($", "unscoped admins get no OpDiv filter")
+		assert.NotContains(t, sql, "FALSE", "unscoped admins do not fail closed")
+	})
+}
+
 // TestScoreAuditInfo verifies the Auditable contract: AuditInfo returns the
 // two pointers exactly as set on the struct. Pure accessor, no logic, but
 // the contract is what generic consumers (exports, admin views) will rely
@@ -281,7 +329,7 @@ func TestScoreAuditInfo(t *testing.T) {
 			UserID: "11111111-1111-1111-1111-111111111111",
 			Name:   "Grand Moff Tarkin",
 			Email:  "Grand.Moff@DeathStar.Empire",
-			Role:   "ADMIN",
+			Role:   "OWNER",
 		}
 		s := &Score{LastEditedAt: &ts, LastEditedBy: ref}
 
@@ -404,8 +452,8 @@ func TestDerefString(t *testing.T) {
 		assert.Equal(t, "", derefString(nil))
 	})
 	t.Run("Value", func(t *testing.T) {
-		v := "ADMIN"
-		assert.Equal(t, "ADMIN", derefString(&v))
+		v := "OWNER"
+		assert.Equal(t, "OWNER", derefString(&v))
 	})
 	t.Run("EmptyStringPointer", func(t *testing.T) {
 		v := ""

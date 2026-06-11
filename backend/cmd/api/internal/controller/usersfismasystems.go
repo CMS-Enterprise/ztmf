@@ -53,10 +53,27 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpDiv write-scope: the acting admin may only assign a system they manage
+	// to a user they manage. OWNER/HHS_ADMIN pass both; an OPDIV_ADMIN must hold
+	// the system's OpDiv and share an OpDiv with the target user.
+	if _, gerr := guardManageFismaSystem(r.Context(), authdUser, uf.FismaSystemID); gerr != nil {
+		respond(w, r, nil, gerr)
+		return
+	}
+	target, terr := model.FindUserByID(r.Context(), userID)
+	if terr != nil {
+		respond(w, r, nil, terr)
+		return
+	}
+	if !authdUser.CanManageUser(target) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
 	uf, err = uf.Save(r.Context())
 	if err != nil {
 		respond(w, r, nil, err)
-
+		return
 	}
 
 	respond(w, r, uf, nil)
@@ -86,6 +103,21 @@ func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	uf.UserID = userID
 	fmt.Sscan(fismaSystemID, &uf.FismaSystemID)
+
+	// Same OpDiv write-scope as assignment: manage both the system and the user.
+	if _, gerr := guardManageFismaSystem(r.Context(), authdUser, uf.FismaSystemID); gerr != nil {
+		respond(w, r, nil, gerr)
+		return
+	}
+	target, terr := model.FindUserByID(r.Context(), userID)
+	if terr != nil {
+		respond(w, r, nil, terr)
+		return
+	}
+	if !authdUser.CanManageUser(target) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
 
 	err := uf.Delete(r.Context())
 

@@ -18,11 +18,21 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.HasAdminRead() {
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+
+	// Scope by tier AFTER decode so a client cannot widen scope via query
+	// params: unscoped admins see all; OPDIV tiers fail-closed to their granted
+	// OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		findScoresInput.RestrictToOpDivIDs = true
+		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
+	default:
 		findScoresInput.UserID = &user.UserID
 	}
 
-	err = decoder.Decode(&findScoresInput, r.URL.Query())
 	if err == nil {
 		scores, err = model.FindScores(r.Context(), findScoresInput)
 	}
@@ -54,6 +64,16 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OpDiv write-scope: an admin-tier writer may only score a system in an
+	// OpDiv they manage (OWNER/HHS_ADMIN any; OPDIV_ADMIN only their grants).
+	// ISSO/ISSM keep the per-system assignment path checked above.
+	if user.IsAdmin() {
+		if _, err := guardManageFismaSystem(r.Context(), user, score.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
 	vars := mux.Vars(r)
 
 	if v, ok := vars["scoreid"]; ok {
@@ -75,11 +95,21 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findScoresInput := model.FindScoresInput{}
 
-	if !user.HasAdminRead() {
+	err = decoder.Decode(&findScoresInput, r.URL.Query())
+
+	// Same tier scoping as ListScores, applied AFTER decode: unscoped admins see
+	// all; OPDIV tiers fail-closed to their OpDivs; ISSO/ISSM keep the
+	// assigned-systems path.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		findScoresInput.RestrictToOpDivIDs = true
+		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
+	default:
 		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 
-	err = decoder.Decode(&findScoresInput, r.URL.Query())
 	if err == nil {
 		aggregate, err = model.FindScoresAggregate(r.Context(), findScoresInput)
 	}

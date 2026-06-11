@@ -46,12 +46,6 @@ locals {
   // impl reuses them rather than racing dev's state for ownership.
   manage_vpc_endpoints = var.environment != "impl"
 
-  // Snowflake sync is dev/prod-only for impl v1. Snowflake credentials require
-  // SDL coordination not yet done for impl. CFACTS S3 sync (S3-trigger only,
-  // no external service dep) stays on for impl. Kion is gated separately via
-  // var.kion_rotate_schedule_enabled in tfvars.
-  enable_snowflake_sync = contains(["dev", "prod"], var.environment)
-
   // Reference shims: pick the resource for dev/prod, the data source for impl.
   // Keeps every other file's reference site identical regardless of env.
   ecr_api_repo_url = local.manage_account_singletons ? aws_ecr_repository.ztmf_api[0].repository_url : data.aws_ecr_repository.ztmf_api[0].repository_url
