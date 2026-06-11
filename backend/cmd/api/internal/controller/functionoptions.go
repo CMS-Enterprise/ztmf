@@ -8,6 +8,16 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// ListFunctionOptions godoc
+//
+//	@Summary	List options for a function
+//	@Tags		functions
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		functionid	path		int	true	"Function ID"
+//	@Success	200			{object}	apiResponse[[]model.FunctionOption]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functions/{functionid}/options [get]
 func ListFunctionOptions(w http.ResponseWriter, r *http.Request) {
 	input := model.FindFunctionOptionsInput{}
 

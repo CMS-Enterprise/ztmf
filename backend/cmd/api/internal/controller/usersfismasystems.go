@@ -9,6 +9,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// ListUserFismaSystems godoc
+//
+//	@Summary	List the FISMA system ids assigned to a user
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string	true	"User ID"
+//	@Success	200	{object}	apiResponse[[]int32]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedfismasystems [get]
 func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.HasAdminRead() {
@@ -28,6 +40,21 @@ func ListUserFismaSystems(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystemids, err)
 }
 
+// CreateUserFismaSystem godoc
+//
+//	@Summary	Assign a FISMA system to a user
+//	@Tags		users
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string					true	"User ID"
+//	@Param		body	body	model.UserFismaSystem	true	"FISMA system assignment"
+//	@Success	201	{object}	apiResponse[model.UserFismaSystem]
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedfismasystems [post]
 func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -79,6 +106,19 @@ func CreateUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, uf, nil)
 }
 
+// DeleteUserFismaSystem godoc
+//
+//	@Summary	Unassign a FISMA system from a user
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid			path	string	true	"User ID"
+//	@Param		fismasystemid	path	int		true	"FISMA System ID"
+//	@Success	204	"No Content"
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedfismasystems/{fismasystemid} [delete]
 func DeleteUserFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {

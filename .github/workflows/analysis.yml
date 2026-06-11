@@ -19,6 +19,36 @@ jobs:
           version: "latest"
           working-directory: backend
 
+  OpenAPI-Spec-Check:
+    name: openapi spec up to date
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      # Regenerate the spec from the Go annotations (same command as
+      # `make generate-openapi`) and fail if it differs from what's committed.
+      # The swag version is pinned via the tool directive in backend/go.mod, so
+      # CI and local generation produce byte-identical output.
+      - name: Regenerate OpenAPI spec
+        working-directory: backend
+        run: go tool swag init -g cmd/api/main.go --dir ./ --parseInternal --v3.1 --outputTypes yaml -o ./ && mv swagger.yaml openapi.yaml
+
+      - name: Fail if openapi.yaml is out of date
+        working-directory: backend
+        run: |
+          if ! git diff --exit-code openapi.yaml; then
+            echo "::error::backend/openapi.yaml is out of date. Run 'make generate-openapi' and commit the result."
+            exit 1
+          fi
+
   Lint-Terraform:
     name: lint terraform
     runs-on: ubuntu-latest

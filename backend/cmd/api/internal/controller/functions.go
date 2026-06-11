@@ -9,6 +9,15 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// ListFunctions godoc
+//
+//	@Summary	List all functions
+//	@Tags		functions
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[[]model.Function]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/functions [get]
 func ListFunctions(w http.ResponseWriter, r *http.Request) {
 
 	var (
@@ -24,6 +33,17 @@ func ListFunctions(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, functions, err)
 }
 
+// GetFunctionByID godoc
+//
+//	@Summary	Get a function by ID
+//	@Tags		functions
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		functionid	path		int	true	"Function ID"
+//	@Success	200			{object}	apiResponse[model.Function]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functions/{functionid} [get]
 func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	ID, ok := vars["functionid"]
@@ -39,6 +59,21 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, f, err)
 }
 
+// SaveFunction godoc
+//
+//	@Summary	Create or update a function
+//	@Tags		functions
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		functionid	path		int				true	"Function ID"
+//	@Param		body		body		model.Function	true	"Function to create or update"
+//	@Success	201			{object}	apiResponse[model.Function]
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functions [post]
+//	@Router		/functions/{functionid} [put]
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	if !user.IsAdmin() {

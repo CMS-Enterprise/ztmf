@@ -7,7 +7,7 @@ SHELL := /bin/bash
 # Single source of truth for the local API port
 API_PORT ?= 8080
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
 
 # Default target
 help:
@@ -37,6 +37,9 @@ help:
 	@echo "Authentication:"
 	@echo "  make generate-jwt     Generate JWT token for testing (requires EMAIL variable)"
 	@echo "  make test-empire-data Generate JWT tokens for Empire test users"
+	@echo ""
+	@echo "API spec:"
+	@echo "  make generate-openapi Regenerate backend/openapi.yaml from Go handler annotations"
 	@echo ""
 	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
 	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
@@ -246,6 +249,16 @@ clean:
 	@echo "✅ Clean complete"
 
 # Test targets
+# Regenerate the OpenAPI spec from swag annotations on the Go handlers. The spec
+# is generated, never hand-edited; CI fails if a commit leaves it out of date
+# (see .github/workflows/analysis.yml). swag v2 emits OpenAPI 3.1 with --v3.1.
+# Like the other targets this assumes a host `go`; on a machine without one, run
+# the equivalent in a container (see backend CLAUDE.md / the swag tool dep).
+generate-openapi:
+	@echo "📝 Generating OpenAPI spec from Go handler annotations..."
+	cd backend && go tool swag init -g cmd/api/main.go --dir ./ --parseInternal --v3.1 --outputTypes yaml -o ./ && mv swagger.yaml openapi.yaml
+	@echo "✅ Wrote backend/openapi.yaml"
+
 test:
 	@echo "🧪 Running all tests..."
 	cd backend && go test ./...

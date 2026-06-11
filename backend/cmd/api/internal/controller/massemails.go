@@ -10,6 +10,19 @@ import (
 
 // SaveMassEmail only responds to a PUT request so as to update a single item table
 // see model/massemails
+// SaveMassEmail godoc
+//
+//	@Summary	Send a mass email to a recipient group
+//	@Tags		massemails
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		body	body		model.MassEmail	true	"Mass email subject, body, and recipient group"
+//	@Success	201	{object}	apiResponse[[]string]
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/massemails [post]
 func SaveMassEmail(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	// Mass email is a write action that targets recipients across every OpDiv
