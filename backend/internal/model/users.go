@@ -121,6 +121,87 @@ func (u *User) IsAssignedFismaSystem(fismasystemid int32) bool {
 	return false
 }
 
+// EffectiveOpDivScope describes the OpDiv visibility a query should grant this
+// user. unscoped is true for tiers that see every OpDiv (OWNER, HHS_ADMIN,
+// HHS_READONLY_ADMIN); for OpDiv-scoped tiers it returns the concrete OpDiv ids
+// the user holds grants for. Callers pass these straight into a Find*Input so
+// the scope predicate lives in one place. A scoped user with no grants yields
+// (false, nil) which the query layer treats as "match nothing" (fail closed).
+func (u *User) EffectiveOpDivScope() (unscoped bool, opdivIDs []int32) {
+	if u.HasUnscopedRead() {
+		return true, nil
+	}
+	for _, id := range u.AssignedOpDivIDs {
+		if id != nil {
+			opdivIDs = append(opdivIDs, *id)
+		}
+	}
+	return false, opdivIDs
+}
+
+// CanManageFismaSystem is the write-side counterpart to CanAccessFismaSystem.
+// A user may modify a system only if they hold an admin (write) tier AND either
+// see every OpDiv (OWNER, HHS_ADMIN) or hold a grant for the system's OpDiv
+// (OPDIV_ADMIN). Read-only admins and system-scoped ISSO/ISSM are not write
+// managers of a system regardless of OpDiv.
+func (u *User) CanManageFismaSystem(opdivID *int32) bool {
+	if !u.IsAdmin() {
+		return false
+	}
+	if u.HasUnscopedRead() {
+		return true
+	}
+	return opdivID != nil && u.IsAssignedOpDiv(*opdivID)
+}
+
+// CanAssignRole reports whether this user may assign the given role to another
+// user. Prevents tier escalation: an OPDIV_ADMIN can only mint roles at or below
+// the OpDiv tier, an HHS_ADMIN can mint anything except the platform OWNER tier,
+// and only an OWNER can mint another OWNER.
+func (u *User) CanAssignRole(role string) bool {
+	switch u.Role {
+	case "OWNER":
+		return true
+	case "HHS_ADMIN":
+		return role != "OWNER"
+	case "OPDIV_ADMIN":
+		switch role {
+		case "OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", "ISSO", "ISSM":
+			return true
+		}
+	}
+	return false
+}
+
+// CanManageUser reports whether this user may modify the target user.
+// OWNER/HHS_ADMIN manage anyone; an OPDIV_ADMIN may only manage a user who
+// shares at least one of the admin's granted OpDivs. Used for update/delete of
+// an existing user (create is gated by CanAssignRole plus the scoped grant step,
+// since a brand-new user has no OpDiv yet).
+func (u *User) CanManageUser(target *User) bool {
+	if !u.IsAdmin() || target == nil {
+		return false
+	}
+	// Tier ceiling: you may only manage a user whose current role is within your
+	// assignable set. This stops an OPDIV_ADMIN from acting on a higher-tier
+	// account (e.g. HHS_ADMIN/OWNER) even if an OpDiv is shared, and stops an
+	// HHS_ADMIN from acting on an OWNER. Without this, granting one's own OpDiv
+	// onto a superior account would manufacture the overlap and bypass the tier.
+	if !u.CanAssignRole(target.Role) {
+		return false
+	}
+	if u.HasUnscopedRead() {
+		return true
+	}
+	// OPDIV_ADMIN: must also share an OpDiv with the target.
+	for _, t := range target.AssignedOpDivIDs {
+		if t != nil && u.IsAssignedOpDiv(*t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (u *User) Save(ctx context.Context) (*User, error) {
 	if err := u.validate(); err != nil {
 		return nil, err
@@ -206,6 +287,13 @@ type FindUsersInput struct {
 	FullName *string `schema:"fullname"`
 	Role     *string `schema:"role"`
 	Deleted  bool    `schema:"deleted"`
+	// OpDivIDs / RestrictToOpDivIDs scope the list to users holding a grant in
+	// one of the acting admin's OpDivs. Mirror of FindFismaSystemsInput: when
+	// RestrictToOpDivIDs is set with an empty slice the query fails closed
+	// (WHERE FALSE) rather than returning every user. Not schema-tagged so a
+	// client cannot inject scope via query params - the controller sets them.
+	OpDivIDs           []int32
+	RestrictToOpDivIDs bool
 }
 
 func (fui *FindUsersInput) validate() error {
@@ -248,6 +336,16 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 
 	if fui.Role != nil {
 		sqlb = sqlb.Where("role=?", fui.Role)
+	}
+
+	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold
+	// a grant in one of their OpDivs. Empty grants under RestrictToOpDivIDs ->
+	// no rows. Unscoped admins set neither field and see everyone.
+	switch {
+	case fui.RestrictToOpDivIDs && len(fui.OpDivIDs) == 0:
+		sqlb = sqlb.Where("FALSE")
+	case len(fui.OpDivIDs) > 0:
+		sqlb = sqlb.Where("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
