@@ -68,7 +68,7 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
 -- Exercises the pre-auth lookup returning idp="entra" and, later, the
 -- multi-issuer login path. Empire persona only - no real identities.
 INSERT INTO public.users (userid, email, fullname, role, identity_provider)
-    VALUES ('88888888-8888-4888-8888-888888888888', 'Grand.Admiral.Thrawn@chiss.empire', 'Grand Admiral Thrawn', 'ISSO', 'entra')
+    VALUES ('aa000088-8888-4888-8888-888888888888', 'Grand.Admiral.Thrawn@chiss.empire', 'Grand Admiral Thrawn', 'ISSO', 'entra')
     ON CONFLICT DO NOTHING;
 
 -- Test HHS_READONLY_ADMIN User (Emperor - can observe everything but not modify)
