@@ -72,9 +72,13 @@ func trapError(e error) error {
 			return ErrNoReference
 
 		case "28P01":
-			// failed to connect, password authentication failed
-			// TODO refactor DB secret caching/refreshing to avoid needing this!
-			log.Fatal(pgErr.Error())
+			// password authentication failed. db.Conn already re-fetches the
+			// rotated secret and retries the connection once on this error, so
+			// a 28P01 reaching here means even the retry failed (e.g. genuinely
+			// wrong credentials, not a routine rotation). Surface it as a
+			// connection error instead of exiting the process, which used to
+			// turn every secret rotation into a self-healing-but-real outage.
+			return ErrDbConnection
 		}
 	}
 

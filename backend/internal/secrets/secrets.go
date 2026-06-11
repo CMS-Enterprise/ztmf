@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,6 +27,11 @@ type Secret struct {
 	secret   *secretsmanager.GetSecretValueOutput
 	metadata *secretsmanager.DescribeSecretOutput
 	client   *secretsmanager.Client
+	// mu guards secret/metadata. Conn() now refreshes reactively on a 28P01 from
+	// the per-request path, so during a rotation many goroutines can read (Value)
+	// and write (Refresh) these fields concurrently. The lock is held across the
+	// fetch RPC so a refresh storm serializes instead of racing the pointers.
+	mu sync.Mutex
 }
 
 // Value returns the current secret string. If AWS Secrets Manager has rotated
@@ -33,13 +39,16 @@ type Secret struct {
 // past, with a 23-hour grace window to tolerate rotation lead time), the value
 // is refreshed transparently. The provided context is used for the refresh RPC.
 func (s *Secret) Value(ctx context.Context) (*string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.metadata.NextRotationDate != nil {
 		// Secrets Manager may rotate several hours before the NextRotationDate
 		// advertised in metadata. Subtract 23h to widen the stale window and
 		// avoid serving a rotated-away value.
 		now := time.Now().Add(time.Duration(-23) * time.Hour).UTC()
 		if now.After(*s.metadata.NextRotationDate) {
-			if err := s.Refresh(ctx); err != nil {
+			if err := s.refreshLocked(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -50,6 +59,14 @@ func (s *Secret) Value(ctx context.Context) (*string, error) {
 // Refresh updates the secret and metadata from Secrets Manager using ctx for
 // the RPC timeout and cancellation.
 func (s *Secret) Refresh(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshLocked(ctx)
+}
+
+// refreshLocked performs the fetch-and-assign; the caller must hold s.mu. Split
+// out so Value can refresh inline without re-locking (which would deadlock).
+func (s *Secret) refreshLocked(ctx context.Context) error {
 	getSecretValueOutput, describeSecretOutput, err := s.fetchSecretData(ctx)
 	if err != nil {
 		return err
