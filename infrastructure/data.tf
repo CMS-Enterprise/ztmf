@@ -67,6 +67,19 @@ data "aws_secretsmanager_secret_version" "ztmf_db_user_current" {
   secret_id = data.aws_secretsmanager_secret.ztmf_db_user.id
 }
 
+// Entra OIDC config + session signing key. Read only when entra_enabled so the
+// first apply can create the secrets and let the operator seed them before
+// anything consumes them (an unseeded secret has no version and would fail
+// this read).
+data "aws_secretsmanager_secret_version" "ztmf_entra_oidc_current" {
+  count     = var.entra_enabled ? 1 : 0
+  secret_id = aws_secretsmanager_secret.ztmf_entra_oidc.id
+}
+
+// The session signing key is consumed by ECS as a container secret (injected by
+// ARN via local.entra_api_secrets), so Terraform never needs to read its plaintext
+// value. No data-source read here, by design.
+
 // Note: this used to be a `data "aws_secretsmanager_secrets" "rds"` lookup that
 // found the RDS-managed master password secret by tag. The Secrets Manager API
 // `tag-value` filter is prefix-matching, so once impl was provisioned the same

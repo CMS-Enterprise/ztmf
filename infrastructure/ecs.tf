@@ -20,6 +20,25 @@ module "api_task" {
   principal = { Service = "ecs-tasks.amazonaws.com" }
 }
 
+// ECS resolves container `secrets` (the session signing key) using the task
+// EXECUTION role, so it needs read access to that secret. Only granted when
+// the dual-IdP feature is enabled.
+resource "aws_iam_role_policy" "ztmf_api_task_execution_entra" {
+  count = var.entra_enabled ? 1 : 0
+  name  = "entraSessionSecret"
+  role  = module.api_task_execution.role_id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+        Effect   = "Allow"
+        Resource = [aws_secretsmanager_secret.ztmf_session_signing_key.arn]
+      },
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ztmf_api_task" {
   name = "taskExecutionPermissions"
   role = module.api_task.role_id
@@ -68,7 +87,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
       essential        = true
       portMappings     = [{ containerPort = 443 }]
 
-      environment = [
+      environment = concat([
         {
           name  = "ENVIRONMENT" // only for logging, application code should not depend on any particular value
           value = var.environment
@@ -125,7 +144,8 @@ resource "aws_ecs_task_definition" "ztmf_api" {
           name  = "SMTP_CA_INT_SECRET_ID"
           value = local.smtp_intermediate_arn
         }
-      ]
+      ], local.entra_api_env)
+      secrets = local.entra_api_secrets
       logConfiguration = {
         logDriver = "awslogs"
         options = {

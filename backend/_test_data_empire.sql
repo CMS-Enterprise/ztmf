@@ -5,10 +5,35 @@
 -- NOTE: Schema is created by migrations - this file only contains test data INSERTs
 -- Migrations run first, then this file populates data via DB_POPULATE
 
--- EMPIRE OpDiv (test-only, not in real opdivs seed). Used to scope empire
--- test data once the multi-OpDiv predicates flip in Stage C.
+-- EMPIRE OpDivs (test-only, not in the real opdivs seed). Mirrors the shape of
+-- migration 0026's real data: one parent (EMPIRE, like HHS) plus 13 sister
+-- divisions (like the 13 HHS OpDivs), so the OpDiv selector and multi-OpDiv
+-- scope predicates can be exercised against realistic variety. Empire personas
+-- only -- no real OpDiv names here.
 INSERT INTO public.opdivs (code, name, is_parent, active)
-    VALUES ('EMPIRE', 'Galactic Empire (test fixture)', FALSE, TRUE)
+    VALUES ('EMPIRE', 'Galactic Empire (test fixture)', TRUE, TRUE)
+    ON CONFLICT DO NOTHING;
+-- Converge the parent flag explicitly: the INSERT above no-ops on a DB that
+-- already seeded EMPIRE as a non-parent (persistent dev volumes), so set it
+-- here. There is no plain unique constraint on code (only a partial expression
+-- index), hence an UPDATE rather than ON CONFLICT DO UPDATE.
+UPDATE public.opdivs SET is_parent = TRUE WHERE LOWER(code) = 'empire';
+
+-- 13 sister divisions of the Empire.
+INSERT INTO public.opdivs (code, name, is_parent, active) VALUES
+    ('ISB',     'Imperial Security Bureau',                       FALSE, TRUE),
+    ('COMPNOR', 'Commission for the Preservation of the New Order', FALSE, TRUE),
+    ('INAV',    'Imperial Navy',                                  FALSE, TRUE),
+    ('IARM',    'Imperial Army',                                  FALSE, TRUE),
+    ('ISC',     'Imperial Stormtrooper Corps',                    FALSE, TRUE),
+    ('TARK',    'Tarkin Initiative',                              FALSE, TRUE),
+    ('IIB',     'Imperial Intelligence',                          FALSE, TRUE),
+    ('IEC',     'Imperial Engineering Corps',                     FALSE, TRUE),
+    ('IMED',    'Imperial Medical Corps',                         FALSE, TRUE),
+    ('ILOG',    'Imperial Logistics Command',                     FALSE, TRUE),
+    ('ISRV',    'Imperial Survey Corps',                          FALSE, TRUE),
+    ('IWPN',    'Imperial Weapons Research',                      FALSE, TRUE),
+    ('IGOV',    'Imperial Oversector Governance',                 FALSE, TRUE)
     ON CONFLICT DO NOTHING;
 
 -- REBELLION OpDiv (test-only). A second OpDiv distinct from EMPIRE so the
@@ -37,6 +62,13 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     ON CONFLICT DO NOTHING;
 INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('44444444-4444-4444-4444-444444444444', 'Director.Krennic@scarif.empire', 'Orson Krennic', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
+
+-- Test Entra-authenticated user (HHS/OpDiv side of the dual-IdP split).
+-- Exercises the pre-auth lookup returning idp="entra" and, later, the
+-- multi-issuer login path. Empire persona only - no real identities.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('aa000088-8888-4888-8888-888888888888', 'Grand.Admiral.Thrawn@chiss.empire', 'Grand Admiral Thrawn', 'ISSO', 'entra')
     ON CONFLICT DO NOTHING;
 
 -- Test HHS_READONLY_ADMIN User (Emperor - can observe everything but not modify)
@@ -98,6 +130,24 @@ SELECT u.userid, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
         'Opdiv.Admin@empire.test',
         'Opdiv.Readonly@empire.test'
        )
+ON CONFLICT DO NOTHING;
+
+-- Multi-OpDiv membership: assign several empire officers across more than one
+-- sister division so the OpDiv selector (multi-select) and the multi-OpDiv
+-- scope predicates have users with >1 grant to exercise.
+INSERT INTO public.users_opdivs (userid, opdiv_id)
+SELECT u.userid, o.opdiv_id
+  FROM (VALUES
+        ('Director.Krennic@scarif.empire', 'TARK'),  -- Krennic spans the Tarkin
+        ('Director.Krennic@scarif.empire', 'IWPN'),  -- Initiative and weapons research
+        ('Admiral.Piett@executor.empire',  'INAV'),
+        ('Commander.Veers@hoth.empire',    'IARM'),  -- Veers spans army
+        ('Commander.Veers@hoth.empire',    'ISC'),   -- and the stormtrooper corps
+        ('Grand.Moff@DeathStar.Empire',    'ISB'),   -- Tarkin spans security
+        ('Grand.Moff@DeathStar.Empire',    'IGOV')   -- and oversector governance
+       ) AS g(email, code)
+  JOIN public.users u  ON u.email = g.email
+  JOIN public.opdivs o ON o.code = g.code
 ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
