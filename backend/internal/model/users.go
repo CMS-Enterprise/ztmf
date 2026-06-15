@@ -418,15 +418,19 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 	if err != nil {
 		return nil, trapError(err)
 	}
-	// Close the dedicated connection last (after the tx resolves); defers run
-	// LIFO, so this is declared before the tx rollback defer.
-	defer conn.Close(ctx)
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
+		conn.Close(ctx)
 		return nil, trapError(err)
 	}
-	defer tx.Rollback(ctx)
+	// Resolve the transaction and then close the dedicated connection in a single
+	// defer, so the order cannot be broken by another defer added later. Rollback
+	// is a no-op once the transaction has committed.
+	defer func() {
+		tx.Rollback(ctx)
+		conn.Close(ctx)
+	}()
 
 	var deleted bool
 	err = tx.QueryRow(ctx,
