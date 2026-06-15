@@ -218,7 +218,7 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 
 	pk, ok := genericPublicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, errors.New("Okta key is not ECDSA")
+		return nil, errors.New("okta key is not ECDSA")
 	}
 
 	keysMu.Lock()
@@ -270,7 +270,7 @@ type jwk struct {
 func refreshEntraKeys() error {
 	cfg := config.GetInstance()
 	if cfg.Auth.EntraJWKSUrl == "" {
-		return errors.New("Entra JWKS URL not configured")
+		return errors.New("entra JWKS URL not configured")
 	}
 
 	res, err := http.DefaultClient.Get(cfg.Auth.EntraJWKSUrl)
@@ -299,7 +299,7 @@ func refreshEntraKeys() error {
 		parsed[k.Kid] = pk
 	}
 	if len(parsed) == 0 {
-		return errors.New("Entra JWKS contained no usable RSA keys")
+		return errors.New("entra JWKS contained no usable RSA keys")
 	}
 
 	entraMu.Lock()
