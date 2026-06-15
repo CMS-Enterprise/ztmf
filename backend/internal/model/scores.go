@@ -730,6 +730,7 @@ func copyPreviousScores(dataCallID int32) {
 	if err != nil {
 		return
 	}
+	defer conn.Close(context.TODO())
 
 	sql, args, _ := sqlb.ToSql()
 
