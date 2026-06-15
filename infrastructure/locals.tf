@@ -35,6 +35,9 @@ locals {
     { name = "AUTH_ENTRA_ISSUER", value = local.entra_oidc_options["issuer"] },
     { name = "AUTH_ENTRA_JWKS_URL", value = local.entra_oidc_options["jwks_uri"] },
     { name = "AUTH_ENTRA_TENANT_ID", value = local.entra_oidc_options["tenant_id"] },
+    # Pin the accepted audience to the ZTMF Entra app's client id so a validly
+    # signed token minted for a different app in the same tenant is rejected.
+    { name = "AUTH_ENTRA_AUDIENCE", value = local.entra_oidc_options["client_id"] },
     { name = "AUTH_COOKIE_DOMAIN", value = local.domain_name },
   ] : []
 

@@ -12,6 +12,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -48,6 +49,7 @@ const minEntraRefreshInterval = 5 * time.Minute
 var (
 	ErrUntrustedIssuer = errors.New("token issuer is not trusted")
 	ErrWrongTenant     = errors.New("token tenant is not the trusted Entra tenant")
+	ErrWrongAudience   = errors.New("token audience is not the trusted ZTMF application")
 )
 
 type Claims struct {
@@ -93,28 +95,61 @@ func decodeJWT(tokenString string) (*jwt.Token, error) {
 // tenant, reading the trusted values from config.
 func validateIssuer(claims *Claims) error {
 	cfg := config.GetInstance()
-	return validateIssuerWith(claims.Issuer, claims.TID, cfg.Auth.OktaIssuer, cfg.Auth.EntraIssuer, cfg.Auth.EntraTenantID)
+	return validateIssuerWith(
+		claims.Issuer, claims.TID, claims.Audience,
+		cfg.Auth.OktaIssuer, cfg.Auth.EntraIssuer, cfg.Auth.EntraTenantID,
+		cfg.Auth.OktaAudience, cfg.Auth.EntraAudience,
+	)
 }
 
 // validateIssuerWith is the pure decision: an Entra token must match the Entra
-// issuer and (when pinned) the tenant; an Okta token must match the Okta
-// issuer. Each check is skipped when its issuer is not configured, so an
-// environment with only Okta wired up keeps working unchanged, and an
-// environment with no issuers configured preserves the legacy no-check behavior.
-func validateIssuerWith(iss, tid, oktaIss, entraIss, entraTID string) error {
+// issuer and (when pinned) the tenant and audience; an Okta token must match the
+// Okta issuer and (when pinned) the audience. Each check is skipped when its
+// value is not configured, so an environment with only Okta wired up keeps
+// working unchanged, and an environment with no issuers configured preserves the
+// legacy no-check behavior. The audience check rejects a validly-signed token
+// minted for a different application in the same issuer/tenant.
+func validateIssuerWith(iss, tid string, aud jwt.ClaimStrings, oktaIss, entraIss, entraTID, oktaAud, entraAud string) error {
 	switch {
 	case entraIss != "" && iss == entraIss:
 		if entraTID != "" && tid != entraTID {
 			return ErrWrongTenant
 		}
+		if entraAud != "" && !slices.Contains(aud, entraAud) {
+			return ErrWrongAudience
+		}
 		return nil
 	case oktaIss != "" && iss == oktaIss:
+		if oktaAud != "" && !slices.Contains(aud, oktaAud) {
+			return ErrWrongAudience
+		}
 		return nil
 	case oktaIss == "" && entraIss == "":
 		return nil
 	default:
 		return ErrUntrustedIssuer
 	}
+}
+
+// hs256Allowed decides whether an HS256 IdP token may be verified, returning the
+// HMAC key or an error. HS256 is for local dev / E2E only, where IdP tokens are
+// simulated with a shared secret. In any deployed environment the IdP bearer path
+// must be asymmetric (ES256/RS256): once /api/* is backend-gated, accepting HS256
+// would let anyone who learns the symmetric secret forge a token for any user. It
+// is refused outside local/test regardless of whether a secret is configured, so
+// the guarantee lives in code rather than relying on AUTH_HS256_SECRET never being
+// set in prod. localOrTest is taken as a parameter (rather than read from the
+// config singleton) so the decision is pure and unit-testable, mirroring the
+// validateIssuer / validateIssuerWith split above.
+func hs256Allowed(localOrTest bool, secret string) (any, error) {
+	if !localOrTest {
+		return nil, errors.New("HS256 tokens are not accepted in this environment")
+	}
+	if secret == "" {
+		// Fail closed: never verify an HS256 token against an empty key.
+		return nil, errors.New("HS256 secret not configured")
+	}
+	return []byte(secret), nil
 }
 
 // getKey resolves the verification key for a token by signing algorithm:
@@ -126,11 +161,7 @@ func getKey(token *jwt.Token) (interface{}, error) {
 	case "none":
 		return nil, errors.New("unsupported jwt signing algorithm")
 	case "HS256":
-		if cfg.Auth.HS256_SECRET == "" {
-			// Fail closed: never verify an HS256 token against an empty key.
-			return nil, errors.New("HS256 secret not configured")
-		}
-		return []byte(cfg.Auth.HS256_SECRET), nil
+		return hs256Allowed(cfg.IsLocalOrTest(), cfg.Auth.HS256_SECRET)
 	case "RS256":
 		kid, ok := token.Header["kid"].(string)
 		if !ok {

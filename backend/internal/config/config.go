@@ -53,6 +53,16 @@ type config struct {
 		EntraJWKSUrl  string `env:"AUTH_ENTRA_JWKS_URL"`
 		EntraTenantID string `env:"AUTH_ENTRA_TENANT_ID"`
 
+		// OktaAudience / EntraAudience are the expected aud claim (the ZTMF app's
+		// client id / api identifier) for each IdP. When set, a token whose aud
+		// does not contain the expected value is rejected, so a validly-signed
+		// token minted for a *different* application in the same issuer/tenant
+		// cannot authenticate to ZTMF. Optional and enforced only when set, in
+		// parallel with EntraTenantID pinning: empty means no audience check, which
+		// preserves local/dev (HS256, no aud) and the legacy single-app behavior.
+		OktaAudience  string `env:"AUTH_OKTA_AUDIENCE"`
+		EntraAudience string `env:"AUTH_ENTRA_AUDIENCE"`
+
 		// SessionSigningSecret signs the application session JWT minted after a
 		// successful IdP login (Option A: ALB stops gating /api/*, the backend
 		// gates it instead). Falls back to HS256_SECRET when unset so local dev
