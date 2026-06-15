@@ -300,6 +300,10 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	if err != nil {
 		return nil, trapError(err)
 	}
+	// Close the dedicated connection last (after the tx rollback/commit). defers
+	// run LIFO, so declaring this before the tx defer guarantees the transaction
+	// is resolved before the connection is closed.
+	defer conn.Close(ctx)
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
