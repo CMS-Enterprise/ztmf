@@ -53,7 +53,7 @@ func Run() {
 func getMigrator() *migrate.Migrator {
 	if migrator == nil {
 		once.Do(func() {
-			conn, err := db.Conn(context.Background())
+			conn, err := db.MigrationConn(context.Background())
 			if err != nil {
 				log.Fatal(err)
 				return

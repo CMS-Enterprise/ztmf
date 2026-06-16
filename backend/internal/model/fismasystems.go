@@ -303,7 +303,7 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		conn.Close(ctx)
+		conn.Release()
 		return nil, trapError(err)
 	}
 	// Resolve the transaction and then close the dedicated connection in a single
@@ -311,7 +311,7 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	// is a no-op once the transaction has committed.
 	defer func() {
 		tx.Rollback(ctx)
-		conn.Close(ctx)
+		conn.Release()
 	}()
 
 	var decommissioned bool

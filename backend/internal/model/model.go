@@ -45,10 +45,10 @@ func query[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) ([]
 	if err != nil {
 		return nil, trapError(err)
 	}
-	// db.Conn opens a dedicated connection (there is no shared pool); it must be
-	// closed when the query completes or the connection leaks. Without this every
-	// call accumulates an open connection until the cluster's limit is reached.
-	defer conn.Close(ctx)
+	// Return the connection to the pool when the query completes. Without this
+	// the pooled connection is never released and the pool is exhausted under
+	// any concurrency.
+	defer conn.Release()
 
 	sql, args, _ := sqlb.ToSql()
 	rows, err := conn.Query(ctx, sql, args...)
@@ -74,8 +74,8 @@ func queryRow[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) 
 	if err != nil {
 		return nil, trapError(err)
 	}
-	// Close the dedicated connection on return; see query() above.
-	defer conn.Close(ctx)
+	// Release the connection back to the pool on return; see query() above.
+	defer conn.Release()
 
 	sql, args, _ := sqlb.ToSql()
 
