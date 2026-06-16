@@ -434,7 +434,7 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		conn.Close(ctx)
+		conn.Release()
 		return nil, trapError(err)
 	}
 	// Resolve the transaction and then close the dedicated connection in a single
@@ -442,7 +442,7 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 	// is a no-op once the transaction has committed.
 	defer func() {
 		tx.Rollback(ctx)
-		conn.Close(ctx)
+		conn.Release()
 	}()
 
 	var deleted bool
