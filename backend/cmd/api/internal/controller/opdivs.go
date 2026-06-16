@@ -43,7 +43,7 @@ func ListOpDivs(w http.ResponseWriter, r *http.Request) {
 //	@Accept		json
 //	@Produce	json
 //	@Security	bearerAuth
-//	@Param		opdiv_id	path		int			true	"OpDiv ID"
+//	@Param		opdiv_id	path		int			false	"OpDiv ID (for update)"
 //	@Param		body		body		model.OpDiv	true	"OpDiv to create or update"
 //	@Success	201			{object}	apiResponse[model.OpDiv]
 //	@Failure	400			{object}	apiResponse[any]

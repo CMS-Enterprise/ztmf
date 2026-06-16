@@ -60,7 +60,7 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 //	@Accept		json
 //	@Produce	json
 //	@Security	bearerAuth
-//	@Param		functionid	path		int				true	"Function ID"
+//	@Param		functionid	path		int				false	"Function ID (for update)"
 //	@Param		body		body		model.Function	true	"Function to create or update"
 //	@Success	201			{object}	apiResponse[model.Function]
 //	@Failure	400			{object}	apiResponse[any]

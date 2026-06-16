@@ -49,6 +49,15 @@ jobs:
             exit 1
           fi
 
+      # The drift check above only proves the spec matches the annotations, not
+      # that the annotations are correct. Redocly lint enforces correctness
+      # (e.g. every operation must declare security). Rule relaxations live in
+      # backend/redocly.yaml; the one intentional public route is acknowledged
+      # in backend/.redocly.lint-ignore.yaml. Pinned to match local generation.
+      - name: Lint OpenAPI spec (Redocly)
+        working-directory: backend
+        run: docker run --rm -v "$PWD":/work -w /work redocly/cli:2.32.2 lint openapi.yaml
+
   Lint-Terraform:
     name: lint terraform
     runs-on: ubuntu-latest

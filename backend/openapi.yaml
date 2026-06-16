@@ -138,6 +138,13 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-controller_idpLookupResponse:
+      properties:
+        data:
+          $ref: '#/components/schemas/controller.idpLookupResponse'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_DataCall:
       properties:
         data:
@@ -206,6 +213,11 @@ components:
         data:
           $ref: '#/components/schemas/model.UserOpDiv'
         error:
+          type: string
+      type: object
+    controller.idpLookupResponse:
+      properties:
+        idp:
           type: string
       type: object
     model.AuditRef:
@@ -487,6 +499,41 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /auth/lookup:
+    get:
+      description: 'Unauthenticated pre-auth lookup the landing page uses to route
+        a browser to the correct IdP login path. Unknown, unprovisioned, and soft-deleted
+        emails all return a null idp, so it cannot be used to enumerate accounts.
+        This is the one public route: it deliberately has no bearerAuth security.'
+      parameters:
+      - description: Email address to resolve
+        in: query
+        name: email
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-controller_idpLookupResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      summary: Resolve the identity provider for an email
+      tags:
+      - auth
   /datacalls:
     get:
       responses:
@@ -766,24 +813,34 @@ paths:
         name: userid
         schema:
           type: string
-      - description: Filter by FISMA system ID (payload)
+      - description: 'Filter by action: created, updated, or deleted'
         in: query
-        name: fismasystemid
+        name: action
+        schema:
+          type: string
+      - description: Filter by affected resource (table name)
+        in: query
+        name: resource
+        schema:
+          type: string
+      - description: Filter by FISMA system ID referenced in the event payload
+        in: query
+        name: payload.fismasystemid
         schema:
           type: integer
-      - description: Filter by score ID (payload)
+      - description: Filter by score ID referenced in the event payload
         in: query
-        name: scoreid
+        name: payload.scoreid
         schema:
           type: integer
-      - description: Filter by data call ID (payload)
+      - description: Filter by data call ID referenced in the event payload
         in: query
-        name: datacallid
+        name: payload.datacallid
         schema:
           type: integer
-      - description: Filter by question ID (payload)
+      - description: Filter by question ID referenced in the event payload
         in: query
-        name: questionid
+        name: payload.questionid
         schema:
           type: integer
       responses:
@@ -1180,10 +1237,9 @@ paths:
       - functions
     post:
       parameters:
-      - description: Function ID
+      - description: Function ID (for update)
         in: path
         name: functionid
-        required: true
         schema:
           type: integer
       requestBody:
@@ -1262,10 +1318,9 @@ paths:
       - functions
     put:
       parameters:
-      - description: Function ID
+      - description: Function ID (for update)
         in: path
         name: functionid
-        required: true
         schema:
           type: integer
       requestBody:
@@ -1401,10 +1456,9 @@ paths:
       - opdivs
     post:
       parameters:
-      - description: OpDiv ID
+      - description: OpDiv ID (for update)
         in: path
         name: opdiv_id
-        required: true
         schema:
           type: integer
       requestBody:
@@ -1451,10 +1505,9 @@ paths:
   /opdivs/{opdiv_id}:
     put:
       parameters:
-      - description: OpDiv ID
+      - description: OpDiv ID (for update)
         in: path
         name: opdiv_id
-        required: true
         schema:
           type: integer
       requestBody:
