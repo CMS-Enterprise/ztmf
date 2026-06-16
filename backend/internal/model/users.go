@@ -318,11 +318,24 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 
 	// Explicit column list (vs SELECT *) so new schema columns that do not
 	// have a corresponding User struct field do not break pgx struct scans.
-	// AssignedFismaSystems and AssignedOpDivIDs are populated on a per-user
-	// detail lookup (findUser), not on the list view where they would force
-	// extra joins for no UI benefit.
+	// AssignedOpDivIDs is loaded with the same correlated subquery findUser
+	// uses, so the users table renders the OpDiv column straight from this
+	// list response instead of the client backfilling grants with one
+	// /users/{id} call per row (an N+1 that made the page crawl). The subquery
+	// is a composite-PK index-only scan; the whole list is a few milliseconds.
+	// AssignedFismaSystems is intentionally not loaded here: it is json:"-"
+	// (server-side authz only, used by findUser) and the list view neither
+	// serializes nor needs it, so computing it would be wasted work.
 	sqlb := stmntBuilder.
-		Select("users.userid", "email", "fullname", "role", "deleted", "identity_provider").
+		Select(
+			"users.userid",
+			"users.email",
+			"users.fullname",
+			"users.role",
+			"users.deleted",
+			"users.identity_provider",
+			"(SELECT ARRAY_AGG(opdiv_id) FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids",
+		).
 		From("public.users").
 		Where("deleted=?", fui.Deleted)
 
