@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -38,6 +39,17 @@ const (
 type dbCreds struct {
 	Username string
 	Password string
+}
+
+// sslMode selects the libpq sslmode for the connection. Deployed environments
+// require TLS to RDS/Aurora with no plaintext fallback. Local and test run
+// against a Docker Postgres with no TLS configured, where "require" would fail
+// the connection, so they use "allow".
+func sslMode() string {
+	if config.GetInstance().IsLocalOrTest() {
+		return "allow"
+	}
+	return "require"
 }
 
 // Conn acquires a connection from the shared pool. Callers MUST call
@@ -101,7 +113,8 @@ func Pool(ctx context.Context) (*pgxpool.Pool, error) {
 func initPool() error {
 	cfg := config.GetInstance()
 
-	poolCfg, err := pgxpool.ParseConfig("host=" + cfg.Db.Host + " port=" + cfg.Db.Port + " dbname=" + cfg.Db.Name + " sslmode=allow")
+	// No credentials in the DSN: BeforeConnect supplies them per connection.
+	poolCfg, err := pgxpool.ParseConfig(fmt.Sprintf("host=%s port=%s dbname=%s sslmode=%s", cfg.Db.Host, cfg.Db.Port, cfg.Db.Name, sslMode()))
 	if err != nil {
 		log.Println("could not parse db pool config", err)
 		return err
@@ -175,11 +188,15 @@ func connectOne(ctx context.Context) (*pgx.Conn, error) {
 	}
 
 	cfg := config.GetInstance()
-	connConfig, err := pgx.ParseConfig("host=" + cfg.Db.Host + " port=" + cfg.Db.Port + " dbname=" + cfg.Db.Name + " user=" + creds.Username + " password=" + creds.Password + " sslmode=allow")
+	connConfig, err := pgx.ParseConfig(fmt.Sprintf("host=%s port=%s dbname=%s sslmode=%s", cfg.Db.Host, cfg.Db.Port, cfg.Db.Name, sslMode()))
 	if err != nil {
 		log.Println("could not parse db config", err)
 		return nil, err
 	}
+	// Set credentials as fields rather than concatenating them into the DSN, so
+	// a username or password containing special characters cannot break parsing.
+	connConfig.User = creds.Username
+	connConfig.Password = creds.Password
 
 	connConfig.OnNotice = func(_ *pgconn.PgConn, n *pgconn.Notice) {
 		log.Printf("pg notice [%s]: %s", n.Severity, n.Message)
