@@ -8,6 +8,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
+//	@Summary	List all users
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		email		query	string	false	"Filter by email (partial match)"
+//	@Param		fullname	query	string	false	"Filter by full name (partial match)"
+//	@Param		role		query	string	false	"Filter by role"
+//	@Param		deleted		query	bool	false	"Include soft-deleted users"
+//	@Success	200	{object}	apiResponse[[]model.User]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users [get]
 func ListUsers(w http.ResponseWriter, r *http.Request) {
 	var (
 		users []*model.User
@@ -38,6 +50,16 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, users, err)
 }
 
+//	@Summary	Get a user by ID
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string	true	"User ID"
+//	@Success	200	{object}	apiResponse[model.User]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid} [get]
 func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.HasAdminRead() {
@@ -69,6 +91,13 @@ func GetUserByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, user, nil)
 }
 
+//	@Summary	Get the currently authenticated user
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[model.User]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/current [get]
 func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 
@@ -76,6 +105,21 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // SaveUser is for admin management
+//
+//	@Summary	Create or update a user
+//	@Tags		users
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string		false	"User ID (for update)"
+//	@Param		body	body	model.User	true	"User to create or update"
+//	@Success	201	{object}	apiResponse[model.User]
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users [post]
+//	@Router		/users/{userid} [put]
 func SaveUser(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -138,6 +182,17 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteUser handles the deletion of a user
+//
+//	@Summary	Delete a user
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string	true	"User ID"
+//	@Success	204	"No Content"
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid} [delete]
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -174,6 +229,17 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // RestoreUser clears the deleted flag on a soft-deleted user (admin only).
+//
+//	@Summary	Restore a soft-deleted user
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string	true	"User ID"
+//	@Success	200	{object}	apiResponse[model.User]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/restore [put]
 func RestoreUser(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {

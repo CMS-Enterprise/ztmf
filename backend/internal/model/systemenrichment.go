@@ -16,7 +16,7 @@ import (
 // base64.
 type SystemEnrichment struct {
 	FismaUUID string          `json:"fisma_uuid" db:"fisma_uuid"`
-	Payload   json.RawMessage `json:"payload" db:"payload"`
+	Payload   json.RawMessage `json:"payload" db:"payload" swaggertype:"object"`
 	SyncedAt  time.Time       `json:"synced_at" db:"synced_at"`
 }
 

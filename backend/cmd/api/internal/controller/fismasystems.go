@@ -10,6 +10,14 @@ import (
 	"github.com/gorilla/mux"
 )
 
+//	@Summary	List all FISMA systems
+//	@Tags		fismasystems
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		decommissioned	query		bool	false	"Filter by decommissioned status"
+//	@Success	200				{object}	apiResponse[[]model.FismaSystem]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems [get]
 func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	input := model.FindFismaSystemsInput{}
@@ -52,6 +60,16 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystems, err)
 }
 
+//	@Summary	Get a FISMA system by ID
+//	@Tags		fismasystems
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path		int	true	"FISMA system ID"
+//	@Success	200				{object}	apiResponse[model.FismaSystem]
+//	@Failure	403				{object}	apiResponse[any]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems/{fismasystemid} [get]
 func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	vars := mux.Vars(r)
@@ -101,6 +119,21 @@ func guardManageFismaSystem(ctx context.Context, user *model.User, id int32) (*m
 	return sys, nil
 }
 
+//	@Summary	Create or update a FISMA system
+//	@Tags		fismasystems
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path		int					false	"FISMA system ID (update only)"
+//	@Param		body			body		model.FismaSystem	true	"FISMA system to save"
+//	@Success	201				{object}	apiResponse[model.FismaSystem]
+//	@Success	204				"No Content"
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	403				{object}	apiResponse[any]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems [post]
+//	@Router		/fismasystems/{fismasystemid} [put]
 func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -166,6 +199,19 @@ type DecommissionRequest struct {
 }
 
 // DeleteFismaSystem handles the decommissioning of a fismasystem
+//
+//	@Summary	Decommission a FISMA system
+//	@Tags		fismasystems
+//	@Accept		json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path	int							true	"FISMA system ID"
+//	@Param		body			body	controller.DecommissionRequest	false	"Optional decommission parameters"
+//	@Success	204				"No Content"
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	403				{object}	apiResponse[any]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems/{fismasystemid} [delete]
 func DeleteFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -233,6 +279,20 @@ type ReactivateRequest struct {
 
 // ReactivateFismaSystem clears the decommissioned flag and stamps reactivation
 // audit columns (admin only).
+//
+//	@Summary	Reactivate a decommissioned FISMA system
+//	@Tags		fismasystems
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path		int							true	"FISMA system ID"
+//	@Param		body			body		controller.ReactivateRequest	false	"Optional reactivation parameters"
+//	@Success	200				{object}	apiResponse[model.FismaSystem]
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	403				{object}	apiResponse[any]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems/{fismasystemid}/reactivate [put]
 func ReactivateFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {

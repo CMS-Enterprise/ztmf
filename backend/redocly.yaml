@@ -1,0 +1,25 @@
+# Redocly lint config for the swag-generated openapi.yaml.
+#
+# openapi.yaml is generated from Go handler annotations by `make generate-openapi`
+# (swaggo/swag v2). A few default Redocly rules conflict with how swag represents
+# our handlers; we relax exactly those, with the reason inline. Everything else
+# uses the recommended ruleset.
+extends:
+  - recommended
+
+rules:
+  # Several create/update endpoints (e.g. SaveDataCall, SaveUser) are a single Go
+  # handler registered for both `POST /x` and `PUT /x/{id}`. swag emits one shared
+  # parameter set for both operations, so the collection POST inherits the item
+  # PUT's `{id}` path parameter (rendered `required: false`). Downgraded to a
+  # warning rather than splitting the runtime handlers purely for doc fidelity.
+  path-parameters-defined: warn
+
+  # swag v2 does not emit operationId for operations annotated without an explicit
+  # @ID. Not worth annotating all ~48 handlers; client generators fall back to a
+  # path/method-derived id.
+  operation-operationId: off
+
+  # Read-only list/detail endpoints legitimately declare only 5xx failure
+  # responses; a generic 4xx is not always meaningful for them.
+  operation-4xx-response: off

@@ -22,6 +22,16 @@ type idpLookupResponse struct {
 // login path before any session exists. It is intentionally public; abuse is
 // contained by (1) identical responses for found and not-found, (2) WAF and an
 // in-app rate limiter on this route, and (3) never logging the email.
+//
+//	@Summary		Resolve the identity provider for an email
+//	@Description	Unauthenticated pre-auth lookup the landing page uses to route a browser to the correct IdP login path. Unknown, unprovisioned, and soft-deleted emails all return a null idp, so it cannot be used to enumerate accounts. This is the one public route: it deliberately has no bearerAuth security.
+//	@Tags			auth
+//	@Produce		json
+//	@Param			email	query		string	true	"Email address to resolve"
+//	@Success		200		{object}	apiResponse[idpLookupResponse]
+//	@Failure		400		{object}	apiResponse[any]
+//	@Failure		500		{object}	apiResponse[any]
+//	@Router			/auth/lookup [get]
 func LookupIdP(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.URL.Query().Get("email"))
 	if email == "" {
