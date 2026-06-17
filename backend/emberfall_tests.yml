@@ -695,7 +695,11 @@ tests:
         json:
           data:
             <<: *userData
-  
+            # No explicit IdP supplied on create, so it defaults to the CMS
+            # baseline (okta). HHS users are routed to entra by an HHS-wide actor
+            # passing an explicit identity_provider (see the override gate).
+            identity_provider: "okta"
+
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: PUT
     headers:

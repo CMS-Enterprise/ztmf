@@ -213,11 +213,13 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 	// deleted column is intentionally left out as it cannot be set by an update, and on create it defaults to false
 	// it must be set via explicit delete. See DeleteUser below
 	if creating {
-		// identity_provider is NOT NULL on the table. Caller may pass an
-		// explicit value (HHS users from the onboarding workbook get 'entra';
-		// CMS contractor exceptions can be set explicitly). Falls back to
-		// 'okta' so the existing CMS admin-panel create-user flow keeps
-		// working without a forced column add on the request body.
+		// identity_provider is NOT NULL on the table. ZTMF is CMS-origin, so
+		// Okta is the baseline; Entra is the exception for HHS users. An HHS-wide
+		// actor (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN) may pass an explicit value
+		// to route an HHS user to Entra - the controller blanks the field for any
+		// OpDiv-scoped actor, whose users are CMS and stay on Okta. When blank,
+		// default to okta. A later CMS OpDiv grant (or an HHS one) re-derives the
+		// value through deriveIdentityProvider (usersopdivs.go).
 		idp := u.IdentityProvider
 		if idp == "" {
 			idp = "okta"
