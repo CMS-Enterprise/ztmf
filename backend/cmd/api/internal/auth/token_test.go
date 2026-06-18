@@ -1,14 +1,22 @@
 package auth
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,4 +166,98 @@ func TestDecodeJWT_HS256(t *testing.T) {
 		_, err := decodeJWT(mint("wrong-secret"))
 		assert.Error(t, err)
 	})
+}
+
+// TestKidPattern verifies the allowlist that gates the attacker-controlled kid
+// before it is used to build the Okta key-fetch URL. Legitimate Okta key ids
+// (URL-safe base64 / UUID-style) pass; traversal, host-injection, scheme, and
+// oversized values are rejected.
+func TestKidPattern(t *testing.T) {
+	valid := []string{
+		"abc123",
+		"AbC_123-xyz",
+		"0J8e2cF3aB4dQ5sZ_w-T",
+		"550e8400e29b41d4a716446655440000",
+		strings.Repeat("a", 200), // length boundary: 200 is the inclusive max
+	}
+	invalid := []string{
+		"",
+		"../../../../latest/meta-data", // path traversal
+		"a/b",                          // path separator
+		"key.pem",                      // dot (traversal building block)
+		"@attacker.example",            // userinfo/host injection
+		"http://evil.example/k",        // scheme injection
+		"%2e%2e%2f",                    // url-encoded traversal
+		"a b",                          // whitespace
+		"a:b",                          // colon
+		strings.Repeat("a", 201),       // length boundary: 201 is one over the max
+	}
+	for _, k := range valid {
+		assert.True(t, kidPattern.MatchString(k), "expected valid kid: %q", k)
+	}
+	for _, k := range invalid {
+		assert.False(t, kidPattern.MatchString(k), "expected invalid kid: %q", k)
+	}
+}
+
+// TestOktaKeyRejectsMaliciousKid confirms oktaKey rejects a malicious kid with
+// the validation error *before* attempting any outbound fetch (a network attempt
+// would surface a different error). This is the SSRF / key-confusion guard.
+func TestOktaKeyRejectsMaliciousKid(t *testing.T) {
+	for _, kid := range []string{
+		"../../../../latest/meta-data/iam/security-credentials/",
+		"@attacker.example/key.pem",
+		"http://evil.example/key.pem",
+		"a/b",
+		strings.Repeat("a", 500),
+	} {
+		tok := &jwt.Token{Header: map[string]any{"alg": "ES256", "kid": kid}}
+		_, err := oktaKey(tok)
+		require.Error(t, err)
+		assert.Equal(t, "invalid kid", err.Error(), "kid %q must be rejected before any fetch", kid)
+	}
+}
+
+// TestOktaKeyMissingKid covers the no-kid header case.
+func TestOktaKeyMissingKid(t *testing.T) {
+	tok := &jwt.Token{Header: map[string]any{"alg": "ES256"}}
+	_, err := oktaKey(tok)
+	require.Error(t, err)
+	assert.Equal(t, "token missing kid", err.Error())
+}
+
+// TestOktaKeyValidKidFetchesAndParses is the positive regression guard: a valid
+// kid builds exactly TokenKeyUrl+kid (no surprise path segments), the fetch is
+// served and the PEM parsed into an ECDSA key. Locks in that the hardened client
+// + concatenation behave as before for legitimate input.
+func TestOktaKeyValidKidFetchesAndParses(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write(pemBytes)
+	}))
+	defer ts.Close()
+
+	cfg := config.GetInstance()
+	orig := cfg.Auth.TokenKeyUrl
+	cfg.Auth.TokenKeyUrl = ts.URL + "/"
+	defer func() { cfg.Auth.TokenKeyUrl = orig }()
+
+	const kid = "valid-Kid_123"
+	keysMu.Lock()
+	delete(keys, kid)
+	keysMu.Unlock()
+
+	tok := &jwt.Token{Header: map[string]any{"alg": "ES256", "kid": kid}}
+	key, err := oktaKey(tok)
+	require.NoError(t, err)
+	assert.Equal(t, "/"+kid, gotPath, "fetch path is exactly TokenKeyUrl+kid")
+	_, ok := key.(*ecdsa.PublicKey)
+	assert.True(t, ok, "returns a parsed ECDSA public key")
 }
