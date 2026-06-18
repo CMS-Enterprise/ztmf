@@ -118,6 +118,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_ScoreDiff:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.ScoreDiff'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_User:
       properties:
         data:
@@ -439,6 +449,38 @@ components:
           type: number
         systemtier:
           type: string
+      type: object
+    model.ScoreDiff:
+      properties:
+        changed_at:
+          type: string
+        changed_by:
+          $ref: '#/components/schemas/model.AuditRef'
+        fismasystemid:
+          type: integer
+        from:
+          $ref: '#/components/schemas/model.ScoreDiffSide'
+        function:
+          type: string
+        functionid:
+          type: integer
+        question:
+          type: string
+        to:
+          $ref: '#/components/schemas/model.ScoreDiffSide'
+      type: object
+    model.ScoreDiffSide:
+      properties:
+        functionoptionid:
+          type: integer
+        notes:
+          type: string
+        optionname:
+          type: string
+        score:
+          type: integer
+        scoreid:
+          type: integer
       type: object
     model.SystemEnrichment:
       properties:
@@ -1882,6 +1924,55 @@ paths:
       security:
       - bearerAuth: []
       summary: Get aggregated scores
+      tags:
+      - scores
+  /scores/diff:
+    get:
+      description: 'Compares the score (functionoption) answers of two data calls
+        and returns only the questionnaire functions whose answer changed, each annotated
+        with who made the later change and when. Scoped to the caller''s tier: unscoped
+        admins see all systems, OpDiv-scoped admins their OpDivs'' systems, and ISSO/ISSM
+        their assigned systems.'
+      parameters:
+      - description: Data call ID to compare from (earlier cycle)
+        in: query
+        name: from
+        required: true
+        schema:
+          type: integer
+      - description: Data call ID to compare to (later cycle)
+        in: query
+        name: to
+        required: true
+        schema:
+          type: integer
+      - description: Limit the diff to a single FISMA system
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_ScoreDiff'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Diff scores between two data calls
       tags:
       - scores
   /systemenrichment/{fisma_uuid}:
