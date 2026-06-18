@@ -12,6 +12,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
@@ -45,6 +46,28 @@ var (
 // rotated keys well ahead of use, so a few minutes of staleness on a genuinely
 // new kid is an acceptable trade for closing that amplification vector.
 const minEntraRefreshInterval = 5 * time.Minute
+
+// kidPattern restricts an attacker-controlled JWT `kid` to URL-safe characters
+// before it is used to build the Okta key-fetch URL. `kid` is read from the
+// unverified token header (it selects the verification key, so it must be read
+// before the signature is checked), making it untrusted input. Okta key ids are
+// URL-safe base64 thumbprints, so this allowlist rejects nothing legitimate
+// while preventing path traversal, host injection, and scheme tricks from
+// reshaping the outbound request (SSRF / key-confusion).
+var kidPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
+
+// keyFetchClient is used for all outbound IdP key fetches (the Okta per-kid PEM
+// endpoint and the Entra JWKS document). It sets a timeout so a slow or hung key
+// endpoint cannot pin a request goroutine, and it refuses to follow redirects so
+// a 3xx response cannot bounce the fetch to an unexpected host - defense in depth
+// alongside kid validation. http.DefaultClient (no timeout, follows redirects)
+// must not be used for these.
+var keyFetchClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 var (
 	ErrUntrustedIssuer = errors.New("token issuer is not trusted")
@@ -180,6 +203,12 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 	if !ok {
 		return nil, errors.New("token missing kid")
 	}
+	// Validate before anything else: kid is attacker-controlled and is about to
+	// be concatenated into an outbound URL. Restricting it to URL-safe characters
+	// is what makes the concatenation below safe (no traversal/host injection).
+	if !kidPattern.MatchString(kid) {
+		return nil, errors.New("invalid kid")
+	}
 
 	keysMu.RLock()
 	cached, ok := keys[kid]
@@ -190,9 +219,12 @@ func oktaKey(token *jwt.Token) (interface{}, error) {
 
 	cfg := config.GetInstance()
 	url := cfg.Auth.TokenKeyUrl + kid
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := keyFetchClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +305,7 @@ func refreshEntraKeys() error {
 		return errors.New("entra JWKS URL not configured")
 	}
 
-	res, err := http.DefaultClient.Get(cfg.Auth.EntraJWKSUrl)
+	res, err := keyFetchClient.Get(cfg.Auth.EntraJWKSUrl)
 	if err != nil {
 		return err
 	}
