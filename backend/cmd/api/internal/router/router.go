@@ -2,15 +2,36 @@ package router
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/controller"
 	"github.com/gorilla/mux"
+	"golang.org/x/time/rate"
 )
 
 func Handler() http.Handler {
 	var userIdPattern = "[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+"
-	router := mux.NewRouter()
+	root := mux.NewRouter()
+
+	// The pre-auth IdP lookup is the one unauthenticated route: the caller has
+	// no session yet, so it cannot sit behind auth.Middleware. It is registered
+	// before the authenticated subrouter so mux matches it first, and it is
+	// wrapped in an in-process rate limiter as defense-in-depth (WAF on this
+	// path is the authoritative limit).
+	lookupLimiter := auth.NewRateLimiter(rate.Limit(5), 10, 10*time.Minute)
+	root.Handle("/api/v1/auth/lookup", lookupLimiter.Middleware(http.HandlerFunc(controller.LookupIdP))).Methods("GET")
+
+	// Post-OIDC login. The ALB authenticates /login* per IdP and forwards here
+	// with the IdP token in the auth header; SessionHandler mints the app
+	// session cookie. These live outside auth.Middleware because no app session
+	// cookie exists yet - the ALB OIDC handshake is the gate for these paths.
+	root.HandleFunc("/login", auth.SessionHandler).Methods("GET")
+	root.PathPrefix("/login/").HandlerFunc(auth.SessionHandler).Methods("GET")
+
+	// Every other route requires authentication. Registering them on a subrouter
+	// keeps auth.Middleware off the public lookup route above.
+	router := root.PathPrefix("/").Subrouter()
 	router.Use(auth.Middleware)
 
 	router.HandleFunc("/api/v1/datacalls", controller.ListDataCalls).Methods("GET")
@@ -81,5 +102,5 @@ func Handler() http.Handler {
 	// massemails resource only supports a single verb as there are no records to get list and details for, but the operation is non-idempotent
 	router.HandleFunc("/api/v1/massemails", controller.SaveMassEmail).Methods("POST")
 
-	return router
+	return root
 }

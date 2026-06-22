@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +44,7 @@ func purgeIntegrationTestRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("purge: db.Conn: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Release()
 	_, err = conn.Exec(ctx,
 		`DELETE FROM datacalls WHERE datacall LIKE $1`,
 		integrationTestPrefix+"%",
@@ -73,7 +73,7 @@ func TestFindScoresAggregateIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	t.Run("ShapeInvariants_AllAggregates", func(t *testing.T) {
 		// Pull every aggregate from the DB. Don't filter — we want to
@@ -181,7 +181,7 @@ func TestScoreSaveValidationIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	// Find a datacall whose deadline is in the past, plus one whose
 	// deadline is in the future. The seeded datacalls do not guarantee
@@ -280,7 +280,7 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	// Insert two datacalls explicitly ordered so copyPreviousScores'
 	// "latest-1 is previous" logic finds the right one. Each row gets
@@ -367,7 +367,7 @@ func ensureFutureDataCall(t *testing.T, ctx context.Context) int32 {
 	t.Helper()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	var dataCallID int32
 	err = conn.QueryRow(ctx, `
@@ -393,7 +393,7 @@ func anyExistingFunctionOption(t *testing.T, ctx context.Context) (int32, int32)
 	t.Helper()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	var fismaSystemID, functionOptionID int32
 	require.NoError(t, conn.QueryRow(ctx, `
@@ -422,7 +422,7 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
 	dataCallID := ensureFutureDataCall(t, ctx)
@@ -482,7 +482,7 @@ func TestFindScoresIncludesAuditFieldsIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
 	dataCallID := ensureFutureDataCall(t, ctx)
@@ -611,7 +611,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	fismaSystemID, functionOptionID := anyExistingFunctionOption(t, ctx)
 	dataCallID := ensureFutureDataCall(t, ctx)
@@ -703,7 +703,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 
 // countScoreEvents is a small helper used by the no-op preservation test
 // to assert that read-through Saves do not append event rows.
-func countScoreEvents(t *testing.T, ctx context.Context, conn *pgx.Conn, scoreID int32) int {
+func countScoreEvents(t *testing.T, ctx context.Context, conn *pgxpool.Conn, scoreID int32) int {
 	t.Helper()
 	var n int
 	require.NoError(t, conn.QueryRow(ctx, `
@@ -735,7 +735,7 @@ func TestFindScoresISSOScopeRetainsAuditFieldsIntegration(t *testing.T) {
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	const krennicUUID = "44444444-4444-4444-4444-444444444444"
 	const krennicFisma = int32(1003)

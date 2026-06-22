@@ -26,6 +26,16 @@ func sharesOpDiv(actor, target *model.User) bool {
 // ListUserOpDivs returns the OpDiv ids a user holds grants for. Unscoped admins
 // may view any user; an OpDiv-scoped admin may only view a user who shares one
 // of their OpDivs.
+//	@Summary	List the OpDiv ids a user holds grants for
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string	true	"User ID"
+//	@Success	200	{object}	apiResponse[[]int32]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedopdivs [get]
 func ListUserOpDivs(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.HasAdminRead() {
@@ -58,6 +68,19 @@ func ListUserOpDivs(w http.ResponseWriter, r *http.Request) {
 // CreateUserOpDiv grants a user OpDiv membership. Unscoped admins may grant any
 // OpDiv; an OPDIV_ADMIN may only grant an OpDiv they themselves hold (so they
 // can add users to their own OpDiv but not place users into another OpDiv).
+//	@Summary	Grant a user OpDiv membership
+//	@Tags		users
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string			true	"User ID"
+//	@Param		body	body	model.UserOpDiv	true	"OpDiv grant"
+//	@Success	201	{object}	apiResponse[model.UserOpDiv]
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedopdivs [post]
 func CreateUserOpDiv(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -107,6 +130,17 @@ func CreateUserOpDiv(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUserOpDiv revokes a user's OpDiv grant. Same scope as granting: an
 // OPDIV_ADMIN may only revoke an OpDiv they hold.
+//	@Summary	Revoke a user's OpDiv grant
+//	@Tags		users
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid		path	string	true	"User ID"
+//	@Param		opdiv_id	path	int		true	"OpDiv ID"
+//	@Success	204	"No Content"
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/assignedopdivs/{opdiv_id} [delete]
 func DeleteUserOpDiv(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {

@@ -19,6 +19,32 @@ locals {
   //  we can use it to simplify code instead of placing all the other fields in TF vars
   oidc_options = jsondecode(data.aws_secretsmanager_secret_version.ztmf_va_trust_provider_current.secret_string)
 
+  // Entra OIDC config, decoded only when entra_enabled (the data source is
+  // gated on the same flag). Empty map otherwise so references compile while
+  // the feature is off.
+  entra_oidc_options = var.entra_enabled ? jsondecode(data.aws_secretsmanager_secret_version.ztmf_entra_oidc_current[0].secret_string) : {}
+
+  // Extra API task environment when the dual-IdP feature is on. Both issuers
+  // must be set together: once issuer validation is active, an Okta token whose
+  // issuer is not configured would be rejected, so the Okta issuer (already in
+  // the existing OIDC secret) is wired alongside the Entra values. These are
+  // non-secret OIDC discovery values; the session signing key is injected
+  // separately as a container secret.
+  entra_api_env = var.entra_enabled ? [
+    { name = "AUTH_OKTA_ISSUER", value = local.oidc_options["issuer"] },
+    { name = "AUTH_ENTRA_ISSUER", value = local.entra_oidc_options["issuer"] },
+    { name = "AUTH_ENTRA_JWKS_URL", value = local.entra_oidc_options["jwks_uri"] },
+    { name = "AUTH_ENTRA_TENANT_ID", value = local.entra_oidc_options["tenant_id"] },
+    # Pin the accepted audience to the ZTMF Entra app's client id so a validly
+    # signed token minted for a different app in the same tenant is rejected.
+    { name = "AUTH_ENTRA_AUDIENCE", value = local.entra_oidc_options["client_id"] },
+    { name = "AUTH_COOKIE_DOMAIN", value = local.domain_name },
+  ] : []
+
+  entra_api_secrets = var.entra_enabled ? [
+    { name = "AUTH_SESSION_SIGNING_SECRET", valueFrom = aws_secretsmanager_secret.ztmf_session_signing_key.arn },
+  ] : []
+
   // impl shares the dev AWS account and dev VPC; per-env suffix renames every
   // VPC- and account-scoped resource that would otherwise collide with dev's.
   // dev/prod render an empty suffix so existing AWS object names (and the

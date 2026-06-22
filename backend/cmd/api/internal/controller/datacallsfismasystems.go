@@ -9,6 +9,17 @@ import (
 )
 
 // SaveDataCallFismaSystem handles the PUT request to mark a FISMA system as having completed a data call
+//
+//	@Summary	Mark a FISMA system as having completed a data call
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		datacallid		path		int	true	"Data call ID"
+//	@Param		fismasystemid	path	int	true	"FISMA system ID"
+//	@Success	204	"No Content"
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls/{datacallid}/fismasystems/{fismasystemid} [put]
 func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 
@@ -56,6 +67,16 @@ func SaveDataCallFismaSystem(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListDataCallFismaSystems handles the GET request to list all FISMA systems that have marked a specific data call as complete
+//
+//	@Summary	List FISMA systems that have completed a data call
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		datacallid	path		int	true	"Data call ID"
+//	@Success	200			{object}	apiResponse[[]model.FismaSystem]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/datacalls/{datacallid}/fismasystems [get]
 func ListDataCallFismaSystems(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	vars := mux.Vars(r)
@@ -94,6 +115,16 @@ func ListDataCallFismaSystems(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListFismaSystemDataCalls handles the GET request to list all data calls that a specific FISMA system has marked as complete
+//
+//	@Summary	List data calls a FISMA system has completed
+//	@Tags		fismasystems
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path		int	true	"FISMA system ID"
+//	@Success	200				{object}	apiResponse[[]model.DataCall]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems/{fismasystemid}/datacalls [get]
 func ListFismaSystemDataCalls(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 

@@ -12,6 +12,10 @@ INSERT INTO public.users (email, fullname, role, identity_provider)
 INSERT INTO public.users (email, fullname, role, identity_provider)
     VALUES ('Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
+-- Entra-authenticated user: exercises the pre-auth lookup returning idp="entra".
+INSERT INTO public.users (email, fullname, role, identity_provider)
+    VALUES ('Entra.User@nowhere.xyz', 'Entra Test User', 'ISSO', 'entra')
+    ON CONFLICT DO NOTHING;
 
 -- Grant CMS OpDiv membership to every test user. Migration 0034 only seeded
 -- users that existed at migration time; populate adds users after migrations

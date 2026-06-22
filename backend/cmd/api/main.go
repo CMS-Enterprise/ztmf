@@ -10,6 +10,14 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
+// @title           ZTMF API
+// @version         1.0.0
+// @description     API for the Zero Trust Maturity Framework (ZTMF).
+// @BasePath        /api/v1
+//
+// @securityDefinitions.apikey  bearerAuth
+// @in                          header
+// @name                        Authorization
 func main() {
 	log.SetFlags(0)
 	cfg := config.GetInstance()

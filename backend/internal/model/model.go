@@ -45,6 +45,10 @@ func query[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) ([]
 	if err != nil {
 		return nil, trapError(err)
 	}
+	// Return the connection to the pool when the query completes. Without this
+	// the pooled connection is never released and the pool is exhausted under
+	// any concurrency.
+	defer conn.Release()
 
 	sql, args, _ := sqlb.ToSql()
 	rows, err := conn.Query(ctx, sql, args...)
@@ -70,6 +74,8 @@ func queryRow[T any](ctx context.Context, sqlb SqlBuilder, fn pgx.RowToFunc[T]) 
 	if err != nil {
 		return nil, trapError(err)
 	}
+	// Release the connection back to the pool on return; see query() above.
+	defer conn.Release()
 
 	sql, args, _ := sqlb.ToSql()
 

@@ -12,6 +12,14 @@ import (
 // ListOpDivs returns the OpDiv reference list. Open to any authenticated user
 // because the list contains no sensitive data and the frontend needs it for
 // OpDiv selectors (admin user-create, system-create, importer validation).
+//
+//	@Summary	List all OpDivs
+//	@Tags		opdivs
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[[]model.OpDiv]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/opdivs [get]
 func ListOpDivs(w http.ResponseWriter, r *http.Request) {
 	input := model.FindOpDivsInput{}
 
@@ -29,6 +37,20 @@ func ListOpDivs(w http.ResponseWriter, r *http.Request) {
 // OpDiv list is the tenant boundary itself, so only the unscoped platform tier
 // may add or change one. A PUT with active=false deactivates an OpDiv. This is
 // the runtime path for onboarding a new OpDiv without a code deploy.
+//
+//	@Summary	Create or update an OpDiv
+//	@Tags		opdivs
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		opdiv_id	path		int			false	"OpDiv ID (for update)"
+//	@Param		body		body		model.OpDiv	true	"OpDiv to create or update"
+//	@Success	201			{object}	apiResponse[model.OpDiv]
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/opdivs [post]
+//	@Router		/opdivs/{opdiv_id} [put]
 func SaveOpDiv(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsOwner() {
