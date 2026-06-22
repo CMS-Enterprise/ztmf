@@ -15,6 +15,34 @@ resource "aws_secretsmanager_secret" "ztmf_va_trust_provider" {
   }
 }
 
+// Entra ID OIDC config for the second identity provider. Same operator-seed
+// bootstrap as the Okta secret above: terraform creates the empty container,
+// the operator seeds the JSON out of band with `aws secretsmanager
+// put-secret-value` (scripts/bootstrap-entra-secrets.sh), and the value is
+// never in terraform state or this public repo. Created regardless of
+// entra_enabled so it can be seeded before the auth wiring is switched on.
+// Payload keys: authorization_endpoint, token_endpoint, user_info_endpoint,
+// issuer, jwks_uri, tenant_id, client_id, client_secret.
+resource "aws_secretsmanager_secret" "ztmf_entra_oidc" {
+  name = "ztmf_entra_oidc${local.underscore_sfx}"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+// Signing key for the application session token minted after an OIDC login.
+// Operator-seeded with a high-entropy random value; an empty value makes the
+// backend fail session minting closed (it never signs with an empty key), so
+// this must hold a real value before entra_enabled is flipped on.
+resource "aws_secretsmanager_secret" "ztmf_session_signing_key" {
+  name = "ztmf_session_signing_key${local.underscore_sfx}"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # cert and key are the TLS digicert certificate purchased by Elizabeth S.
 # initially we tried to use them on the Fargate container but decided to
 # simplify things by just generating self-signed certs during container builds

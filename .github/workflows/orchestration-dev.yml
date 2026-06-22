@@ -24,20 +24,23 @@ jobs:
       backend: ${{ steps.backend.outputs.backend }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
-      - name: Check for changes in backend/
+      # Run the backend job when backend code OR the backend workflow itself
+      # changes, so edits to backend.yml (e.g. action version bumps) are
+      # validated by the smoke test rather than shipping unexercised.
+      - name: Check for changes in backend/ or its workflow
         id: backend
-        run: echo "backend=$(git --no-pager diff --name-only origin/main backend/ | grep ".go\|.sum\|Dockerfile" | head -n 1)" >> $GITHUB_OUTPUT
+        run: echo "backend=$(git --no-pager diff --name-only origin/main -- backend/ .github/workflows/backend.yml | grep -E '\.go$|\.sum$|Dockerfile|workflows/backend.yml' | head -n 1)" >> $GITHUB_OUTPUT
 
   backend:
     name: Backend
     needs:
       - analysis
       - diff
-    if: ${{ github.event.pull_request.draft == false && contains(needs.diff.outputs.backend, 'backend/') && !failure() && !cancelled() }}
+    if: ${{ github.event.pull_request.draft == false && needs.diff.outputs.backend != '' && !failure() && !cancelled() }}
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV

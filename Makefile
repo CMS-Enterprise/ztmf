@@ -29,7 +29,7 @@ export COMPOSE_PROJECT_NAME
 export TEST_API_PORT
 export TEST_DB_PORT
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi lint-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
 
 # Default target
 help:
@@ -59,6 +59,10 @@ help:
 	@echo "Authentication:"
 	@echo "  make generate-jwt     Generate JWT token for testing (requires EMAIL variable)"
 	@echo "  make test-empire-data Generate JWT tokens for Empire test users"
+	@echo ""
+	@echo "API spec:"
+	@echo "  make generate-openapi Regenerate backend/openapi.yaml from Go handler annotations"
+	@echo "  make lint-openapi     Lint backend/openapi.yaml with Redocly (correctness gate)"
 	@echo ""
 	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
 	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
@@ -269,6 +273,25 @@ clean:
 	@echo "✅ Clean complete"
 
 # Test targets
+# Regenerate the OpenAPI spec from swag annotations on the Go handlers. The spec
+# is generated, never hand-edited; CI fails if a commit leaves it out of date
+# (see .github/workflows/analysis.yml). swag v2 emits OpenAPI 3.1 with --v3.1.
+# Like the other targets this assumes a host `go`; on a machine without one, run
+# the equivalent in a container (see backend CLAUDE.md / the swag tool dep).
+generate-openapi:
+	@echo "📝 Generating OpenAPI spec from Go handler annotations..."
+	cd backend && go tool swag init -g cmd/api/main.go --dir ./ --parseInternal --v3.1 --outputTypes yaml -o ./ && mv swagger.yaml openapi.yaml
+	@echo "✅ Wrote backend/openapi.yaml"
+
+# Lint the generated spec for correctness (the drift check only proves it matches
+# the annotations, not that the annotations are valid). Same pinned image and
+# config the CI OpenAPI-Spec-Check job uses; rule relaxations are in
+# backend/redocly.yaml and the one public-route exception in
+# backend/.redocly.lint-ignore.yaml.
+lint-openapi:
+	@echo "🔎 Linting backend/openapi.yaml with Redocly..."
+	docker run --rm -v "$$(pwd)/backend":/work -w /work redocly/cli:2.32.2 lint openapi.yaml
+
 test:
 	@echo "🧪 Running all tests..."
 	cd backend && go test ./...
@@ -327,12 +350,12 @@ test-integration:
 	@echo "   (never the dev DB on :54321 - that volume holds real data on purpose)"
 	@echo "🧹 Cleaning up any existing test containers..."
 	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
-	@echo "🚀 Starting fresh test environment (db :54399; test-api applies migrations + seed)..."
+	@echo "🚀 Starting fresh test environment (db :$(TEST_DB_PORT); test-api applies migrations + seed)..."
 	@cd backend && docker compose -f compose-test.yml up -d --build
 	@echo "⏳ Waiting for migrations + empire seed to apply..."
 	@sleep 15
-	@echo "🔬 Running integration tests against :54399..."
-	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=54399 DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
+	@echo "🔬 Running integration tests against :$(TEST_DB_PORT)..."
+	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=$(TEST_DB_PORT) DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
 		go test -run Integration ./... -count=1 \
 		|| (echo "❌ Integration tests failed"; docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🧹 Cleaning up test environment..."

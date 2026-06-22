@@ -174,7 +174,7 @@ func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, erro
 	if err != nil {
 		return false, nil, trapError(err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	current := &Score{}
 	err = conn.QueryRow(ctx, `
@@ -226,7 +226,7 @@ func lookupScoreAudit(ctx context.Context, scoreID int32) (*time.Time, *AuditRef
 		log.Println("lookupScoreAudit: db.Conn:", err)
 		return nil, nil
 	}
-	defer conn.Close(ctx)
+	defer conn.Release()
 
 	const q = `
 		SELECT e.createdat, u.userid, u.fullname, u.email, u.role
@@ -730,6 +730,7 @@ func copyPreviousScores(dataCallID int32) {
 	if err != nil {
 		return
 	}
+	defer conn.Release()
 
 	sql, args, _ := sqlb.ToSql()
 

@@ -21,6 +21,7 @@ func populate(path string) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Release()
 	_, err = conn.Exec(ctx, string(sql))
 	return err
 }

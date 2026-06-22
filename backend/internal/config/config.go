@@ -37,6 +37,44 @@ type config struct {
 		HS256_SECRET string `env:"AUTH_HS256_SECRET"`
 		TokenKeyUrl  string `env:"AUTH_TOKEN_KEY_URL"` // where to find the key that validates JWT
 		HeaderField  string `env:"AUTH_HEADER_FIELD"`  // the header that includes encoded JWT from OIDC IDP
+
+		// OktaIssuer is the expected iss claim for tokens minted by the CMS Okta
+		// IdP. When set, IdP tokens whose issuer does not match an allowed issuer
+		// are rejected. Left empty in local dev (HS256) where no issuer is asserted.
+		OktaIssuer string `env:"AUTH_OKTA_ISSUER"`
+
+		// Entra* configure the second OIDC provider. EntraIssuer is the exact
+		// iss claim (the /v2.0 suffix is part of the issuer, not optional).
+		// EntraJWKSUrl is the key set used to verify RS256 signatures.
+		// EntraTenantID is pinned against the token tid claim so that only the
+		// configured tenant can authenticate, even if another Entra tenant
+		// presents a validly-signed token.
+		EntraIssuer   string `env:"AUTH_ENTRA_ISSUER"`
+		EntraJWKSUrl  string `env:"AUTH_ENTRA_JWKS_URL"`
+		EntraTenantID string `env:"AUTH_ENTRA_TENANT_ID"`
+
+		// OktaAudience / EntraAudience are the expected aud claim (the ZTMF app's
+		// client id / api identifier) for each IdP. When set, a token whose aud
+		// does not contain the expected value is rejected, so a validly-signed
+		// token minted for a *different* application in the same issuer/tenant
+		// cannot authenticate to ZTMF. Optional and enforced only when set, in
+		// parallel with EntraTenantID pinning: empty means no audience check, which
+		// preserves local/dev (HS256, no aud) and the legacy single-app behavior.
+		OktaAudience  string `env:"AUTH_OKTA_AUDIENCE"`
+		EntraAudience string `env:"AUTH_ENTRA_AUDIENCE"`
+
+		// SessionSigningSecret signs the application session JWT minted after a
+		// successful IdP login (Option A: ALB stops gating /api/*, the backend
+		// gates it instead). Falls back to HS256_SECRET when unset so local dev
+		// and the E2E suite, which send an HS256 bearer directly, keep working.
+		SessionSigningSecret string `env:"AUTH_SESSION_SIGNING_SECRET"`
+		// SessionCookieName is the cookie that carries the app session token.
+		SessionCookieName string `env:"AUTH_SESSION_COOKIE_NAME" envDefault:"ztmf_session"`
+		// SessionTTL is the app session lifetime in seconds.
+		SessionTTL int `env:"AUTH_SESSION_TTL" envDefault:"10800"`
+		// CookieDomain scopes the session cookie (e.g. dev.ztmf.cms.gov). Empty
+		// scopes the cookie to the exact request host, which is correct locally.
+		CookieDomain string `env:"AUTH_COOKIE_DOMAIN"`
 	}
 	Db struct {
 		Host        string  `env:"DB_ENDPOINT"`
@@ -132,6 +170,23 @@ func GetInstance() *config {
 	}
 
 	return cfg
+}
+
+// SessionSecret returns the secret used to sign and verify the application
+// session token. It prefers AUTH_SESSION_SIGNING_SECRET. The fallback to the
+// HS256 secret is allowed ONLY in local/test, where that secret is the
+// well-known dev value and sessions are minted from HS256 bearers anyway. In a
+// deployed environment the fallback is refused: if AUTH_SESSION_SIGNING_SECRET
+// is unset the function returns nil so MintSession/ParseSession fail closed,
+// rather than silently signing production sessions with a shared HS256 key.
+func (c *config) SessionSecret() []byte {
+	if c.Auth.SessionSigningSecret != "" {
+		return []byte(c.Auth.SessionSigningSecret)
+	}
+	if c.IsLocalOrTest() {
+		return []byte(c.Auth.HS256_SECRET)
+	}
+	return nil
 }
 
 // IsLocal reports whether the API is running in the local development

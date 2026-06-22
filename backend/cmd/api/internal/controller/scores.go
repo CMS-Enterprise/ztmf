@@ -9,6 +9,15 @@ import (
 	"github.com/gorilla/mux"
 )
 
+//	@Summary	List all scores
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	query		int	false	"Filter by FISMA system ID"
+//	@Param		datacallid		query		int	false	"Filter by data call ID"
+//	@Success	200				{object}	apiResponse[[]model.Score]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/scores [get]
 func ListScores(w http.ResponseWriter, r *http.Request) {
 
 	var (
@@ -40,6 +49,21 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, scores, err)
 }
 
+//	@Summary	Create or update a score
+//	@Tags		scores
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		scoreid	path		int			false	"Score ID"
+//	@Param		body	body		model.Score	true	"Score to save"
+//	@Success	201		{object}	apiResponse[model.Score]
+//	@Success	204		"No Content"
+//	@Failure	400		{object}	apiResponse[any]
+//	@Failure	403		{object}	apiResponse[any]
+//	@Failure	404		{object}	apiResponse[any]
+//	@Failure	500		{object}	apiResponse[any]
+//	@Router		/scores [post]
+//	@Router		/scores/{scoreid} [put]
 func SaveScore(w http.ResponseWriter, r *http.Request) {
 	var (
 		scoreID int32
@@ -86,6 +110,16 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, score, err)
 }
 
+//	@Summary	Get aggregated scores
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	query		int		false	"Filter by FISMA system ID"
+//	@Param		datacallid		query		int		false	"Filter by data call ID"
+//	@Param		include_pillars	query		bool	false	"Include per-pillar scores"
+//	@Success	200				{object}	apiResponse[[]model.ScoreAggregate]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/scores/aggregate [get]
 func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 	var (
 		aggregate []*model.ScoreAggregate

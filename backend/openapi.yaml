@@ -1,1481 +1,281 @@
-openapi: 3.0.0
-info:
-  title: ZTMF API
-  description: API for Zero Trust Maturity Framework
-  version: 1.0.0
-servers:
-  - url: /api/v1
-    description: Base API path
-paths:
-  /datacalls:
-    get:
-      summary: List all data calls
-      description: Returns a list of all data calls
-      operationId: listDataCalls
-      responses:
-        '200':
-          description: A list of data calls
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DataCall'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new data call
-      description: Creates a new data call (Admin only)
-      operationId: createDataCall
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DataCall'
-      responses:
-        '201':
-          description: Data call created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/DataCall'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /datacalls/latest:
-    get:
-      summary: Get the latest data call
-      description: Returns the most recent data call
-      operationId: getLatestDataCall
-      responses:
-        '200':
-          description: The latest data call
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/DataCall'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /datacalls/{datacallid}:
-    get:
-      summary: Get a data call by ID
-      description: Returns a specific data call by ID
-      operationId: getDataCallById
-      parameters:
-        - name: datacallid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A data call
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/DataCall'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    put:
-      summary: Update a data call
-      description: Updates an existing data call (Admin only)
-      operationId: updateDataCall
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datacallid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DataCall'
-      responses:
-        '204':
-          description: Data call updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /datacalls/{datacallid}/fismasystems/{fismasystemid}:
-    put:
-      summary: Complete a data call for a FISMA system
-      description: Marks a data call as completed for a specific FISMA system
-      operationId: completeDataCall
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datacallid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '204':
-          description: Data call completed for FISMA system
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /datacalls/{datacallid}/fismasystems:
-    get:
-      summary: List completed FISMA systems for a data call
-      description: Returns a list of FISMA systems that have completed a specific data call
-      operationId: listCompletedFismaSystems
-      parameters:
-        - name: datacallid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of completed FISMA systems
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/FismaSystem'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /datacalls/{datacallid}/export:
-    get:
-      summary: Export data call results
-      description: Exports data call results to Excel format
-      operationId: exportDataCall
-      parameters:
-        - name: datacallid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-        - name: fsids
-          in: query
-          required: false
-          schema:
-            type: array
-            items:
-              type: integer
-              format: int32
-          description: Filter by FISMA system IDs
-      responses:
-        '200':
-          description: Excel file
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                type: string
-                format: binary
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /fismasystems:
-    get:
-      summary: List FISMA systems
-      description: Returns a list of FISMA systems (filtered by user access if not admin)
-      operationId: listFismaSystems
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: A list of FISMA systems
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/FismaSystem'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new FISMA system
-      description: Creates a new FISMA system (Admin only)
-      operationId: createFismaSystem
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FismaSystem'
-      responses:
-        '201':
-          description: FISMA system created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/FismaSystem'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /fismasystems/{fismasystemid}:
-    get:
-      summary: Get a FISMA system by ID
-      description: Returns a specific FISMA system by ID
-      operationId: getFismaSystemById
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A FISMA system
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/FismaSystem'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    put:
-      summary: Update a FISMA system
-      description: Updates an existing FISMA system (Admin only)
-      operationId: updateFismaSystem
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FismaSystem'
-      responses:
-        '204':
-          description: FISMA system updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    delete:
-      summary: Decommission a FISMA system
-      description: Marks a FISMA system as decommissioned with optional date and notes (Admin only)
-      operationId: deleteFismaSystem
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                decommissioned_date:
-                  type: string
-                  format: date-time
-                  description: Custom decommission date (defaults to now)
-                notes:
-                  type: string
-                  description: Reason or notes for decommissioning
-      responses:
-        '200':
-          description: FISMA system decommissioned
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/FismaSystem'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /fismasystems/{fismasystemid}/reactivate:
-    put:
-      summary: Reactivate a decommissioned FISMA system
-      description: Clears the decommissioned flag on a FISMA system and stamps reactivation audit columns (Admin only). Decommission audit columns are preserved for history.
-      operationId: reactivateFismaSystem
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                notes:
-                  type: string
-                  description: Reason or notes for reactivation
-      responses:
-        '200':
-          description: FISMA system reactivated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/FismaSystem'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /fismasystems/{fismasystemid}/datacalls:
-    get:
-      summary: List completed data calls for a FISMA system
-      description: Returns a list of data calls that have been completed by a specific FISMA system
-      operationId: listCompleteDataCalls
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of completed data calls
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DataCall'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /fismasystems/{fismasystemid}/questions:
-    get:
-      summary: List questions for a FISMA system
-      description: Returns a list of questions relevant to a specific FISMA system
-      operationId: listFismaSystemQuestions
-      parameters:
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of questions
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Question'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /functions/{functionid}/options:
-    get:
-      summary: List options for a function
-      description: Returns a list of options for a specific function
-      operationId: listFunctionOptions
-      parameters:
-        - name: functionid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of function options
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/FunctionOption'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /opdivs:
-    get:
-      summary: List OpDivs
-      description: |
-        Returns the reference list of HHS Operating Divisions plus the HHS
-        parent row. Used by the admin panel for OpDiv selectors and by the
-        onboarding workbook importer to validate opdiv codes. Open to any
-        authenticated user; contains no sensitive data.
-      operationId: listOpDivs
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: active_only
-          in: query
-          required: false
-          description: When true (default), only returns rows with active=true.
-          schema:
-            type: boolean
-            default: true
-      responses:
-        '200':
-          description: OpDiv list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/OpDiv'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create an OpDiv
-      description: |
-        Creates a new Operating Division. OWNER only - the OpDiv list is the
-        tenant boundary. A new OpDiv is always created active. Returns 400 with
-        a field-level message (data.code) if the code is missing/too long or
-        already in use by another active OpDiv.
-      operationId: createOpDiv
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OpDivInput'
-      responses:
-        '201':
-          description: Created OpDiv
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/OpDiv'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /opdivs/{opdiv_id}:
-    put:
-      summary: Update or deactivate an OpDiv
-      description: |
-        Updates an OpDiv's code/name/is_parent/active. OWNER only. Set
-        active=false to deactivate (soft) rather than delete. Returns 204.
-      operationId: updateOpDiv
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: opdiv_id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OpDivInput'
-      responses:
-        '204':
-          description: Updated (no body)
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users:
-    get:
-      summary: List users
-      description: Returns a list of users. Unscoped admins (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN) see all users; OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) see only users holding a grant in one of their OpDivs (fail-closed - a scoped admin with no grants gets an empty list).
-      operationId: listUsers
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: email
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: fullname
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: role
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: deleted
-          in: query
-          required: false
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: A list of users
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/User'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new user
-      description: Creates a new user
-      operationId: createUser
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '201':
-          description: User created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/current:
-    get:
-      summary: Get current user
-      description: Returns the currently authenticated user
-      operationId: getCurrentUser
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Current user
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}:
-    get:
-      summary: Get a user by ID
-      description: Returns a specific user by ID
-      operationId: getUserById
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      responses:
-        '200':
-          description: A user
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    put:
-      summary: Update a user
-      description: Updates an existing user
-      operationId: updateUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '204':
-          description: User updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    delete:
-      summary: Delete a user
-      description: Marks a user as deleted
-      operationId: deleteUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      responses:
-        '204':
-          description: User deleted
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}/restore:
-    put:
-      summary: Restore a soft-deleted user
-      description: Clears the deleted flag on a user (Admin only). Audit history is captured automatically in the events table.
-      operationId: restoreUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      responses:
-        '200':
-          description: User restored
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}/assignedfismasystems:
-    get:
-      summary: List FISMA systems assigned to a user
-      description: Returns a list of FISMA systems assigned to a specific user
-      operationId: listUserFismaSystems
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      responses:
-        '200':
-          description: A list of FISMA system IDs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: integer
-                      format: int32
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Assign a FISMA system to a user
-      description: Assigns a FISMA system to a specific user
-      operationId: assignFismaSystemToUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserFismaSystem'
-      responses:
-        '201':
-          description: FISMA system assigned to user
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/UserFismaSystem'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}/assignedfismasystems/{fismasystemid}:
-    delete:
-      summary: Remove a FISMA system assignment from a user
-      description: Removes a FISMA system assignment from a specific user
-      operationId: removeFismaSystemFromUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-        - name: fismasystemid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '204':
-          description: FISMA system assignment removed
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}/assignedopdivs:
-    get:
-      summary: List a user's OpDiv grants
-      description: |
-        Returns the OpDiv ids a user holds grants for. Unscoped admins may view
-        any user; an OpDiv-scoped admin may only view a user who shares one of
-        their OpDivs.
-      operationId: listUserOpDivs
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      responses:
-        '200':
-          description: A list of OpDiv ids
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: integer
-                      format: int32
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Grant a user OpDiv membership
-      description: |
-        Grants the user membership in an OpDiv (idempotent). Unscoped admins may
-        grant any OpDiv; an OPDIV_ADMIN may only grant an OpDiv they themselves
-        hold and only onto a user whose tier is within their assignable set.
-        Granting recomputes the user's identity_provider from their OpDiv set
-        (CMS -> okta, otherwise entra).
-      operationId: grantUserOpDiv
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                opdiv_id:
-                  type: integer
-                  format: int32
-              required:
-                - opdiv_id
-      responses:
-        '201':
-          description: OpDiv granted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/UserOpDiv'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /users/{userid}/assignedopdivs/{opdiv_id}:
-    delete:
-      summary: Revoke a user's OpDiv grant
-      description: |
-        Revokes a user's OpDiv membership (idempotent). Same scope as granting:
-        an OPDIV_ADMIN may only revoke an OpDiv they hold. Recomputes the user's
-        identity_provider afterward.
-      operationId: revokeUserOpDiv
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: path
-          required: true
-          schema:
-            type: string
-            pattern: '[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+'
-        - name: opdiv_id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '204':
-          description: OpDiv grant revoked
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /scores:
-    get:
-      summary: List scores
-      description: Returns a list of scores. Unscoped admins see all; OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) see only scores for systems in their granted OpDivs (fail-closed); ISSO/ISSM see only their assigned systems' scores.
-      operationId: listScores
-      parameters:
-        - name: fismasystemid
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-        - name: datacallid
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of scores
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Score'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new score
-      description: Creates a new score
-      operationId: createScore
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Score'
-      responses:
-        '201':
-          description: Score created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Score'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /scores/aggregate:
-    get:
-      summary: Get aggregate scores
-      description: Returns aggregate scores with optional pillar breakdown
-      operationId: getScoresAggregate
-      parameters:
-        - name: fismasystemid
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-        - name: datacallid
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-        - name: include_pillars
-          in: query
-          required: false
-          description: Include breakdown by pillar
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: Aggregate scores
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ScoreAggregate'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /scores/{scoreid}:
-    put:
-      summary: Update a score
-      description: Updates an existing score
-      operationId: updateScore
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: scoreid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Score'
-      responses:
-        '204':
-          description: Score updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /questions:
-    get:
-      summary: List questions
-      description: Returns a list of questions
-      operationId: listQuestions
-      responses:
-        '200':
-          description: A list of questions
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Question'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new question
-      description: Creates a new question
-      operationId: createQuestion
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Question'
-      responses:
-        '201':
-          description: Question created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Question'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /questions/{questionid}:
-    get:
-      summary: Get a question by ID
-      description: Returns a specific question by ID
-      operationId: getQuestionById
-      parameters:
-        - name: questionid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A question
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Question'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    put:
-      summary: Update a question
-      description: Updates an existing question
-      operationId: updateQuestion
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: questionid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Question'
-      responses:
-        '204':
-          description: Question updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /functions:
-    get:
-      summary: List functions
-      description: Returns a list of functions
-      operationId: listFunctions
-      parameters:
-        - name: questionid
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A list of functions
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Function'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    post:
-      summary: Create a new function
-      description: Creates a new function
-      operationId: createFunction
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Function'
-      responses:
-        '201':
-          description: Function created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Function'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /functions/{functionid}:
-    get:
-      summary: Get a function by ID
-      description: Returns a specific function by ID
-      operationId: getFunctionById
-      parameters:
-        - name: functionid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: A function
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Function'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-    put:
-      summary: Update a function
-      description: Updates an existing function
-      operationId: updateFunction
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: functionid
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int32
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Function'
-      responses:
-        '204':
-          description: Function updated
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /events:
-    get:
-      summary: Get events
-      description: Returns the audit trail of write operations. Restricted to the unscoped admin tiers (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN); OpDiv-scoped tiers (OPDIV_ADMIN, OPDIV_READONLY_ADMIN) receive 403 because audit events carry no OpDiv to scope the log on.
-      operationId: getEvents
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userid
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: action
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: resource
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: payload
-          in: query
-          required: false
-          schema:
-            type: object
-      responses:
-        '200':
-          description: A list of events
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Event'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /systemenrichment/{fisma_uuid}:
-    get:
-      summary: Get system enrichment payload by FISMA UUID
-      description: Returns the generic enrichment payload for a FISMA system by its UUID. Admin and read-only admin tiers can access any system; ISSOs can only access systems they are assigned to. The payload is an opaque JSON document owned by the enrichment pipeline; systems with no enrichment data return 404.
-      operationId: getSystemEnrichment
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: fisma_uuid
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: System enrichment payload
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/SystemEnrichment'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /massemails:
-    post:
-      summary: Send mass email
-      description: Sends a mass email to recipients across every OpDiv. Restricted to the unscoped write-admin tiers (OWNER, HHS_ADMIN); read-only admins and OpDiv-scoped tiers receive 403 (there is no per-OpDiv recipient scoping).
-      operationId: sendMassEmail
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MassEmail'
-      responses:
-        '201':
-          description: Mass email sent
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/MassEmail'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/ServerError'
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
   schemas:
-    DataCall:
-      type: object
+    controller.DecommissionRequest:
       properties:
-        datacallid:
-          type: integer
-          format: int32
+        decommissioned_date:
+          type: string
+        notes:
+          type: string
+      type: object
+    controller.ReactivateRequest:
+      properties:
+        notes:
+          type: string
+      type: object
+    controller.apiResponse-any:
+      properties:
+        data: {}
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_int32:
+      properties:
+        data:
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_DataCall:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.DataCall'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_Event:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.Event'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_FismaSystem:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.FismaSystem'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_Function:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.Function'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_FunctionOption:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.FunctionOption'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_OpDiv:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.OpDiv'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_Question:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.Question'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_Score:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.Score'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_ScoreAggregate:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.ScoreAggregate'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_User:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.User'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_string:
+      properties:
+        data:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-controller_idpLookupResponse:
+      properties:
+        data:
+          $ref: '#/components/schemas/controller.idpLookupResponse'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_DataCall:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.DataCall'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_FismaSystem:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.FismaSystem'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_Function:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.Function'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_OpDiv:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.OpDiv'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_Question:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.Question'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_Score:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.Score'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_SystemEnrichment:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.SystemEnrichment'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_User:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.User'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_UserFismaSystem:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.UserFismaSystem'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_UserOpDiv:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.UserOpDiv'
+        error:
+          type: string
+      type: object
+    controller.idpLookupResponse:
+      properties:
+        idp:
+          type: string
+      type: object
+    model.AuditRef:
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        userid:
+          type: string
+      type: object
+    model.DataCall:
+      properties:
         datacall:
           type: string
+        datacallid:
+          type: integer
         datecreated:
           type: string
-          format: date-time
         deadline:
           type: string
-          format: date-time
-      required:
-        - datacall
-        - deadline
-    FismaSystem:
       type: object
+    model.Event:
       properties:
-        fismasystemid:
-          type: integer
-          format: int32
-        fismauid:
+        action:
+          description: the action they took
+          type: string
+        createdat:
+          description: at what date and time
+          type: string
+        payload:
+          description: incoming data
+        type:
+          description: on what resource
+          type: string
+        userid:
+          description: who initiated the event
+          type: string
+      type: object
+    model.FismaSystem:
+      properties:
+        component:
+          type: string
+        datacallcontact:
+          type: string
+        datacenterenvironment:
+          type: string
+        decommissioned:
+          type: boolean
+        decommissioned_by:
+          type: string
+        decommissioned_date:
+          type: string
+        decommissioned_notes:
+          type: string
+        divisionname:
           type: string
         fismaacronym:
           type: string
@@ -1483,520 +283,2202 @@ components:
           type: string
         fismasubsystem:
           type: string
-          nullable: true
-        component:
+        fismasystemid:
+          type: integer
+        fismauid:
           type: string
-          nullable: true
         groupacronym:
           type: string
-          nullable: true
         groupname:
           type: string
-          nullable: true
-        divisionname:
-          type: string
-          nullable: true
-        datacenterenvironment:
-          type: string
-          nullable: true
-        datacallcontact:
-          type: string
-          nullable: true
         issoemail:
           type: string
-          nullable: true
-        sdl_sync_enabled:
-          type: boolean
-          description: Controls whether this system is included in SDL/Snowflake sync. Existing systems default to true; new systems default to false (opt-in).
-        decommissioned:
-          type: boolean
-          description: Whether the system has been decommissioned
-        decommissioned_date:
-          type: string
-          format: date-time
-          nullable: true
-          description: Date the system was decommissioned
-        decommissioned_by:
-          type: string
-          nullable: true
-          description: User ID of the admin who decommissioned the system
-        decommissioned_notes:
-          type: string
-          nullable: true
-          description: Notes about why the system was decommissioned
+        opdiv_id:
+          type: integer
         reactivated_by:
           type: string
-          nullable: true
-          description: User ID of the admin who reactivated the system after decommission
         reactivated_date:
           type: string
-          format: date-time
-          nullable: true
-          description: Date the system was last reactivated
         reactivation_notes:
           type: string
-          nullable: true
-          description: Notes about why the system was reactivated
-        opdiv_id:
-          type: integer
-          format: int32
-          nullable: true
-          description: |
-            OpDiv that owns this system. References opdivs.opdiv_id. Defaults
-            to CMS when a request body omits the field (transitional behavior
-            for existing CMS provisioning paths). HHS OpDiv systems are
-            provisioned with this set explicitly via the onboarding workbook
-            importer.
-      required:
-        - fismauid
-        - fismaacronym
-        - fismaname
-    User:
-      type: object
-      properties:
-        userid:
-          type: string
-        email:
-          type: string
-          format: email
-        fullname:
-          type: string
-        role:
-          type: string
-          description: |
-            Multi-OpDiv role taxonomy. The legacy values ADMIN and
-            READONLY_ADMIN were removed in Stage D of the multi-OpDiv
-            migration; they map to OWNER and HHS_READONLY_ADMIN respectively.
-          enum:
-            - OWNER
-            - HHS_ADMIN
-            - HHS_READONLY_ADMIN
-            - OPDIV_ADMIN
-            - OPDIV_READONLY_ADMIN
-            - ISSO
-            - ISSM
-        deleted:
+        sdl_sync_enabled:
           type: boolean
-        identity_provider:
-          type: string
-          description: |
-            IdP that authenticates this user. okta for CMS, entra for
-            HHS / OpDiv users. Managed by the application; not user-editable.
-          enum: [okta, entra]
-        assignedopdivids:
-          type: array
-          nullable: true
-          items:
-            type: integer
-            format: int32
-          description: |
-            OpDivs the user holds a grant for, sourced from users_opdivs.
-            Populated on per-user detail responses (GET /users/current,
-            GET /users/{userid}); always null on the list endpoint
-            (GET /users) because the extra join is skipped there. Frontend
-            list views must not infer "no grants" from a null on the list
-            response - call the detail endpoint to inspect a user's grants.
-      required:
-        - email
-        - fullname
-        - role
-    OpDiv:
       type: object
+    model.Function:
       properties:
-        opdiv_id:
+        datacenterenvironment:
+          type: string
+        description:
+          type: string
+        function:
+          type: string
+        functionid:
           type: integer
-          format: int32
-          description: Surrogate primary key.
-        code:
-          type: string
-          description: Short code (e.g. HHS, CMS, CDC, FDA, NIH).
-        name:
-          type: string
-          description: Official division name.
-        is_parent:
-          type: boolean
-          description: TRUE only for the HHS parent row.
-        active:
-          type: boolean
-          description: Inactive OpDivs are retained for historical references but hidden from default queries.
-      required:
-        - opdiv_id
-        - code
-        - name
-        - is_parent
-        - active
-    OpDivInput:
-      type: object
-      description: Request body for creating or updating an OpDiv (OWNER only).
-      properties:
-        code:
-          type: string
-          maxLength: 16
-          description: Short code, 1-16 chars, unique among active OpDivs.
-        name:
-          type: string
-          maxLength: 128
-          description: Official division name, 1-128 chars.
-        is_parent:
-          type: boolean
-          description: TRUE only for a department/parent row.
-        active:
-          type: boolean
-          description: >-
-            Honored on update only (set false to deactivate). Ignored on create;
-            a new OpDiv is always created active.
-      required:
-        - code
-        - name
-    UserFismaSystem:
-      type: object
-      properties:
-        userid:
-          type: string
-        fismasystemid:
+        order:
           type: integer
-          format: int32
-      required:
-        - userid
-        - fismasystemid
-    UserOpDiv:
-      type: object
-      properties:
-        userid:
-          type: string
-        opdiv_id:
-          type: integer
-          format: int32
-        granted_by:
-          type: string
-          nullable: true
-          description: userid of the admin who granted the membership.
-      required:
-        - userid
-        - opdiv_id
-    Score:
-      type: object
-      properties:
-        scoreid:
-          type: integer
-          format: int32
-        fismasystemid:
-          type: integer
-          format: int32
-        datecalculated:
-          type: number
-          format: double
-        notes:
-          type: string
-          nullable: true
-          maxLength: 2000
-        functionoptionid:
-          type: integer
-          format: int32
-        datacallid:
-          type: integer
-          format: int32
-        last_edited_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: >-
-            RFC3339 timestamp of the most recent write to this score row.
-            Null only for rows inserted outside the event-tracking write path
-            (seed data); every API-driven save records an event.
-        last_edited_by:
-          allOf:
-            - $ref: '#/components/schemas/AuditRef'
-          nullable: true
-          description: >-
-            Identifies the user who performed the most recent write. Authz
-            for these fields follows the score row itself; if you can read
-            the score, you can read its editor.
-      required:
-        - fismasystemid
-        - functionoptionid
-        - datacallid
-    AuditRef:
-      type: object
-      description: >-
-        Standard "who touched this row" reference embedded on per-resource
-        audit fields (last_edited_by, future created_by/decommissioned_by).
-        Inherits authz from the resource that carries it.
-      properties:
-        userid:
-          type: string
-          format: uuid
-          description: User UUID. Stable identifier even if name/email/role change.
-        name:
-          type: string
-          description: Display name from users.fullname.
-        email:
-          type: string
-        role:
-          type: string
-          # Canonical role taxonomy lives in backend/internal/model/users.go
-          # (IsAdmin / IsOwner / IsHHSAdmin / IsOpDivAdmin role predicates).
-          # When a new role is added there, update this enum AND
-          # validations.go in lockstep -- openapi has drifted from code
-          # twice in this repo, so this comment is the canary.
-          enum:
-            - OWNER
-            - HHS_ADMIN
-            - HHS_READONLY_ADMIN
-            - OPDIV_ADMIN
-            - OPDIV_READONLY_ADMIN
-            - ISSM
-            - ISSO
-      required:
-        - userid
-    ScoreAggregate:
-      type: object
-      properties:
-        datacallid:
-          type: integer
-          format: int32
-        fismasystemid:
-          type: integer
-          format: int32
-        systemscore:
-          type: number
-          format: double
-          description: >-
-            Overall system maturity score on the HHS-aligned 1.0 to 5.0 scale.
-            Computed as the simple average of the per-pillar scores. A system
-            whose every question is unanswered lands at exactly 1.0
-            (Not Assessed).
-        systemtier:
-          type: string
-          description: >-
-            Tier label derived from systemscore. Boundaries: Optimal >= 4.1,
-            Advanced >= 3.1, Initial >= 2.1, Traditional >= 1.01, otherwise
-            Not Assessed.
-          enum:
-            - Optimal
-            - Advanced
-            - Initial
-            - Traditional
-            - Not Assessed
-        pillarscores:
-          type: array
-          description: Optional pillar breakdown (only present when include_pillars=true)
-          items:
-            $ref: '#/components/schemas/PillarScore'
-    PillarScore:
-      type: object
-      properties:
         pillarid:
           type: integer
-          format: int32
-        pillar:
-          type: string
-          description: Name of the pillar
-        score:
-          type: number
-          format: double
-          description: >-
-            Pillar maturity score on the HHS-aligned 1.0 to 5.0 scale. A
-            pillar with no answered questions lands at exactly 1.0; a pillar
-            with every question at Optimal lands at 5.0.
-        tier:
-          type: string
-          description: >-
-            Tier label derived from score, using the same thresholds as
-            systemtier.
-          enum:
-            - Optimal
-            - Advanced
-            - Initial
-            - Traditional
-            - Not Assessed
-    Question:
-      type: object
-      properties:
         questionid:
           type: integer
-          format: int32
-        question:
+      type: object
+    model.FunctionOption:
+      properties:
+        description:
           type: string
+        functionid:
+          type: integer
+        functionoptionid:
+          type: integer
+        optionname:
+          type: string
+        score:
+          type: integer
+      type: object
+    model.MassEmail:
+      properties:
+        body:
+          type: string
+        datesent:
+          type: string
+        group:
+          type: string
+        massemailid:
+          type: integer
+        subject:
+          type: string
+      type: object
+    model.OpDiv:
+      properties:
+        active:
+          type: boolean
+        code:
+          type: string
+        is_parent:
+          description: |-
+            IsParent and Active are pointers so an update can distinguish "not supplied"
+            (nil, leave the column untouched) from an explicit false. With a non-pointer
+            bool, any update that omits the field defaults to false: omitting is_parent
+            would demote the HHS parent OpDiv (which drives HHS-wide authorization), and
+            omitting active would silently deactivate an active OpDiv.
+          type: boolean
+        name:
+          type: string
+        opdiv_id:
+          type: integer
+      type: object
+    model.Pillar:
+      properties:
+        order:
+          type: integer
+        pillar:
+          type: string
+        pillarid:
+          type: integer
+      type: object
+    model.PillarScore:
+      properties:
+        pillar:
+          type: string
+        pillarid:
+          type: integer
+        score:
+          type: number
+        tier:
+          type: string
+      type: object
+    model.Question:
+      properties:
+        function:
+          $ref: '#/components/schemas/model.Function'
         notesprompt:
           type: string
         order:
           type: integer
+        pillar:
+          $ref: '#/components/schemas/model.Pillar'
         pillarid:
           type: integer
-          format: int32
-        pillar:
-          $ref: '#/components/schemas/Pillar'
-        function:
-          $ref: '#/components/schemas/Function'
-      required:
-        - question
-        - notesprompt
-        - order
-        - pillarid
-    Pillar:
-      type: object
-      properties:
-        pillarid:
-          type: integer
-          format: int32
-        pillar:
+        question:
           type: string
-        order:
-          type: integer
-    Function:
-      type: object
-      properties:
-        functionid:
-          type: integer
-          format: int32
-        function:
-          type: string
-        description:
-          type: string
-        datacenterenvironment:
-          type: string
-        order:
-          type: integer
         questionid:
           type: integer
-          format: int32
-          nullable: true
-        pillarid:
-          type: integer
-          format: int32
-      required:
-        - function
-        - description
-        - datacenterenvironment
-        - pillarid
-    FunctionOption:
       type: object
+    model.Score:
       properties:
+        datacallid:
+          type: integer
+        datecalculated:
+          type: number
+        fismasystemid:
+          type: integer
+        functionoption:
+          $ref: '#/components/schemas/model.FunctionOption'
         functionoptionid:
           type: integer
-          format: int32
-        functionid:
-          type: integer
-          format: int32
-        score:
-          type: integer
-          format: int32
-        optionname:
+        last_edited_at:
           type: string
-        description:
+        last_edited_by:
+          $ref: '#/components/schemas/model.AuditRef'
+        notes:
           type: string
-    SystemEnrichment:
+        scoreid:
+          type: integer
       type: object
-      description: Generic per-system enrichment payload. The payload shape is opaque to the core API and owned by the enrichment pipeline.
+    model.ScoreAggregate:
+      properties:
+        datacallid:
+          type: integer
+        fismasystemid:
+          type: integer
+        pillarscores:
+          items:
+            $ref: '#/components/schemas/model.PillarScore'
+          type: array
+          uniqueItems: false
+        systemscore:
+          type: number
+        systemtier:
+          type: string
+      type: object
+    model.SystemEnrichment:
       properties:
         fisma_uuid:
           type: string
         payload:
           type: object
-          description: Opaque JSON document produced by the enrichment pipeline; returned verbatim.
-          additionalProperties: true
         synced_at:
           type: string
-          format: date-time
-      required:
-        - fisma_uuid
-        - payload
-        - synced_at
-    Event:
       type: object
+    model.User:
       properties:
+        assignedopdivids:
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
+        deleted:
+          type: boolean
+        email:
+          type: string
+        fullname:
+          type: string
+        identity_provider:
+          type: string
+        role:
+          type: string
         userid:
           type: string
-        action:
-          type: string
-        type:
-          type: string
-        createdat:
-          type: string
-          format: date-time
-        payload:
-          type: object
-    MassEmail:
       type: object
+    model.UserFismaSystem:
       properties:
-        massemailid:
-          type: integer
-        datesent:
-          type: string
-          format: date-time
-          nullable: true
-        subject:
-          type: string
-        body:
-          type: string
-        group:
-          type: string
-          enum: [ISSO, ISSM, DCC, ALL, ADMIN]
-      required:
-        - subject
-        - body
-        - group
-    Answer:
-      type: object
-      properties:
-        datacall:
-          type: string
         fismasystemid:
           type: integer
-          format: int32
-        fismaacronym:
+        userid:
           type: string
-        datacenterenvironment:
+      type: object
+    model.UserOpDiv:
+      properties:
+        granted_by:
           type: string
-        pillar:
-          type: string
-        question:
-          type: string
-        function:
-          type: string
-        description:
-          type: string
-        optionname:
-          type: string
-        score:
+        opdiv_id:
           type: integer
-        notes:
+        userid:
           type: string
-  responses:
-    BadRequest:
-      description: Bad request
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
+      type: object
+  securitySchemes:
+    bearerAuth:
+      in: header
+      name: Authorization
+      type: apiKey
+externalDocs:
+  description: ""
+  url: ""
+info:
+  description: API for the Zero Trust Maturity Framework (ZTMF).
+  title: ZTMF API
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /auth/lookup:
+    get:
+      description: 'Unauthenticated pre-auth lookup the landing page uses to route
+        a browser to the correct IdP login path. Unknown, unprovisioned, and soft-deleted
+        emails all return a null idp, so it cannot be used to enumerate accounts.
+        This is the one public route: it deliberately has no bearerAuth security.'
+      parameters:
+      - description: Email address to resolve
+        in: query
+        name: email
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-controller_idpLookupResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      summary: Resolve the identity provider for an email
+      tags:
+      - auth
+  /datacalls:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_DataCall'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all data calls
+      tags:
+      - datacalls
+    post:
+      parameters:
+      - description: Data call ID (for update)
+        in: path
+        name: datacallid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.DataCall'
+                description: Data call to save
+                summary: body
+        description: Data call to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCall'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a data call
+      tags:
+      - datacalls
+  /datacalls/{datacallid}:
+    get:
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCall'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a data call by ID
+      tags:
+      - datacalls
+    put:
+      parameters:
+      - description: Data call ID (for update)
+        in: path
+        name: datacallid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.DataCall'
+                description: Data call to save
+                summary: body
+        description: Data call to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCall'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a data call
+      tags:
+      - datacalls
+  /datacalls/{datacallid}/export:
+    get:
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      - description: FISMA system IDs to filter by
+        in: query
+        name: fsids
+        schema:
+          items:
+            type: integer
+          type: array
+      responses:
+        "200":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
                 type: string
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
-    Forbidden:
-      description: Forbidden
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
-    ServerError:
-      description: Server error
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
+          description: xlsx spreadsheet of the data call's answers
+        "500":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Export a data call's answers as an xlsx spreadsheet
+      tags:
+      - datacalls
+  /datacalls/{datacallid}/fismasystems:
+    get:
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_FismaSystem'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List FISMA systems that have completed a data call
+      tags:
+      - datacalls
+  /datacalls/{datacallid}/fismasystems/{fismasystemid}:
+    put:
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Mark a FISMA system as having completed a data call
+      tags:
+      - datacalls
+  /datacalls/latest:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCall'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get the latest data call
+      tags:
+      - datacalls
+  /events:
+    get:
+      parameters:
+      - description: Filter by initiating user ID
+        in: query
+        name: userid
+        schema:
+          type: string
+      - description: 'Filter by action: created, updated, or deleted'
+        in: query
+        name: action
+        schema:
+          type: string
+      - description: Filter by affected resource (table name)
+        in: query
+        name: resource
+        schema:
+          type: string
+      - description: Filter by FISMA system ID referenced in the event payload
+        in: query
+        name: payload.fismasystemid
+        schema:
+          type: integer
+      - description: Filter by score ID referenced in the event payload
+        in: query
+        name: payload.scoreid
+        schema:
+          type: integer
+      - description: Filter by data call ID referenced in the event payload
+        in: query
+        name: payload.datacallid
+        schema:
+          type: integer
+      - description: Filter by question ID referenced in the event payload
+        in: query
+        name: payload.questionid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_Event'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List audit-trail events
+      tags:
+      - events
+  /fismasystems:
+    get:
+      parameters:
+      - description: Filter by decommissioned status
+        in: query
+        name: decommissioned
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_FismaSystem'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all FISMA systems
+      tags:
+      - fismasystems
+    post:
+      parameters:
+      - description: FISMA system ID (update only)
+        in: path
+        name: fismasystemid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.FismaSystem'
+                description: FISMA system to save
+                summary: body
+        description: FISMA system to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a FISMA system
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}:
+    delete:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.DecommissionRequest'
+                description: Optional decommission parameters
+                summary: body
+        description: Optional decommission parameters
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Decommission a FISMA system
+      tags:
+      - fismasystems
+    get:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a FISMA system by ID
+      tags:
+      - fismasystems
+    put:
+      parameters:
+      - description: FISMA system ID (update only)
+        in: path
+        name: fismasystemid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.FismaSystem'
+                description: FISMA system to save
+                summary: body
+        description: FISMA system to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a FISMA system
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}/datacalls:
+    get:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_DataCall'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List data calls a FISMA system has completed
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}/questions:
+    get:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_Question'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List questions relevant to a FISMA system
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}/reactivate:
+    put:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.ReactivateRequest'
+                description: Optional reactivation parameters
+                summary: body
+        description: Optional reactivation parameters
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Reactivate a decommissioned FISMA system
+      tags:
+      - fismasystems
+  /functions:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_Function'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all functions
+      tags:
+      - functions
+    post:
+      parameters:
+      - description: Function ID (for update)
+        in: path
+        name: functionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Function'
+                description: Function to create or update
+                summary: body
+        description: Function to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Function'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a function
+      tags:
+      - functions
+  /functions/{functionid}:
+    get:
+      parameters:
+      - description: Function ID
+        in: path
+        name: functionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Function'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a function by ID
+      tags:
+      - functions
+    put:
+      parameters:
+      - description: Function ID (for update)
+        in: path
+        name: functionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Function'
+                description: Function to create or update
+                summary: body
+        description: Function to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Function'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a function
+      tags:
+      - functions
+  /functions/{functionid}/options:
+    get:
+      parameters:
+      - description: Function ID
+        in: path
+        name: functionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_FunctionOption'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List options for a function
+      tags:
+      - functions
+  /massemails:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.MassEmail'
+                description: Mass email subject, body, and recipient group
+                summary: body
+        description: Mass email subject, body, and recipient group
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_string'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Send a mass email to a recipient group
+      tags:
+      - massemails
+  /opdivs:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_OpDiv'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all OpDivs
+      tags:
+      - opdivs
+    post:
+      parameters:
+      - description: OpDiv ID (for update)
+        in: path
+        name: opdiv_id
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.OpDiv'
+                description: OpDiv to create or update
+                summary: body
+        description: OpDiv to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_OpDiv'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update an OpDiv
+      tags:
+      - opdivs
+  /opdivs/{opdiv_id}:
+    put:
+      parameters:
+      - description: OpDiv ID (for update)
+        in: path
+        name: opdiv_id
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.OpDiv'
+                description: OpDiv to create or update
+                summary: body
+        description: OpDiv to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_OpDiv'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update an OpDiv
+      tags:
+      - opdivs
+  /questions:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_Question'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all questions
+      tags:
+      - questions
+    post:
+      parameters:
+      - description: Question ID
+        in: path
+        name: questionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Question'
+                description: Question to save
+                summary: body
+        description: Question to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Question'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a question
+      tags:
+      - questions
+  /questions/{questionid}:
+    get:
+      parameters:
+      - description: Question ID
+        in: path
+        name: questionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Question'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a question by ID
+      tags:
+      - questions
+    put:
+      parameters:
+      - description: Question ID
+        in: path
+        name: questionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Question'
+                description: Question to save
+                summary: body
+        description: Question to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Question'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a question
+      tags:
+      - questions
+  /scores:
+    get:
+      parameters:
+      - description: Filter by FISMA system ID
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      - description: Filter by data call ID
+        in: query
+        name: datacallid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_Score'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all scores
+      tags:
+      - scores
+    post:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Score'
+                description: Score to save
+                summary: body
+        description: Score to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Score'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a score
+      tags:
+      - scores
+  /scores/{scoreid}:
+    put:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.Score'
+                description: Score to save
+                summary: body
+        description: Score to save
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Score'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a score
+      tags:
+      - scores
+  /scores/aggregate:
+    get:
+      parameters:
+      - description: Filter by FISMA system ID
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      - description: Filter by data call ID
+        in: query
+        name: datacallid
+        schema:
+          type: integer
+      - description: Include per-pillar scores
+        in: query
+        name: include_pillars
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_ScoreAggregate'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get aggregated scores
+      tags:
+      - scores
+  /systemenrichment/{fisma_uuid}:
+    get:
+      parameters:
+      - description: FISMA system UUID
+        in: path
+        name: fisma_uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_SystemEnrichment'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get enrichment payload for a FISMA system
+      tags:
+      - systemenrichment
+  /users:
+    get:
+      parameters:
+      - description: Filter by email (partial match)
+        in: query
+        name: email
+        schema:
+          type: string
+      - description: Filter by full name (partial match)
+        in: query
+        name: fullname
+        schema:
+          type: string
+      - description: Filter by role
+        in: query
+        name: role
+        schema:
+          type: string
+      - description: Include soft-deleted users
+        in: query
+        name: deleted
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_User'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List all users
+      tags:
+      - users
+    post:
+      parameters:
+      - description: User ID (for update)
+        in: path
+        name: userid
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.User'
+                description: User to create or update
+                summary: body
+        description: User to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a user
+      tags:
+      - users
+  /users/{userid}:
+    delete:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Delete a user
+      tags:
+      - users
+    get:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a user by ID
+      tags:
+      - users
+    put:
+      parameters:
+      - description: User ID (for update)
+        in: path
+        name: userid
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.User'
+                description: User to create or update
+                summary: body
+        description: User to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update a user
+      tags:
+      - users
+  /users/{userid}/assignedfismasystems:
+    get:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_int32'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List the FISMA system ids assigned to a user
+      tags:
+      - users
+    post:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.UserFismaSystem'
+                description: FISMA system assignment
+                summary: body
+        description: FISMA system assignment
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_UserFismaSystem'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Assign a FISMA system to a user
+      tags:
+      - users
+  /users/{userid}/assignedfismasystems/{fismasystemid}:
+    delete:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Unassign a FISMA system from a user
+      tags:
+      - users
+  /users/{userid}/assignedopdivs:
+    get:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_int32'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List the OpDiv ids a user holds grants for
+      tags:
+      - users
+    post:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.UserOpDiv'
+                description: OpDiv grant
+                summary: body
+        description: OpDiv grant
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_UserOpDiv'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Grant a user OpDiv membership
+      tags:
+      - users
+  /users/{userid}/assignedopdivs/{opdiv_id}:
+    delete:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      - description: OpDiv ID
+        in: path
+        name: opdiv_id
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Revoke a user's OpDiv grant
+      tags:
+      - users
+  /users/{userid}/restore:
+    put:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Restore a soft-deleted user
+      tags:
+      - users
+  /users/current:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get the currently authenticated user
+      tags:
+      - users
+servers:
+- url: /api/v1

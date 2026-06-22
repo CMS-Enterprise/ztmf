@@ -188,6 +188,37 @@ resource "aws_cloudfront_distribution" "ztmf" {
     viewer_protocol_policy = "redirect-to-https"
   }
 
+  # Dual-IdP login subpaths (e.g. /login/entra) must reach the ALB origin. The
+  # exact "/login" behavior above does not match subpaths, so without this
+  # CloudFront serves the S3 default origin (AccessDenied) for /login/entra and
+  # Entra login is unreachable. Gated on entra_enabled to match the per-IdP ALB
+  # rules, which are created under the same flag (the /login/entra* listener
+  # rule). Okta keeps using the exact "/login" behavior above, unaffected.
+  dynamic "ordered_cache_behavior" {
+    for_each = var.entra_enabled ? [1] : []
+    content {
+      path_pattern               = "/login/*"
+      allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+      cached_methods             = ["HEAD", "GET", "OPTIONS"]
+      target_origin_id           = "ztmf_api"
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
+      }
+
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = true
+      viewer_protocol_policy = "redirect-to-https"
+    }
+  }
+
   # Serve static error page when the API origin returns 5xx errors.
   # The error page is deployed to S3 alongside the React app assets.
   # Short TTL (10s) so CloudFront picks up a recovered origin quickly.

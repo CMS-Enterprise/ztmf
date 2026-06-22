@@ -11,11 +11,27 @@ import (
 	"github.com/gorilla/mux"
 )
 
+//	@Summary	List all data calls
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[[]model.DataCall]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls [get]
 func ListDataCalls(w http.ResponseWriter, r *http.Request) {
 	datacalls, err := model.FindDataCalls(r.Context())
 	respond(w, r, datacalls, err)
 }
 
+//	@Summary	Get a data call by ID
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		datacallid	path		int	true	"Data call ID"
+//	@Success	200			{object}	apiResponse[model.DataCall]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/datacalls/{datacallid} [get]
 func GetDataCallByID(w http.ResponseWriter, r *http.Request) {
 	var datacallID int32
 	vars := mux.Vars(r)
@@ -31,6 +47,15 @@ func GetDataCallByID(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, dc, err)
 }
 
+//	@Summary	Export a data call's answers as an xlsx spreadsheet
+//	@Tags		datacalls
+//	@Produce	application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+//	@Security	bearerAuth
+//	@Param		datacallid	path	int		true	"Data call ID"
+//	@Param		fsids		query	[]int	false	"FISMA system IDs to filter by"
+//	@Success	200	{string}	binary	"xlsx spreadsheet of the data call's answers"
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls/{datacallid}/export [get]
 func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findAnswersInput := model.FindAnswersInput{}
@@ -84,6 +109,19 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//	@Summary	Create or update a data call
+//	@Tags		datacalls
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		datacallid	path	int				false	"Data call ID (for update)"
+//	@Param		body		body	model.DataCall	true	"Data call to save"
+//	@Success	201	{object}	apiResponse[model.DataCall]
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls [post]
+//	@Router		/datacalls/{datacallid} [put]
 func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 	authdUser := model.UserFromContext(r.Context())
 	if !authdUser.IsAdmin() {
@@ -115,6 +153,13 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, d, nil)
 }
 
+//	@Summary	Get the latest data call
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[model.DataCall]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls/latest [get]
 func GetLatestDataCall(w http.ResponseWriter, r *http.Request) {
 	dc, err := model.FindLatestDataCall(r.Context())
 	respond(w, r, dc, err)

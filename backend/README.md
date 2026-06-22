@@ -254,6 +254,31 @@ This approach provides several benefits:
 
 The decoder is initialized once and shared across all controllers because it caches struct metadata for performance.
 
+#### API Specification (OpenAPI)
+
+`openapi.yaml` is **generated**, not hand-written. It is produced from [swaggo/swag](https://github.com/swaggo/swag) v2 annotation comments on the handler functions, so the spec can never silently drift from the code. **Do not edit `openapi.yaml` by hand** — edit the annotations and regenerate.
+
+```bash
+make generate-openapi   # regenerates backend/openapi.yaml from the annotations
+```
+
+Each handler carries a comment block describing its operation; the general API info lives above `func main()` in `cmd/api/main.go`. The standard `{ data, error }` response envelope is documented via the generic `apiResponse[T]` wrapper in `controller/docs.go` (e.g. `@Success 200 {object} apiResponse[model.DataCall]`):
+
+```go
+// ListDataCalls godoc
+//
+//	@Summary	List all data calls
+//	@Tags		datacalls
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Success	200	{object}	apiResponse[[]model.DataCall]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/datacalls [get]
+func ListDataCalls(w http.ResponseWriter, r *http.Request) {
+```
+
+The `OpenAPI-Spec-Check` CI job (in `.github/workflows/analysis.yml`) regenerates the spec and fails the build if it differs from the committed `openapi.yaml`. swag is pinned as a tool dependency in `go.mod`, so CI and local runs produce identical output. `redocly.yaml` holds the lint config (a couple of default rules are relaxed where swag's output style requires it, each with an inline reason).
+
 ### Migrations (migrations/)
 
 Database schema migrations are managed through numbered migration files:
@@ -468,8 +493,10 @@ To work with this codebase:
 
 1. Add the route in `router.go`
 2. Create or update the controller method
-3. Implement any required model methods
-4. Test the endpoint
+3. Add the swag annotation block above the handler (see [API Specification](#api-specification-openapi))
+4. Implement any required model methods
+5. Run `make generate-openapi` and commit the updated `openapi.yaml`
+6. Test the endpoint
 
 #### Adding a Database Change
 
