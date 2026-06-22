@@ -8,9 +8,15 @@ import (
 )
 
 // GetSystemEnrichment returns the generic enrichment payload for a FISMA system
-// by its fisma_uuid. Access control mirrors the FISMA-system assignment check:
-// admins (and read-only admins) may read any system; an ISSO may read only
-// systems they are assigned to. A system with no enrichment row yields 404.
+// by its fisma_uuid. Access is OpDiv-scoped (fetch-then-gate): unscoped admin
+// tiers read any system, OpDiv-scoped admins read systems in their granted
+// OpDivs, and an ISSO reads only systems they are assigned to. Enrichment is
+// additionally gated on the owning OpDiv having insights_enabled = TRUE (handled
+// in the model), so a system in a non-enabled OpDiv yields 404 - the same
+// response as a system with no enrichment row. A caller who lacks access to an
+// existing, insights-enabled system still gets 403 (consistent with the rest of
+// the API's authz); this hides the gate and missing systems, not the existence
+// of systems the caller simply cannot read.
 //	@Summary	Get enrichment payload for a FISMA system
 //	@Tags		systemenrichment
 //	@Produce	json
@@ -31,16 +37,16 @@ func GetSystemEnrichment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.HasAdminRead() {
-		canAccess, err := model.UserCanAccessFismaSystemByUUID(r.Context(), user.UserID, fismaUUID)
-		if err != nil {
-			respond(w, r, nil, err)
-			return
-		}
-		if !canAccess {
-			respond(w, r, nil, ErrForbidden)
-			return
-		}
+	// Resolve the system first so access is evaluated against its OpDiv. A miss
+	// stays 404 (ErrNoData) so we never leak which systems exist via a 403.
+	system, err := model.FindFismaSystemByUUID(r.Context(), fismaUUID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	if !user.CanAccessFismaSystem(system.OpDivID, system.FismaSystemID) {
+		respond(w, r, nil, ErrForbidden)
+		return
 	}
 
 	enrichment, err := model.FindSystemEnrichment(r.Context(), fismaUUID)

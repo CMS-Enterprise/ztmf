@@ -353,6 +353,13 @@ components:
           type: boolean
         code:
           type: string
+        insights_enabled:
+          description: |-
+            InsightsEnabled gates whether system_enrichment (ZTMF Insights) is served
+            for systems in this OpDiv. Pointer for the same reason as IsParent/Active:
+            an update that omits it must leave the column untouched, not reset it to
+            false (which would silently disable enrichment for an enabled OpDiv).
+          type: boolean
         is_parent:
           description: |-
             IsParent and Active are pointers so an update can distinguish "not supplied"
