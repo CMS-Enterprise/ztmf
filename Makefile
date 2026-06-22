@@ -350,12 +350,12 @@ test-integration:
 	@echo "   (never the dev DB on :54321 - that volume holds real data on purpose)"
 	@echo "🧹 Cleaning up any existing test containers..."
 	@cd backend && docker compose -f compose-test.yml down -v 2>/dev/null || true
-	@echo "🚀 Starting fresh test environment (db :54399; test-api applies migrations + seed)..."
+	@echo "🚀 Starting fresh test environment (db :$(TEST_DB_PORT); test-api applies migrations + seed)..."
 	@cd backend && docker compose -f compose-test.yml up -d --build
 	@echo "⏳ Waiting for migrations + empire seed to apply..."
 	@sleep 15
-	@echo "🔬 Running integration tests against :54399..."
-	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=54399 DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
+	@echo "🔬 Running integration tests against :$(TEST_DB_PORT)..."
+	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=$(TEST_DB_PORT) DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
 		go test -run Integration ./... -count=1 \
 		|| (echo "❌ Integration tests failed"; docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🧹 Cleaning up test environment..."
