@@ -18,6 +18,11 @@ INSERT INTO public.opdivs (code, name, is_parent, active)
 -- here. There is no plain unique constraint on code (only a partial expression
 -- index), hence an UPDATE rather than ON CONFLICT DO UPDATE.
 UPDATE public.opdivs SET is_parent = TRUE WHERE LOWER(code) = 'empire';
+-- Enable ZTMF Insights for the EMPIRE OpDiv so system_enrichment is served for
+-- EMPIRE systems (mirrors CMS being the insights-enabled OpDiv in prod). The
+-- migration only enables code='CMS', so set the test OpDiv explicitly here.
+-- REBELLION is intentionally left disabled to exercise the OpDiv-gated 404.
+UPDATE public.opdivs SET insights_enabled = TRUE WHERE LOWER(code) = 'empire';
 
 -- 13 sister divisions of the Empire.
 INSERT INTO public.opdivs (code, name, is_parent, active) VALUES
@@ -530,6 +535,16 @@ ON CONFLICT (idm_name) DO NOTHING;
 INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     'E1D00198-36D4-4EAB-8C00-501E1D000999',
     '{"fisma_acronym":"SLD-GEN","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
+-- Enrichment row for a REBELLION system (RB-1, 1005). REBELLION has
+-- insights_enabled = FALSE, so the OpDiv gate must hide this row: a read returns
+-- 404 even though the payload exists and the caller is authorized. Proves the
+-- gate is the OpDiv flag, not merely a missing row.
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'A1B2C300-1977-4E5F-9D0A-1234567890AB',
+    '{"fisma_acronym":"RB-1","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Low"},"scoring":{"suggested_score":1,"suggested_label":"Traditional","evidence_sources":["Kion"]}}',
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 

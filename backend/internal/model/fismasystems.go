@@ -112,26 +112,23 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
-// UserCanAccessFismaSystemByUUID checks whether a user is assigned to the
-// FISMA system identified by fismaUUID (fismasystems.fismauid), via the
-// users_fismasystems junction table. Returns (false, nil) when the user has
-// no assignment to that system.
-func UserCanAccessFismaSystemByUUID(ctx context.Context, userID string, fismaUUID string) (bool, error) {
-	sqlb := stmntBuilder.
-		Select("1").
-		From("users_fismasystems").
-		InnerJoin("fismasystems ON fismasystems.fismasystemid = users_fismasystems.fismasystemid").
-		Where("LOWER(fismasystems.fismauid) = LOWER(?) AND users_fismasystems.userid = ?", fismaUUID, userID).
-		Limit(1)
-
-	_, err := queryRow(ctx, sqlb, pgx.RowTo[int])
-	if err != nil {
-		if err == ErrNoData {
-			return false, nil
-		}
-		return false, err
+// FindFismaSystemByUUID returns the FISMA system identified by its fisma_uuid
+// (fismasystems.fismauid, matched case-insensitively), or ErrNoData if none
+// matches. Used by the enrichment endpoint to resolve a system's opdiv_id for
+// OpDiv-scoped access checks before serving enrichment. fismauid is not unique
+// by schema; this returns the first match, which is sufficient for the access
+// check since duplicates are not expected in practice.
+func FindFismaSystemByUUID(ctx context.Context, fismaUUID string) (*FismaSystem, error) {
+	if fismaUUID == "" {
+		return nil, ErrNoData
 	}
-	return true, nil
+
+	sqlb := stmntBuilder.
+		Select(fismaSystemColumns...).
+		From("fismasystems").
+		Where("LOWER(fismauid) = LOWER(?)", fismaUUID)
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
 func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
