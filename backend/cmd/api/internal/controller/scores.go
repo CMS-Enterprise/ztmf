@@ -110,6 +110,50 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, score, err)
 }
 
+//	@Summary	Diff scores between two data calls
+//	@Description	Compares the score (functionoption) answers of two data calls and returns only the questionnaire functions whose answer changed, each annotated with who made the later change and when. Scoped to the caller's tier: unscoped admins see all systems, OpDiv-scoped admins their OpDivs' systems, and ISSO/ISSM their assigned systems.
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		from			query		int	true	"Data call ID to compare from (earlier cycle)"
+//	@Param		to				query		int	true	"Data call ID to compare to (later cycle)"
+//	@Param		fismasystemid	query		int	false	"Limit the diff to a single FISMA system"
+//	@Success	200				{object}	apiResponse[[]model.ScoreDiff]
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/scores/diff [get]
+func GetScoresDiff(w http.ResponseWriter, r *http.Request) {
+	var (
+		diffs []*model.ScoreDiff
+		err   error
+	)
+
+	user := model.UserFromContext(r.Context())
+	input := model.FindScoreDiffInput{}
+
+	err = decoder.Decode(&input, r.URL.Query())
+
+	// Same tier scoping as ListScores, applied AFTER decode so a client cannot
+	// widen scope via query params: unscoped admins see all; OPDIV tiers
+	// fail-closed to their granted OpDivs' systems; ISSO/ISSM keep the
+	// per-system (UserID) path.
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		input.RestrictToOpDivIDs = true
+		_, input.OpDivIDs = user.EffectiveOpDivScope()
+	default:
+		input.UserID = &user.UserID
+	}
+
+	if err == nil {
+		diffs, err = model.FindScoreDiff(r.Context(), input)
+	}
+
+	respond(w, r, diffs, err)
+}
+
 //	@Summary	Get aggregated scores
 //	@Tags		scores
 //	@Produce	json

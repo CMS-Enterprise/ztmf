@@ -701,6 +701,142 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 		"after a real change, the editor must be the user who made it")
 }
 
+// TestFindScoreDiffIntegration exercises the real diff SQL against Postgres:
+// the FULL OUTER JOIN between two cycles, the IS DISTINCT FROM "drop unchanged
+// rows" filter, the function/question catalog joins, and the events lateral
+// that attributes the later change. Pure-Go builder tests cannot see any of
+// these because the SQL never executes there.
+//
+// Fixture is built in-test against the empire seed: two synthetic future
+// data calls (cleaned up via the prefix sweep), and four scores written
+// through Save so each carries a real attributed event:
+//
+//	F1: option optA in 'from' (Krennic), optB in 'to' (Tarkin) -> CHANGED
+//	F2: option optC in both cycles                             -> unchanged, dropped
+//	F3: option optD in 'to' only                               -> one-sided, surfaces with From=nil
+//
+// Empire fixtures only (see [[feedback_no_real_pii_in_tests]]); never
+// substitute real CMS users.
+func TestFindScoreDiffIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	// Two future data calls so Save's deadline guard passes. The prefix makes
+	// them (and their cascaded scores) discoverable by the sweep.
+	suffix := time.Now().UnixNano()
+	var dcFrom, dcTo int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+	`, fmt.Sprintf("%sdiff_from_%d", integrationTestPrefix, suffix)).Scan(&dcFrom))
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+	`, fmt.Sprintf("%sdiff_to_%d", integrationTestPrefix, suffix)).Scan(&dcTo))
+
+	// F1: a function with at least two options so the same function can carry
+	// a different answer across cycles.
+	var f1 int32
+	var optA, optB int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionid FROM functionoptions GROUP BY functionid HAVING COUNT(*) >= 2 LIMIT 1
+	`).Scan(&f1), "seed must have a function with >=2 options")
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionoptionid FROM functionoptions WHERE functionid = $1 ORDER BY functionoptionid LIMIT 1
+	`, f1).Scan(&optA))
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionoptionid FROM functionoptions WHERE functionid = $1 ORDER BY functionoptionid OFFSET 1 LIMIT 1
+	`, f1).Scan(&optB))
+
+	// F2, F3: two other distinct functions, one option each.
+	var f2, f3, optC, optD int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionid, functionoptionid FROM functionoptions WHERE functionid <> $1 ORDER BY functionid LIMIT 1
+	`, f1).Scan(&f2, &optC))
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionid, functionoptionid FROM functionoptions WHERE functionid NOT IN ($1, $2) ORDER BY functionid LIMIT 1
+	`, f1, f2).Scan(&f3, &optD))
+
+	// An existing system to attach the scores to (FK-safe).
+	var sys int32
+	require.NoError(t, conn.QueryRow(ctx, `SELECT fismasystemid FROM scores LIMIT 1`).Scan(&sys))
+
+	krennic := UserToContext(ctx, &User{
+		UserID: "44444444-4444-4444-4444-444444444444", Email: "Director.Krennic@scarif.empire",
+		FullName: "Orson Krennic", Role: "ISSO",
+	})
+	tarkin := UserToContext(ctx, &User{
+		UserID: "11111111-1111-1111-1111-111111111111", Email: "Grand.Moff@DeathStar.Empire",
+		FullName: "Grand Moff Tarkin", Role: "OWNER",
+	})
+
+	save := func(uctx context.Context, fo, dc int32) int32 {
+		t.Helper()
+		s, err := (&Score{FismaSystemID: sys, FunctionOptionID: fo, DataCallID: dc}).Save(uctx)
+		require.NoError(t, err)
+		return s.ScoreID
+	}
+
+	createdScoreIDs := []int32{
+		save(krennic, optA, dcFrom), // F1 from
+		save(tarkin, optB, dcTo),    // F1 to (changed; Tarkin is the change author)
+		save(krennic, optC, dcFrom), // F2 from
+		save(tarkin, optC, dcTo),    // F2 to (unchanged)
+		save(tarkin, optD, dcTo),    // F3 to only (one-sided)
+	}
+	defer func() {
+		for _, id := range createdScoreIDs {
+			_, _ = conn.Exec(ctx, `DELETE FROM events WHERE resource='public.scores' AND (payload->>'scoreid')::int = $1`, id)
+			_, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, id)
+		}
+	}()
+
+	diffs, err := FindScoreDiff(ctx, FindScoreDiffInput{
+		FismaSystemID:  &sys,
+		FromDataCallID: &dcFrom,
+		ToDataCallID:   &dcTo,
+	})
+	require.NoError(t, err)
+
+	byFunction := map[int32]*ScoreDiff{}
+	for _, d := range diffs {
+		byFunction[d.FunctionID] = d
+	}
+
+	// F2 was answered identically in both cycles: it must be dropped.
+	assert.NotContains(t, byFunction, f2, "unchanged function must not appear in the diff")
+
+	// F1 changed option optA -> optB; the change is attributed to the 'to' writer.
+	if assert.Contains(t, byFunction, f1, "changed function must appear") {
+		d := byFunction[f1]
+		require.NotNil(t, d.From, "F1 answered in both cycles")
+		require.NotNil(t, d.To)
+		assert.Equal(t, optA, d.From.FunctionOptionID, "from side is the earlier option")
+		assert.Equal(t, optB, d.To.FunctionOptionID, "to side is the later option")
+		require.NotNil(t, d.ChangedBy, "a changed answer must resolve its author from events")
+		assert.Equal(t, "11111111-1111-1111-1111-111111111111", d.ChangedBy.UserID,
+			"the change is attributed to whoever wrote the later (to) answer")
+		assert.NotNil(t, d.ChangedAt)
+	}
+
+	// F3 was answered only in the 'to' cycle: it surfaces with no 'from' side.
+	if assert.Contains(t, byFunction, f3, "one-sided (newly answered) function must surface via the outer join") {
+		d := byFunction[f3]
+		assert.Nil(t, d.From, "F3 has no earlier-cycle answer")
+		require.NotNil(t, d.To)
+		assert.Equal(t, optD, d.To.FunctionOptionID)
+	}
+}
+
 // countScoreEvents is a small helper used by the no-op preservation test
 // to assert that read-through Saves do not append event rows.
 func countScoreEvents(t *testing.T, ctx context.Context, conn *pgxpool.Conn, scoreID int32) int {
