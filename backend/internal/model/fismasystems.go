@@ -117,7 +117,9 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 // matches. Used by the enrichment endpoint to resolve a system's opdiv_id for
 // OpDiv-scoped access checks before serving enrichment. fismauid is not unique
 // by schema; this returns the first match, which is sufficient for the access
-// check since duplicates are not expected in practice.
+// check since duplicates are not expected in practice. LIMIT 1 makes that
+// single-row intent explicit at the query level rather than relying on the
+// driver discarding extra rows.
 func FindFismaSystemByUUID(ctx context.Context, fismaUUID string) (*FismaSystem, error) {
 	if fismaUUID == "" {
 		return nil, ErrNoData
@@ -126,7 +128,8 @@ func FindFismaSystemByUUID(ctx context.Context, fismaUUID string) (*FismaSystem,
 	sqlb := stmntBuilder.
 		Select(fismaSystemColumns...).
 		From("fismasystems").
-		Where("LOWER(fismauid) = LOWER(?)", fismaUUID)
+		Where("LOWER(fismauid) = LOWER(?)", fismaUUID).
+		Limit(1)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
