@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -10,6 +13,41 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
+
+// Error codes returned in the JSON body alongside the HTTP status. The FE keys
+// off these to render distinguishable copy: UNAUTHORIZED maps to "your session
+// has expired", ACCOUNT_NOT_PROVISIONED maps to a terminal "contact your
+// administrator" message with no retry CTA. See ztmf-ui#403.
+const (
+	CodeUnauthorized          = "UNAUTHORIZED"
+	CodeForbiddenOrigin       = "FORBIDDEN_ORIGIN"
+	CodeAccountNotProvisioned = "ACCOUNT_NOT_PROVISIONED"
+)
+
+// Package-level seams over the model lookups so tests can stub them without a
+// database. Production wiring is the real model functions.
+var (
+	findUserByID    = model.FindUserByID
+	findUserByEmail = model.FindUserByEmail
+)
+
+// errorBody is the JSON shape returned on every middleware-rejected request.
+// Single shape across 401/403/500 so the FE interceptor can rely on it and
+// branch on `code` rather than parsing status alone.
+type errorBody struct {
+	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
+
+// writeJSONError writes a standardized JSON error response and is the only
+// rejection surface used by Middleware. Centralizing the shape keeps the FE
+// interceptor's contract single-sourced.
+func writeJSONError(w http.ResponseWriter, status int, msg, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(errorBody{Error: msg, Code: code})
+}
 
 // Middleware authenticates /api/* requests and attaches the matching user to
 // the request context. It accepts two token sources, in order:
@@ -21,13 +59,20 @@ import (
 //     (HS256 bearer) and the E2E suite working, and also covers the interim
 //     period before the ALB rule flips, where the ALB still injects the IdP
 //     token on /api/*.
+//
+// Rejection statuses distinguish three failure shapes the FE needs to
+// disambiguate (ztmf-ui#403): 401 for missing/invalid session, 403 with code
+// ACCOUNT_NOT_PROVISIONED for an authenticated identity with no app account
+// (or a soft-deleted one), and 403 with code FORBIDDEN_ORIGIN for CSRF.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := config.GetInstance()
 
 		claims, isSession, ok := claimsFromRequest(r)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized,
+				"Your session has expired. Please sign in again.",
+				CodeUnauthorized)
 			return
 		}
 
@@ -37,7 +82,9 @@ func Middleware(next http.Handler) http.Handler {
 		// cookie path is browser-driven; the bearer path is for API clients and
 		// is not subject to CSRF.
 		if isSession && !isSafeMethod(r.Method) && !sameOrigin(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			writeJSONError(w, http.StatusForbidden,
+				"Request blocked: origin not allowed.",
+				CodeForbiddenOrigin)
 			return
 		}
 
@@ -51,12 +98,16 @@ func Middleware(next http.Handler) http.Handler {
 			err  error
 		)
 		if isSession {
-			user, err = model.FindUserByID(r.Context(), claims.Subject)
+			user, err = findUserByID(r.Context(), claims.Subject)
 		} else {
-			user, err = model.FindUserByEmail(r.Context(), IdentifierFromClaims(claims))
+			user, err = findUserByEmail(r.Context(), IdentifierFromClaims(claims))
 		}
 
 		if err != nil && !isSession && cfg.IsLocal() {
+			// Local dev convenience: an unauthenticated identity that doesn't
+			// map to a row gets a fresh OWNER user so contributors can poke
+			// around without seeding by hand. Any lookup error (not-found,
+			// connection blip) routes through this path locally.
 			log.Printf("Local dev: auto-creating OWNER user for %s\n", claims.Email)
 			user = &model.User{
 				Email:    claims.Email,
@@ -69,18 +120,39 @@ func Middleware(next http.Handler) http.Handler {
 			user, err = user.Save(r.Context())
 			if err != nil {
 				log.Printf("Failed to auto-create user: %s\n", err)
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusInternalServerError,
+					"internal error", "")
 				return
 			}
+		} else if errors.Is(err, model.ErrNoData) {
+			// The IdP authenticated this identity, but it has no row in the
+			// ZTMF users table. Distinct from "session expired" - the session
+			// is valid; the user simply has no app account. The FE branches on
+			// this code to render a terminal "contact your administrator"
+			// message instead of looping the user back through the IdP.
+			log.Printf("authenticated identity has no ZTMF account: %s\n", IdentifierFromClaims(claims))
+			writeJSONError(w, http.StatusForbidden,
+				"Your ZTMF account is not set up. Contact your administrator to request access.",
+				CodeAccountNotProvisioned)
+			return
 		} else if err != nil {
-			log.Printf("Could not find user for request: %s\n", err)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			// DB connection blip, decode failure, etc. Not a credential
+			// problem, so do not present as one to the FE.
+			log.Printf("user lookup failed: %s\n", err)
+			writeJSONError(w, http.StatusInternalServerError,
+				"internal error", "")
 			return
 		}
 
 		if user.Deleted {
-			log.Println("a deleted user tried to access the API")
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			// Same FE-facing UX as the never-provisioned case: the IdP
+			// session is valid but no usable app account exists. Logged
+			// distinctly so support can tell "offboarded" from "never
+			// onboarded" without grepping the users table.
+			log.Printf("deleted user attempted to access the API: %s\n", user.Email)
+			writeJSONError(w, http.StatusForbidden,
+				"Your ZTMF account is no longer active. Contact your administrator.",
+				CodeAccountNotProvisioned)
 			return
 		}
 
@@ -88,6 +160,14 @@ func Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// Compile-time assertion that the model lookup vars have the signatures the
+// middleware (and the tests) expect. Keeps a future signature drift in the
+// model package from sneaking through.
+var (
+	_ func(context.Context, string) (*model.User, error) = findUserByID
+	_ func(context.Context, string) (*model.User, error) = findUserByEmail
+)
 
 // isSafeMethod reports whether the HTTP method is read-only and therefore not
 // a CSRF concern.
