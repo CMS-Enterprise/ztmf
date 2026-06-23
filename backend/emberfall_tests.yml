@@ -1121,6 +1121,16 @@ tests:
     expect:
       status: 404
 
+  # OpDiv gate: RB-1 (REBELLION) HAS an enrichment row, but REBELLION is not
+  # insights_enabled, so even an unscoped admin (commonHeaders) gets 404. Proves
+  # the gate is the OpDiv flag, not a missing row or an access failure.
+  - url: http://localhost:8080/api/v1/systemenrichment/A1B2C300-1977-4E5F-9D0A-1234567890AB
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
   # massemails only supports this one route
   # test that it errors on invalid input
   - url: http://localhost:8080/api/v1/massemails

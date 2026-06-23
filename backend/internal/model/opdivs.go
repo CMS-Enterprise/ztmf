@@ -20,6 +20,11 @@ type OpDiv struct {
 	// omitting active would silently deactivate an active OpDiv.
 	IsParent *bool `json:"is_parent" db:"is_parent"`
 	Active   *bool `json:"active"`
+	// InsightsEnabled gates whether system_enrichment (ZTMF Insights) is served
+	// for systems in this OpDiv. Pointer for the same reason as IsParent/Active:
+	// an update that omits it must leave the column untouched, not reset it to
+	// false (which would silently disable enrichment for an enabled OpDiv).
+	InsightsEnabled *bool `json:"insights_enabled" db:"insights_enabled"`
 }
 
 // FindOpDivsInput holds optional filters for listing OpDivs.
@@ -32,7 +37,7 @@ type FindOpDivsInput struct {
 // and by the onboarding workbook importer to validate opdiv codes.
 func FindOpDivs(ctx context.Context, input FindOpDivsInput) ([]*OpDiv, error) {
 	sqlb := stmntBuilder.
-		Select("opdiv_id", "code", "name", "is_parent", "active").
+		Select("opdiv_id", "code", "name", "is_parent", "active", "insights_enabled").
 		From("public.opdivs").
 		OrderBy("(NOT is_parent), code")
 
@@ -79,30 +84,35 @@ func (o *OpDiv) Save(ctx context.Context) (*OpDiv, error) {
 
 	var sqlb SqlBuilder
 	if o.OpDivID == 0 {
-		// Create: a new OpDiv is always active; is_parent defaults to false when
-		// the optional field is omitted.
+		// Create: a new OpDiv is always active; is_parent and insights_enabled
+		// default to false when the optional fields are omitted.
 		isParent := o.IsParent != nil && *o.IsParent
+		insightsEnabled := o.InsightsEnabled != nil && *o.InsightsEnabled
 		sqlb = stmntBuilder.
 			Insert("public.opdivs").
-			Columns("code", "name", "is_parent", "active").
-			Values(o.Code, o.Name, isParent, true).
-			Suffix("RETURNING opdiv_id, code, name, is_parent, active")
+			Columns("code", "name", "is_parent", "active", "insights_enabled").
+			Values(o.Code, o.Name, isParent, true, insightsEnabled).
+			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled")
 	} else {
 		ub := stmntBuilder.
 			Update("public.opdivs").
 			Set("code", o.Code).
 			Set("name", o.Name)
-		// Only touch is_parent / active when the caller explicitly supplied them;
-		// omitting a field (nil) must leave the current value intact.
+		// Only touch is_parent / active / insights_enabled when the caller
+		// explicitly supplied them; omitting a field (nil) must leave the current
+		// value intact.
 		if o.IsParent != nil {
 			ub = ub.Set("is_parent", *o.IsParent)
 		}
 		if o.Active != nil {
 			ub = ub.Set("active", *o.Active)
 		}
+		if o.InsightsEnabled != nil {
+			ub = ub.Set("insights_enabled", *o.InsightsEnabled)
+		}
 		sqlb = ub.
 			Where("opdiv_id=?", o.OpDivID).
-			Suffix("RETURNING opdiv_id, code, name, is_parent, active")
+			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByName[OpDiv])
