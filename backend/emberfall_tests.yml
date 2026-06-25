@@ -836,8 +836,8 @@ tests:
   # type. Anything that survives unit + integration but breaks at the
   # HTTP boundary still shows up here.
   #
-  # The DS-1 seed (fismasystemid=1001) has 24 score rows across datacalls
-  # 1 and 2 in _test_data_empire.sql, guaranteeing a non-empty response.
+  # The DS-1 seed (fismasystemid=1001) has 12 score rows across datacalls
+  # 3 and 4 in _test_data_empire.sql, guaranteeing a non-empty response.
 
   # 1. Scored system returns a populated aggregate via the full HTTP
   #    path. Regression target: 5xx anywhere in the new aggregation SQL,
@@ -881,15 +881,15 @@ tests:
   #
   # commonHeaders maps to test.user@nowhere.xyz (the OWNER fixture); the
   # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
-  # Both saves target datacallid=3 ("Audit Fields Smoke Cycle"), seeded in
+  # Both saves target datacallid=5 ("Audit Fields Smoke Cycle"), seeded in
   # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
   # trip the past-deadline guard on the ISSO path. (Admin bypasses the
   # guard, but routing both paths through the same fixture keeps the
   # regression honest if the admin bypass is ever tightened.)
   #
-  # The literal "datacallid: 3" appears in this block four times plus
+  # The literal "datacallid: 5" appears in this block and below plus
   # once in a query string. If you renumber the seed row, update all
-  # five references in lockstep -- see the NOTE at the seed INSERT in
+  # references in lockstep -- see the NOTE at the seed INSERT in
   # backend/_test_data_empire.sql.
   - id: createScoreForAudit
     url: http://localhost:8080/api/v1/scores
@@ -901,7 +901,7 @@ tests:
       json:
         fismasystemid: 1001
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "Audit field smoke - created by Emberfall"
     expect:
       status: 201
@@ -912,7 +912,7 @@ tests:
           data:
             fismasystemid: 1001
             functionoptionid: 1
-            datacallid: 3
+            datacallid: 5
             notes: "Audit field smoke - created by Emberfall"
             last_edited_by:
               email: "Test.User@nowhere.xyz"
@@ -922,7 +922,7 @@ tests:
   # response so no body.json assertion (aquia-inc/emberfall#36); status +
   # content-type are the regression target here. The POST above carries
   # the per-field audit assertion against the single-object response.
-  - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=3"
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=5"
     method: GET
     headers:
       <<: *commonHeaders
@@ -943,7 +943,7 @@ tests:
       json:
         fismasystemid: 1001
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "Audit field smoke - updated by Emberfall"
     expect:
       status: 204
@@ -979,7 +979,7 @@ tests:
       json:
         fismasystemid: 1003
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "ISSO audit smoke - own system"
     expect:
       status: 201
@@ -1008,7 +1008,7 @@ tests:
       json:
         fismasystemid: 1001
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "ISSO write to unassigned system - should be blocked"
     expect:
       status: 403
@@ -1263,7 +1263,7 @@ tests:
         fismasystemid: 1002
         functionoptionid: 1
         notes: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        datacallid: 1
+        datacallid: 5
     expect:
       status: 400
 
@@ -1278,7 +1278,7 @@ tests:
         fismasystemid: 1
         functionoptionid: 1
         notes: "should be blocked"
-        datacallid: 1
+        datacallid: 5
     expect:
       status: 403
 
@@ -1600,13 +1600,14 @@ tests:
       json:
         fismasystemid: 1006
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "cross-OpDiv score attempt - must be blocked"
     expect:
       status: 403
 
   # OPDIV_ADMIN gets 403 marking an out-of-scope REBELLION system (1006) complete.
-  - url: http://localhost:8080/api/v1/datacalls/2/fismasystems/1006
+  # datacallid=4 (FY2025) is a literal; if datacalls are renumbered, update here too.
+  - url: http://localhost:8080/api/v1/datacalls/4/fismasystems/1006
     method: PUT
     headers:
       <<: *opDivAdminHeaders
@@ -1694,7 +1695,7 @@ tests:
       json:
         fismasystemid: 1002
         functionoptionid: 1
-        datacallid: 3
+        datacallid: 5
         notes: "readonly write attempt - must be blocked"
     expect:
       status: 403
