@@ -164,15 +164,19 @@ INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
-INSERT INTO public.datacalls VALUES (1, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+-- IDs are intentionally ordered chronologically so FindLatestDataCall
+-- (ORDER BY datacallid DESC) returns the open Audit cycle as current.
+INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
 -- Future-deadline cycle used by audit-field smoke tests (ISSO writes need
 -- a non-expired datacall so validate() does not trip the deadline guard).
--- NOTE: backend/emberfall_tests.yml references datacallid=3 literally in
+-- NOTE: backend/emberfall_tests.yml references datacallid=5 literally in
 -- the audit-fields block; if you reorder or renumber this row, update the
--- four "datacallid: 3" references and the "?datacallid=3" query string
+-- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
-INSERT INTO public.datacalls VALUES (3, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
@@ -313,11 +317,16 @@ INSERT INTO public.users_fismasystems VALUES ('44444444-4444-4444-4444-444444444
 INSERT INTO public.users_fismasystems VALUES ('66666666-6666-6666-6666-666666666666', 1003) ON CONFLICT DO NOTHING; -- Emberfall ISSO -> Shield Gen (for system_enrichment access E2E tests)
 
 -- DataCall-System Assignments (Systems participating in audits)
-INSERT INTO public.datacalls_fismasystems VALUES (1, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review
-INSERT INTO public.datacalls_fismasystems VALUES (1, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2024 review
-INSERT INTO public.datacalls_fismasystems VALUES (2, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2025 assessment
-INSERT INTO public.datacalls_fismasystems VALUES (2, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in FY2025 assessment
-INSERT INTO public.datacalls_fismasystems VALUES (2, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2025 assessment
+INSERT INTO public.datacalls_fismasystems VALUES (3, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review
+INSERT INTO public.datacalls_fismasystems VALUES (3, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2024 review
+INSERT INTO public.datacalls_fismasystems VALUES (4, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2025 assessment
+INSERT INTO public.datacalls_fismasystems VALUES (4, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in FY2025 assessment
+INSERT INTO public.datacalls_fismasystems VALUES (4, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2025 assessment
+-- Enroll systems 1001-1003 in the open Audit cycle so Emberfall score tests
+-- (createScoreForAudit, issoCreateScoreOwnSystem) can write against datacall 5.
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1001) ON CONFLICT DO NOTHING; -- DS-1 in Audit Smoke Cycle
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1002) ON CONFLICT DO NOTHING; -- Executor in Audit Smoke Cycle
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in Audit Smoke Cycle
 
 -- Imperial Zero Trust Questionnaire (Full Coverage)
 
@@ -479,45 +488,45 @@ INSERT INTO public.functionoptions VALUES (69, 7018, 4, 'Advanced', 'Continuous 
 -- Comprehensive Test Scores across all Zero Trust pillars
 -- Scores reference functionoptionids: 1-23 (Imperial-Fleet), 24-46 (Space-Station), 47-69 (Forest-Moon)
 
--- Death Star System Scores (datacall 1) - Space-Station functionoptions
-INSERT INTO public.scores VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 25, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 28, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 32, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 36, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 40, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 44, 1) ON CONFLICT DO NOTHING;
+-- Death Star System Scores (datacall 3 / FY2024) - Space-Station functionoptions
+INSERT INTO public.scores VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 25, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 28, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 32, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 36, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 40, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 44, 3) ON CONFLICT DO NOTHING;
 
--- Executor System Scores (datacall 1) - Imperial-Fleet functionoptions
-INSERT INTO public.scores VALUES (9007, 1002, '2024-09-01 00:00:00+00', 'Star Destroyer inventory centrally tracked with automation', 2, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9008, 1002, '2024-09-01 00:00:00+00', 'Bridge applications use standardized access controls', 6, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9009, 1002, '2024-09-01 00:00:00+00', 'Fleet networks have dynamic security with real-time monitoring', 11, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9010, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence has automated data loss prevention', 15, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9011, 1002, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Executor systems', 18, 1) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9012, 1002, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with Force-sensitivity screening', 22, 1) ON CONFLICT DO NOTHING;
+-- Executor System Scores (datacall 3 / FY2024) - Imperial-Fleet functionoptions
+INSERT INTO public.scores VALUES (9007, 1002, '2024-09-01 00:00:00+00', 'Star Destroyer inventory centrally tracked with automation', 2, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9008, 1002, '2024-09-01 00:00:00+00', 'Bridge applications use standardized access controls', 6, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9009, 1002, '2024-09-01 00:00:00+00', 'Fleet networks have dynamic security with real-time monitoring', 11, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9010, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence has automated data loss prevention', 15, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9011, 1002, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Executor systems', 18, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9012, 1002, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with Force-sensitivity screening', 22, 3) ON CONFLICT DO NOTHING;
 
--- Shield Generator System Scores (datacall 2) - Forest-Moon functionoptions
-INSERT INTO public.scores VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 49, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 54, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 58, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 62, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 65, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 69, 2) ON CONFLICT DO NOTHING;
+-- Shield Generator System Scores (datacall 4 / FY2025) - Forest-Moon functionoptions
+INSERT INTO public.scores VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 49, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 54, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 58, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 62, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 65, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 69, 4) ON CONFLICT DO NOTHING;
 
--- Executor System Scores (datacall 2) - Imperial-Fleet functionoptions
-INSERT INTO public.scores VALUES (9019, 1002, '2024-09-01 00:00:00+00', 'Enhanced Star Destroyer device security with predictive maintenance', 4, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9020, 1002, '2024-09-01 00:00:00+00', 'Advanced bridge applications with zero trust architecture', 8, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9021, 1002, '2024-09-01 00:00:00+00', 'Imperial fleet networks fully software-defined with zero trust', 12, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9022, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence with dynamic data protection and analytics', 16, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9023, 1002, '2024-09-01 00:00:00+00', 'Continuous adaptive Imperial security posture across all systems', 19, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9024, 1002, '2024-09-01 00:00:00+00', 'Advanced identity verification with continuous Force-sensitivity monitoring', 23, 2) ON CONFLICT DO NOTHING;
+-- Executor System Scores (datacall 4 / FY2025) - Imperial-Fleet functionoptions
+INSERT INTO public.scores VALUES (9019, 1002, '2024-09-01 00:00:00+00', 'Enhanced Star Destroyer device security with predictive maintenance', 4, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9020, 1002, '2024-09-01 00:00:00+00', 'Advanced bridge applications with zero trust architecture', 8, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9021, 1002, '2024-09-01 00:00:00+00', 'Imperial fleet networks fully software-defined with zero trust', 12, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9022, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence with dynamic data protection and analytics', 16, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9023, 1002, '2024-09-01 00:00:00+00', 'Continuous adaptive Imperial security posture across all systems', 19, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9024, 1002, '2024-09-01 00:00:00+00', 'Advanced identity verification with continuous Force-sensitivity monitoring', 23, 4) ON CONFLICT DO NOTHING;
 
--- Death Star System Scores (datacall 2) - Space-Station functionoptions
-INSERT INTO public.scores VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 26, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 29, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 34, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 2) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 2) ON CONFLICT DO NOTHING;
+-- Death Star System Scores (datacall 4 / FY2025) - Space-Station functionoptions
+INSERT INTO public.scores VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 26, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 29, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 34, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 4) ON CONFLICT DO NOTHING;
 
 -- IdM Scoring lookup table for identity enrichment tooltips
 INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES
@@ -554,8 +563,8 @@ INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
 -- climbs over time, and three additional questionnaires (datacenterenvironments).
 --
 -- Everything below uses fresh ID ranges and NEW OpDivs only. It deliberately
--- does not touch systems 1001-1006, datacalls 1-3, or scores 9001-9030, which
--- the Emberfall E2E suite asserts against (aggregate on 1001, datacallid=3, the
+-- does not touch systems 1001-1006, datacalls 1-5, or scores 9001-9030, which
+-- the Emberfall E2E suite asserts against (aggregate on 1001, datacallid=5, the
 -- EMPIRE/REBELLION OpDiv-scoped read counts).
 -- ============================================================================
 
@@ -672,16 +681,14 @@ SELECT u.userid, s.fismasystemid
   JOIN public.fismasystems s ON s.fismasystemid = m.sysid
 ON CONFLICT DO NOTHING;
 
--- Historical data-call cycles. FY2024 (1) and FY2025 (2) already exist; add the
--- two prior fiscal years so the new systems have a 4-cycle maturity trend.
-INSERT INTO public.datacalls VALUES (4, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (5, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+-- Historical data-call cycles. FY2022 (1) and FY2023 (2) are declared in the
+-- header block above; FY2024 (3) and FY2025 (4) are also above. No new inserts
+-- needed here — just wire the new systems into all four closed cycles.
 
 -- Every new system participates in all four cycles (FY2022, FY2023, FY2024, FY2025).
 INSERT INTO public.datacalls_fismasystems (datacallid, fismasystemid)
 SELECT dc, s.fismasystemid
-  FROM generate_series(1, 1) g
-  CROSS JOIN (VALUES (4),(5),(1),(2)) AS d(dc)
+  FROM (VALUES (1),(2),(3),(4)) AS d(dc)
   JOIN public.fismasystems s ON s.fismasystemid BETWEEN 1101 AND 1110
 ON CONFLICT DO NOTHING;
 
@@ -754,10 +761,10 @@ BEGIN
         base_off := sys.off;
         FOR dc IN
             SELECT * FROM (VALUES
-                (4, 0, TIMESTAMPTZ '2022-09-01 00:00:00+00'),
-                (5, 1, TIMESTAMPTZ '2023-09-01 00:00:00+00'),
-                (1, 2, TIMESTAMPTZ '2024-09-01 00:00:00+00'),
-                (2, 3, TIMESTAMPTZ '2025-02-15 00:00:00+00')
+                (1, 0, TIMESTAMPTZ '2022-09-01 00:00:00+00'),
+                (2, 1, TIMESTAMPTZ '2023-09-01 00:00:00+00'),
+                (3, 2, TIMESTAMPTZ '2024-09-01 00:00:00+00'),
+                (4, 3, TIMESTAMPTZ '2025-02-15 00:00:00+00')
             ) AS d(datacallid, yr, dt)
         LOOP
             yr_index := dc.yr;

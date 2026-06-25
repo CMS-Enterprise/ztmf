@@ -357,7 +357,7 @@ func boolPtr(b bool) *bool { return &b }
 // sweep cleans it up) if none exists in seed data. Shared by the audit
 // field tests below so each one does not redo the discovery dance.
 //
-// In the default empire seed this resolves to datacallid=3 ("Audit
+// In the default empire seed this resolves to datacallid=5 ("Audit
 // Fields Smoke Cycle", deadline 2099-12-31), which is also the cycle
 // the emberfall audit-fields block writes to. That is intentional
 // reuse, not a fixture collision: scores written by these integration
@@ -543,7 +543,7 @@ func TestFindScoresIncludesAuditFieldsIntegration(t *testing.T) {
 // when nothing has been edited in the current session.
 //
 // The fixture is the expanded empire seed: system 1110 (Tarkin Initiative
-// Superweapon R&D), scored in datacall 2 (FY2025) with one seeded "updated"
+// Superweapon R&D), scored in datacall 2 (FY2023) with one seeded "updated"
 // event per score attributed to its assigned officer, Bevel Lemelisk. If the
 // seed audit events go missing or the join regresses, last_edited_by silently
 // returns to blank in the UI and this test fails.
@@ -560,7 +560,7 @@ func TestFindScoresResolvesSeededAuditFieldsIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Tarkin Initiative R&D system and the FY2025 cycle, both from the seed.
+	// Tarkin Initiative R&D system and the FY2023 cycle, both from the seed.
 	fismaSystemID := int32(1110)
 	dataCallID := int32(2)
 
@@ -570,7 +570,7 @@ func TestFindScoresResolvesSeededAuditFieldsIntegration(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, scores,
-		"expanded empire seed must score system 1110 in datacall 2 (FY2025)")
+		"expanded empire seed must score system 1110 in datacall 2 (FY2023)")
 
 	// Every seeded score for this system+cycle carries an event attributed to
 	// the system's assigned officer, so each row must resolve the same editor.
