@@ -79,6 +79,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs", controller.ListUserOpDivs).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs", controller.CreateUserOpDiv).Methods("POST")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedopdivs/{opdiv_id:[0-9]+}", controller.DeleteUserOpDiv).Methods("DELETE")
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/opdivs", controller.SetUserOpDivs).Methods("PUT")
 
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Methods("GET")
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun
