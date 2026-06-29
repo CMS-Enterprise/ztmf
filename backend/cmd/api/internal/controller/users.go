@@ -148,10 +148,13 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// identity_provider is derived from OpDiv on grant and is only overridable
-	// by an OWNER. Ignore any client-supplied value from a non-OWNER so it
-	// cannot be used to misroute a user's login.
-	if !authdUser.IsOwner() {
+	// identity_provider is derived from OpDiv membership (see deriveIdentityProvider).
+	// An explicit override is only honored from an HHS-wide actor (OWNER, HHS_ADMIN,
+	// HHS_READONLY_ADMIN); OpDiv-scoped admins are confined to their own scope and
+	// cannot set it. Ignore any client-supplied value from a scoped actor so it
+	// cannot be used to misroute a user's login. When left blank, Save derives it
+	// from the new user's OpDiv set on create.
+	if !authdUser.HasUnscopedRead() {
 		user.IdentityProvider = ""
 	}
 
