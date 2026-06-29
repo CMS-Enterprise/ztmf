@@ -62,6 +62,44 @@ func TestSetUserOpDivs_OpDivAdminInScopePassesGate(t *testing.T) {
 	assert.NotEqual(t, http.StatusForbidden, w.Code)
 }
 
+// A missing opdiv_ids key returns 400 — the field is required so a serialization
+// bug that drops it cannot silently clear all grants.
+func TestSetUserOpDivs_MissingOpDivIDs(t *testing.T) {
+	r := withUser(httptest.NewRequest("PUT", "/api/v1/users/"+grantUserID+"/opdivs",
+		jsonBody(t, map[string]any{})), &model.User{Role: "HHS_ADMIN"})
+	r = mux.SetURLVars(r, map[string]string{"userid": grantUserID})
+	w := httptest.NewRecorder()
+	SetUserOpDivs(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// An explicit empty slice is a valid "clear all in-scope grants" request; it
+// must pass the nil check and not be rejected as malformed.
+func TestSetUserOpDivs_ExplicitEmptySlicePassesNilCheck(t *testing.T) {
+	r := withUser(httptest.NewRequest("PUT", "/api/v1/users/"+grantUserID+"/opdivs",
+		jsonBody(t, map[string]any{"opdiv_ids": []int{}})), &model.User{Role: "HHS_ADMIN"})
+	r = mux.SetURLVars(r, map[string]string{"userid": grantUserID})
+	w := httptest.NewRecorder()
+	SetUserOpDivs(w, r)
+	assert.NotEqual(t, http.StatusBadRequest, w.Code)
+}
+
+// SetUserOpDivs must not block an OPDIV_ADMIN from granting their own OpDiv to a
+// brand-new user who has no existing grants (bootstrap onboarding path).
+// The handler cannot reach the shared-OpDiv check without a DB (FindUserByID),
+// so this test verifies the scope gate still passes — the response is 500 (no DB),
+// NOT 403 from a shared-OpDiv rejection.
+func TestSetUserOpDivs_OpDivAdminNewUserBootstrap(t *testing.T) {
+	opdiv5 := int32(5)
+	actor := &model.User{Role: "OPDIV_ADMIN", AssignedOpDivIDs: []*int32{&opdiv5}}
+	r := withUser(httptest.NewRequest("PUT", "/api/v1/users/"+grantUserID+"/opdivs",
+		jsonBody(t, map[string]any{"opdiv_ids": []int{5}})), actor)
+	r = mux.SetURLVars(r, map[string]string{"userid": grantUserID})
+	w := httptest.NewRecorder()
+	SetUserOpDivs(w, r)
+	assert.NotEqual(t, http.StatusForbidden, w.Code)
+}
+
 // CreateUserOpDiv's forbidden paths are reached before any DB call: a non-admin
 // is rejected by the tier gate, and an OPDIV_ADMIN granting an OpDiv they do not
 // hold is rejected by the in-memory scope check.
