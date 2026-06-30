@@ -27,6 +27,19 @@ resource "aws_lb" "ztmf_api" {
   security_groups            = [aws_security_group.ztmf_alb.id]
   subnets                    = data.aws_subnets.private.ids
   enable_deletion_protection = true
+
+  # Per-request access logs record actions_executed + error_reason for failed
+  # authenticate-oidc, the one signal missing when an Entra/Okta login breaks.
+  # Bucket name is referenced literally (not aws_s3_bucket.ztmf_logs[0].id)
+  # because that resource is count-gated on manage_account_singletons; the
+  # literal name is what the bucket policy in s3.tf already grants the ELB log
+  # delivery account on the rest-api-alb/* prefix. SSE-S3 on the bucket
+  # satisfies ALB's SSE-S3-only requirement; no bucket/policy change needed.
+  access_logs {
+    bucket  = "ztmf-logs-${local.account_id}-use1"
+    prefix  = "rest-api-alb"
+    enabled = true
+  }
 }
 
 
