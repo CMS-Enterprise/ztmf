@@ -33,6 +33,12 @@ const sessionIssuer = "ztmf"
 // a missing tenant or identifier claim visible in the logs without ever writing
 // an email, UPN, or raw token. Previously these branches returned 401 silently,
 // so a broken login left no trace in the API log group.
+//
+// Steady-state note: ALB-forwarded Entra tokens are built from the IdP userinfo
+// response and normally omit the id_token-only tid claim, so tid_present=false
+// is the expected steady state on Entra logins - not an anomaly on its own; read
+// it together with branch and err. This is the same reason validateIssuer pins
+// tid only when the token presents it (see token.go).
 func logLoginReject(branch string, err error, tkn *jwt.Token) {
 	var issP, tidP, audP, emailP, upnP bool
 	if tkn != nil {

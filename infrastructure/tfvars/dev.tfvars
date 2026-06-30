@@ -12,9 +12,12 @@ ecs_service_task_count = 1
 entra_enabled = true
 
 
-# Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS
-# topic; confirm the AWS subscription email once after first apply. Interim
-# destination — swap for a shared inbox / Slack webhook later.
+# Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS topic
+# (confirm the AWS subscription email once after first apply).
+# INTERIM destination only — an individual address used to stand up alerting for
+# the dev Entra pilot. Replace it with a shared team inbox or a Slack webhook
+# before this routing is relied on beyond dev / before prod, so paging never
+# depends on one person being reachable.
 alarm_notification_email = "jono@aquia.us"
 
 # TLS cert rotation Lambda
