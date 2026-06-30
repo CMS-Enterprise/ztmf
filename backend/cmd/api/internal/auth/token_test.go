@@ -55,6 +55,10 @@ func TestValidateIssuerWith(t *testing.T) {
 		{"entra token, tenant matches", entra, tid, nil, okta, entra, tid, "", "", nil},
 		{"entra token, wrong tenant", entra, "other-tenant", nil, okta, entra, tid, "", "", ErrWrongTenant},
 		{"entra token, tenant not pinned", entra, "anything", nil, okta, entra, "", "", "", nil},
+		// ALB-forwarded Entra tokens (built from the userinfo response) may omit
+		// the id_token-only tid claim. A missing tid must still pass when the
+		// tenant-scoped issuer matches; a present-but-wrong tid is still rejected.
+		{"entra token, tid absent passes via tenant-scoped issuer", entra, "", nil, okta, entra, tid, "", "", nil},
 		{"unknown issuer with issuers configured", "https://evil.example", "", nil, okta, entra, tid, "", "", ErrUntrustedIssuer},
 		{"no issuers configured is legacy pass", "https://anything", "", nil, "", "", "", "", "", nil},
 		{"okta-only env rejects entra issuer", entra, tid, nil, okta, "", "", "", "", ErrUntrustedIssuer},
