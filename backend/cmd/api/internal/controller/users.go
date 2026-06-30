@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/mux"
 )
@@ -207,6 +208,14 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	userID, ok := vars["userid"]
 	if !ok {
 		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	// Self delete prevention gate.
+	if userID == authdUser.UserID {
+		auth.WriteJSONError(w, http.StatusForbidden,
+			"You cannot delete your own account.",
+			auth.CodeSelfDeleteForbidden)
 		return
 	}
 
