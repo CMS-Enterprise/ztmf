@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -489,4 +491,50 @@ func TestSaveMassEmail_ReadonlyAdminForbidden(t *testing.T) {
 // helper
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func TestDeleteUser_SelfDeleteRejected(t *testing.T) {
+	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+adminUser.UserID, nil)
+	r = mux.SetURLVars(r, map[string]string{"userid": adminUser.UserID})
+	r = withUser(r, adminUser)
+	w := httptest.NewRecorder()
+
+	DeleteUser(w, r)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, auth.CodeSelfDeleteForbidden, body.Code)
+	assert.NotEmpty(t, body.Error)
+}
+
+func TestDeleteUser_OtherDeleteNotSelfError(t *testing.T) {
+	otherID := "99999999-9999-4999-8999-999999999999"
+	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+otherID, nil)
+	r = mux.SetURLVars(r, map[string]string{"userid": otherID})
+	r = withUser(r, adminUser)
+	w := httptest.NewRecorder()
+
+	DeleteUser(w, r)
+
+	var body struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	assert.NotEqual(t, auth.CodeSelfDeleteForbidden, body.Code)
+}
+
+func TestDeleteUser_MissingIDIsNotFound(t *testing.T) {
+	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users", nil)
+	r = withUser(r, adminUser)
+	w := httptest.NewRecorder()
+
+	DeleteUser(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
