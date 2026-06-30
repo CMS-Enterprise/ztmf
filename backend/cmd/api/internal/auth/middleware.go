@@ -22,6 +22,7 @@ const (
 	CodeUnauthorized          = "UNAUTHORIZED"
 	CodeForbiddenOrigin       = "FORBIDDEN_ORIGIN"
 	CodeAccountNotProvisioned = "ACCOUNT_NOT_PROVISIONED"
+	CodeSelfDeleteForbidden = "SELF_DELETE_FORBIDDEN"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a
@@ -39,10 +40,10 @@ type errorBody struct {
 	Code  string `json:"code,omitempty"`
 }
 
-// writeJSONError writes a standardized JSON error response and is the only
+// WriteJSONError writes a standardized JSON error response and is the only
 // rejection surface used by Middleware. Centralizing the shape keeps the FE
 // interceptor's contract single-sourced.
-func writeJSONError(w http.ResponseWriter, status int, msg, code string) {
+func WriteJSONError(w http.ResponseWriter, status int, msg, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
@@ -70,7 +71,7 @@ func Middleware(next http.Handler) http.Handler {
 
 		claims, isSession, ok := claimsFromRequest(r)
 		if !ok {
-			writeJSONError(w, http.StatusUnauthorized,
+			WriteJSONError(w, http.StatusUnauthorized,
 				"Your session has expired. Please sign in again.",
 				CodeUnauthorized)
 			return
@@ -82,7 +83,7 @@ func Middleware(next http.Handler) http.Handler {
 		// cookie path is browser-driven; the bearer path is for API clients and
 		// is not subject to CSRF.
 		if isSession && !isSafeMethod(r.Method) && !sameOrigin(r) {
-			writeJSONError(w, http.StatusForbidden,
+			WriteJSONError(w, http.StatusForbidden,
 				"Request blocked: origin not allowed.",
 				CodeForbiddenOrigin)
 			return
@@ -120,7 +121,7 @@ func Middleware(next http.Handler) http.Handler {
 			user, err = user.Save(r.Context())
 			if err != nil {
 				log.Printf("Failed to auto-create user: %s\n", err)
-				writeJSONError(w, http.StatusInternalServerError,
+				WriteJSONError(w, http.StatusInternalServerError,
 					"internal error", "")
 				return
 			}
@@ -131,7 +132,7 @@ func Middleware(next http.Handler) http.Handler {
 			// this code to render a terminal "contact your administrator"
 			// message instead of looping the user back through the IdP.
 			log.Printf("authenticated identity has no ZTMF account: %s\n", IdentifierFromClaims(claims))
-			writeJSONError(w, http.StatusForbidden,
+			WriteJSONError(w, http.StatusForbidden,
 				"Your ZTMF account is not set up. Contact your administrator to request access.",
 				CodeAccountNotProvisioned)
 			return
@@ -139,7 +140,7 @@ func Middleware(next http.Handler) http.Handler {
 			// DB connection blip, decode failure, etc. Not a credential
 			// problem, so do not present as one to the FE.
 			log.Printf("user lookup failed: %s\n", err)
-			writeJSONError(w, http.StatusInternalServerError,
+			WriteJSONError(w, http.StatusInternalServerError,
 				"internal error", "")
 			return
 		}
@@ -150,7 +151,7 @@ func Middleware(next http.Handler) http.Handler {
 			// distinctly so support can tell "offboarded" from "never
 			// onboarded" without grepping the users table.
 			log.Printf("deleted user attempted to access the API: %s\n", user.Email)
-			writeJSONError(w, http.StatusForbidden,
+			WriteJSONError(w, http.StatusForbidden,
 				"Your ZTMF account is no longer active. Contact your administrator.",
 				CodeAccountNotProvisioned)
 			return
