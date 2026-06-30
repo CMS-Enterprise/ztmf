@@ -12,6 +12,11 @@ ecs_service_task_count = 1
 entra_enabled = true
 
 
+# Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS
+# topic; confirm the AWS subscription email once after first apply. Interim
+# destination — swap for a shared inbox / Slack webhook later.
+alarm_notification_email = "jono@aquia.us"
+
 # TLS cert rotation Lambda
 # ACM ARN sourced from SSM Parameter Store /ztmf/dev/cert-rotation/acm-arn
 enable_cert_rotation_lambda = true
