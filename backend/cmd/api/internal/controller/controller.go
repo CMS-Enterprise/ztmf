@@ -91,6 +91,8 @@ func parseRFC3339(dateStr string) (time.Time, error) {
 	return time.Parse(time.RFC3339, dateStr)
 }
 
+// sanitizeErr maps an error to an HTTP status code and optional typed code string.
+// error is last so the signature follows Go convention (status, code, err).
 func sanitizeErr(err error) (int, string, error) {
 	switch err.(type) {
 	case *model.InvalidInputError:
