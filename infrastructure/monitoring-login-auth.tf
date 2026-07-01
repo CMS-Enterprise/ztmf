@@ -88,3 +88,57 @@ resource "aws_cloudwatch_metric_alarm" "ztmf_login_elb_auth_failure" {
     Environment = var.environment
   }
 }
+
+# Client-event telemetry. The pre-auth login page beacons a login-lookup outage
+# (GET /api/v1/auth/lookup failing: timeout/network/5xx/4xx/malformed) to the
+# unauthenticated POST /api/v1/client-events, which writes one structured line to
+# ztmf_api. This metric filter turns those lines into an outage count.
+#
+# BEST-EFFORT signal: the endpoint is unauthenticated, so this metric is
+# spoofable (fake beacons inflate it) and suppressible (exhausting the in-app
+# rate limiter masks a real outage). The internal ALB access logs remain the
+# unforgeable source of record; this is a convenience layer on top. No dimensions
+# by design - default_value and dimensions are mutually exclusive in the provider,
+# and a per-reason/per-IP dimension would add custom-metric cost and
+# re-identification risk. Total count is the signal we want.
+resource "aws_cloudwatch_log_metric_filter" "ztmf_login_lookup_unavailable" {
+  name           = "ztmf-login-lookup-unavailable-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.ztmf_api.name
+  # Exact-phrase match against the handler's log line (controller/clientevents.go
+  # writes "client_event: lookup_unavailable reason=..."). The two are coupled: if
+  # that log format changes, update this pattern or the metric goes silently quiet
+  # (and, under treat_missing_data=notBreaching below, the alarm never fires).
+  pattern = "\"client_event: lookup_unavailable\""
+
+  metric_transformation {
+    name          = "LookupUnavailable"
+    namespace     = "ZTMF/Login"
+    value         = "1"
+    default_value = "0" # continuous zeros keep the alarm out of INSUFFICIENT_DATA
+    unit          = "Count"
+  }
+}
+
+# Alarm on a sustained burst of lookup outages, tuned so a lone transient timeout
+# does not page: Sum >= 5 in a single 5-min window. Mirrors the ELBAuth alarm
+# shape above and routes to the same ztmf-alarms topic. Reads the custom
+# (dimensionless) metric the filter above publishes.
+resource "aws_cloudwatch_metric_alarm" "ztmf_login_lookup_unavailable" {
+  alarm_name          = "ztmf-login-lookup-unavailable-${var.environment}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = aws_cloudwatch_log_metric_filter.ztmf_login_lookup_unavailable.metric_transformation[0].name
+  namespace           = aws_cloudwatch_log_metric_filter.ztmf_login_lookup_unavailable.metric_transformation[0].namespace
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "5"
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "Client-side login-lookup outages beaconed to /api/v1/client-events exceeded the threshold in a 5-min window. Best-effort/spoofable signal - the internal ALB access logs are the source of record. Check ztmf_api for 'client_event: lookup_unavailable' and the /api/v1/auth/lookup path health."
+  alarm_actions       = [aws_sns_topic.ztmf_alarms.arn]
+  ok_actions          = [aws_sns_topic.ztmf_alarms.arn]
+
+  tags = {
+    Name        = "ZTMF Login Lookup Unavailable Alarm"
+    Environment = var.environment
+  }
+}
