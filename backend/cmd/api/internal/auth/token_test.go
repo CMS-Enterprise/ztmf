@@ -65,7 +65,11 @@ func TestValidateIssuerWith(t *testing.T) {
 		// audience pinning (parallel to tenant pinning): enforced only when set
 		{"entra token, audience matches", entra, tid, jwt.ClaimStrings{entraAud}, okta, entra, tid, "", entraAud, nil},
 		{"entra token, wrong audience", entra, tid, jwt.ClaimStrings{"api://other-app"}, okta, entra, tid, "", entraAud, ErrWrongAudience},
-		{"entra token, no audience claim but pinned", entra, tid, nil, okta, entra, tid, "", entraAud, ErrWrongAudience},
+		// ALB-forwarded Entra tokens omit the id_token-only aud claim too; a missing
+		// aud must pass when pinned (parallel to tid), while a present-but-wrong aud
+		// is still rejected above. Both claims absent is the real dev scenario.
+		{"entra token, aud absent passes when pinned", entra, tid, nil, okta, entra, tid, "", entraAud, nil},
+		{"entra token, tid and aud both absent pass via tenant-scoped issuer", entra, "", nil, okta, entra, tid, "", entraAud, nil},
 		{"entra token, audience not enforced when unset", entra, tid, jwt.ClaimStrings{"api://other-app"}, okta, entra, tid, "", "", nil},
 		{"entra token, multiple audiences includes expected", entra, tid, jwt.ClaimStrings{"api://other-app", entraAud}, okta, entra, tid, "", entraAud, nil},
 		{"okta token, audience matches", okta, "", jwt.ClaimStrings{oktaAud}, okta, entra, tid, oktaAud, "", nil},

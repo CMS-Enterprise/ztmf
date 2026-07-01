@@ -144,7 +144,12 @@ func validateIssuerWith(iss, tid string, aud jwt.ClaimStrings, oktaIss, entraIss
 		if entraTID != "" && tid != "" && tid != entraTID {
 			return ErrWrongTenant
 		}
-		if entraAud != "" && !slices.Contains(aud, entraAud) {
+		// aud, like tid, is an id_token claim the ALB-forwarded (userinfo-derived)
+		// token may not carry, so pin it only when the token actually presents an
+		// audience: a present-but-wrong aud is still rejected, while a missing aud
+		// falls back to the tenant scoping the matched issuer already enforces (the
+		// ALB validated audience against the client during the OIDC code exchange).
+		if entraAud != "" && len(aud) > 0 && !slices.Contains(aud, entraAud) {
 			return ErrWrongAudience
 		}
 		return nil
