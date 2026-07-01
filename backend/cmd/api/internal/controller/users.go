@@ -3,6 +3,7 @@ package controller
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
@@ -212,7 +213,10 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Self delete prevention gate.
-	if userID == authdUser.UserID {
+	if strings.EqualFold(userID, authdUser.UserID) {
+		caseVariant := userID != authdUser.UserID
+		log.Printf("user: self-delete blocked actor=%s target=%s case_variant=%t\n",
+			authdUser.UserID, userID, caseVariant)
 		auth.WriteJSONError(w, http.StatusForbidden,
 			"You cannot delete your own account.",
 			auth.CodeSelfDeleteForbidden)
