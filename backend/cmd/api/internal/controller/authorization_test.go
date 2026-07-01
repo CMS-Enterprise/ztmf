@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
@@ -514,19 +515,57 @@ func TestDeleteUser_SelfDeleteRejected(t *testing.T) {
 }
 
 func TestDeleteUser_OtherDeleteNotSelfError(t *testing.T) {
-	otherID := "99999999-9999-4999-8999-999999999999"
-	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+otherID, nil)
-	r = mux.SetURLVars(r, map[string]string{"userid": otherID})
-	r = withUser(r, adminUser)
-	w := httptest.NewRecorder()
+	// A non-caller UUID that contains hex letters, so we can also try a case
+	// variant. 
+	otherIDLower := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	for _, otherID := range []string{otherIDLower, strings.ToUpper(otherIDLower)} {
+		t.Run(otherID, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+otherID, nil)
+			r = mux.SetURLVars(r, map[string]string{"userid": otherID})
+			r = withUser(r, adminUser)
+			w := httptest.NewRecorder()
 
-	DeleteUser(w, r)
+			DeleteUser(w, r)
 
-	var body struct {
-		Code string `json:"code"`
+			var body struct {
+				Code string `json:"code"`
+			}
+			_ = json.Unmarshal(w.Body.Bytes(), &body)
+			assert.NotEqual(t, auth.CodeSelfDeleteForbidden, body.Code)
+		})
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	assert.NotEqual(t, auth.CodeSelfDeleteForbidden, body.Code)
+}
+
+func TestDeleteUser_SelfDeleteRejected_CaseInsensitive(t *testing.T) {
+	// Use a UUID with hex letters so case-folding is observable. Local
+	// fixture rather than the shared adminUser (whose UserID is all digits).
+	callerID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	caller := &model.User{
+		UserID: callerID,
+		Email:  "case@empire.test",
+		Role:   "OWNER",
+	}
+	variants := map[string]string{
+		"upper-cased": strings.ToUpper(callerID),
+		"mixed-case":  "F47ac10B-58CC-4372-A567-0e02B2c3D479",
+	}
+	for name, pathID := range variants {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+pathID, nil)
+			r = mux.SetURLVars(r, map[string]string{"userid": pathID})
+			r = withUser(r, caller)
+			w := httptest.NewRecorder()
+
+			DeleteUser(w, r)
+
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			var body struct {
+				Code string `json:"code"`
+			}
+			assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+			assert.Equal(t, auth.CodeSelfDeleteForbidden, body.Code)
+		})
+	}
 }
 
 func TestDeleteUser_MissingIDIsNotFound(t *testing.T) {
