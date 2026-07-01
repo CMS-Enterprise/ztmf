@@ -10,4 +10,5 @@ var (
 	ErrServer             = errors.New("server error")
 	ErrServiceUnavailable = errors.New("service unavailable")
 	ErrMalformed          = errors.New("json malformed or type mismatch")
+	ErrSelfDelete = errors.New("You cannot delete your own account.")
 )
