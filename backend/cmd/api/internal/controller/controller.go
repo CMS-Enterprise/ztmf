@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/schema"
 )
@@ -19,6 +20,10 @@ var decoder = schema.NewDecoder()
 type response struct {
 	Data any    `json:"data,omitempty"`
 	Err  string `json:"error,omitempty"`
+	// Set only for error responses that opt into
+	// a typed code via sanitizeErr; omitted for both successful responses
+	// and generic errors so existing consumers see the same shape.
+	Code string `json:"code,omitempty"`
 }
 
 // respondOK writes an HTTP 200 with the JSON-wrapped data payload. Use for
@@ -61,12 +66,14 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 	}
 
 	if err != nil {
-		status, err = sanitizeErr(err)
+		var code string
+		status, err, code = sanitizeErr(err)
 		switch e := err.(type) {
 		case *model.InvalidInputError:
 			res.Data = e.Data()
 		}
 		res.Err = err.Error()
+		res.Code = code
 	}
 
 	w.WriteHeader(status)
@@ -84,13 +91,16 @@ func parseRFC3339(dateStr string) (time.Time, error) {
 	return time.Parse(time.RFC3339, dateStr)
 }
 
-func sanitizeErr(err error) (int, error) {
+func sanitizeErr(err error) (int, error, string) {
 	switch err.(type) {
 	case *model.InvalidInputError:
-		return 400, err
+		return 400, err, ""
 	}
 
-	var status int
+	var (
+		status int
+		code   string
+	)
 
 	switch {
 	case errors.Is(err, model.ErrNoData):
@@ -98,6 +108,9 @@ func sanitizeErr(err error) (int, error) {
 		fallthrough
 	case errors.Is(err, ErrNotFound):
 		status = 404
+	case errors.Is(err, ErrSelfDelete):
+		status = 403
+		code = auth.CodeSelfDeleteForbidden
 	case errors.Is(err, ErrForbidden),
 		errors.Is(err, model.ErrPastDeadline):
 		status = 403
@@ -117,5 +130,5 @@ func sanitizeErr(err error) (int, error) {
 		err = ErrServer
 	}
 
-	return status, err
+	return status, err, code
 }

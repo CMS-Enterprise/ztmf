@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/mux"
 )
@@ -217,9 +216,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		caseVariant := userID != authdUser.UserID
 		log.Printf("user: self-delete blocked actor=%s target=%s case_variant=%t\n",
 			authdUser.UserID, userID, caseVariant)
-		auth.WriteJSONError(w, http.StatusForbidden,
-			"You cannot delete your own account.",
-			auth.CodeSelfDeleteForbidden)
+		respond(w, r, nil, ErrSelfDelete)
 		return
 	}
 
