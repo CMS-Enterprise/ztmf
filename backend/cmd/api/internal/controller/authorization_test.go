@@ -2,12 +2,16 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -489,4 +493,105 @@ func TestSaveMassEmail_ReadonlyAdminForbidden(t *testing.T) {
 // helper
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func TestDeleteUser_SelfDeleteRejected(t *testing.T) {
+	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+adminUser.UserID, nil)
+	r = mux.SetURLVars(r, map[string]string{"userid": adminUser.UserID})
+	r = withUser(r, adminUser)
+	w := httptest.NewRecorder()
+
+	DeleteUser(w, r)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, auth.CodeSelfDeleteForbidden, body.Code)
+	assert.NotEmpty(t, body.Error)
+}
+
+func TestDeleteUser_OtherDeleteSucceeds(t *testing.T) {
+	otherIDLower := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	target := &model.User{
+		UserID: otherIDLower,
+		Email:  "target@empire.test",
+		Role:   "ISSO",
+	}
+
+	prevFind, prevDel := findUserByID, deleteUser
+	findUserByID = func(_ context.Context, _ string) (*model.User, error) {
+		return target, nil
+	}
+	deleteUser = func(_ context.Context, _ string) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		findUserByID = prevFind
+		deleteUser = prevDel
+	})
+
+	
+	variants := map[string]string{
+		"lower-cased": otherIDLower,
+		"upper-cased": strings.ToUpper(otherIDLower),
+	}
+	for name, pathID := range variants {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+pathID, nil)
+			r = mux.SetURLVars(r, map[string]string{"userid": pathID})
+			r = withUser(r, adminUser)
+			w := httptest.NewRecorder()
+
+			DeleteUser(w, r)
+
+			assert.Equal(t, http.StatusNoContent, w.Code)
+		})
+	}
+}
+
+func TestDeleteUser_SelfDeleteRejected_CaseInsensitive(t *testing.T) {
+	// Use a UUID with hex letters so case-folding is observable. Local
+	// fixture rather than the shared adminUser (whose UserID is all digits).
+	callerID := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+	caller := &model.User{
+		UserID: callerID,
+		Email:  "case@empire.test",
+		Role:   "OWNER",
+	}
+	variants := map[string]string{
+		"upper-cased": strings.ToUpper(callerID),
+		"mixed-case":  "F47ac10B-58CC-4372-A567-0e02B2c3D479",
+	}
+	for name, pathID := range variants {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+pathID, nil)
+			r = mux.SetURLVars(r, map[string]string{"userid": pathID})
+			r = withUser(r, caller)
+			w := httptest.NewRecorder()
+
+			DeleteUser(w, r)
+
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			var body struct {
+				Code string `json:"code"`
+			}
+			assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+			assert.Equal(t, auth.CodeSelfDeleteForbidden, body.Code)
+		})
+	}
+}
+
+func TestDeleteUser_MissingIDIsNotFound(t *testing.T) {
+	r := httptest.NewRequest(http.MethodDelete, "/api/v1/users", nil)
+	r = withUser(r, adminUser)
+	w := httptest.NewRecorder()
+
+	DeleteUser(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

@@ -22,6 +22,7 @@ const (
 	CodeUnauthorized          = "UNAUTHORIZED"
 	CodeForbiddenOrigin       = "FORBIDDEN_ORIGIN"
 	CodeAccountNotProvisioned = "ACCOUNT_NOT_PROVISIONED"
+	CodeSelfDeleteForbidden = "SELF_DELETE_FORBIDDEN"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a
