@@ -22,6 +22,14 @@ func Handler() http.Handler {
 	lookupLimiter := auth.NewRateLimiter(rate.Limit(5), 10, 10*time.Minute)
 	root.Handle("/api/v1/auth/lookup", lookupLimiter.Middleware(http.HandlerFunc(controller.LookupIdP))).Methods("GET")
 
+	// Unauthenticated pre-auth telemetry: the login page beacons a login-lookup
+	// failure here before any session exists, so like the lookup it lives outside
+	// auth.Middleware. It gets its own limiter (a separate bucket from the lookup)
+	// so a flood of beacons cannot drain the lookup's budget; the rate is tighter
+	// because this route is more attractive to flood (no email, pure fire-and-forget).
+	clientEventsLimiter := auth.NewRateLimiter(rate.Limit(1), 5, 10*time.Minute)
+	root.Handle("/api/v1/client-events", clientEventsLimiter.Middleware(http.HandlerFunc(controller.SaveClientEvent))).Methods("POST")
+
 	// Post-OIDC login. The ALB authenticates /login* per IdP and forwards here
 	// with the IdP token in the auth header; SessionHandler mints the app
 	// session cookie. These live outside auth.Middleware because no app session

@@ -225,6 +225,13 @@ components:
         error:
           type: string
       type: object
+    controller.clientEvent:
+      properties:
+        event:
+          type: string
+        reason:
+          type: string
+      type: object
     controller.idpLookupResponse:
       properties:
         idp:
@@ -589,6 +596,41 @@ paths:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Internal Server Error
       summary: Resolve the identity provider for an email
+      tags:
+      - auth
+  /client-events:
+    post:
+      description: Unauthenticated fire-and-forget beacon the login page sends when
+        a login-lookup call fails. Accepts only a fixed event/reason enum (a failure
+        category, never an email or PII), writes one structured log line, and returns
+        204. Deliberately has no bearerAuth security.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.clientEvent'
+                description: Client event (failure category only)
+                summary: body
+        description: Client event (failure category only)
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: bad request
+        "413":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: payload too large
+      summary: Record a pre-auth client telemetry event
       tags:
       - auth
   /datacalls:
