@@ -67,7 +67,7 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 
 	if err != nil {
 		var code string
-		status, err, code = sanitizeErr(err)
+		status, code, err = sanitizeErr(err)
 		switch e := err.(type) {
 		case *model.InvalidInputError:
 			res.Data = e.Data()
@@ -91,10 +91,10 @@ func parseRFC3339(dateStr string) (time.Time, error) {
 	return time.Parse(time.RFC3339, dateStr)
 }
 
-func sanitizeErr(err error) (int, error, string) {
+func sanitizeErr(err error) (int, string, error) {
 	switch err.(type) {
 	case *model.InvalidInputError:
-		return 400, err, ""
+		return 400, "", err
 	}
 
 	var (
@@ -130,5 +130,5 @@ func sanitizeErr(err error) (int, error, string) {
 		err = ErrServer
 	}
 
-	return status, err, code
+	return status, code, err
 }
