@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -514,24 +515,41 @@ func TestDeleteUser_SelfDeleteRejected(t *testing.T) {
 	assert.NotEmpty(t, body.Error)
 }
 
-func TestDeleteUser_OtherDeleteNotSelfError(t *testing.T) {
-	// A non-caller UUID that contains hex letters, so we can also try a case
-	// variant. 
+func TestDeleteUser_OtherDeleteSucceeds(t *testing.T) {
 	otherIDLower := "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-	for _, otherID := range []string{otherIDLower, strings.ToUpper(otherIDLower)} {
-		t.Run(otherID, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+otherID, nil)
-			r = mux.SetURLVars(r, map[string]string{"userid": otherID})
+	target := &model.User{
+		UserID: otherIDLower,
+		Email:  "target@empire.test",
+		Role:   "ISSO",
+	}
+
+	prevFind, prevDel := findUserByID, deleteUser
+	findUserByID = func(_ context.Context, _ string) (*model.User, error) {
+		return target, nil
+	}
+	deleteUser = func(_ context.Context, _ string) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		findUserByID = prevFind
+		deleteUser = prevDel
+	})
+
+	
+	variants := map[string]string{
+		"lower-cased": otherIDLower,
+		"upper-cased": strings.ToUpper(otherIDLower),
+	}
+	for name, pathID := range variants {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+pathID, nil)
+			r = mux.SetURLVars(r, map[string]string{"userid": pathID})
 			r = withUser(r, adminUser)
 			w := httptest.NewRecorder()
 
 			DeleteUser(w, r)
 
-			var body struct {
-				Code string `json:"code"`
-			}
-			_ = json.Unmarshal(w.Body.Bytes(), &body)
-			assert.NotEqual(t, auth.CodeSelfDeleteForbidden, body.Code)
+			assert.Equal(t, http.StatusNoContent, w.Code)
 		})
 	}
 }
