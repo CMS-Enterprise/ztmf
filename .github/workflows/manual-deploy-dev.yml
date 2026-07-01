@@ -1,17 +1,15 @@
 name: Manual Deploy to DEV
 
-# Deploy main to DEV on demand. API/app only by default; Terraform apply is opt-in.
+# Deploy main to DEV on demand.
 #   - orchestration-dev (open/sync a PR): preview a feature branch on DEV.
 #   - this workflow: (re)deploy main to DEV, e.g. to reset DEV after branch deploys.
-# Always redeploys (skips the diff gate). Run:
-#   gh workflow run "Manual Deploy to DEV" --ref main [-f include_infrastructure=true]
+# The rollout IS the terraform apply (backend.yml only builds/pushes the image;
+# ecs.tf reads the tag from the ztmf_api_tag SSM param), so infrastructure always runs.
+# Caveat: re-running on an unchanged main SHA fails the immutable ECR tag push —
+# land a commit first so the build gets a new tag.
+# Run: gh workflow run "Manual Deploy to DEV" --ref main
 on:
   workflow_dispatch:
-    inputs:
-      include_infrastructure:
-        description: 'Also run the Terraform infrastructure apply against DEV'
-        type: boolean
-        default: false
 
 jobs:
   analysis:
@@ -33,7 +31,6 @@ jobs:
     needs:
       - analysis
       - backend
-    if: ${{ inputs.include_infrastructure }}
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: DEV
