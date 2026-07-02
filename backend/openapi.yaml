@@ -279,6 +279,12 @@ components:
       type: object
     model.FismaSystem:
       properties:
+        cloud_service_model:
+          type: string
+        cloud_system:
+          type: string
+        cloud_vendor:
+          type: string
         component:
           type: string
         datacallcontact:
@@ -295,6 +301,8 @@ components:
           type: string
         divisionname:
           type: string
+        fips:
+          type: string
         fismaacronym:
           type: string
         fismaname:
@@ -305,11 +313,17 @@ components:
           type: integer
         fismauid:
           type: string
+        goco_coco_gogo:
+          type: string
         groupacronym:
           type: string
         groupname:
           type: string
+        hva:
+          type: string
         issoemail:
+          type: string
+        legacy:
           type: string
         opdiv_id:
           type: integer
@@ -321,6 +335,14 @@ components:
           type: string
         sdl_sync_enabled:
           type: boolean
+        system_operator:
+          type: string
+        system_owner:
+          type: string
+        system_owner_email:
+          type: string
+        system_type:
+          type: string
       type: object
     model.Function:
       properties:
@@ -446,6 +468,8 @@ components:
           $ref: '#/components/schemas/model.AuditRef'
         notes:
           type: string
+        notes_is_ai_summary:
+          type: boolean
         scoreid:
           type: integer
       type: object

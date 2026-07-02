@@ -35,6 +35,7 @@ type Score struct {
 	FismaSystemID    int32           `json:"fismasystemid"`
 	DateCalculated   float64         `json:"datecalculated"`
 	Notes            *string         `json:"notes"`
+	NotesIsAISummary bool            `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
 	FunctionOptionID int32           `json:"functionoptionid"`
 	DataCallID       int32           `json:"datacallid"`
 	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
@@ -95,9 +96,9 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	if s.ScoreID == 0 {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
-			Columns("fismasystemid", "notes", "functionoptionid", "datacallid").
-			Values(s.FismaSystemID, s.Notes, s.FunctionOptionID, s.DataCallID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
+			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid").
+			Values(s.FismaSystemID, s.Notes, s.NotesIsAISummary, s.FunctionOptionID, s.DataCallID).
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
 	} else {
 		sqlb = stmntBuilder.
 			Update("public.scores").
@@ -106,7 +107,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Set("functionoptionid", s.FunctionOptionID).
 			Set("datacallid", s.DataCallID).
 			Where("scoreid=?", s.ScoreID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, functionoptionid, datacallid")
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
@@ -179,11 +180,11 @@ func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, erro
 	current := &Score{}
 	err = conn.QueryRow(ctx, `
 		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
-		       notes, functionoptionid, datacallid
+		       notes, notes_is_ai_summary, functionoptionid, datacallid
 		FROM scores WHERE scoreid = $1
 	`, incoming.ScoreID).Scan(
 		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
-		&current.Notes, &current.FunctionOptionID, &current.DataCallID,
+		&current.Notes, &current.NotesIsAISummary, &current.FunctionOptionID, &current.DataCallID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -349,7 +350,7 @@ type FindScoresInput struct {
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	sqlb := stmntBuilder.
-		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.functionoptionid, scores.datacallid").
+		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.notes_is_ai_summary, scores.functionoptionid, scores.datacallid").
 		From("scores")
 
 	if input.contains("functionoption") {
@@ -406,7 +407,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
-		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.FunctionOptionID, &score.DataCallID}
+		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.NotesIsAISummary, &score.FunctionOptionID, &score.DataCallID}
 		if input.contains("functionoption") {
 			score.FunctionOption = &FunctionOption{}
 			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)
@@ -715,13 +716,13 @@ func copyPreviousScores(dataCallID int32) {
 
 	// select the previous scores but set the datacallid to be the latest
 	prevScoresSqlb := squirrel.
-		Select("fismasystemid", "datecalculated", "notes", "functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID)).
+		Select("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID)).
 		From("scores").
 		Where("datacallid=?", prevDataCall.DataCallID)
 
 	sqlb := squirrel.
 		Insert("scores").
-		Columns("fismasystemid", "datecalculated", "notes", "functionoptionid", "datacallid").
+		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid").
 		Select(prevScoresSqlb).
 		PlaceholderFormat(squirrel.Dollar)
 
