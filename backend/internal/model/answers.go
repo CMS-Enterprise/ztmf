@@ -20,7 +20,7 @@ type Answer struct {
 	OptionName            string
 	Score                 int
 	Notes                 string
-	NotesIsAISummary      bool `db:"notes_is_ai_summary"`
+	NotesIsAISummary      *bool `db:"notes_is_ai_summary"`
 }
 
 type FindAnswersInput struct {

@@ -903,7 +903,7 @@ END $$;
 BEGIN;
 
 -- Clean re-run: remove only what this file owns (scores cascade via datacall)
-DELETE FROM public.datacalls WHERE datacall IN ('FY23 ZTM','FY24 ZTM','FY25 ZTM');
+DELETE FROM public.datacalls WHERE datacallid IN (101, 102, 103);
 DELETE FROM public.fismasystems WHERE fismaacronym LIKE 'MOCK-%';
 
 -- The 3 historical HHS data calls

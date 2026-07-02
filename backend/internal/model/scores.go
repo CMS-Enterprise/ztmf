@@ -35,7 +35,7 @@ type Score struct {
 	FismaSystemID    int32           `json:"fismasystemid"`
 	DateCalculated   float64         `json:"datecalculated"`
 	Notes            *string         `json:"notes"`
-	NotesIsAISummary bool            `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
+	NotesIsAISummary *bool           `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
 	FunctionOptionID int32           `json:"functionoptionid"`
 	DataCallID       int32           `json:"datacallid"`
 	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
@@ -97,15 +97,21 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
 			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid").
-			Values(s.FismaSystemID, s.Notes, s.NotesIsAISummary, s.FunctionOptionID, s.DataCallID).
+			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
 	} else {
+		setCols := squirrel.Eq{
+			"fismasystemid":    s.FismaSystemID,
+			"notes":            s.Notes,
+			"functionoptionid": s.FunctionOptionID,
+			"datacallid":       s.DataCallID,
+		}
+		if s.NotesIsAISummary != nil {
+			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
+		}
 		sqlb = stmntBuilder.
 			Update("public.scores").
-			Set("fismasystemid", s.FismaSystemID).
-			Set("notes", s.Notes).
-			Set("functionoptionid", s.FunctionOptionID).
-			Set("datacallid", s.DataCallID).
+			SetMap(setCols).
 			Where("scoreid=?", s.ScoreID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
 	}
@@ -207,6 +213,9 @@ func scoresEqualForUpdate(current, incoming *Score) bool {
 	if current.FismaSystemID != incoming.FismaSystemID ||
 		current.DataCallID != incoming.DataCallID ||
 		current.FunctionOptionID != incoming.FunctionOptionID {
+		return false
+	}
+	if incoming.NotesIsAISummary != nil && derefBool(current.NotesIsAISummary) != *incoming.NotesIsAISummary {
 		return false
 	}
 	return derefString(current.Notes) == derefString(incoming.Notes)
@@ -449,6 +458,13 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
 }
 
 // pillarScoreRow is the wire shape returned by findPillarScoresAll. One row
