@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy"}
 
 type FismaSystem struct {
 	FismaSystemID         int32      `json:"fismasystemid"`
@@ -35,6 +35,17 @@ type FismaSystem struct {
 	ReactivatedDate       *time.Time `json:"reactivated_date"`
 	ReactivationNotes     *string    `json:"reactivation_notes"`
 	OpDivID               *int32     `json:"opdiv_id" db:"opdiv_id"`
+	HVA                   *string    `json:"hva" db:"hva"`
+	FIPS                  *string    `json:"fips" db:"fips"`
+	SystemType            *string    `json:"system_type" db:"system_type"`
+	CloudSystem           *string    `json:"cloud_system" db:"cloud_system"`
+	CloudServiceModel     *string    `json:"cloud_service_model" db:"cloud_service_model"`
+	CloudVendor           *string    `json:"cloud_vendor" db:"cloud_vendor"`
+	SystemOperator        *string    `json:"system_operator" db:"system_operator"`
+	GocoCocGoGo           *string    `json:"goco_coco_gogo" db:"goco_coco_gogo"`
+	SystemOwner           *string    `json:"system_owner" db:"system_owner"`
+	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
+	Legacy                *string    `json:"legacy" db:"legacy"`
 }
 
 type FindFismaSystemsInput struct {
@@ -154,15 +165,24 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		} else {
 			opdivVal = squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1)")
 		}
-		insertCols := append(append([]string{}, fismaSystemColumns[1:13]...), "opdiv_id")
+		insertCols := []string{
+			"fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component",
+			"groupacronym", "groupname", "divisionname", "datacenterenvironment",
+			"datacallcontact", "issoemail", "sdl_sync_enabled", "opdiv_id",
+			"hva", "fips", "system_type", "cloud_system", "cloud_service_model",
+			"cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner",
+			"system_owner_email", "legacy",
+		}
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
 			Columns(insertCols...).
 			Values(
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
-				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled,
-				opdivVal,
+				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
+				f.HVA, f.FIPS, f.SystemType, f.CloudSystem, f.CloudServiceModel,
+				f.CloudVendor, f.SystemOperator, f.GocoCocGoGo, f.SystemOwner,
+				f.SystemOwnerEmail, f.Legacy,
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
@@ -180,6 +200,17 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			Set("datacallcontact", f.DataCallContact).
 			Set("issoemail", f.ISSOEmail).
 			Set("sdl_sync_enabled", f.SDLSyncEnabled).
+			Set("hva", f.HVA).
+			Set("fips", f.FIPS).
+			Set("system_type", f.SystemType).
+			Set("cloud_system", f.CloudSystem).
+			Set("cloud_service_model", f.CloudServiceModel).
+			Set("cloud_vendor", f.CloudVendor).
+			Set("system_operator", f.SystemOperator).
+			Set("goco_coco_gogo", f.GocoCocGoGo).
+			Set("system_owner", f.SystemOwner).
+			Set("system_owner_email", f.SystemOwnerEmail).
+			Set("legacy", f.Legacy).
 			Where("fismasystemid=?", f.FismaSystemID).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	}

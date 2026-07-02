@@ -425,6 +425,39 @@ func TestScoresEqualForUpdate(t *testing.T) {
 		assert.False(t, scoresEqualForUpdate(base(), nil))
 	})
 
+	t.Run("NotesIsAISummaryNilSkipped", func(t *testing.T) {
+		current := base()
+		trueVal := true
+		current.NotesIsAISummary = &trueVal
+		incoming := base()
+		// nil means the client omitted the field; must not trigger an update
+		incoming.NotesIsAISummary = nil
+		assert.True(t, scoresEqualForUpdate(current, incoming),
+			"omitted NotesIsAISummary must not be treated as a change")
+	})
+
+	t.Run("NotesIsAISummaryClearedByFalse", func(t *testing.T) {
+		current := base()
+		trueVal := true
+		current.NotesIsAISummary = &trueVal
+		incoming := base()
+		falseVal := false
+		incoming.NotesIsAISummary = &falseVal
+		assert.False(t, scoresEqualForUpdate(current, incoming),
+			"explicit false must be detected as a real change and written to DB")
+	})
+
+	t.Run("NotesIsAISummaryUnchanged", func(t *testing.T) {
+		current := base()
+		trueVal := true
+		current.NotesIsAISummary = &trueVal
+		incoming := base()
+		trueVal2 := true
+		incoming.NotesIsAISummary = &trueVal2
+		assert.True(t, scoresEqualForUpdate(current, incoming),
+			"same value must not trigger an update")
+	})
+
 	// Pinned contract: whitespace-only notes do NOT normalize to empty.
 	// The FE trims before submitting today, so reaching this comparison
 	// with " " on one side means a caller is deliberately sending

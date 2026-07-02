@@ -101,6 +101,39 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystem, nil)
 }
 
+// clearHHSMetadata nils the 11 HHS onboarding fields on a FismaSystem.
+// Called on INSERT when the acting user lacks unscoped read access.
+func clearHHSMetadata(fs *model.FismaSystem) {
+	fs.HVA = nil
+	fs.FIPS = nil
+	fs.SystemType = nil
+	fs.CloudSystem = nil
+	fs.CloudServiceModel = nil
+	fs.CloudVendor = nil
+	fs.SystemOperator = nil
+	fs.GocoCocGoGo = nil
+	fs.SystemOwner = nil
+	fs.SystemOwnerEmail = nil
+	fs.Legacy = nil
+}
+
+// copyHHSMetadata copies the 11 HHS onboarding fields from src onto dst.
+// Called on UPDATE when the acting user lacks unscoped read access so that
+// a scoped admin edit does not wipe HHS metadata they cannot see.
+func copyHHSMetadata(src, dst *model.FismaSystem) {
+	dst.HVA = src.HVA
+	dst.FIPS = src.FIPS
+	dst.SystemType = src.SystemType
+	dst.CloudSystem = src.CloudSystem
+	dst.CloudServiceModel = src.CloudServiceModel
+	dst.CloudVendor = src.CloudVendor
+	dst.SystemOperator = src.SystemOperator
+	dst.GocoCocGoGo = src.GocoCocGoGo
+	dst.SystemOwner = src.SystemOwner
+	dst.SystemOwnerEmail = src.SystemOwnerEmail
+	dst.Legacy = src.Legacy
+}
+
 // guardManageFismaSystem fetches the target system and verifies the acting user
 // may write it: OWNER/HHS_ADMIN manage any system, an OPDIV_ADMIN only systems
 // in an OpDiv they hold a grant for. A missing system stays a NotFound (it does
@@ -172,13 +205,22 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update path: an OpDiv-scoped admin may only edit a system in an OpDiv they
-	// hold a grant for. opdiv_id is immutable on update, so the existing row's
-	// OpDiv is authoritative.
-	if f.FismaSystemID != 0 {
-		if _, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID); err != nil {
+	// HHS metadata gate: only OWNER and HHS_ADMIN may write the 11 HHS onboarding
+	// fields (HasUnscopedRead gates this; HHS_READONLY_ADMIN is already blocked by
+	// IsAdmin() above). On INSERT, clear fields for scoped actors. On UPDATE, copy
+	// stored values so a scoped admin edit does not wipe data they cannot see.
+	if f.FismaSystemID == 0 {
+		if !authdUser.HasUnscopedRead() {
+			clearHHSMetadata(f)
+		}
+	} else {
+		existing, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID)
+		if err != nil {
 			respond(w, r, nil, err)
 			return
+		}
+		if !authdUser.HasUnscopedRead() {
+			copyHHSMetadata(existing, f)
 		}
 	}
 
