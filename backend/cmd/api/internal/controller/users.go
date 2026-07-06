@@ -1,11 +1,21 @@
 package controller
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/mux"
+)
+
+// Package-level seams over the model funcs used by DeleteUser so tests can
+// stub them without a database. Production wiring is the real model funcs.
+// Same pattern as auth/middleware.go's findUserByID / findUserByEmail vars.
+var (
+	findUserByID = model.FindUserByID
+	deleteUser   = model.DeleteUser
 )
 
 //	@Summary	List all users
@@ -148,10 +158,13 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// identity_provider is derived from OpDiv on grant and is only overridable
-	// by an OWNER. Ignore any client-supplied value from a non-OWNER so it
-	// cannot be used to misroute a user's login.
-	if !authdUser.IsOwner() {
+	// identity_provider is derived from OpDiv membership (see deriveIdentityProvider).
+	// An explicit override is only honored from an HHS-wide actor (OWNER, HHS_ADMIN,
+	// HHS_READONLY_ADMIN); OpDiv-scoped admins are confined to their own scope and
+	// cannot set it. Ignore any client-supplied value from a scoped actor so it
+	// cannot be used to misroute a user's login. When left blank, Save derives it
+	// from the new user's OpDiv set on create.
+	if !authdUser.HasUnscopedRead() {
 		user.IdentityProvider = ""
 	}
 
@@ -207,8 +220,17 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Self delete prevention gate.
+	if strings.EqualFold(userID, authdUser.UserID) {
+		caseVariant := userID != authdUser.UserID
+		log.Printf("user: self-delete blocked actor=%s target=%s case_variant=%t\n",
+			authdUser.UserID, userID, caseVariant)
+		respond(w, r, nil, ErrSelfDelete)
+		return
+	}
+
 	// An OpDiv-scoped admin may only delete a user within their OpDiv.
-	target, terr := model.FindUserByID(r.Context(), userID)
+	target, terr := findUserByID(r.Context(), userID)
 	if terr != nil {
 		respond(w, r, nil, terr)
 		return
@@ -218,7 +240,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := model.DeleteUser(r.Context(), userID)
+	err := deleteUser(r.Context(), userID)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, err)
@@ -275,3 +297,11 @@ func RestoreUser(w http.ResponseWriter, r *http.Request) {
 
 	respondOK(w, user)
 }
+
+// Compile-time assertion that the model funcs used by DeleteUser keep the
+// signatures the seams (and their tests) expect. Guards against silent
+// signature drift in the model package.
+var (
+	_ func(context.Context, string) (*model.User, error) = findUserByID
+	_ func(context.Context, string) error                = deleteUser
+)

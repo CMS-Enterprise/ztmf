@@ -18,6 +18,12 @@ variable "entra_enabled" {
   default     = false
 }
 
+variable "alarm_notification_email" {
+  description = "Email subscribed to the ztmf-alarms SNS topic for login/OIDC alerting. Empty (default) creates the topic and alarms without a subscription so they can land before a destination is finalized; set per-environment in tfvars. For a Slack/PagerDuty endpoint, swap the subscription protocol in monitoring-login-auth.tf."
+  type        = string
+  default     = ""
+}
+
 variable "kion_rotate_schedule_enabled" {
   description = "Enable the daily EventBridge schedule for ztmf-kion-key-rotate. Kion NAT allowlist is in place (CMS-Enterprise/ztmf-misc#174) and real rotation was validated end to end on 2026-04-22, so this defaults to true. Set to false only for temporary maintenance windows when rotation must be paused."
   type        = bool

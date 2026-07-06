@@ -123,9 +123,130 @@ func CreateUserOpDiv(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
+	// Shared-OpDiv check: an OPDIV_ADMIN may only act on users who already share
+	// one of their OpDivs. A user with no grants is not yet in any scope, so
+	// an OPDIV_ADMIN granting their own OpDiv is the intended onboarding path.
+	if !authdUser.HasUnscopedRead() && len(target.AssignedOpDivIDs) > 0 && !sharesOpDiv(authdUser, target) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
 
 	saved, err := uo.Save(r.Context())
 	respond(w, r, saved, err)
+}
+
+type setUserOpDivsInput struct {
+	OpDivIDs *[]int32 `json:"opdiv_ids"`
+}
+
+// SetUserOpDivs replaces a user's full OpDiv grant set in one batch. The desired
+// set is reconciled against current grants (adds missing, removes extra) in one
+// transaction, and identity_provider is re-derived once at the end. An
+// OPDIV_ADMIN may only include OpDivs they hold; grants outside their scope are
+// left unchanged.
+//
+//	@Summary	Set a user's OpDiv grants (batch replace)
+//	@Tags		users
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		userid	path	string				true	"User ID"
+//	@Param		body	body	setUserOpDivsInput	true	"Desired grant set"
+//	@Success	204	"No Content"
+//	@Failure	400	{object}	apiResponse[any]
+//	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
+//	@Failure	500	{object}	apiResponse[any]
+//	@Router		/users/{userid}/opdivs [put]
+func SetUserOpDivs(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.IsAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	userID, ok := mux.Vars(r)["userid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	var input setUserOpDivsInput
+	if err := getJSON(r.Body, &input); err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+	// A missing opdiv_ids key and an explicit [] both would otherwise deserialize
+	// identically. Require the field to be present so a serialization bug cannot
+	// silently clear all grants; an intentional clear must send an explicit [].
+	if input.OpDivIDs == nil {
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+	opdivIDs := *input.OpDivIDs
+
+	// Scope gate: OPDIV_ADMIN may only request OpDivs they hold. Pure memory
+	// check — runs before the tier-ceiling DB call to short-circuit early.
+	if !authdUser.HasUnscopedRead() {
+		for _, id := range opdivIDs {
+			if !authdUser.IsAssignedOpDiv(id) {
+				respond(w, r, nil, ErrForbidden)
+				return
+			}
+		}
+	}
+
+	// Tier ceiling: cannot manage a higher-tier user.
+	target, err := model.FindUserByID(r.Context(), userID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	if !authdUser.CanAssignRole(target.Role) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	// Shared-OpDiv check: an OPDIV_ADMIN may only act on users who already share
+	// one of their OpDivs. A user with no grants is not yet in any scope, so
+	// an OPDIV_ADMIN granting their own OpDiv is the intended onboarding path.
+	if !authdUser.HasUnscopedRead() && len(target.AssignedOpDivIDs) > 0 && !sharesOpDiv(authdUser, target) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	current, err := model.FindUserOpDivsByUserID(r.Context(), userID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	desiredSet := make(map[int32]bool, len(opdivIDs))
+	for _, id := range opdivIDs {
+		desiredSet[id] = true
+	}
+	currentSet := make(map[int32]bool, len(current))
+	for _, id := range current {
+		currentSet[id] = true
+	}
+
+	var toAdd, toRemove []int32
+	// Scope-guard toAdd locally as defense-in-depth: even though the scope gate
+	// above already validates every requested ID, mirror the check here so the
+	// invariant holds if the gate above is ever relaxed.
+	for _, id := range opdivIDs {
+		if !currentSet[id] && (authdUser.HasUnscopedRead() || authdUser.IsAssignedOpDiv(id)) {
+			toAdd = append(toAdd, id)
+		}
+	}
+	for _, id := range current {
+		if !desiredSet[id] && (authdUser.HasUnscopedRead() || authdUser.IsAssignedOpDiv(id)) {
+			toRemove = append(toRemove, id)
+		}
+	}
+
+	err = model.SetUserOpDivs(r.Context(), userID, toAdd, toRemove, &authdUser.UserID)
+	respond(w, r, nil, err)
 }
 
 // DeleteUserOpDiv revokes a user's OpDiv grant. Same scope as granting: an
@@ -168,6 +289,25 @@ func DeleteUserOpDiv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := uo.Delete(r.Context())
+	// Tier ceiling + shared-OpDiv check: mirror the same gates as the other
+	// single-grant handler (CreateUserOpDiv) so all three mutation paths are
+	// consistently scoped.
+	target, err := model.FindUserByID(r.Context(), uo.UserID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	if !authdUser.CanAssignRole(target.Role) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	// A user with no grants is not yet in any scope; allow the revoke to
+	// proceed (edge case: all grants already removed by another admin).
+	if !authdUser.HasUnscopedRead() && len(target.AssignedOpDivIDs) > 0 && !sharesOpDiv(authdUser, target) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	err = uo.Delete(r.Context())
 	respond(w, r, "", err)
 }

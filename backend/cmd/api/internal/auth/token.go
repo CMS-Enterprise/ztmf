@@ -135,10 +135,21 @@ func validateIssuer(claims *Claims) error {
 func validateIssuerWith(iss, tid string, aud jwt.ClaimStrings, oktaIss, entraIss, entraTID, oktaAud, entraAud string) error {
 	switch {
 	case entraIss != "" && iss == entraIss:
-		if entraTID != "" && tid != entraTID {
+		// entraIss is tenant-scoped (https://login.microsoftonline.com/{tid}/v2.0),
+		// so an exact issuer match already proves the token is from the trusted
+		// tenant. tid is an id_token claim the ALB-forwarded token (built from the
+		// userinfo response) may not carry, so pin it only when the token actually
+		// presents it: a present-but-wrong tid is still rejected, while a missing
+		// tid falls back to the tenant scoping the matched issuer already enforces.
+		if entraTID != "" && tid != "" && tid != entraTID {
 			return ErrWrongTenant
 		}
-		if entraAud != "" && !slices.Contains(aud, entraAud) {
+		// aud, like tid, is an id_token claim the ALB-forwarded (userinfo-derived)
+		// token may not carry, so pin it only when the token actually presents an
+		// audience: a present-but-wrong aud is still rejected, while a missing aud
+		// falls back to the tenant scoping the matched issuer already enforces (the
+		// ALB validated audience against the client during the OIDC code exchange).
+		if entraAud != "" && len(aud) > 0 && !slices.Contains(aud, entraAud) {
 			return ErrWrongAudience
 		}
 		return nil

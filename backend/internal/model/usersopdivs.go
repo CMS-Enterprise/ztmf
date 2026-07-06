@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
@@ -89,6 +90,66 @@ func FindUserOpDivsByUserID(ctx context.Context, userID string) ([]int32, error)
 		OrderBy("opdiv_id")
 
 	return query(ctx, sqlb, pgx.RowTo[int32])
+}
+
+// SetUserOpDivs reconciles a user's OpDiv grants against the desired set in one
+// transaction: removes grants in toRemove, adds grants in toAdd, then re-derives
+// identity_provider once. toAdd and toRemove are pre-computed by the controller,
+// which enforces scope (an OPDIV_ADMIN can only touch OpDivs they hold).
+func SetUserOpDivs(ctx context.Context, userID string, toAdd, toRemove []int32, grantedBy *string) error {
+	if !isValidUUID(userID) {
+		return &InvalidInputError{data: map[string]any{"userid": "uuid required"}}
+	}
+
+	if len(toAdd) == 0 && len(toRemove) == 0 {
+		return nil
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return trapError(err)
+	}
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		conn.Release()
+		return trapError(err)
+	}
+	defer func() {
+		tx.Rollback(ctx)
+		conn.Release()
+	}()
+
+	if len(toRemove) > 0 {
+		if _, err = tx.Exec(ctx,
+			"DELETE FROM users_opdivs WHERE userid=$1 AND opdiv_id = ANY($2)",
+			userID, toRemove,
+		); err != nil {
+			return trapError(err)
+		}
+	}
+
+	if len(toAdd) > 0 {
+		sqlb := stmntBuilder.
+			Insert("users_opdivs").
+			Columns("userid", "opdiv_id", "granted_by")
+		for _, id := range toAdd {
+			sqlb = sqlb.Values(userID, id, grantedBy)
+		}
+		sqlb = sqlb.Suffix("ON CONFLICT (userid, opdiv_id) DO NOTHING")
+		q, args, err := sqlb.ToSql()
+		if err != nil {
+			return trapError(err)
+		}
+		if _, err = tx.Exec(ctx, q, args...); err != nil {
+			return trapError(err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return trapError(err)
+	}
+
+	return deriveIdentityProvider(ctx, userID)
 }
 
 // deriveIdentityProvider sets a user's identity_provider from their OpDiv

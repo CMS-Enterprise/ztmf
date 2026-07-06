@@ -55,13 +55,21 @@ func TestValidateIssuerWith(t *testing.T) {
 		{"entra token, tenant matches", entra, tid, nil, okta, entra, tid, "", "", nil},
 		{"entra token, wrong tenant", entra, "other-tenant", nil, okta, entra, tid, "", "", ErrWrongTenant},
 		{"entra token, tenant not pinned", entra, "anything", nil, okta, entra, "", "", "", nil},
+		// ALB-forwarded Entra tokens (built from the userinfo response) may omit
+		// the id_token-only tid claim. A missing tid must still pass when the
+		// tenant-scoped issuer matches; a present-but-wrong tid is still rejected.
+		{"entra token, tid absent passes via tenant-scoped issuer", entra, "", nil, okta, entra, tid, "", "", nil},
 		{"unknown issuer with issuers configured", "https://evil.example", "", nil, okta, entra, tid, "", "", ErrUntrustedIssuer},
 		{"no issuers configured is legacy pass", "https://anything", "", nil, "", "", "", "", "", nil},
 		{"okta-only env rejects entra issuer", entra, tid, nil, okta, "", "", "", "", ErrUntrustedIssuer},
 		// audience pinning (parallel to tenant pinning): enforced only when set
 		{"entra token, audience matches", entra, tid, jwt.ClaimStrings{entraAud}, okta, entra, tid, "", entraAud, nil},
 		{"entra token, wrong audience", entra, tid, jwt.ClaimStrings{"api://other-app"}, okta, entra, tid, "", entraAud, ErrWrongAudience},
-		{"entra token, no audience claim but pinned", entra, tid, nil, okta, entra, tid, "", entraAud, ErrWrongAudience},
+		// ALB-forwarded Entra tokens omit the id_token-only aud claim too; a missing
+		// aud must pass when pinned (parallel to tid), while a present-but-wrong aud
+		// is still rejected above. Both claims absent is the real dev scenario.
+		{"entra token, aud absent passes when pinned", entra, tid, nil, okta, entra, tid, "", entraAud, nil},
+		{"entra token, tid and aud both absent pass via tenant-scoped issuer", entra, "", nil, okta, entra, tid, "", entraAud, nil},
 		{"entra token, audience not enforced when unset", entra, tid, jwt.ClaimStrings{"api://other-app"}, okta, entra, tid, "", "", nil},
 		{"entra token, multiple audiences includes expected", entra, tid, jwt.ClaimStrings{"api://other-app", entraAud}, okta, entra, tid, "", entraAud, nil},
 		{"okta token, audience matches", okta, "", jwt.ClaimStrings{oktaAud}, okta, entra, tid, oktaAud, "", nil},

@@ -26,6 +26,34 @@ func hashIdentifier(id string) []byte {
 // path.
 const sessionIssuer = "ztmf"
 
+// logLoginReject records why a login was rejected so a 401 is diagnosable
+// without leaking the token or any PII. It logs the failing branch, the error
+// (which for token problems names the specific cause, e.g. ErrWrongTenant), and
+// which claims were *present* as booleans only - never their values. That makes
+// a missing tenant or identifier claim visible in the logs without ever writing
+// an email, UPN, or raw token. Previously these branches returned 401 silently,
+// so a broken login left no trace in the API log group.
+//
+// Steady-state note: ALB-forwarded Entra tokens are built from the IdP userinfo
+// response and normally omit the id_token-only tid claim, so tid_present=false
+// is the expected steady state on Entra logins - not an anomaly on its own; read
+// it together with branch and err. This is the same reason validateIssuer pins
+// tid only when the token presents it (see token.go).
+func logLoginReject(branch string, err error, tkn *jwt.Token) {
+	var issP, tidP, audP, emailP, upnP bool
+	if tkn != nil {
+		if c, ok := tkn.Claims.(*Claims); ok && c != nil {
+			issP = c.Issuer != ""
+			tidP = c.TID != ""
+			audP = len(c.Audience) > 0
+			emailP = c.Email != ""
+			upnP = c.PreferredUsername != ""
+		}
+	}
+	log.Printf("login: reject branch=%s err=%v iss_present=%t tid_present=%t aud_present=%t email_present=%t upn_present=%t\n",
+		branch, err, issP, tidP, audP, emailP, upnP)
+}
+
 // IdentifierFromClaims returns the canonical user identifier from an IdP token.
 // Email is preferred because that is how CMS/Okta users are keyed today; for
 // Entra users without a mailbox attribute the email claim is absent, so the UPN
@@ -108,6 +136,7 @@ func SessionHandler(w http.ResponseWriter, r *http.Request) {
 
 	rawHeader, ok := r.Header[http.CanonicalHeaderKey(cfg.Auth.HeaderField)]
 	if !ok || len(rawHeader) == 0 {
+		logLoginReject("missing_header", nil, nil)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -115,23 +144,26 @@ func SessionHandler(w http.ResponseWriter, r *http.Request) {
 	encoded := strings.TrimSpace(strings.Replace(rawHeader[0], "Bearer", "", -1))
 	tkn, err := decodeJWT(encoded)
 	if err != nil || !tkn.Valid {
+		logLoginReject("decode_jwt", err, tkn)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	identifier := IdentifierFromClaims(tkn.Claims.(*Claims))
 	if identifier == "" {
+		logLoginReject("empty_identifier", nil, tkn)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	user, err := model.FindUserByEmail(r.Context(), identifier)
 	if err != nil {
-		log.Printf("login: no user for identifier hash %x\n", hashIdentifier(identifier))
+		log.Printf("login: reject branch=no_user hash=%x\n", hashIdentifier(identifier))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if user.Deleted {
+		log.Printf("login: reject branch=user_deleted hash=%x\n", hashIdentifier(identifier))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

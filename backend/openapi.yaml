@@ -230,6 +230,14 @@ components:
         idp:
           type: string
       type: object
+    controller.setUserOpDivsInput:
+      properties:
+        opdiv_ids:
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
+      type: object
     model.AuditRef:
       properties:
         email:
@@ -2517,6 +2525,58 @@ paths:
       security:
       - bearerAuth: []
       summary: Revoke a user's OpDiv grant
+      tags:
+      - users
+  /users/{userid}/opdivs:
+    put:
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.setUserOpDivsInput'
+                description: Desired grant set
+                summary: body
+        description: Desired grant set
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Set a user's OpDiv grants (batch replace)
       tags:
       - users
   /users/{userid}/restore:

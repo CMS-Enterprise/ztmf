@@ -1,0 +1,37 @@
+name: Manual Deploy to DEV
+
+# Deploy main to DEV on demand.
+#   - orchestration-dev (open/sync a PR): preview a feature branch on DEV.
+#   - this workflow: (re)deploy main to DEV, e.g. to reset DEV after branch deploys.
+# The rollout IS the terraform apply (backend.yml only builds/pushes the image;
+# ecs.tf reads the tag from the ztmf_api_tag SSM param), so infrastructure always runs.
+# Caveat: re-running on an unchanged main SHA fails the immutable ECR tag push —
+# land a commit first so the build gets a new tag.
+# Run: gh workflow run "Manual Deploy to DEV" --ref main
+on:
+  workflow_dispatch:
+
+jobs:
+  analysis:
+    name: Analysis
+    uses: ./.github/workflows/analysis.yml
+    secrets: inherit
+
+  backend:
+    name: Backend
+    needs:
+      - analysis
+    uses: ./.github/workflows/backend.yml
+    with:
+      environment: DEV
+    secrets: inherit
+
+  infrastructure:
+    name: Infrastructure
+    needs:
+      - analysis
+      - backend
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: DEV
+    secrets: inherit
