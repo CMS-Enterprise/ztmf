@@ -5,7 +5,7 @@
 # reaches the DB at localhost:54399. Docker Desktop on macOS does not expose
 # `network_mode: host` container ports to the host, so host networking silently
 # broke both targets on Apple Silicon; published ports behave identically on
-# Linux/CI. See CMS-Enterprise/ztmf#384.
+# Linux/CI. See issue #384.
 
 services:
   test-db:
