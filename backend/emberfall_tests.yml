@@ -210,7 +210,7 @@ system1002WithHHSData: &system1002WithHHSData
   groupacronym: "STARCOM"
   groupname: "Imperial Starfleet Command"
   divisionname: "Naval Operations Division"
-  datacenterenvironment: "Imperial-Fleet"
+  datacenterenvironment: "Other"
   datacallcontact: "captain.needa@executor.empire"
   issoemail: "Admiral.Piett@executor.empire"
   sdl_sync_enabled: true
@@ -590,6 +590,8 @@ tests:
   #
   # Part 1: opDivAdmin POSTs a system with HHS fields → clearHHSMetadata
   # strips them; created record has null HHS fields.
+  # opdiv_id 15 = EMPIRE OpDiv, position 15 in the seed INSERT sequence
+  # (_test_data_empire.sql). If this fails with 403, the seed order changed.
   - id: createFismaSystemScopedAdmin
     url: http://localhost:8080/api/v1/fismasystems
     method: POST
@@ -599,6 +601,7 @@ tests:
     body:
       json:
         <<: *fismaSystemWithHHSData
+        opdiv_id: 15
     expect:
       status: 201
       headers:
