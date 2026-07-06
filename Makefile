@@ -7,7 +7,26 @@ SHELL := /bin/bash
 # Single source of truth for the local API port
 API_PORT ?= 8080
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi lint-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
+# Emberfall E2E runner install, resolved per platform. Releases are published as
+# emberfall_{Darwin,Linux}_{arm64,x86_64,i386}.tar.gz, so a hardcoded Linux URL
+# hands macOS (Apple Silicon) developers a binary that will not execute. Detect
+# the host OS/arch and build the matching asset URL. Override any var as needed,
+# e.g. `make install-emberfall EMBERFALL_BIN_DIR=$HOME/.local/bin`.
+EMBERFALL_VERSION ?= v0.4.1
+EMBERFALL_OS := $(shell uname -s)
+EMBERFALL_UNAME_M := $(shell uname -m)
+EMBERFALL_ARCH := $(if $(filter arm64 aarch64,$(EMBERFALL_UNAME_M)),arm64,$(if $(filter i386 i686,$(EMBERFALL_UNAME_M)),i386,x86_64))
+EMBERFALL_ASSET := emberfall_$(EMBERFALL_OS)_$(EMBERFALL_ARCH).tar.gz
+EMBERFALL_URL := https://github.com/aquia-inc/emberfall/releases/download/$(EMBERFALL_VERSION)/$(EMBERFALL_ASSET)
+# Checksums file is published per release as emberfall_<version-no-v>_checksums.txt.
+EMBERFALL_CHECKSUMS_URL := https://github.com/aquia-inc/emberfall/releases/download/$(EMBERFALL_VERSION)/emberfall_$(patsubst v%,%,$(EMBERFALL_VERSION))_checksums.txt
+# Default to a user-writable dir: /usr/local/bin is root-owned (and often absent
+# on Apple Silicon, where Homebrew lives under /opt/homebrew), so it fails the
+# install without sudo. Override for a system-wide install, e.g.
+# `make install-emberfall EMBERFALL_BIN_DIR=/usr/local/bin`.
+EMBERFALL_BIN_DIR ?= $(HOME)/.local/bin
+
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi lint-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full install-emberfall full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
 
 # Default target
 help:
@@ -32,6 +51,7 @@ help:
 	@echo "  make test-coverage-view  Open HTML coverage report in browser"
 	@echo "  make test-coverage-text  Show coverage summary in terminal"
 	@echo "  make test-e2e            Run Emberfall E2E tests"
+	@echo "  make install-emberfall   Install the Emberfall E2E runner for this OS/arch"
 	@echo "  make test-full           Run all tests including E2E (comprehensive)"
 	@echo ""
 	@echo "Authentication:"
@@ -301,11 +321,22 @@ test-coverage-text:
 	@echo "Running tests with coverage..."
 	@cd backend && go test -cover ./...
 
+install-emberfall:
+	@echo "📥 Installing emberfall $(EMBERFALL_VERSION) for $(EMBERFALL_OS)/$(EMBERFALL_ARCH) -> $(EMBERFALL_BIN_DIR)..."
+	@mkdir -p $(EMBERFALL_BIN_DIR)
+	@curl -fsSL $(EMBERFALL_URL) -o /tmp/$(EMBERFALL_ASSET)
+	@curl -fsSL $(EMBERFALL_CHECKSUMS_URL) -o /tmp/emberfall_checksums.txt
+	@cd /tmp && grep " $(EMBERFALL_ASSET)$$" emberfall_checksums.txt | if command -v sha256sum >/dev/null 2>&1; then sha256sum -c -; else shasum -a 256 -c -; fi
+	@tar -xzf /tmp/$(EMBERFALL_ASSET) -C $(EMBERFALL_BIN_DIR) emberfall
+	@chmod +x $(EMBERFALL_BIN_DIR)/emberfall
+	@rm -f /tmp/$(EMBERFALL_ASSET) /tmp/emberfall_checksums.txt
+	@echo "✅ emberfall $(EMBERFALL_VERSION) installed to $(EMBERFALL_BIN_DIR)/emberfall (sha256 verified)"
+	@case ":$$PATH:" in *":$(EMBERFALL_BIN_DIR):"*) ;; *) echo "⚠️  $(EMBERFALL_BIN_DIR) is not on your PATH. Add it: export PATH=\"$(EMBERFALL_BIN_DIR):$$PATH\"" ;; esac
+
 test-e2e:
 	@echo "🧪 Running Emberfall E2E tests (isolated environment)..."
 	@if ! command -v emberfall >/dev/null 2>&1; then \
-		echo "❌ Emberfall not installed"; \
-		echo "   Install: curl -L https://github.com/aquia-inc/emberfall/releases/download/v0.4.1/emberfall_Linux_x86_64.tar.gz | tar -xz && mv emberfall ~/.local/bin/"; \
+		echo "❌ Emberfall not installed. Run: make install-emberfall"; \
 		exit 1; \
 	fi
 	@echo "🧹 Cleaning up any existing test containers..."
