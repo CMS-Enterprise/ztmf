@@ -514,6 +514,8 @@ components:
           type: integer
         notes:
           type: string
+        notes_is_ai_summary:
+          type: boolean
         optionname:
           type: string
         score:
