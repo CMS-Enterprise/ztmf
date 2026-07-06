@@ -1,5 +1,11 @@
-# Isolated test environment - matches GitHub Actions behavior
-# Uses host networking like CI, fresh database each run, no volumes
+# Isolated test environment - fresh database each run, no volumes.
+# Uses a bridge network with published ports (not host networking) so the
+# host-side test runners work on every platform: emberfall (make test-e2e)
+# reaches the API at localhost:8090 and `go test` (make test-integration)
+# reaches the DB at localhost:54399. Docker Desktop on macOS does not expose
+# `network_mode: host` container ports to the host, so host networking silently
+# broke both targets on Apple Silicon; published ports behave identically on
+# Linux/CI. See CMS-Enterprise/ztmf#384.
 
 services:
   test-db:
@@ -8,7 +14,8 @@ services:
       POSTGRES_DB: ztmf
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: testpass
-    network_mode: host  # Use host network like CI
+    ports:
+      - "54399:54399"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d ztmf -p 54399"]
       interval: 2s
@@ -23,7 +30,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PORT: 8090
-      DB_ENDPOINT: localhost
+      DB_ENDPOINT: test-db  # reach the DB by service name over the compose network
       DB_PORT: 54399
       DB_NAME: ztmf
       DB_USER: admin
@@ -32,7 +39,8 @@ services:
       AUTH_HS256_SECRET: zeroTrust
       AUTH_HEADER_FIELD: Authorization
       ENVIRONMENT: test
-    network_mode: host  # Use host network like CI
+    ports:
+      - "8090:8090"
     volumes:
       - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro
     depends_on:
