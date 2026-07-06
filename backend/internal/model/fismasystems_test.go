@@ -103,12 +103,14 @@ func TestFismaSystemSDLSyncEnabledField(t *testing.T) {
 	})
 
 	t.Run("InsertSliceBoundary", func(t *testing.T) {
-		// The INSERT uses fismaSystemColumns[1:13] which should end with sdl_sync_enabled
-		insertCols := fismaSystemColumns[1:13]
-		assert.Equal(t, "sdl_sync_enabled", insertCols[len(insertCols)-1],
-			"last column in INSERT slice must be sdl_sync_enabled")
-		assert.Equal(t, 12, len(insertCols),
-			"INSERT slice should have 12 columns (fismauid through sdl_sync_enabled)")
+		// Save() INSERT uses an explicit named list (not a positional slice).
+		// Pin that the core columns are present at the expected positions so
+		// future appends to fismaSystemColumns don't silently break Insert order.
+		assert.Equal(t, "fismauid", fismaSystemColumns[1])
+		assert.Equal(t, "sdl_sync_enabled", fismaSystemColumns[12],
+			"sdl_sync_enabled must remain at index 12 (position in named INSERT list)")
+		assert.Equal(t, "opdiv_id", fismaSystemColumns[20],
+			"opdiv_id must remain at index 20")
 	})
 }
 
