@@ -101,7 +101,7 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystem, nil)
 }
 
-// clearHHSMetadata nils the 11 HHS onboarding fields on a FismaSystem.
+// clearHHSMetadata nils the 12 HHS onboarding fields on a FismaSystem.
 // Called on INSERT when the acting user lacks unscoped read access.
 func clearHHSMetadata(fs *model.FismaSystem) {
 	fs.HVA = nil
@@ -115,9 +115,10 @@ func clearHHSMetadata(fs *model.FismaSystem) {
 	fs.SystemOwner = nil
 	fs.SystemOwnerEmail = nil
 	fs.Legacy = nil
+	fs.ISSOName = nil
 }
 
-// copyHHSMetadata copies the 11 HHS onboarding fields from src onto dst.
+// copyHHSMetadata copies the 12 HHS onboarding fields from src onto dst.
 // Called on UPDATE when the acting user lacks unscoped read access so that
 // a scoped admin edit does not wipe HHS metadata they cannot see.
 func copyHHSMetadata(src, dst *model.FismaSystem) {
@@ -132,6 +133,7 @@ func copyHHSMetadata(src, dst *model.FismaSystem) {
 	dst.SystemOwner = src.SystemOwner
 	dst.SystemOwnerEmail = src.SystemOwnerEmail
 	dst.Legacy = src.Legacy
+	dst.ISSOName = src.ISSOName
 }
 
 // guardManageFismaSystem fetches the target system and verifies the acting user

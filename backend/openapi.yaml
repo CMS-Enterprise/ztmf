@@ -321,6 +321,8 @@ components:
           type: string
         hva:
           type: string
+        isso_name:
+          type: string
         issoemail:
           type: string
         legacy:
