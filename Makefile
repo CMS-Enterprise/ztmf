@@ -18,6 +18,8 @@ EMBERFALL_UNAME_M := $(shell uname -m)
 EMBERFALL_ARCH := $(if $(filter arm64 aarch64,$(EMBERFALL_UNAME_M)),arm64,$(if $(filter i386 i686,$(EMBERFALL_UNAME_M)),i386,x86_64))
 EMBERFALL_ASSET := emberfall_$(EMBERFALL_OS)_$(EMBERFALL_ARCH).tar.gz
 EMBERFALL_URL := https://github.com/aquia-inc/emberfall/releases/download/$(EMBERFALL_VERSION)/$(EMBERFALL_ASSET)
+# Checksums file is published per release as emberfall_<version-no-v>_checksums.txt.
+EMBERFALL_CHECKSUMS_URL := https://github.com/aquia-inc/emberfall/releases/download/$(EMBERFALL_VERSION)/emberfall_$(patsubst v%,%,$(EMBERFALL_VERSION))_checksums.txt
 # Default to a user-writable dir: /usr/local/bin is root-owned (and often absent
 # on Apple Silicon, where Homebrew lives under /opt/homebrew), so it fails the
 # install without sudo. Override for a system-wide install, e.g.
@@ -322,19 +324,19 @@ test-coverage-text:
 install-emberfall:
 	@echo "📥 Installing emberfall $(EMBERFALL_VERSION) for $(EMBERFALL_OS)/$(EMBERFALL_ARCH) -> $(EMBERFALL_BIN_DIR)..."
 	@mkdir -p $(EMBERFALL_BIN_DIR)
-	@curl -fsSL $(EMBERFALL_URL) -o /tmp/emberfall-$(EMBERFALL_VERSION).tar.gz
-	@tar -xzf /tmp/emberfall-$(EMBERFALL_VERSION).tar.gz -C $(EMBERFALL_BIN_DIR) emberfall
+	@curl -fsSL $(EMBERFALL_URL) -o /tmp/$(EMBERFALL_ASSET)
+	@curl -fsSL $(EMBERFALL_CHECKSUMS_URL) -o /tmp/emberfall_checksums.txt
+	@cd /tmp && grep " $(EMBERFALL_ASSET)$$" emberfall_checksums.txt | if command -v sha256sum >/dev/null 2>&1; then sha256sum -c -; else shasum -a 256 -c -; fi
+	@tar -xzf /tmp/$(EMBERFALL_ASSET) -C $(EMBERFALL_BIN_DIR) emberfall
 	@chmod +x $(EMBERFALL_BIN_DIR)/emberfall
-	@rm -f /tmp/emberfall-$(EMBERFALL_VERSION).tar.gz
-	@echo "✅ emberfall $(EMBERFALL_VERSION) installed to $(EMBERFALL_BIN_DIR)/emberfall"
+	@rm -f /tmp/$(EMBERFALL_ASSET) /tmp/emberfall_checksums.txt
+	@echo "✅ emberfall $(EMBERFALL_VERSION) installed to $(EMBERFALL_BIN_DIR)/emberfall (sha256 verified)"
 	@case ":$$PATH:" in *":$(EMBERFALL_BIN_DIR):"*) ;; *) echo "⚠️  $(EMBERFALL_BIN_DIR) is not on your PATH. Add it: export PATH=\"$(EMBERFALL_BIN_DIR):$$PATH\"" ;; esac
 
 test-e2e:
 	@echo "🧪 Running Emberfall E2E tests (isolated environment)..."
 	@if ! command -v emberfall >/dev/null 2>&1; then \
-		echo "❌ Emberfall not installed"; \
-		echo "   Run: make install-emberfall"; \
-		echo "   (or: mkdir -p $(EMBERFALL_BIN_DIR) && curl -fsSL $(EMBERFALL_URL) | tar -xzf - -C $(EMBERFALL_BIN_DIR) emberfall)"; \
+		echo "❌ Emberfall not installed. Run: make install-emberfall"; \
 		exit 1; \
 	fi
 	@echo "🧹 Cleaning up any existing test containers..."
