@@ -323,6 +323,8 @@ components:
           type: string
         issoemail:
           type: string
+        isso_name:
+          type: string
         legacy:
           type: string
         opdiv_id:

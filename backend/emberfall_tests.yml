@@ -153,7 +153,7 @@ updatedScoreData: &updatedScoreData
   functionoptionid: 1
   notes: "Updated by Emberfall test"
 
-# HHS metadata anchor (11 fields). Used to exercise the RBAC write gate:
+# HHS metadata anchor (12 fields). Used to exercise the RBAC write gate:
 # OWNER writes land in DB; scoped admins are stripped on create and preserved
 # on update. Values are intentionally Star-Wars-themed to match the fixture.
 hhsExpected: &hhsExpected
@@ -168,6 +168,7 @@ hhsExpected: &hhsExpected
   system_owner: "Grand Moff Tarkin"
   system_owner_email: "tarkin@deathstar.empire"
   legacy: "No"
+  isso_name: "Darth Vader"
 
 # Combined base+HHS anchor for the OWNER create-with-HHS test.
 fismaSystemWithHHSData: &fismaSystemWithHHSData
@@ -198,6 +199,7 @@ fismaSystemWithHHSData: &fismaSystemWithHHSData
   system_owner: "Grand Moff Tarkin"
   system_owner_email: "tarkin@deathstar.empire"
   legacy: "No"
+  isso_name: "Darth Vader"
 
 # Core fields for system 1002 (SSD-EX, EMPIRE OpDiv). opDivAdmin can write
 # to this system; used in the "preserve on update" half of Test B.
@@ -225,6 +227,7 @@ system1002WithHHSData: &system1002WithHHSData
   system_owner: "Grand Moff Tarkin"
   system_owner_email: "tarkin@deathstar.empire"
   legacy: "No"
+  isso_name: "Darth Vader"
 
 tests:
   # Authentication Tests
@@ -620,6 +623,7 @@ tests:
             system_owner: null
             system_owner_email: null
             legacy: null
+            isso_name: null
 
   # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
   # holds a write grant for this system).

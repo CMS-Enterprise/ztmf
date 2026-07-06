@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy", "isso_name"}
 
 type FismaSystem struct {
 	FismaSystemID         int32      `json:"fismasystemid"`
@@ -46,6 +46,7 @@ type FismaSystem struct {
 	SystemOwner           *string    `json:"system_owner" db:"system_owner"`
 	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
 	Legacy                *string    `json:"legacy" db:"legacy"`
+	ISSOName              *string    `json:"isso_name" db:"isso_name"`
 }
 
 type FindFismaSystemsInput struct {
@@ -171,7 +172,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			"datacallcontact", "issoemail", "sdl_sync_enabled", "opdiv_id",
 			"hva", "fips", "system_type", "cloud_system", "cloud_service_model",
 			"cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner",
-			"system_owner_email", "legacy",
+			"system_owner_email", "legacy", "isso_name",
 		}
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
@@ -182,7 +183,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
 				f.HVA, f.FIPS, f.SystemType, f.CloudSystem, f.CloudServiceModel,
 				f.CloudVendor, f.SystemOperator, f.GocoCocGoGo, f.SystemOwner,
-				f.SystemOwnerEmail, f.Legacy,
+				f.SystemOwnerEmail, f.Legacy, f.ISSOName,
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
@@ -215,6 +216,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			"system_owner":        f.SystemOwner,
 			"system_owner_email":  f.SystemOwnerEmail,
 			"legacy":              f.Legacy,
+			"isso_name":           f.ISSOName,
 		}
 		for col, val := range hhsCols {
 			if val != nil {
