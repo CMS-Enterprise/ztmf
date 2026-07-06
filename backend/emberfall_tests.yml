@@ -153,6 +153,79 @@ updatedScoreData: &updatedScoreData
   functionoptionid: 1
   notes: "Updated by Emberfall test"
 
+# HHS metadata anchor (11 fields). Used to exercise the RBAC write gate:
+# OWNER writes land in DB; scoped admins are stripped on create and preserved
+# on update. Values are intentionally Star-Wars-themed to match the fixture.
+hhsExpected: &hhsExpected
+  hva: "High Value"
+  fips: "Moderate"
+  system_type: "Major Application"
+  cloud_system: "Yes"
+  cloud_service_model: "IaaS"
+  cloud_vendor: "Imperial Cloud Co"
+  system_operator: "Agency"
+  goco_coco_gogo: "GOCO"
+  system_owner: "Grand Moff Tarkin"
+  system_owner_email: "tarkin@deathstar.empire"
+  legacy: "No"
+
+# Combined base+HHS anchor for the OWNER create-with-HHS test.
+fismaSystemWithHHSData: &fismaSystemWithHHSData
+  fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+  fismaacronym: "ZTMF"
+  fismaname: "Zero Trust Maturity Framework"
+  fismasubsystem: "Core System"
+  component: "Security"
+  groupacronym: "SEC"
+  groupname: "Security Group"
+  divisionname: "IT Division"
+  datacenterenvironment: "AWS"
+  datacallcontact: "contact@example.com"
+  issoemail: "isso@example.com"
+  sdl_sync_enabled: false
+  decommissioned: false
+  decommissioned_date: null
+  decommissioned_by: null
+  decommissioned_notes: null
+  hva: "High Value"
+  fips: "Moderate"
+  system_type: "Major Application"
+  cloud_system: "Yes"
+  cloud_service_model: "IaaS"
+  cloud_vendor: "Imperial Cloud Co"
+  system_operator: "Agency"
+  goco_coco_gogo: "GOCO"
+  system_owner: "Grand Moff Tarkin"
+  system_owner_email: "tarkin@deathstar.empire"
+  legacy: "No"
+
+# Core fields for system 1002 (SSD-EX, EMPIRE OpDiv). opDivAdmin can write
+# to this system; used in the "preserve on update" half of Test B.
+system1002WithHHSData: &system1002WithHHSData
+  fismauid: "E0EC0100-1980-4C3D-9A7B-00F020240000"
+  fismaacronym: "SSD-EX"
+  fismaname: "Super Star Destroyer Executor Command Systems"
+  fismasubsystem: "Flagship Communication Hub"
+  component: "IMPNAVY-(FLEET)"
+  groupacronym: "STARCOM"
+  groupname: "Imperial Starfleet Command"
+  divisionname: "Naval Operations Division"
+  datacenterenvironment: "Imperial-Fleet"
+  datacallcontact: "captain.needa@executor.empire"
+  issoemail: "Admiral.Piett@executor.empire"
+  sdl_sync_enabled: true
+  hva: "High Value"
+  fips: "Moderate"
+  system_type: "Major Application"
+  cloud_system: "Yes"
+  cloud_service_model: "IaaS"
+  cloud_vendor: "Imperial Cloud Co"
+  system_operator: "Agency"
+  goco_coco_gogo: "GOCO"
+  system_owner: "Grand Moff Tarkin"
+  system_owner_email: "tarkin@deathstar.empire"
+  legacy: "No"
+
 tests:
   # Authentication Tests
   - url: http://localhost:8080/api/v1/users/current
@@ -453,6 +526,140 @@ tests:
             <<: *updatedFismaSystemData
             sdl_sync_enabled: true
 
+  # Test A — OWNER writes HHS fields on create, reads them back, then does a
+  # partial PUT (HHS fields omitted). The partial PUT must NOT wipe the stored
+  # HHS values (the conditional SetMap fix in model/fismasystems.go).
+  - id: createFismaSystemWithHHS
+    url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemWithHHSData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *hhsExpected
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *hhsExpected
+
+  # Partial PUT — core fields only, HHS fields intentionally omitted.
+  # Before the fix this would have written NULL to all 11 HHS columns.
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *hhsExpected
+
+  # Test B — Scoped admin RBAC gate.
+  #
+  # Part 1: opDivAdmin POSTs a system with HHS fields → clearHHSMetadata
+  # strips them; created record has null HHS fields.
+  - id: createFismaSystemScopedAdmin
+    url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemWithHHSData
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            hva: null
+            fips: null
+            system_type: null
+            cloud_system: null
+            cloud_service_model: null
+            cloud_vendor: null
+            system_operator: null
+            goco_coco_gogo: null
+            system_owner: null
+            system_owner_email: null
+            legacy: null
+
+  # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
+  # holds a write grant for this system).
+  - url: "http://localhost:8080/api/v1/fismasystems/1002"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *system1002WithHHSData
+    expect:
+      status: 204
+
+  # Part 3: opDivAdmin PUTs system 1002 with different HHS values →
+  # copyHHSMetadata overwrites them back to the stored values.
+  - url: "http://localhost:8080/api/v1/fismasystems/1002"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *system1002WithHHSData
+        hva: "OVERWRITE ATTEMPT"
+        system_owner: "Impostor"
+    expect:
+      status: 204
+
+  # GET confirms OWNER's values survived the scoped admin PUT.
+  - url: "http://localhost:8080/api/v1/fismasystems/1002"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            <<: *hhsExpected
+
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
     headers:
@@ -461,7 +668,7 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
-  
+
   # - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/questions"
   #   method: GET
   #   headers:
@@ -949,6 +1156,67 @@ tests:
         functionoptionid: 1
         datacallid: 5
         notes: "Audit field smoke - updated by Emberfall"
+    expect:
+      status: 204
+
+  # Test C — notes_is_ai_summary flag semantics.
+  #
+  # 1. POST with notes_is_ai_summary: true simulates an AI import; the 201
+  #    response body must carry the flag set. (GET /scores returns an array
+  #    so body assertions aren't available there — aquia-inc/emberfall#36.)
+  - id: createAIScore
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 2
+        datacallid: 5
+        notes: "AI-generated summary of Imperial device tracking posture"
+        notes_is_ai_summary: true
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            notes_is_ai_summary: true
+
+  # 2. PUT with notes_is_ai_summary: false simulates a user editing the
+  #    notes field; the flag must be cleared (write-path completes cleanly).
+  - url: "http://localhost:8080/api/v1/scores/{{.createAIScore.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 2
+        datacallid: 5
+        notes: "Human-edited: Imperial device tracking posture reviewed"
+        notes_is_ai_summary: false
+    expect:
+      status: 204
+
+  # 3. PUT omitting notes_is_ai_summary entirely — stored false must be
+  #    preserved (nil-means-skip semantics). Unit coverage in
+  #    TestScoresEqualForUpdate/NotesIsAISummaryNilSkipped.
+  - url: "http://localhost:8080/api/v1/scores/{{.createAIScore.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 2
+        datacallid: 5
+        notes: "Human-edited: Imperial device tracking posture reviewed"
     expect:
       status: 204
 

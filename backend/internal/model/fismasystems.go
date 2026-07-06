@@ -186,31 +186,44 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
-		// UPDATE - exclude decommissioned fields
-		sqlb = stmntBuilder.Update("fismasystems").
-			Set("fismauid", f.FismaUID).
-			Set("fismaacronym", f.FismaAcronym).
-			Set("fismaname", f.FismaName).
-			Set("fismasubsystem", f.FismaSubsystem).
-			Set("component", f.Component).
-			Set("groupacronym", f.Groupacronym).
-			Set("groupname", f.GroupName).
-			Set("divisionname", f.DivisionName).
-			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("datacallcontact", f.DataCallContact).
-			Set("issoemail", f.ISSOEmail).
-			Set("sdl_sync_enabled", f.SDLSyncEnabled).
-			Set("hva", f.HVA).
-			Set("fips", f.FIPS).
-			Set("system_type", f.SystemType).
-			Set("cloud_system", f.CloudSystem).
-			Set("cloud_service_model", f.CloudServiceModel).
-			Set("cloud_vendor", f.CloudVendor).
-			Set("system_operator", f.SystemOperator).
-			Set("goco_coco_gogo", f.GocoCocGoGo).
-			Set("system_owner", f.SystemOwner).
-			Set("system_owner_email", f.SystemOwnerEmail).
-			Set("legacy", f.Legacy).
+		// UPDATE - exclude decommissioned fields.
+		// Core fields are always written; HHS fields are conditional on non-nil
+		// so a partial PUT (form that omits a field) does not wipe importer data.
+		setCols := squirrel.Eq{
+			"fismauid":              f.FismaUID,
+			"fismaacronym":          f.FismaAcronym,
+			"fismaname":             f.FismaName,
+			"fismasubsystem":        f.FismaSubsystem,
+			"component":             f.Component,
+			"groupacronym":          f.Groupacronym,
+			"groupname":             f.GroupName,
+			"divisionname":          f.DivisionName,
+			"datacenterenvironment": f.DataCenterEnvironment,
+			"datacallcontact":       f.DataCallContact,
+			"issoemail":             f.ISSOEmail,
+			"sdl_sync_enabled":      f.SDLSyncEnabled,
+		}
+		hhsCols := map[string]*string{
+			"hva":                 f.HVA,
+			"fips":                f.FIPS,
+			"system_type":         f.SystemType,
+			"cloud_system":        f.CloudSystem,
+			"cloud_service_model": f.CloudServiceModel,
+			"cloud_vendor":        f.CloudVendor,
+			"system_operator":     f.SystemOperator,
+			"goco_coco_gogo":      f.GocoCocGoGo,
+			"system_owner":        f.SystemOwner,
+			"system_owner_email":  f.SystemOwnerEmail,
+			"legacy":              f.Legacy,
+		}
+		for col, val := range hhsCols {
+			if val != nil {
+				setCols[col] = *val
+			}
+		}
+		sqlb = stmntBuilder.
+			Update("fismasystems").
+			SetMap(setCols).
 			Where("fismasystemid=?", f.FismaSystemID).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	}

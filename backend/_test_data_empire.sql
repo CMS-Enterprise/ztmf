@@ -489,44 +489,44 @@ INSERT INTO public.functionoptions VALUES (69, 7018, 4, 'Advanced', 'Continuous 
 -- Scores reference functionoptionids: 1-23 (Imperial-Fleet), 24-46 (Space-Station), 47-69 (Forest-Moon)
 
 -- Death Star System Scores (datacall 3 / FY2024) - Space-Station functionoptions
-INSERT INTO public.scores VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 25, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 28, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 32, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 36, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 40, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 44, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9001, 1001, '2024-09-01 00:00:00+00', 'Death Star device tracking shows thermal exhaust port vulnerability', 25, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9002, 1001, '2024-09-01 00:00:00+00', 'Superlaser targeting applications have basic authentication', 28, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9003, 1001, '2024-09-01 00:00:00+00', 'Imperial communication networks use basic encryption', 32, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9004, 1001, '2024-09-01 00:00:00+00', 'Death Star plans stored on isolated systems', 36, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9005, 1001, '2024-09-01 00:00:00+00', 'Empire-wide policies standardized but manual enforcement', 40, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9006, 1001, '2024-09-01 00:00:00+00', 'Imperial officer credentials use biometric authentication', 44, 3) ON CONFLICT DO NOTHING;
 
 -- Executor System Scores (datacall 3 / FY2024) - Imperial-Fleet functionoptions
-INSERT INTO public.scores VALUES (9007, 1002, '2024-09-01 00:00:00+00', 'Star Destroyer inventory centrally tracked with automation', 2, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9008, 1002, '2024-09-01 00:00:00+00', 'Bridge applications use standardized access controls', 6, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9009, 1002, '2024-09-01 00:00:00+00', 'Fleet networks have dynamic security with real-time monitoring', 11, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9010, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence has automated data loss prevention', 15, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9011, 1002, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Executor systems', 18, 3) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9012, 1002, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with Force-sensitivity screening', 22, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9007, 1002, '2024-09-01 00:00:00+00', 'Star Destroyer inventory centrally tracked with automation', 2, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9008, 1002, '2024-09-01 00:00:00+00', 'Bridge applications use standardized access controls', 6, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9009, 1002, '2024-09-01 00:00:00+00', 'Fleet networks have dynamic security with real-time monitoring', 11, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9010, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence has automated data loss prevention', 15, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9011, 1002, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Executor systems', 18, 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9012, 1002, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with Force-sensitivity screening', 22, 3) ON CONFLICT DO NOTHING;
 
 -- Shield Generator System Scores (datacall 4 / FY2025) - Forest-Moon functionoptions
-INSERT INTO public.scores VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 49, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 54, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 58, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 62, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 65, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 69, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9013, 1003, '2024-09-01 00:00:00+00', 'Real-time AT-ST monitoring with behavioral analysis', 49, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9014, 1003, '2024-09-01 00:00:00+00', 'Bunker applications have zero trust micro-segmentation', 54, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9015, 1003, '2024-09-01 00:00:00+00', 'Endor communications use software-defined networks', 58, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9016, 1003, '2024-09-01 00:00:00+00', 'Shield generator data has dynamic protection with analytics', 62, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9017, 1003, '2024-09-01 00:00:00+00', 'Continuous Imperial security posture with adaptive controls', 65, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9018, 1003, '2024-09-01 00:00:00+00', 'Continuous identity verification detects Ewok infiltration', 69, 4) ON CONFLICT DO NOTHING;
 
 -- Executor System Scores (datacall 4 / FY2025) - Imperial-Fleet functionoptions
-INSERT INTO public.scores VALUES (9019, 1002, '2024-09-01 00:00:00+00', 'Enhanced Star Destroyer device security with predictive maintenance', 4, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9020, 1002, '2024-09-01 00:00:00+00', 'Advanced bridge applications with zero trust architecture', 8, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9021, 1002, '2024-09-01 00:00:00+00', 'Imperial fleet networks fully software-defined with zero trust', 12, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9022, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence with dynamic data protection and analytics', 16, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9023, 1002, '2024-09-01 00:00:00+00', 'Continuous adaptive Imperial security posture across all systems', 19, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9024, 1002, '2024-09-01 00:00:00+00', 'Advanced identity verification with continuous Force-sensitivity monitoring', 23, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9019, 1002, '2024-09-01 00:00:00+00', 'Enhanced Star Destroyer device security with predictive maintenance', 4, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9020, 1002, '2024-09-01 00:00:00+00', 'Advanced bridge applications with zero trust architecture', 8, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9021, 1002, '2024-09-01 00:00:00+00', 'Imperial fleet networks fully software-defined with zero trust', 12, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9022, 1002, '2024-09-01 00:00:00+00', 'Tactical intelligence with dynamic data protection and analytics', 16, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9023, 1002, '2024-09-01 00:00:00+00', 'Continuous adaptive Imperial security posture across all systems', 19, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9024, 1002, '2024-09-01 00:00:00+00', 'Advanced identity verification with continuous Force-sensitivity monitoring', 23, 4) ON CONFLICT DO NOTHING;
 
 -- Death Star System Scores (datacall 4 / FY2025) - Space-Station functionoptions
-INSERT INTO public.scores VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 26, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 29, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 34, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 4) ON CONFLICT DO NOTHING;
-INSERT INTO public.scores VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9025, 1001, '2024-09-01 00:00:00+00', 'Death Star device security upgraded with automated threat detection', 26, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9026, 1001, '2024-09-01 00:00:00+00', 'Superlaser applications now use standardized access controls', 29, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9027, 1001, '2024-09-01 00:00:00+00', 'Imperial networks enhanced with dynamic security monitoring', 34, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9028, 1001, '2024-09-01 00:00:00+00', 'Death Star plans now have automated data loss prevention', 38, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9029, 1001, '2024-09-01 00:00:00+00', 'Automated compliance monitoring across Death Star systems', 41, 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid) VALUES (9030, 1001, '2024-09-01 00:00:00+00', 'Centralized Imperial identity with enhanced Force-sensitivity detection', 45, 4) ON CONFLICT DO NOTHING;
 
 -- IdM Scoring lookup table for identity enrichment tooltips
 INSERT INTO public.idm_scoring (idm_name, display_name, score, reasoning) VALUES

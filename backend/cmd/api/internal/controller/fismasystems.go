@@ -213,15 +213,13 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		if !authdUser.HasUnscopedRead() {
 			clearHHSMetadata(f)
 		}
-	} else {
+	} else if !authdUser.HasUnscopedRead() {
 		existing, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID)
 		if err != nil {
 			respond(w, r, nil, err)
 			return
 		}
-		if !authdUser.HasUnscopedRead() {
-			copyHHSMetadata(existing, f)
-		}
+		copyHHSMetadata(existing, f)
 	}
 
 	f, err = f.Save(r.Context())
