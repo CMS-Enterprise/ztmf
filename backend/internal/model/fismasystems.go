@@ -68,6 +68,20 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
+
+	// Resolve a single ISSO display name for the systems table. HHS systems carry
+	// isso_name directly; CMS systems carry only issoemail, which maps to the
+	// ISSO's user record - so COALESCE yields one populated name column for both
+	// populations without a per-row lookup. email is unique, so the correlated
+	// subquery returns at most one row. Read-only: the write path never sets
+	// isso_name from this, so a resolved name is never persisted back. Applied to
+	// the list only; the single-system GET returns the stored value unchanged.
+	for i := range c {
+		if c[i] == "isso_name" {
+			c[i] = "COALESCE(fismasystems.isso_name, " +
+				"(SELECT fullname FROM users WHERE LOWER(email) = LOWER(fismasystems.issoemail) LIMIT 1)) AS isso_name"
+		}
+	}
 	sqlb := stmntBuilder.Select(c...).From("fismasystems")
 
 	// Filter decommissioned systems
