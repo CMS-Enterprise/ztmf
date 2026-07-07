@@ -38,6 +38,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_DataCenterEnvironment:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.DataCenterEnvironment'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_Event:
       properties:
         data:
@@ -259,6 +269,23 @@ components:
           type: string
         deadline:
           type: string
+      type: object
+    model.DataCenterEnvironment:
+      properties:
+        category:
+          type: string
+        datacenterenvironment:
+          type: string
+        ordr:
+          type: integer
+        scoring_key:
+          description: |-
+            ScoringKey is the functions.datacenterenvironment set this environment is
+            scored against. NULL means the environment is not scored (e.g. the legacy
+            DECOMMISSIONED marker), so it is a pointer to distinguish that from "".
+          type: string
+        selectable:
+          type: boolean
       type: object
     model.Event:
       properties:
@@ -890,6 +917,32 @@ paths:
       summary: Get the latest data call
       tags:
       - datacalls
+  /datacenterenvironments:
+    get:
+      parameters:
+      - description: Only environments offered in the system dropdown
+        in: query
+        name: selectable_only
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_DataCenterEnvironment'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List datacenterenvironment mappings
+      tags:
+      - datacenterenvironments
   /events:
     get:
       parameters:

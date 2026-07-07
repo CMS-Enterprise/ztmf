@@ -929,3 +929,81 @@ func TestFindScoresISSOScopeRetainsAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, krennicUUID, found.LastEditedBy.UserID)
 	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
 }
+
+// TestScoringResolvesEnvironmentAliasIntegration proves the ztmf#392 mechanism:
+// a system whose raw datacenterenvironment is NOT itself a functions catalog key
+// still scores, because the datacenterenvironments mapping redirects it to a
+// scoring_key. The redirect is transparent - routing an already-scored system
+// through an alias row that points at the same scoring_key yields the identical
+// aggregate it had under its real environment. This is the exact failure mode
+// behind the HHS 0.00 scores (free-text env values absent from the functions
+// catalog); before #392 the direct join returned nothing for such a system.
+func TestScoringResolvesEnvironmentAliasIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Pick any scored system whose environment maps to a non-null scoring_key.
+	var sysID int32
+	var realEnv, scoringKey string
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT fs.fismasystemid, fs.datacenterenvironment, dce.scoring_key
+		FROM scores s
+		JOIN fismasystems fs           ON fs.fismasystemid = s.fismasystemid
+		JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		WHERE dce.scoring_key IS NOT NULL
+		LIMIT 1
+	`).Scan(&sysID, &realEnv, &scoringKey),
+		"need at least one scored, mapped system to alias")
+
+	// Baseline: the aggregate the system produces under its real environment.
+	base, err := FindScoresAggregate(ctx, FindScoresInput{
+		FismaSystemID:  &sysID,
+		IncludePillars: boolPtr(true),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, base, "baseline aggregate expected for the chosen system")
+
+	const alias = "integration_test_alias_env" // deliberately not a functions key
+
+	// Register the alias -> same scoring_key, and point the system at it.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO datacenterenvironments (datacenterenvironment, category, scoring_key, selectable, ordr)
+		VALUES ($1, $1, $2, false, 0)
+		ON CONFLICT (datacenterenvironment) DO UPDATE SET scoring_key = EXCLUDED.scoring_key
+	`, alias, scoringKey)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `UPDATE fismasystems SET datacenterenvironment = $1 WHERE fismasystemid = $2`, alias, sysID)
+	require.NoError(t, err)
+
+	// Always restore the shared seed so other tests see the original env.
+	defer func() {
+		_, _ = conn.Exec(ctx, `UPDATE fismasystems SET datacenterenvironment = $1 WHERE fismasystemid = $2`, realEnv, sysID)
+		_, _ = conn.Exec(ctx, `DELETE FROM datacenterenvironments WHERE datacenterenvironment = $1`, alias)
+	}()
+
+	// Guard: the alias value must genuinely be absent from the functions
+	// catalog, otherwise the old direct join would have matched it and the
+	// test would prove nothing about the mapping indirection.
+	var directMatches int
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT count(*) FROM functions WHERE datacenterenvironment = $1`, alias).Scan(&directMatches))
+	require.Zero(t, directMatches, "alias must not be a functions.datacenterenvironment value")
+
+	// Under the alias the aggregate must still be populated, and because the
+	// alias resolves to the same scoring_key, the score must be unchanged.
+	aliased, err := FindScoresAggregate(ctx, FindScoresInput{
+		FismaSystemID:  &sysID,
+		IncludePillars: boolPtr(true),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, aliased, "aliased env must still score via the mapping (ztmf#392)")
+	require.Len(t, aliased, len(base), "same system + scores must yield the same number of aggregate rows")
+	assert.InDelta(t, base[0].SystemScore, aliased[0].SystemScore, 1e-9,
+		"an alias pointing at the same scoring_key must not change the score")
+}

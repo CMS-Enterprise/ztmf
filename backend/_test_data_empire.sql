@@ -360,6 +360,20 @@ INSERT INTO public.questions VALUES (8016, 'How does your system authenticate an
 INSERT INTO public.questions VALUES (8017, 'What measures detect Force-sensitive individuals or Rebel infiltrators attempting system access?', 'Detail identity verification processes, behavioral analysis, and security screening protocols to identify potential security threats among personnel.', 6, 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.questions VALUES (8018, 'How does your system manage Imperial identity lifecycle from recruitment to retirement?', 'Describe automated identity provisioning, access reviews, and deprovisioning processes for Imperial officers, contractors, and service accounts.', 6, 0) ON CONFLICT DO NOTHING;
 
+-- datacenterenvironments mapping rows for the Imperial (test) environments
+-- (ztmf#392). The migration seeds the real CMS/HHS vocabulary; these identity
+-- rows register the Star Wars environments so the scoring join and the answer
+-- form (both route fismasystems.datacenterenvironment -> scoring_key) resolve.
+-- Not selectable, so the /datacenterenvironments dropdown stays the canonical set.
+INSERT INTO public.datacenterenvironments (datacenterenvironment, category, scoring_key, selectable, ordr) VALUES
+    ('Imperial-Fleet',   'Imperial-Fleet',   'Imperial-Fleet',   FALSE, 0),
+    ('Space-Station',    'Space-Station',    'Space-Station',    FALSE, 0),
+    ('Forest-Moon',      'Forest-Moon',      'Forest-Moon',      FALSE, 0),
+    ('Ground-Assault',   'Ground-Assault',   'Ground-Assault',   FALSE, 0),
+    ('Surveillance-Net', 'Surveillance-Net', 'Surveillance-Net', FALSE, 0),
+    ('Shipyard-RnD',     'Shipyard-RnD',     'Shipyard-RnD',     FALSE, 0)
+ON CONFLICT DO NOTHING;
+
 -- Sample Functions (Imperial Zero Trust Functions) - MUST come before functionoptions
 -- Each datacenterenvironment needs functions with questionid set so FindQuestionsByFismaSystem works
 -- (INNER JOIN functions ON functions.questionid=questions.questionid)
