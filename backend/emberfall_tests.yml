@@ -22,14 +22,18 @@ opDivAdminHeaders: &opDivAdminHeaders
 opDivReadonlyHeaders: &opDivReadonlyHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
 
-# Data definitions using YAML anchors
+# Data definitions using YAML anchors.
+# The deadline is intentionally far-future — beyond the empire seed's
+# furthest-out call (Audit Fields Smoke Cycle, 2099-12-31) — so this
+# test-created call is the one GET /datacalls/latest returns. As of #393,
+# "latest"/"current" is the max-deadline call, not the max datacallid.
 dataCallData: &dataCallData
-  datacall: "FY2025 Q1"
-  deadline: "2025-03-31T17:59:59Z"
+  datacall: "FY2100 ZTM"
+  deadline: "2100-03-31T17:59:59Z"
 
 updatedDataCallData: &updatedDataCallData
-  datacall: "FY2025 Q1"
-  deadline: "2025-03-31T17:59:59Z"
+  datacall: "FY2100 ZTM"
+  deadline: "2100-03-31T17:59:59Z"
 
 fismaSystemData: &fismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
