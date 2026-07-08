@@ -803,6 +803,142 @@ tests:
           data:
             <<: *reactivatedFismaSystemData
 
+  # Target Maturity Endpoints (#398)
+  # PUT /fismasystems/{id}/target-maturity is the one system field pair an
+  # assigned ISSO may write; admin tiers stay OpDiv-scoped and read-only tiers
+  # are always 403. Tier vocabulary is the tier NAME (Initial/Advanced/Optimal).
+
+  # OWNER sets a target on the created system - 200 with both fields echoed
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/target-maturity"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Optimal"
+        target_maturity_justification: "Internet-facing HVA; risk posture warrants the highest target."
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            target_maturity_tier: "Optimal"
+            target_maturity_justification: "Internet-facing HVA; risk posture warrants the highest target."
+
+  # ISSO assigned to 1003 (Shield Gen) may set its target - 200
+  - url: http://localhost:8080/api/v1/fismasystems/1003/target-maturity
+    method: PUT
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Initial"
+        target_maturity_justification: "Isolated internal system with no PII."
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            target_maturity_tier: "Initial"
+
+  # Target fields flow through the normal system read
+  - url: http://localhost:8080/api/v1/fismasystems/1003
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            target_maturity_tier: "Initial"
+            target_maturity_justification: "Isolated internal system with no PII."
+
+  # Same ISSO is NOT assigned to 1002 - 403
+  - url: http://localhost:8080/api/v1/fismasystems/1002/target-maturity
+    method: PUT
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "Should never be written."
+    expect:
+      status: 403
+
+  # Read-only admin tier never writes - 403
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "Should never be written."
+    expect:
+      status: 403
+
+  # OpDiv read-only tier never writes - 403
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "Should never be written."
+    expect:
+      status: 403
+
+  # OPDIV_ADMIN with EMPIRE grant cannot write a REBELLION system (1005) - 403
+  - url: http://localhost:8080/api/v1/fismasystems/1005/target-maturity
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "Should never be written."
+    expect:
+      status: 403
+
+  # Traditional is outside the selectable vocabulary - 400
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Traditional"
+        target_maturity_justification: "Below the minimum selectable target."
+    expect:
+      status: 400
+
+  # Justification is required on every save - 400
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+    expect:
+      status: 400
+
 
   # Functions Endpoints
   - id: createFunction

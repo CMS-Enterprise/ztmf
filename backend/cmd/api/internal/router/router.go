@@ -52,6 +52,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.DeleteFismaSystem).Methods("DELETE")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/reactivate", controller.ReactivateFismaSystem).Methods("PUT")
+	// target maturity is ISSO-writable (unlike the admin-only system PUT); see SaveFismaSystemTargetMaturity
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/target-maturity", controller.SaveFismaSystemTargetMaturity).Methods("PUT")
 	// returns a list of data calls that this fisma system has marked complete
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/datacalls", controller.ListFismaSystemDataCalls).Methods("GET")
 

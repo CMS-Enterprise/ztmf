@@ -381,3 +381,70 @@ func ReactivateFismaSystem(w http.ResponseWriter, r *http.Request) {
 
 	respondOK(w, system)
 }
+
+// SaveFismaSystemTargetMaturity records a system's risk-based target maturity
+// tier and justification (#398). Unlike the full-system PUT (admin only), this
+// is writable by the ISSO/ISSM assigned to the system - it is the one field
+// pair they own. Admin-tier writers stay OpDiv-scoped via
+// guardManageFismaSystem, mirroring the scores write path.
+//
+//	@Summary	Set a system's target maturity tier and justification
+//	@Tags		fismasystems
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		fismasystemid	path		int							true	"FISMA system ID"
+//	@Param		body			body		model.TargetMaturityInput	true	"Target tier (Initial, Advanced, or Optimal) and required justification"
+//	@Success	200				{object}	apiResponse[model.FismaSystem]
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	403				{object}	apiResponse[any]
+//	@Failure	404				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/fismasystems/{fismasystemid}/target-maturity [put]
+func SaveFismaSystemTargetMaturity(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+
+	vars := mux.Vars(r)
+	fismaSystemIDStr, ok := vars["fismasystemid"]
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	var fismaSystemID int32
+	fmt.Sscan(fismaSystemIDStr, &fismaSystemID)
+
+	// Same gate shape as SaveScore: read-only tiers never write; non-admins
+	// must be assigned to the system; admin tiers are OpDiv-scoped.
+	if authdUser.IsReadOnlyAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	if !authdUser.IsAdmin() && !authdUser.IsAssignedFismaSystem(fismaSystemID) {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	if authdUser.IsAdmin() {
+		if _, err := guardManageFismaSystem(r.Context(), authdUser, fismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+	}
+
+	var input model.TargetMaturityInput
+	if err := getJSON(r.Body, &input); err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+	input.FismaSystemID = fismaSystemID
+
+	system, err := model.SaveTargetMaturity(r.Context(), input)
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	respondOK(w, system)
+}

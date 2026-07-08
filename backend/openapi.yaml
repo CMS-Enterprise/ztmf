@@ -372,6 +372,14 @@ components:
           type: string
         system_type:
           type: string
+        target_maturity_justification:
+          type: string
+        target_maturity_tier:
+          description: |-
+            Risk-based target maturity (#398). NULL = no ISSO has asserted a target
+            yet; the UI presents the Advanced default. Written only via
+            SaveTargetMaturity, never through Save().
+          type: string
       type: object
     model.Function:
       properties:
@@ -559,6 +567,13 @@ components:
         payload:
           type: object
         synced_at:
+          type: string
+      type: object
+    model.TargetMaturityInput:
+      properties:
+        target_maturity_justification:
+          type: string
+        target_maturity_tier:
           type: string
       type: object
     model.User:
@@ -1351,6 +1366,63 @@ paths:
       security:
       - bearerAuth: []
       summary: Reactivate a decommissioned FISMA system
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}/target-maturity:
+    put:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.TargetMaturityInput'
+                description: Target tier (Initial, Advanced, or Optimal) and required
+                  justification
+                summary: body
+        description: Target tier (Initial, Advanced, or Optimal) and required justification
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Set a system's target maturity tier and justification
       tags:
       - fismasystems
   /functions:
