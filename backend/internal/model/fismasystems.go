@@ -68,6 +68,20 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
+
+	// Resolve a single ISSO display name for the systems table. HHS systems carry
+	// isso_name directly; CMS systems carry only issoemail, which maps to the
+	// ISSO's user record - so COALESCE yields one populated name column for both
+	// populations without a per-row lookup. email is unique, so the correlated
+	// subquery returns at most one row. Read-only: the write path never sets
+	// isso_name from this, so a resolved name is never persisted back. Applied to
+	// the list only; the single-system GET returns the stored value unchanged.
+	for i := range c {
+		if c[i] == "isso_name" {
+			c[i] = "COALESCE(fismasystems.isso_name, " +
+				"(SELECT fullname FROM users WHERE LOWER(email) = LOWER(fismasystems.issoemail) LIMIT 1)) AS isso_name"
+		}
+	}
 	sqlb := stmntBuilder.Select(c...).From("fismasystems")
 
 	// Filter decommissioned systems
@@ -152,6 +166,20 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 
 	if err := f.validate(); err != nil {
 		return nil, err
+	}
+
+	// datacenterenvironment is validated against the reference table (ztmf#392)
+	// rather than a compiled-in list, so the accepted vocabulary is data. The
+	// check lives here rather than in the pure validate() because it needs the
+	// request context for the DB lookup.
+	if f.DataCenterEnvironment != nil {
+		ok, err := dataCenterEnvironmentExists(ctx, *f.DataCenterEnvironment)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, &InvalidInputError{data: map[string]any{"datacenterenvironment": *f.DataCenterEnvironment}}
+		}
 	}
 
 	if f.FismaSystemID == 0 {
@@ -435,9 +463,8 @@ func (f *FismaSystem) validate() error {
 		err.data["issoemail"] = *f.ISSOEmail
 	}
 
-	if f.DataCenterEnvironment != nil && !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
-		err.data["datacenterenvironment"] = *f.DataCenterEnvironment
-	}
+	// datacenterenvironment is validated against the datacenterenvironments
+	// reference table in Save(), which has the context needed for the lookup.
 
 	if len(err.data) > 0 {
 		return &err

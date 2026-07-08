@@ -1999,3 +1999,32 @@ tests:
     expect:
       status: 403
 
+
+  # datacenterenvironments reference list (ztmf#392). Backend-driven source for
+  # the system-environment dropdown. Open to any authenticated user like opdivs.
+  - url: "http://localhost:8080/api/v1/datacenterenvironments?selectable_only=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Full mapping (selectable + alias rows) also returns to any authed user.
+  - url: http://localhost:8080/api/v1/datacenterenvironments
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Not admin-gated: an ISSO can read the reference list too.
+  - url: http://localhost:8080/api/v1/datacenterenvironments
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200

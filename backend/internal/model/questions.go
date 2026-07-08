@@ -69,12 +69,17 @@ func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) 
 // FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment.
 // It is used by all users to list questions relevant to the specified fisma system
 func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Question, error) {
+	// The system's raw datacenterenvironment is resolved to a scoring vocabulary
+	// through the datacenterenvironments mapping (ztmf#392); functions are matched
+	// on that key. This is the same indirection the scoring aggregate uses, so the
+	// answer form an ISSO sees matches the functions a system is scored against.
 	sqlb := stmntBuilder.
 		Select("questions.questionid, question, notesprompt, questions.ordr, pillars.pillarid, pillars.pillar, pillars.ordr, functionid, function, description").
 		From("questions").
 		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
 		InnerJoin("functions ON functions.questionid=questions.questionid").
-		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=functions.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
+		InnerJoin("datacenterenvironments dce ON dce.scoring_key=functions.datacenterenvironment").
+		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=dce.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
 		OrderBy("pillars.ordr, questions.ordr ASC")
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Question, error) {

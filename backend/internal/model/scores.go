@@ -682,7 +682,13 @@ expected AS (
     FROM scored_pairs sp
     INNER JOIN fismasystems fs ON fs.fismasystemid = sp.fismasystemid
     INNER JOIN datacalls dc    ON dc.datacallid    = sp.datacallid
-    INNER JOIN functions f ON f.datacenterenvironment = fs.datacenterenvironment
+    -- Resolve the system's raw datacenterenvironment to its scoring vocabulary
+    -- via the mapping table (ztmf#392), then match functions on that key. A raw
+    -- value with no mapping row, or one whose scoring_key is NULL (e.g. the
+    -- DECOMMISSIONED marker), matches no functions and is excluded from scoring,
+    -- exactly as an unrecognized value was under the old direct join.
+    INNER JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+    INNER JOIN functions f ON f.datacenterenvironment = dce.scoring_key
     INNER JOIN questions q ON q.questionid = f.questionid
     INNER JOIN pillars p   ON p.pillarid   = q.pillarid
     %s
