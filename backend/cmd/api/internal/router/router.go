@@ -86,6 +86,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Methods("GET")
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun
 	router.HandleFunc("/api/v1/scores/diff", controller.GetScoresDiff).Methods("GET")
+	router.HandleFunc("/api/v1/scores/progress", controller.GetScoresProgress).Methods("GET")
 	router.HandleFunc("/api/v1/scores", controller.SaveScore).Methods("POST")
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}", controller.SaveScore).Methods("PUT")
 

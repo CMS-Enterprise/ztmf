@@ -138,6 +138,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_ScoreProgress:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.ScoreProgress'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_User:
       properties:
         data:
@@ -559,6 +569,39 @@ components:
           type: integer
         scoreid:
           type: integer
+      type: object
+    model.ScoreProgress:
+      properties:
+        fismasystemid:
+          type: integer
+        lastupdatedat:
+          description: |-
+            LastUpdatedAt is the most recent edit event across the system's answers
+            in this data call; nil when nothing has been touched this cycle.
+          type: string
+        questionsexpected:
+          description: |-
+            QuestionsExpected is the number of questionnaire functions applicable to
+            the system, resolved through the datacenterenvironments scoring
+            vocabulary (the same join the questionnaire and the score aggregation
+            use, so the denominator matches what an ISSO actually sees).
+          type: integer
+        questionsupdated:
+          description: |-
+            QuestionsUpdated is the number of distinct functions whose answer in
+            this data call has at least one recorded edit event AND is still
+            applicable to the system's current environment. Counted from the same
+            applicable-function set as QuestionsExpected, so it can never exceed it.
+          type: integer
+        updatedsincestart:
+          description: |-
+            UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
+            it answers the ticket's literal question - "has this system updated
+            since the start of the data call" - by name in the response, so a
+            consumer rendering a boolean chip never touches the numeric fields.
+            The anchor is real: events can only postdate the data call's creation,
+            so any counted edit necessarily happened after the cycle started.
+          type: boolean
       type: object
     model.SystemEnrichment:
       properties:
@@ -2141,6 +2184,50 @@ paths:
       security:
       - bearerAuth: []
       summary: Diff scores between two data calls
+      tags:
+      - scores
+  /scores/progress:
+    get:
+      description: 'Returns, for each FISMA system the caller can see, how many questionnaire
+        functions apply to the system, how many have been genuinely updated in the
+        given data call (answers pre-populated from the previous cycle do not count
+        until touched), and when the most recent update happened. Scoped to the caller''s
+        tier: unscoped admins see all systems, OpDiv-scoped admins their OpDivs''
+        systems, and ISSO/ISSM their assigned systems.'
+      parameters:
+      - description: Data call ID to report progress for
+        in: query
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      - description: Limit progress to a single FISMA system
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_ScoreProgress'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get per-system questionnaire progress for a data call
       tags:
       - scores
   /systemenrichment/{fisma_uuid}:
