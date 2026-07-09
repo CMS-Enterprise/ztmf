@@ -321,6 +321,25 @@ tests:
     expect:
       status: 400
 
+  # Logout - unauthenticated (must clear an already-expired session), POST-only.
+  # No Authorization header and no Origin by design: a request with no Origin is
+  # treated as same-origin, so this succeeds and returns 204.
+  - url: "http://localhost:8080/api/v1/auth/logout"
+    method: POST
+    expect:
+      status: 204
+
+  # A cross-origin forced-logout is rejected by the same-origin CSRF check.
+  - url: "http://localhost:8080/api/v1/auth/logout"
+    method: POST
+    headers:
+      Origin: "https://evil.example.com"
+    expect:
+      status: 403
+      body:
+        json:
+          code: "FORBIDDEN_ORIGIN"
+
   # OpDivs Endpoint - reference list used by frontend selectors
   - url: http://localhost:8080/api/v1/opdivs
     method: GET

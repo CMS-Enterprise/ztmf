@@ -212,3 +212,72 @@ func ClearSessionCookie(w http.ResponseWriter) {
 		SameSite: http.SameSiteStrictMode,
 	})
 }
+
+// albSessionCookieNames are the OIDC session cookies the ALB sets, mirrored by
+// hand from the authenticate-oidc rules in infrastructure/alb-internal.tf: the
+// AWS-default AWSELBAuthSessionCookie used by the Okta login rule, and the
+// explicit AWSELBAuthSessionCookie-Entra on the Entra rule. Clearing only
+// ztmf_session ends the app session, but the ALB keeps its own session in these
+// cookies; without expiring them too, a still-valid ALB session silently
+// re-authenticates on the next /login in dual-IdP mode, and in single-IdP mode
+// the ALB session is what gates /api/* in the first place. Keep in sync with the
+// terraform session_cookie_name values.
+var albSessionCookieNames = []string{
+	"AWSELBAuthSessionCookie",
+	"AWSELBAuthSessionCookie-Entra",
+}
+
+// ClearALBSessionCookies expires the ALB OIDC session cookies so logout drops
+// the load balancer's session, not just the app session.
+func ClearALBSessionCookies(w http.ResponseWriter) {
+	for _, base := range albSessionCookieNames {
+		// The ALB stores the session in the base cookie, or splits it into
+		// indexed shards (name-0, name-1, ...) when it exceeds one cookie's
+		// size. Expire the base plus the first two shards, which covers the
+		// OIDC tokens this app receives (comfortably under three shards).
+		// Expiring a shard the browser never received is a harmless no-op.
+		for _, name := range []string{base, base + "-0", base + "-1"} {
+			http.SetCookie(w, &http.Cookie{
+				Name:  name,
+				Value: "",
+				Path:  "/",
+				// No Domain: the ALB sets these as host-only cookies, so the
+				// expiring cookie must also be host-only to match and delete
+				// them. A Domain here would create a distinct domain-scoped
+				// cookie and leave the ALB's original in place.
+				MaxAge:   -1,
+				HttpOnly: true,
+				Secure:   true,
+			})
+		}
+	}
+}
+
+// LogoutHandler ends the user's session. It is intentionally unauthenticated and
+// registered outside auth.Middleware so a request can still clear a session that
+// is already expired or invalid. It clears the app session cookie and expires
+// the ALB OIDC session cookies, then returns 204. IdP-side single logout
+// (Okta/Entra end-session) is out of scope: no end-session endpoint is
+// configured, so this ends the ZTMF and ALB sessions only.
+//
+//	@Summary		Log out
+//	@Description	Clears the ZTMF application session cookie and the ALB OIDC session cookies, ending the session. Unauthenticated so an already-expired session can still be cleared. Does not perform IdP-side single logout.
+//	@Tags			auth
+//	@Success		204	"Session cleared"
+//	@Failure		403	{object}	errorBody
+//	@Router			/auth/logout [post]
+func LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	// Mirror the middleware's CSRF posture for state-changing session requests:
+	// SameSite=Strict already blocks cross-site cookie attachment; this rejects a
+	// cross-origin forced-logout on top. A request with no Origin/Referer (e.g.
+	// the bearer-token E2E path) is allowed, exactly as in Middleware.
+	if !sameOrigin(r) {
+		writeJSONError(w, http.StatusForbidden,
+			"Request blocked: origin not allowed.",
+			CodeForbiddenOrigin)
+		return
+	}
+	ClearSessionCookie(w)
+	ClearALBSessionCookies(w)
+	w.WriteHeader(http.StatusNoContent)
+}
