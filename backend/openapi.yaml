@@ -589,12 +589,18 @@ components:
         questionsupdated:
           description: |-
             QuestionsUpdated is the number of distinct functions whose answer in
-            this data call has at least one recorded edit event.
+            this data call has at least one recorded edit event AND is still
+            applicable to the system's current environment. Counted from the same
+            applicable-function set as QuestionsExpected, so it can never exceed it.
           type: integer
         updatedsincestart:
           description: |-
-            UpdatedSinceStart is a convenience flag: true when at least one answer
-            has been edited in this data call.
+            UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
+            it answers the ticket's literal question - "has this system updated
+            since the start of the data call" - by name in the response, so a
+            consumer rendering a boolean chip never touches the numeric fields.
+            The anchor is real: events can only postdate the data call's creation,
+            so any counted edit necessarily happened after the cycle started.
           type: boolean
       type: object
     model.SystemEnrichment:
