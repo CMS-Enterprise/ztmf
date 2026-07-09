@@ -34,27 +34,36 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
 	defer conn.Release()
 
-	// Two synthetic datacalls ordered so copyPreviousScores' "latest-1 is
-	// previous" logic finds the right one. Prefixed names make them (and
-	// their scores, via FK cascade) discoverable by the purge sweep no
-	// matter how the test exits.
+	// copyPreviousScores resolves "previous" via findPreviousDataCall, which
+	// returns the datacall with the furthest deadline other than the target (it
+	// is only ever called on the newest cycle, so "latest, excluding me" is the
+	// real previous). The seed carries a far-future cycle (the 2099 "Audit Fields
+	// Smoke Cycle", datacallid 5), so the synthetic cycle must sit ABOVE every
+	// existing deadline: newDC must be the global latest and prevDC the next one
+	// down, or findPreviousDataCall(newDC) rolls a seed datacall forward instead
+	// of our marker. Anchor both deadlines above the current max. Prefixed names
+	// make them (and their scores, via FK cascade) discoverable by the purge
+	// sweep no matter how the test exits.
 	var prevDC, newDC int32
-	prevTimestamp := time.Now().Add(-2 * time.Hour)
-	newTimestamp := time.Now().Add(-1 * time.Hour)
+	var maxDeadline time.Time
+	err = conn.QueryRow(ctx, `SELECT COALESCE(MAX(deadline), NOW()) FROM datacalls`).Scan(&maxDeadline)
+	require.NoError(t, err)
+	prevDeadline := maxDeadline.Add(24 * time.Hour)
+	newDeadline := maxDeadline.Add(48 * time.Hour)
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
 		RETURNING datacallid
-	`, fmt.Sprintf("%sprogress_prev_%d", integrationTestPrefix, suffix), prevTimestamp).Scan(&prevDC)
+	`, fmt.Sprintf("%sprogress_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), prevDeadline).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
 		RETURNING datacallid
-	`, fmt.Sprintf("%sprogress_new_%d", integrationTestPrefix, suffix), newTimestamp).Scan(&newDC)
+	`, fmt.Sprintf("%sprogress_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), newDeadline).Scan(&newDC)
 	require.NoError(t, err)
 
 	// Borrow a valid (system, functionoption) pair from seeded data so FK
