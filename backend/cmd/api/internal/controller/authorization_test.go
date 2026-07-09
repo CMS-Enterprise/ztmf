@@ -233,6 +233,38 @@ func TestSaveScore_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- SaveFismaSystemTargetMaturity (#398) ---
+
+func TestSaveFismaSystemTargetMaturity_ReadonlyAdminForbidden(t *testing.T) {
+	body := jsonBody(t, map[string]any{
+		"target_maturity_tier":          "Advanced",
+		"target_maturity_justification": "should never write",
+	})
+	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/target-maturity", body)
+	r.Header.Set("Content-Type", "application/json")
+	r = mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	SaveFismaSystemTargetMaturity(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestSaveFismaSystemTargetMaturity_ISSONotAssignedForbidden(t *testing.T) {
+	body := jsonBody(t, map[string]any{
+		"target_maturity_tier":          "Advanced",
+		"target_maturity_justification": "should never write",
+	})
+	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/999/target-maturity", body)
+	r.Header.Set("Content-Type", "application/json")
+	r = mux.SetURLVars(r, map[string]string{"fismasystemid": "999"})
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	SaveFismaSystemTargetMaturity(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 // --- ListScores ---
 
 func TestListScores_ReadonlyAdminAllowed(t *testing.T) {

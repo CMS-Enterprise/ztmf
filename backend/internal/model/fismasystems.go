@@ -5,13 +5,26 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy", "isso_name"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy", "isso_name", "target_maturity_tier", "target_maturity_justification"}
+
+// validTargetMaturityTiers is the selectable vocabulary for a system's
+// risk-based target maturity level (#398). Deliberately the tier NAMES from
+// Tier(), not CISA stage numbers: the app's score scale is 1-5 (Advanced is
+// 3.10-4.09), so a numeric target could be mis-compared against systemscore.
+// Traditional is not offered - per the GAO response a target below Initial is
+// not a valid risk posture.
+var validTargetMaturityTiers = map[string]bool{
+	"Initial":  true,
+	"Advanced": true,
+	"Optimal":  true,
+}
 
 type FismaSystem struct {
 	FismaSystemID         int32      `json:"fismasystemid"`
@@ -47,6 +60,11 @@ type FismaSystem struct {
 	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
 	Legacy                *string    `json:"legacy" db:"legacy"`
 	ISSOName              *string    `json:"isso_name" db:"isso_name"`
+	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
+	// yet; the UI presents the Advanced default. Written only via
+	// SaveTargetMaturity, never through Save().
+	TargetMaturityTier          *string `json:"target_maturity_tier" db:"target_maturity_tier"`
+	TargetMaturityJustification *string `json:"target_maturity_justification" db:"target_maturity_justification"`
 }
 
 type FindFismaSystemsInput struct {
@@ -446,6 +464,48 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 		return nil, trapError(err)
 	}
 	return &system, nil
+}
+
+// TargetMaturityInput carries an explicit target-maturity assertion for one
+// system (#398).
+type TargetMaturityInput struct {
+	FismaSystemID int32   `json:"-"`
+	Tier          *string `json:"target_maturity_tier"`
+	Justification *string `json:"target_maturity_justification"`
+}
+
+// SaveTargetMaturity records a system's risk-based target maturity tier and
+// its one-sentence justification. Both are required on every save: the
+// justification IS the deliverable (GAO-audit rationale), so a tier without
+// one is rejected. Kept separate from Save() so the ISSO-writable surface is
+// exactly these two columns and nothing else. queryRow's recordEvent hook
+// audits the write like every other fismasystems mutation.
+func SaveTargetMaturity(ctx context.Context, input TargetMaturityInput) (*FismaSystem, error) {
+	if !isValidIntID(input.FismaSystemID) {
+		return nil, ErrNoData
+	}
+
+	invalid := InvalidInputError{data: map[string]any{}}
+	if input.Tier == nil || !validTargetMaturityTiers[*input.Tier] {
+		invalid.data["target_maturity_tier"] = "must be one of Initial, Advanced, Optimal"
+	}
+	if input.Justification == nil || strings.TrimSpace(*input.Justification) == "" {
+		invalid.data["target_maturity_justification"] = "required"
+	} else if utf8.RuneCountInString(strings.TrimSpace(*input.Justification)) > 1000 {
+		invalid.data["target_maturity_justification"] = "must be 1000 characters or fewer"
+	}
+	if len(invalid.data) > 0 {
+		return nil, &invalid
+	}
+
+	sqlb := stmntBuilder.
+		Update("fismasystems").
+		Set("target_maturity_tier", *input.Tier).
+		Set("target_maturity_justification", strings.TrimSpace(*input.Justification)).
+		Where("fismasystemid=?", input.FismaSystemID).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
 func (f *FismaSystem) validate() error {
