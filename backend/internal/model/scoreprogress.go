@@ -27,7 +27,9 @@ type ScoreProgress struct {
 	// use, so the denominator matches what an ISSO actually sees).
 	QuestionsExpected int32 `json:"questionsexpected"`
 	// QuestionsUpdated is the number of distinct functions whose answer in
-	// this data call has at least one recorded edit event.
+	// this data call has at least one recorded edit event AND is still
+	// applicable to the system's current environment. Counted from the same
+	// applicable-function set as QuestionsExpected, so it can never exceed it.
 	QuestionsUpdated int32 `json:"questionsupdated"`
 	// LastUpdatedAt is the most recent edit event across the system's answers
 	// in this data call; nil when nothing has been touched this cycle.
@@ -100,10 +102,10 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	var args []any
 	argN := 1
 
-	// System-scope predicates applied to the expected CTE, which anchors the
-	// result set: a system outside the caller's scope produces no row at all,
-	// and a system inside scope with zero activity still produces a row (that
-	// zero-activity row is the entire point of the feature). Decommissioned
+	// System-scope predicates on the fismasystems anchor. Applied once in the
+	// scoped_systems CTE that both expected and updated read from, so updated
+	// never computes progress for a system the caller cannot see and a
+	// single-system request only touches that system's rows. Decommissioned
 	// systems are out of scope for data call participation entirely.
 	conds := []string{"fs.decommissioned = FALSE"}
 
@@ -134,33 +136,48 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	args = append(args, *input.DataCallID)
 	argN++
 
-	// expected: functions applicable to each in-scope system via the
-	// datacenterenvironments scoring-vocabulary mapping (same indirection as
-	// FindQuestionsByFismaSystem). LEFT joins so a system whose environment
-	// has no mapping still returns with an expected count of zero.
-	//
-	// updated: distinct functions whose score row in this data call has at
-	// least one edit event. The INNER lateral join is the filter - a
-	// pre-populated row copied by copyPreviousScores has no event and drops
-	// out here, which is exactly the "has a row but was not updated" case.
+	// Both count halves draw from the SAME applicable-function set - the exact
+	// set FindQuestionsByFismaSystem resolves for the questionnaire an ISSO
+	// fills out: functions with a question (INNER, so orphan functions are
+	// excluded), a valid pillar, matched to the system's environment through
+	// the datacenterenvironments scoring vocabulary. Because updated's set is
+	// that same set further restricted to answered-with-an-event functions, it
+	// is a subset of expected's - so questionsupdated can never exceed
+	// questionsexpected even when a carried-over answer references a function
+	// that is no longer applicable after an environment change (that answer
+	// simply fails the applicability join). COUNT(DISTINCT) on both guards
+	// against fan-out from the environment mapping.
 	sql := fmt.Sprintf(`
-WITH expected AS (
-    SELECT fs.fismasystemid, COUNT(f.functionid) AS questionsexpected
+WITH scoped_systems AS (
+    SELECT fs.fismasystemid, fs.datacenterenvironment
     FROM fismasystems fs
-    LEFT JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
-    LEFT JOIN functions f ON f.datacenterenvironment = dce.scoring_key
     WHERE %s
-    GROUP BY fs.fismasystemid
+),
+expected AS (
+    SELECT ss.fismasystemid, COUNT(DISTINCT f.functionid) AS questionsexpected
+    FROM scoped_systems ss
+    INNER JOIN datacenterenvironments dce ON dce.datacenterenvironment = ss.datacenterenvironment
+    INNER JOIN functions f ON f.datacenterenvironment = dce.scoring_key
+    INNER JOIN questions q ON q.questionid = f.questionid
+    INNER JOIN pillars p ON p.pillarid = q.pillarid
+    GROUP BY ss.fismasystemid
 ),
 updated AS (
-    SELECT s.fismasystemid,
-           COUNT(DISTINCT fo.functionid) AS questionsupdated,
+    SELECT ss.fismasystemid,
+           COUNT(DISTINCT f.functionid) AS questionsupdated,
            MAX(le.createdat) AS lastupdatedat -- newest across the system's rows; the lateral below is per-row
-    FROM scores s
+    FROM scoped_systems ss
+    INNER JOIN scores s ON s.fismasystemid = ss.fismasystemid AND s.datacallid = $%d
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+    INNER JOIN functions f ON f.functionid = fo.functionid
+    INNER JOIN datacenterenvironments dce ON dce.datacenterenvironment = ss.datacenterenvironment
+                                         AND dce.scoring_key = f.datacenterenvironment
+    INNER JOIN questions q ON q.questionid = f.questionid
+    INNER JOIN pillars p ON p.pillarid = q.pillarid
     -- One newest event per score row (LIMIT 1 keeps the lateral on the
     -- index fast path); the outer MAX then picks the newest across the
-    -- system's rows. Both layers are load-bearing.
+    -- system's rows. The INNER lateral is also the filter - a pre-populated
+    -- row copied by copyPreviousScores has no event and drops out here.
     INNER JOIN LATERAL (
         SELECT createdat
         FROM events
@@ -169,16 +186,16 @@ updated AS (
         ORDER BY createdat DESC
         LIMIT 1
     ) le ON TRUE
-    WHERE s.datacallid = $%d
-    GROUP BY s.fismasystemid
+    GROUP BY ss.fismasystemid
 )
-SELECT ex.fismasystemid,
-       ex.questionsexpected,
+SELECT ss.fismasystemid,
+       COALESCE(ex.questionsexpected, 0) AS questionsexpected,
        COALESCE(u.questionsupdated, 0) AS questionsupdated,
        u.lastupdatedat
-FROM expected ex
-LEFT JOIN updated u ON u.fismasystemid = ex.fismasystemid
-ORDER BY ex.fismasystemid
+FROM scoped_systems ss
+LEFT JOIN expected ex ON ex.fismasystemid = ss.fismasystemid
+LEFT JOIN updated u ON u.fismasystemid = ss.fismasystemid
+ORDER BY ss.fismasystemid
 `, strings.Join(conds, " AND "), dataCallArg)
 
 	return sql, args

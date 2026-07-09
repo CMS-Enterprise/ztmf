@@ -29,35 +29,50 @@ func TestFindScoreProgressInputValidate(t *testing.T) {
 // TestBuildScoreProgressSQL_Shape verifies the structural invariants of the
 // query:
 //
-//   - expected counts flow through the datacenterenvironments scoring
-//     vocabulary (same indirection the questionnaire uses), with LEFT joins
-//     so an unmapped environment still yields a zero-count row;
-//   - the updated CTE keys on edit events via an INNER lateral, which is what
-//     excludes pre-populated rows (copyPreviousScores records no events), the
-//     core "has a row but was not updated" distinction of ztmf#299;
-//   - the outer join is LEFT from expected so zero-activity systems still
-//     return a row (that row is the entire point of the feature).
+//   - scope is applied once in a scoped_systems anchor CTE that both count
+//     halves read from, so updated never computes for out-of-scope systems;
+//   - both expected and updated resolve the applicable-function set the same
+//     way FindQuestionsByFismaSystem does (functions + questions + pillars +
+//     the datacenterenvironments vocabulary), so orphan functions are excluded
+//     and the two halves draw from the same set - guaranteeing updated cannot
+//     exceed expected;
+//   - updated additionally requires the answered function to still be
+//     applicable to the system's current environment (the dce join keyed on
+//     both the system env and the function's scoring key), which is what stops
+//     a carried-over answer to a now-inapplicable function from inflating the
+//     numerator past 100%;
+//   - the updated CTE keys on edit events via an INNER lateral, excluding
+//     pre-populated rows (copyPreviousScores records no events);
+//   - both halves LEFT JOIN back onto scoped_systems so a zero-activity or
+//     unmapped-environment system still returns a row (0 of N).
 func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	in := FindScoreProgressInput{DataCallID: int32Ptr(4)}
 	sql, args := buildScoreProgressSQL(in)
 
+	assert.Contains(t, sql, "WITH scoped_systems AS", "scope is applied once in a shared anchor CTE")
 	assert.Contains(t, sql, "fs.decommissioned = FALSE", "decommissioned systems do not participate in data calls and must not appear")
-	assert.Contains(t, sql, "LEFT JOIN datacenterenvironments dce", "expected count must resolve environments through the scoring vocabulary")
-	assert.Contains(t, sql, "dce.datacenterenvironment = fs.datacenterenvironment", "system's raw environment maps into the vocabulary")
+	// Both halves resolve applicability through the same canonical join chain.
+	assert.Contains(t, sql, "dce.datacenterenvironment = ss.datacenterenvironment", "environment maps into the scoring vocabulary")
 	assert.Contains(t, sql, "f.datacenterenvironment = dce.scoring_key", "functions match on the scoring key")
+	assert.Contains(t, sql, "INNER JOIN questions q ON q.questionid = f.questionid", "orphan functions (no question) must be excluded, matching the questionnaire")
+	assert.Contains(t, sql, "INNER JOIN pillars p ON p.pillarid = q.pillarid", "applicability mirrors FindQuestionsByFismaSystem")
+	// updated re-checks applicability against the system's CURRENT environment.
+	assert.Contains(t, sql, "dce.scoring_key = f.datacenterenvironment", "an answered function must still be applicable to the system's current environment")
+	assert.Equal(t, 2, strings.Count(sql, "COUNT(DISTINCT f.functionid)"), "both halves count distinct applicable functions from the same set")
 	assert.Contains(t, sql, "INNER JOIN LATERAL", "updated count must require an edit event so pre-populated rows drop out")
 	assert.Contains(t, sql, "resource = 'public.scores'", "the lateral must read score events")
-	assert.Contains(t, sql, "COUNT(DISTINCT fo.functionid)", "updated counts distinct functions, not raw rows")
+	assert.Contains(t, sql, "LEFT JOIN expected", "unmapped-environment systems must still return a row")
 	assert.Contains(t, sql, "LEFT JOIN updated", "zero-activity systems must still return a row")
 	assert.Contains(t, sql, "COALESCE(u.questionsupdated, 0)", "zero-activity systems report 0, not NULL")
+	assert.Contains(t, sql, "COALESCE(ex.questionsexpected, 0)", "unmapped-environment systems report 0 expected, not NULL")
 
 	// No scope filters: the single arg is the data call id.
 	assert.Equal(t, []any{int32(4)}, args)
 }
 
 // TestBuildScoreProgressSQL_FismaSystemScope verifies a single-system request
-// narrows the expected CTE (which anchors the result set) and binds the system
-// id before the data call id.
+// narrows the scoped_systems anchor (so both count halves only touch that
+// system's rows) and binds the system id before the data call id.
 func TestBuildScoreProgressSQL_FismaSystemScope(t *testing.T) {
 	in := FindScoreProgressInput{
 		DataCallID:    int32Ptr(4),
@@ -70,8 +85,8 @@ func TestBuildScoreProgressSQL_FismaSystemScope(t *testing.T) {
 }
 
 // TestBuildScoreProgressSQL_UserScope verifies the ISSO/ISSM path: the
-// expected CTE is restricted to the requesting user's assigned systems via a
-// users_fismasystems subquery.
+// scoped_systems anchor is restricted to the requesting user's assigned
+// systems via a users_fismasystems subquery.
 func TestBuildScoreProgressSQL_UserScope(t *testing.T) {
 	uid := "11111111-1111-1111-1111-111111111111"
 	in := FindScoreProgressInput{
