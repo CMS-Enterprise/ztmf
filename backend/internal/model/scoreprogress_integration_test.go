@@ -59,12 +59,17 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 
 	// Borrow a valid (system, functionoption) pair from seeded data so FK
 	// constraints hold.
+	// The system must be active: FindScoreProgress excludes decommissioned
+	// systems, so borrowing one would make the single-system lookup empty.
 	var fismaSystemID, functionOptionID int32
 	err = conn.QueryRow(ctx, `
 		SELECT s.fismasystemid, s.functionoptionid
-		FROM scores s LIMIT 1
+		FROM scores s
+		INNER JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		WHERE fs.decommissioned = FALSE
+		LIMIT 1
 	`).Scan(&fismaSystemID, &functionOptionID)
-	require.NoError(t, err, "need at least one existing score row to derive a valid (system, functionoption) pair")
+	require.NoError(t, err, "need at least one score row on an active system to derive a valid (system, functionoption) pair")
 
 	// Seed one answer in the previous cycle via raw SQL (no events, same as
 	// historical data), then roll it into the new cycle the way datacall

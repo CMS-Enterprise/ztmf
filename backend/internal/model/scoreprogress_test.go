@@ -41,6 +41,7 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	in := FindScoreProgressInput{DataCallID: int32Ptr(4)}
 	sql, args := buildScoreProgressSQL(in)
 
+	assert.Contains(t, sql, "fs.decommissioned = FALSE", "decommissioned systems do not participate in data calls and must not appear")
 	assert.Contains(t, sql, "LEFT JOIN datacenterenvironments dce", "expected count must resolve environments through the scoring vocabulary")
 	assert.Contains(t, sql, "dce.datacenterenvironment = fs.datacenterenvironment", "system's raw environment maps into the vocabulary")
 	assert.Contains(t, sql, "f.datacenterenvironment = dce.scoring_key", "functions match on the scoring key")
@@ -97,7 +98,7 @@ func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 		sql, args := buildScoreProgressSQL(in)
 
 		assert.Contains(t, sql, "fs.opdiv_id = ANY($1)")
-		assert.NotContains(t, sql, "FALSE", "non-empty grants should not fail closed")
+		assert.NotContains(t, sql, "AND FALSE", "non-empty grants should not fail closed")
 		assert.Equal(t, []any{[]int32{7, 9}, int32(4)}, args)
 	})
 
@@ -108,7 +109,7 @@ func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 		}
 		sql, args := buildScoreProgressSQL(in)
 
-		assert.True(t, strings.Contains(sql, "FALSE"), "a scoped admin with no grants must match nothing")
+		assert.True(t, strings.Contains(sql, "AND FALSE"), "a scoped admin with no grants must match nothing")
 		assert.NotContains(t, sql, "opdiv_id = ANY($", "should not bind an OpDiv predicate when there are no grants")
 		assert.Equal(t, []any{int32(4)}, args)
 	})

@@ -32,8 +32,12 @@ type ScoreProgress struct {
 	// LastUpdatedAt is the most recent edit event across the system's answers
 	// in this data call; nil when nothing has been touched this cycle.
 	LastUpdatedAt *time.Time `json:"lastupdatedat,omitempty"`
-	// UpdatedSinceStart is a convenience flag: true when at least one answer
-	// has been edited in this data call.
+	// UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
+	// it answers the ticket's literal question - "has this system updated
+	// since the start of the data call" - by name in the response, so a
+	// consumer rendering a boolean chip never touches the numeric fields.
+	// The anchor is real: events can only postdate the data call's creation,
+	// so any counted edit necessarily happened after the cycle started.
 	UpdatedSinceStart bool `json:"updatedsincestart"`
 }
 
@@ -69,8 +73,11 @@ func (i FindScoreProgressInput) validate() error {
 //
 // Systems the caller cannot see are excluded by the same scoping rules as
 // FindScores (per-user assigned systems, OpDiv grants, or unrestricted).
-// Decommissioned systems are not filtered here - the caller joins progress
-// onto whatever system list it displays, so extra rows are inert.
+// Decommissioned systems are excluded: they do not participate in data
+// calls, so a "not updated" row for one is pure noise in the triage view
+// this endpoint feeds. If a consumer ever needs historical progress for a
+// decommissioned system, add an opt-in query param rather than removing
+// the filter.
 //
 // The query is hand-built parameterized SQL through the read-only rawQuery
 // path (never queryRow, which records events), mirroring FindScoreDiff. The
@@ -96,8 +103,9 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	// System-scope predicates applied to the expected CTE, which anchors the
 	// result set: a system outside the caller's scope produces no row at all,
 	// and a system inside scope with zero activity still produces a row (that
-	// zero-activity row is the entire point of the feature).
-	conds := []string{"TRUE"}
+	// zero-activity row is the entire point of the feature). Decommissioned
+	// systems are out of scope for data call participation entirely.
+	conds := []string{"fs.decommissioned = FALSE"}
 
 	if input.FismaSystemID != nil {
 		conds = append(conds, fmt.Sprintf("fs.fismasystemid = $%d", argN))
@@ -147,9 +155,12 @@ WITH expected AS (
 updated AS (
     SELECT s.fismasystemid,
            COUNT(DISTINCT fo.functionid) AS questionsupdated,
-           MAX(le.createdat) AS lastupdatedat
+           MAX(le.createdat) AS lastupdatedat -- newest across the system's rows; the lateral below is per-row
     FROM scores s
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+    -- One newest event per score row (LIMIT 1 keeps the lateral on the
+    -- index fast path); the outer MAX then picks the newest across the
+    -- system's rows. Both layers are load-bearing.
     INNER JOIN LATERAL (
         SELECT createdat
         FROM events
