@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
@@ -490,7 +491,7 @@ func SaveTargetMaturity(ctx context.Context, input TargetMaturityInput) (*FismaS
 	}
 	if input.Justification == nil || strings.TrimSpace(*input.Justification) == "" {
 		invalid.data["target_maturity_justification"] = "required"
-	} else if len(*input.Justification) > 1000 {
+	} else if utf8.RuneCountInString(strings.TrimSpace(*input.Justification)) > 1000 {
 		invalid.data["target_maturity_justification"] = "must be 1000 characters or fewer"
 	}
 	if len(invalid.data) > 0 {
