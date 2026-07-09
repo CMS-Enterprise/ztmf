@@ -1,5 +1,12 @@
 components:
   schemas:
+    auth.errorBody:
+      properties:
+        code:
+          type: string
+        error:
+          type: string
+      type: object
     controller.DecommissionRequest:
       properties:
         decommissioned_date:
@@ -626,6 +633,23 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /auth/logout:
+    post:
+      description: Clears the ZTMF application session cookie and the ALB OIDC session
+        cookies, ending the session. Unauthenticated so an already-expired session
+        can still be cleared. Does not perform IdP-side single logout.
+      responses:
+        "204":
+          description: Session cleared
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/auth.errorBody'
+          description: Forbidden
+      summary: Log out
+      tags:
+      - auth
   /auth/lookup:
     get:
       description: 'Unauthenticated pre-auth lookup the landing page uses to route

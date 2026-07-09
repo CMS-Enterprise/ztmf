@@ -4,14 +4,18 @@
 # `redocly lint` in CI, while every other instance of these rules stays a hard
 # error. Keep it minimal — do not add an entry to silence a real problem.
 #
-# security-defined on GET /auth/lookup: this is the single deliberately public,
-# pre-auth route (per-user IdP lookup for the login landing page). It has no
-# `@Security bearerAuth` by design; the auth boundary is the ALB/OIDC handshake
-# downstream, not this endpoint. Every other operation still carries bearerAuth,
-# and the rule stays an error for them so a new handler that forgets `@Security`
-# fails the build. The shared-handler `path-parameters-defined` warnings and the
-# `info-license` warning are intentionally NOT ignored here — they stay visible
-# as warnings (see redocly.yaml) rather than silenced.
+# security-defined on the deliberately public, pre-auth auth routes:
+#   - GET  /auth/lookup: per-user IdP lookup for the login landing page.
+#   - POST /auth/logout: clears the session, and must work when the session is
+#     already expired, so it cannot sit behind auth either.
+# Both have no `@Security bearerAuth` by design; the auth boundary is the
+# ALB/OIDC handshake downstream, not these endpoints (logout additionally runs
+# its own same-origin CSRF check). Every other operation still carries
+# bearerAuth, and the rule stays an error for them so a new handler that forgets
+# `@Security` fails the build. The shared-handler `path-parameters-defined`
+# warnings and the `info-license` warning are intentionally NOT ignored here —
+# they stay visible as warnings (see redocly.yaml) rather than silenced.
 openapi.yaml:
   security-defined:
     - '#/paths/~1auth~1lookup/get'
+    - '#/paths/~1auth~1logout/post'

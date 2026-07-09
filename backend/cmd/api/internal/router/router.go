@@ -22,6 +22,12 @@ func Handler() http.Handler {
 	lookupLimiter := auth.NewRateLimiter(rate.Limit(5), 10, 10*time.Minute)
 	root.Handle("/api/v1/auth/lookup", lookupLimiter.Middleware(http.HandlerFunc(controller.LookupIdP))).Methods("GET")
 
+	// Logout is likewise unauthenticated: it must be able to clear a session
+	// that is already expired or invalid, so it cannot sit behind auth.Middleware.
+	// POST-only; it clears the app session cookie and the ALB OIDC session
+	// cookies (LogoutHandler runs its own same-origin CSRF check).
+	root.HandleFunc("/api/v1/auth/logout", auth.LogoutHandler).Methods("POST")
+
 	// Post-OIDC login. The ALB authenticates /login* per IdP and forwards here
 	// with the IdP token in the auth header; SessionHandler mints the app
 	// session cookie. These live outside auth.Middleware because no app session

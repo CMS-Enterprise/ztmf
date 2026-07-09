@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -88,4 +90,74 @@ func TestSessionHandler_Unauthorized(t *testing.T) {
 	SessionHandler(w, r)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Empty(t, w.Result().Cookies())
+}
+
+func TestClearALBSessionCookies_Attributes(t *testing.T) {
+	w := httptest.NewRecorder()
+	ClearALBSessionCookies(w)
+
+	byName := map[string]*http.Cookie{}
+	for _, c := range w.Result().Cookies() {
+		byName[c.Name] = c
+	}
+
+	// Both IdP cookie families, each with its base name and the first two shards.
+	want := []string{
+		"AWSELBAuthSessionCookie", "AWSELBAuthSessionCookie-0", "AWSELBAuthSessionCookie-1",
+		"AWSELBAuthSessionCookie-Entra", "AWSELBAuthSessionCookie-Entra-0", "AWSELBAuthSessionCookie-Entra-1",
+	}
+	require.Len(t, byName, len(want))
+	for _, name := range want {
+		c, ok := byName[name]
+		require.True(t, ok, "expected %s to be cleared", name)
+		assert.Empty(t, c.Value, "%s must be emptied", name)
+		assert.True(t, c.MaxAge < 0, "%s must be expired", name)
+		assert.Equal(t, "/", c.Path)
+		// Host-only: the ALB sets these without a Domain, so the expiring cookie
+		// must not set one either, or it would not match and delete the original.
+		assert.Empty(t, c.Domain, "%s must stay host-only", name)
+	}
+}
+
+func TestLogoutHandler_ClearsSessionAndALBCookies(t *testing.T) {
+	// Same-origin (no Origin/Referer is treated as same-origin) POST logs out.
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	w := httptest.NewRecorder()
+	LogoutHandler(w, r)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	byName := map[string]*http.Cookie{}
+	for _, c := range w.Result().Cookies() {
+		byName[c.Name] = c
+	}
+	// The app session cookie plus both ALB cookie families (base + two shards).
+	require.Len(t, byName, 1+6)
+
+	session, ok := byName[config.GetInstance().Auth.SessionCookieName]
+	require.True(t, ok, "session cookie must be cleared")
+	assert.Empty(t, session.Value)
+	assert.True(t, session.MaxAge < 0, "session cookie must be expired")
+
+	_, ok = byName["AWSELBAuthSessionCookie"]
+	assert.True(t, ok, "Okta ALB cookie must be cleared")
+	_, ok = byName["AWSELBAuthSessionCookie-Entra"]
+	assert.True(t, ok, "Entra ALB cookie must be cleared")
+}
+
+func TestLogoutHandler_RejectsForeignOrigin(t *testing.T) {
+	// A cross-origin forced-logout is rejected with the same code/shape the
+	// middleware uses for CSRF, and clears nothing.
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	r.Host = "ztmf.example.gov"
+	r.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	LogoutHandler(w, r)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Empty(t, w.Result().Cookies(), "must not clear cookies on a blocked origin")
+
+	var body errorBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, CodeForbiddenOrigin, body.Code)
 }
