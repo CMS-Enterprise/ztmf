@@ -176,10 +176,21 @@ func GetScoresProgress(w http.ResponseWriter, r *http.Request) {
 
 	err = decoder.Decode(&input, r.URL.Query())
 
-	// Same tier scoping as ListScores, applied AFTER decode so a client cannot
-	// widen scope via query params: unscoped admins see all; OPDIV tiers
-	// fail-closed to their granted OpDivs' systems; ISSO/ISSM keep the
-	// per-system (UserID) path.
+	scopeScoreProgressInput(user, &input)
+
+	if err == nil {
+		progress, err = model.FindScoreProgress(r.Context(), input)
+	}
+
+	respond(w, r, progress, err)
+}
+
+// scopeScoreProgressInput applies the caller's tier to the query input. Same
+// tier scoping as ListScores, applied AFTER decode so a client cannot widen
+// scope via query params: unscoped admins see all; OPDIV tiers fail-closed to
+// their granted OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
+// Extracted so the role matrix is unit-testable without a database.
+func scopeScoreProgressInput(user *model.User, input *model.FindScoreProgressInput) {
 	switch {
 	case user.HasUnscopedRead():
 		// no scope filter
@@ -189,12 +200,6 @@ func GetScoresProgress(w http.ResponseWriter, r *http.Request) {
 	default:
 		input.UserID = &user.UserID
 	}
-
-	if err == nil {
-		progress, err = model.FindScoreProgress(r.Context(), input)
-	}
-
-	respond(w, r, progress, err)
 }
 
 //	@Summary	Get aggregated scores

@@ -595,3 +595,92 @@ func TestDeleteUser_MissingIDIsNotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+// --- GetScoresProgress ---
+
+// int32PtrAuthz keeps the OpDiv fixture below readable without pulling in a
+// shared helper from another test file.
+func int32PtrAuthz(v int32) *int32 { return &v }
+
+// TestScopeScoreProgressInput pins the role matrix the progress endpoint
+// applies to its query input. This is the security boundary for /scores/
+// progress: the SQL builder is tested separately, so what matters here is
+// that each tier populates (or leaves empty) exactly the scope fields the
+// builder keys on.
+func TestScopeScoreProgressInput(t *testing.T) {
+	t.Run("OwnerUnrestricted", func(t *testing.T) {
+		input := model.FindScoreProgressInput{}
+		scopeScoreProgressInput(adminUser, &input)
+
+		assert.False(t, input.RestrictToOpDivIDs, "OWNER must not be OpDiv-restricted")
+		assert.Empty(t, input.OpDivIDs)
+		assert.Nil(t, input.UserID, "OWNER must not be limited to assigned systems")
+	})
+
+	t.Run("HHSReadonlyAdminUnrestricted", func(t *testing.T) {
+		input := model.FindScoreProgressInput{}
+		scopeScoreProgressInput(readonlyAdmin, &input)
+
+		assert.False(t, input.RestrictToOpDivIDs, "HHS_READONLY_ADMIN has unscoped read")
+		assert.Empty(t, input.OpDivIDs)
+		assert.Nil(t, input.UserID)
+	})
+
+	t.Run("OpDivAdminScopedToGrants", func(t *testing.T) {
+		opdivAdmin := &model.User{
+			UserID:           "44444444-4444-4444-4444-444444444444",
+			Role:             "OPDIV_ADMIN",
+			AssignedOpDivIDs: []*int32{int32PtrAuthz(7), int32PtrAuthz(9)},
+		}
+		input := model.FindScoreProgressInput{}
+		scopeScoreProgressInput(opdivAdmin, &input)
+
+		assert.True(t, input.RestrictToOpDivIDs, "OPDIV_ADMIN must be OpDiv-restricted")
+		assert.Equal(t, []int32{7, 9}, input.OpDivIDs)
+		assert.Nil(t, input.UserID, "OpDiv tier scopes by OpDiv, not by assignment")
+	})
+
+	t.Run("OpDivAdminWithNoGrantsFailsClosed", func(t *testing.T) {
+		opdivAdmin := &model.User{
+			UserID: "55555555-5555-5555-5555-555555555555",
+			Role:   "OPDIV_READONLY_ADMIN",
+		}
+		input := model.FindScoreProgressInput{}
+		scopeScoreProgressInput(opdivAdmin, &input)
+
+		assert.True(t, input.RestrictToOpDivIDs)
+		assert.Empty(t, input.OpDivIDs, "no grants must leave the id list empty so the query fails closed")
+	})
+
+	t.Run("ISSOScopedToAssignedSystems", func(t *testing.T) {
+		input := model.FindScoreProgressInput{}
+		scopeScoreProgressInput(issoUser, &input)
+
+		assert.False(t, input.RestrictToOpDivIDs)
+		if assert.NotNil(t, input.UserID, "ISSO must be limited to their assigned systems") {
+			assert.Equal(t, issoUser.UserID, *input.UserID)
+		}
+	})
+}
+
+// TestGetScoresProgress_MissingDataCall_BadRequest exercises the handler end
+// to end without a database: FindScoreProgress validates before touching the
+// pool, so a request missing the required datacallid must come back 400 for
+// every tier that can reach the endpoint.
+func TestGetScoresProgress_MissingDataCall_BadRequest(t *testing.T) {
+	for name, user := range map[string]*model.User{
+		"Owner":         adminUser,
+		"ReadonlyAdmin": readonlyAdmin,
+		"ISSO":          issoUser,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/scores/progress", nil)
+			r = withUser(r, user)
+			w := httptest.NewRecorder()
+
+			GetScoresProgress(w, r)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}
