@@ -282,28 +282,30 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Release()
 
-	// Insert two datacalls explicitly ordered so copyPreviousScores'
-	// "latest-1 is previous" logic finds the right one. Each row gets
-	// a unique nano-precision suffix so reruns don't collide on the
-	// UNIQUE(datacall) constraint, and the integrationTestPrefix makes
-	// them discoverable by the sweep no matter how the test exits.
+	// Insert two datacalls so copyPreviousScores' "previous is the next call
+	// back" logic finds the right one. findPreviousDataCall now orders by
+	// deadline (see datacalls.go), so both deadlines must beat every seed
+	// datacall (the empire seed's furthest-out is 2099-12-31) with newDC later
+	// than prevDC; then prevDC is the unambiguous previous relative to newDC.
+	// datecreated no longer affects the ordering. Each row gets a unique
+	// nano-precision suffix so reruns don't collide on the UNIQUE(datacall)
+	// constraint, and the integrationTestPrefix makes them discoverable by the
+	// sweep no matter how the test exits.
 	var prevDC, newDC int32
-	prevTimestamp := time.Now().Add(-2 * time.Hour)
-	newTimestamp := time.Now().Add(-1 * time.Hour)
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
 		RETURNING datacallid
-	`, fmt.Sprintf("%sprev_%d", integrationTestPrefix, suffix), prevTimestamp).Scan(&prevDC)
+	`, fmt.Sprintf("%sprev_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $2::timestamptz + INTERVAL '90 days')
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
 		RETURNING datacallid
-	`, fmt.Sprintf("%snew_%d", integrationTestPrefix, suffix), newTimestamp).Scan(&newDC)
+	`, fmt.Sprintf("%snew_%d", integrationTestPrefix, suffix)).Scan(&newDC)
 	require.NoError(t, err)
 
 	// Pick a (fismasystemid, functionoptionid) that already references
@@ -348,6 +350,58 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, afterCount,
 		"copyPreviousScores must carry the marker (system, functionoption) into the new datacall")
+}
+
+// TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by
+// deadline, not datacallid: a call inserted later (higher serial id) but with
+// an earlier deadline must NOT win over an earlier-inserted call with a
+// further-out deadline. This is the historical-load regression from #393 - a
+// re-imported past year can out-id the real current call.
+func TestFindLatestDataCallByDeadlineIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	suffix := time.Now().UnixNano()
+
+	// Insert the further-out deadline FIRST so it gets the LOWER datacallid.
+	// Both deadlines beat every seed datacall (empire seed's furthest-out is
+	// 2099-12-31), so this call is the global latest by deadline.
+	var laterDeadlineID int32
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2102-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%slatest_deadline_%d", integrationTestPrefix, suffix)).Scan(&laterDeadlineID)
+	require.NoError(t, err)
+
+	// Insert an earlier deadline SECOND so it gets the HIGHER datacallid - the
+	// row that would wrongly win under datacallid ordering.
+	var higherIDEarlierDeadline int32
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-06-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%shigher_id_%d", integrationTestPrefix, suffix)).Scan(&higherIDEarlierDeadline)
+	require.NoError(t, err)
+
+	require.Greater(t, higherIDEarlierDeadline, laterDeadlineID,
+		"second insert must have the higher datacallid for this test to be meaningful")
+
+	latest, err := FindLatestDataCall(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, laterDeadlineID, latest.DataCallID,
+		"FindLatestDataCall must return the furthest-out deadline, not the highest datacallid")
+	assert.NotEqual(t, higherIDEarlierDeadline, latest.DataCallID,
+		"the higher-datacallid/earlier-deadline call must not be treated as latest")
 }
 
 func boolPtr(b bool) *bool { return &b }
@@ -928,4 +982,82 @@ func TestFindScoresISSOScopeRetainsAuditFieldsIntegration(t *testing.T) {
 	require.NotNil(t, found.LastEditedBy, "ISSO scope must not strip the audit join")
 	assert.Equal(t, krennicUUID, found.LastEditedBy.UserID)
 	assert.Equal(t, "ISSO", found.LastEditedBy.Role)
+}
+
+// TestScoringResolvesEnvironmentAliasIntegration proves the ztmf#392 mechanism:
+// a system whose raw datacenterenvironment is NOT itself a functions catalog key
+// still scores, because the datacenterenvironments mapping redirects it to a
+// scoring_key. The redirect is transparent - routing an already-scored system
+// through an alias row that points at the same scoring_key yields the identical
+// aggregate it had under its real environment. This is the exact failure mode
+// behind the HHS 0.00 scores (free-text env values absent from the functions
+// catalog); before #392 the direct join returned nothing for such a system.
+func TestScoringResolvesEnvironmentAliasIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Pick any scored system whose environment maps to a non-null scoring_key.
+	var sysID int32
+	var realEnv, scoringKey string
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT fs.fismasystemid, fs.datacenterenvironment, dce.scoring_key
+		FROM scores s
+		JOIN fismasystems fs           ON fs.fismasystemid = s.fismasystemid
+		JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		WHERE dce.scoring_key IS NOT NULL
+		LIMIT 1
+	`).Scan(&sysID, &realEnv, &scoringKey),
+		"need at least one scored, mapped system to alias")
+
+	// Baseline: the aggregate the system produces under its real environment.
+	base, err := FindScoresAggregate(ctx, FindScoresInput{
+		FismaSystemID:  &sysID,
+		IncludePillars: boolPtr(true),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, base, "baseline aggregate expected for the chosen system")
+
+	const alias = "integration_test_alias_env" // deliberately not a functions key
+
+	// Register the alias -> same scoring_key, and point the system at it.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO datacenterenvironments (datacenterenvironment, category, scoring_key, selectable, ordr)
+		VALUES ($1, $1, $2, false, 0)
+		ON CONFLICT (datacenterenvironment) DO UPDATE SET scoring_key = EXCLUDED.scoring_key
+	`, alias, scoringKey)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `UPDATE fismasystems SET datacenterenvironment = $1 WHERE fismasystemid = $2`, alias, sysID)
+	require.NoError(t, err)
+
+	// Always restore the shared seed so other tests see the original env.
+	defer func() {
+		_, _ = conn.Exec(ctx, `UPDATE fismasystems SET datacenterenvironment = $1 WHERE fismasystemid = $2`, realEnv, sysID)
+		_, _ = conn.Exec(ctx, `DELETE FROM datacenterenvironments WHERE datacenterenvironment = $1`, alias)
+	}()
+
+	// Guard: the alias value must genuinely be absent from the functions
+	// catalog, otherwise the old direct join would have matched it and the
+	// test would prove nothing about the mapping indirection.
+	var directMatches int
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT count(*) FROM functions WHERE datacenterenvironment = $1`, alias).Scan(&directMatches))
+	require.Zero(t, directMatches, "alias must not be a functions.datacenterenvironment value")
+
+	// Under the alias the aggregate must still be populated, and because the
+	// alias resolves to the same scoring_key, the score must be unchanged.
+	aliased, err := FindScoresAggregate(ctx, FindScoresInput{
+		FismaSystemID:  &sysID,
+		IncludePillars: boolPtr(true),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, aliased, "aliased env must still score via the mapping (ztmf#392)")
+	require.Len(t, aliased, len(base), "same system + scores must yield the same number of aggregate rows")
+	assert.InDelta(t, base[0].SystemScore, aliased[0].SystemScore, 1e-9,
+		"an alias pointing at the same scoring_key must not change the score")
 }

@@ -84,31 +84,6 @@ func TestIsValidUUID(t *testing.T) {
 	}
 }
 
-func TestIsValidDataCenterEnvironment(t *testing.T) {
-	tests := []struct {
-		name string
-		env  string
-		want bool
-	}{
-		{"AWS is valid", "AWS", true},
-		{"SaaS is valid", "SaaS", true},
-		{"CMS-Cloud-AWS is valid", "CMS-Cloud-AWS", true},
-		{"CMSDC is valid", "CMSDC", true},
-		{"CMS-Cloud-MAG is valid", "CMS-Cloud-MAG", true},
-		{"Other is valid", "Other", true},
-		{"OPDC is valid", "OPDC", true},
-		{"DECOMMISSIONED is valid", "DECOMMISSIONED", true},
-		{"lowercase aws is invalid", "aws", false},
-		{"empty is invalid", "", false},
-		{"unknown is invalid", "GCP", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isValidDataCenterEnvironment(tt.env))
-		})
-	}
-}
-
 func TestIsValidIntID(t *testing.T) {
 	tests := []struct {
 		name string

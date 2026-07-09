@@ -2,10 +2,12 @@ package model
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -103,12 +105,14 @@ func TestFismaSystemSDLSyncEnabledField(t *testing.T) {
 	})
 
 	t.Run("InsertSliceBoundary", func(t *testing.T) {
-		// The INSERT uses fismaSystemColumns[1:13] which should end with sdl_sync_enabled
-		insertCols := fismaSystemColumns[1:13]
-		assert.Equal(t, "sdl_sync_enabled", insertCols[len(insertCols)-1],
-			"last column in INSERT slice must be sdl_sync_enabled")
-		assert.Equal(t, 12, len(insertCols),
-			"INSERT slice should have 12 columns (fismauid through sdl_sync_enabled)")
+		// Save() INSERT uses an explicit named list (not a positional slice).
+		// Pin that the core columns are present at the expected positions so
+		// future appends to fismaSystemColumns don't silently break Insert order.
+		assert.Equal(t, "fismauid", fismaSystemColumns[1])
+		assert.Equal(t, "sdl_sync_enabled", fismaSystemColumns[12],
+			"sdl_sync_enabled must remain at index 12 (position in named INSERT list)")
+		assert.Equal(t, "opdiv_id", fismaSystemColumns[20],
+			"opdiv_id must remain at index 20")
 	})
 }
 
@@ -304,4 +308,125 @@ func TestFismaSystemReactivationFields(t *testing.T) {
 // Helper function for creating string pointers
 func stringPtr(s string) *string {
 	return &s
+}
+
+// TestSaveTargetMaturityValidation exercises the pre-DB validation paths of
+// SaveTargetMaturity (#398). These all return before any connection is
+// opened, so they run under -short.
+func TestSaveTargetMaturityValidation(t *testing.T) {
+	ctx := context.Background()
+	tier := "Advanced"
+	justification := "Handles PII and is internet-facing."
+	long := strings.Repeat("x", 1001)
+
+	t.Run("InvalidID", func(t *testing.T) {
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 0, Tier: &tier, Justification: &justification})
+		assert.Equal(t, ErrNoData, err)
+	})
+
+	t.Run("UnknownTier", func(t *testing.T) {
+		bad := "Traditional" // deliberately excluded from the selectable set
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 1001, Tier: &bad, Justification: &justification})
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+
+	t.Run("NilTier", func(t *testing.T) {
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 1001, Justification: &justification})
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+
+	t.Run("MissingJustification", func(t *testing.T) {
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 1001, Tier: &tier})
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+
+	t.Run("BlankJustification", func(t *testing.T) {
+		blank := "   "
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 1001, Tier: &tier, Justification: &blank})
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+
+	t.Run("JustificationTooLong", func(t *testing.T) {
+		_, err := SaveTargetMaturity(ctx, TargetMaturityInput{FismaSystemID: 1001, Tier: &tier, Justification: &long})
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+}
+
+// TestSaveTargetMaturityIntegration writes a target against a real Postgres,
+// reads it back through FindFismaSystem, and restores the columns to NULL so
+// the seeded dev DB is left as found. Skipped under -short.
+func TestSaveTargetMaturityIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+
+	// Pick any existing system rather than hardcoding a seed id.
+	systems, err := FindFismaSystems(ctx, FindFismaSystemsInput{})
+	if err != nil || len(systems) == 0 {
+		t.Fatalf("need at least one seeded fismasystem: %v", err)
+	}
+	target := systems[0]
+
+	// Restore whatever was there before (normally NULL in seed data).
+	defer func() {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("cleanup conn: %v", err)
+		}
+		defer conn.Release()
+		_, err = conn.Exec(ctx,
+			"UPDATE fismasystems SET target_maturity_tier=$1, target_maturity_justification=$2 WHERE fismasystemid=$3",
+			target.TargetMaturityTier, target.TargetMaturityJustification, target.FismaSystemID)
+		if err != nil {
+			t.Fatalf("cleanup restore: %v", err)
+		}
+	}()
+
+	tier := "Optimal"
+	justification := "  Integration test justification.  "
+
+	saved, err := SaveTargetMaturity(ctx, TargetMaturityInput{
+		FismaSystemID: target.FismaSystemID,
+		Tier:          &tier,
+		Justification: &justification,
+	})
+	if err != nil {
+		t.Fatalf("SaveTargetMaturity: %v", err)
+	}
+	if assert.NotNil(t, saved.TargetMaturityTier) {
+		assert.Equal(t, "Optimal", *saved.TargetMaturityTier)
+	}
+	if assert.NotNil(t, saved.TargetMaturityJustification) {
+		// stored trimmed
+		assert.Equal(t, "Integration test justification.", *saved.TargetMaturityJustification)
+	}
+
+	// Read back through the normal read path - the new columns flow through
+	// fismaSystemColumns, so every GET carries them.
+	id := target.FismaSystemID
+	fetched, err := FindFismaSystem(ctx, FindFismaSystemsInput{FismaSystemID: &id})
+	if err != nil {
+		t.Fatalf("FindFismaSystem: %v", err)
+	}
+	if assert.NotNil(t, fetched.TargetMaturityTier) {
+		assert.Equal(t, "Optimal", *fetched.TargetMaturityTier)
+	}
+
+	// CHECK constraint is live: a value outside the vocabulary must fail even
+	// if it somehow bypassed Go validation.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("db.Conn: %v", err)
+	}
+	defer conn.Release()
+	_, err = conn.Exec(ctx,
+		"UPDATE fismasystems SET target_maturity_tier='Bogus' WHERE fismasystemid=$1", id)
+	assert.Error(t, err, "CHECK constraint must reject values outside the tier vocabulary")
 }

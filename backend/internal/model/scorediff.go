@@ -20,6 +20,7 @@ type ScoreDiffSide struct {
 	OptionName       string  `json:"optionname"`
 	Score            int32   `json:"score"`
 	Notes            *string `json:"notes"`
+	NotesIsAISummary *bool   `json:"notes_is_ai_summary"`
 }
 
 // ScoreDiff is a single questionnaire function whose answer changed between two
@@ -121,8 +122,8 @@ SELECT
     COALESCE(f.functionid, t.functionid)       AS functionid,
     fn.function,
     q.question,
-    f.scoreid, f.functionoptionid, f.option_score, f.optionname, f.notes,
-    t.scoreid, t.functionoptionid, t.option_score, t.optionname, t.notes,
+    f.scoreid, f.functionoptionid, f.option_score, f.optionname, f.notes, f.notes_is_ai_summary,
+    t.scoreid, t.functionoptionid, t.option_score, t.optionname, t.notes, t.notes_is_ai_summary,
     le.createdat,
     eu.userid, eu.fullname, eu.email, eu.role
 FROM from_scores f
@@ -141,6 +142,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN users eu ON eu.userid = le.userid
 WHERE f.functionoptionid IS DISTINCT FROM t.functionoptionid
    OR COALESCE(f.notes, '') IS DISTINCT FROM COALESCE(t.notes, '')
+   OR f.notes_is_ai_summary IS DISTINCT FROM t.notes_is_ai_summary
 ORDER BY fismasystemid, fn.ordr, functionid
 `, fromCTE, toCTE)
 
@@ -183,7 +185,7 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 
 	return fmt.Sprintf(`
     SELECT s.scoreid, s.fismasystemid, fo.functionid, s.functionoptionid,
-           fo.score AS option_score, fo.optionname, s.notes
+           fo.score AS option_score, fo.optionname, s.notes, s.notes_is_ai_summary
     FROM scores s
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
     %s
@@ -196,17 +198,19 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 		fn *string
 		qn *string
 
-		fScoreID  *int32
-		fFOID     *int32
-		fOptScore *int32
-		fOptName  *string
-		fNotes    *string
+		fScoreID    *int32
+		fFOID       *int32
+		fOptScore   *int32
+		fOptName    *string
+		fNotes      *string
+		fAISummary  *bool
 
-		tScoreID  *int32
-		tFOID     *int32
-		tOptScore *int32
-		tOptName  *string
-		tNotes    *string
+		tScoreID    *int32
+		tFOID       *int32
+		tOptScore   *int32
+		tOptName    *string
+		tNotes      *string
+		tAISummary  *bool
 
 		at     *time.Time
 		uID    *string
@@ -217,8 +221,8 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 
 	if err := row.Scan(
 		&d.FismaSystemID, &d.FunctionID, &fn, &qn,
-		&fScoreID, &fFOID, &fOptScore, &fOptName, &fNotes,
-		&tScoreID, &tFOID, &tOptScore, &tOptName, &tNotes,
+		&fScoreID, &fFOID, &fOptScore, &fOptName, &fNotes, &fAISummary,
+		&tScoreID, &tFOID, &tOptScore, &tOptName, &tNotes, &tAISummary,
 		&at, &uID, &uName, &uEmail, &uRole,
 	); err != nil {
 		return nil, err
@@ -237,6 +241,7 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 			OptionName:       derefString(fOptName),
 			Score:            derefInt32(fOptScore),
 			Notes:            fNotes,
+			NotesIsAISummary: fAISummary,
 		}
 	}
 	if tScoreID != nil {
@@ -246,6 +251,7 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 			OptionName:       derefString(tOptName),
 			Score:            derefInt32(tOptScore),
 			Notes:            tNotes,
+			NotesIsAISummary: tAISummary,
 		}
 	}
 

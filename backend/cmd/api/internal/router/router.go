@@ -22,6 +22,12 @@ func Handler() http.Handler {
 	lookupLimiter := auth.NewRateLimiter(rate.Limit(5), 10, 10*time.Minute)
 	root.Handle("/api/v1/auth/lookup", lookupLimiter.Middleware(http.HandlerFunc(controller.LookupIdP))).Methods("GET")
 
+	// Logout is likewise unauthenticated: it must be able to clear a session
+	// that is already expired or invalid, so it cannot sit behind auth.Middleware.
+	// POST-only; it clears the app session cookie and the ALB OIDC session
+	// cookies (LogoutHandler runs its own same-origin CSRF check).
+	root.HandleFunc("/api/v1/auth/logout", auth.LogoutHandler).Methods("POST")
+
 	// Post-OIDC login. The ALB authenticates /login* per IdP and forwards here
 	// with the IdP token in the auth header; SessionHandler mints the app
 	// session cookie. These live outside auth.Middleware because no app session
@@ -52,6 +58,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.SaveFismaSystem).Methods("PUT")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}", controller.DeleteFismaSystem).Methods("DELETE")
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/reactivate", controller.ReactivateFismaSystem).Methods("PUT")
+	// target maturity is ISSO-writable (unlike the admin-only system PUT); see SaveFismaSystemTargetMaturity
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/target-maturity", controller.SaveFismaSystemTargetMaturity).Methods("PUT")
 	// returns a list of data calls that this fisma system has marked complete
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/datacalls", controller.ListFismaSystemDataCalls).Methods("GET")
 
@@ -84,6 +92,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/scores", controller.ListScores).Methods("GET")
 	router.HandleFunc("/api/v1/scores/aggregate", controller.GetScoresAggregate).Methods("GET") // yes "aggregate" is a noun
 	router.HandleFunc("/api/v1/scores/diff", controller.GetScoresDiff).Methods("GET")
+	router.HandleFunc("/api/v1/scores/progress", controller.GetScoresProgress).Methods("GET")
 	router.HandleFunc("/api/v1/scores", controller.SaveScore).Methods("POST")
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}", controller.SaveScore).Methods("PUT")
 
@@ -96,6 +105,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionByID).Methods("GET")
 	router.HandleFunc("/api/v1/functions", controller.SaveFunction).Methods("POST")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
+
+	router.HandleFunc("/api/v1/datacenterenvironments", controller.ListDataCenterEnvironments).Methods("GET")
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
 
