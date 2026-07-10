@@ -891,6 +891,104 @@ func TestFindScoreDiffIntegration(t *testing.T) {
 	}
 }
 
+// TestFindScoreDiffNotesWhitespaceIntegration pins the #409 fix against the
+// real Postgres regexp: with the selected option identical across both cycles,
+// a note that differs only in whitespace (the FY23 two-spaces-after-a-period
+// vintage vs FY24 single spaces) must NOT surface as a change, while a genuine
+// content change to a note must. Exercises the whitespace-normalizing
+// IS DISTINCT FROM clause, which pure-Go builder tests cannot see execute.
+//
+// Empire fixtures only (see [[feedback_no_real_pii_in_tests]]).
+func TestFindScoreDiffNotesWhitespaceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	suffix := time.Now().UnixNano()
+	var dcFrom, dcTo int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+	`, fmt.Sprintf("%swsdiff_from_%d", integrationTestPrefix, suffix)).Scan(&dcFrom))
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+	`, fmt.Sprintf("%swsdiff_to_%d", integrationTestPrefix, suffix)).Scan(&dcTo))
+
+	// Two distinct functions, one option each. Same option is reused in both
+	// cycles so ONLY the notes vary between from and to.
+	var fWS, fReal, optWS, optReal int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionid, functionoptionid FROM functionoptions ORDER BY functionid LIMIT 1
+	`).Scan(&fWS, &optWS))
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT functionid, functionoptionid FROM functionoptions WHERE functionid <> $1 ORDER BY functionid LIMIT 1
+	`, fWS).Scan(&fReal, &optReal))
+
+	var sys int32
+	require.NoError(t, conn.QueryRow(ctx, `SELECT fismasystemid FROM scores LIMIT 1`).Scan(&sys))
+
+	tarkin := UserToContext(ctx, &User{
+		UserID: "11111111-1111-1111-1111-111111111111", Email: "Grand.Moff@DeathStar.Empire",
+		FullName: "Grand Moff Tarkin", Role: "OWNER",
+	})
+
+	saveNote := func(fo, dc int32, notes string) int32 {
+		t.Helper()
+		s, err := (&Score{FismaSystemID: sys, FunctionOptionID: fo, DataCallID: dc, Notes: &notes}).Save(tarkin)
+		require.NoError(t, err)
+		return s.ScoreID
+	}
+
+	createdScoreIDs := []int32{
+		// fWS: same answer, notes differ ONLY by whitespace -> must be dropped.
+		saveNote(optWS, dcFrom, "Segmentation complete.  Controls verified."),
+		saveNote(optWS, dcTo, "Segmentation complete. Controls verified."),
+		// fReal: same answer, note CONTENT changed -> must surface.
+		saveNote(optReal, dcFrom, "Encryption at rest enabled."),
+		saveNote(optReal, dcTo, "Encryption at rest and in transit enabled."),
+	}
+	defer func() {
+		for _, id := range createdScoreIDs {
+			_, _ = conn.Exec(ctx, `DELETE FROM events WHERE resource='public.scores' AND (payload->>'scoreid')::int = $1`, id)
+			_, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, id)
+		}
+	}()
+
+	diffs, err := FindScoreDiff(ctx, FindScoreDiffInput{
+		FismaSystemID:  &sys,
+		FromDataCallID: &dcFrom,
+		ToDataCallID:   &dcTo,
+	})
+	require.NoError(t, err)
+
+	byFunction := map[int32]*ScoreDiff{}
+	for _, d := range diffs {
+		byFunction[d.FunctionID] = d
+	}
+
+	assert.NotContains(t, byFunction, fWS,
+		"a note differing only by whitespace (same answer) must not surface as a change (#409)")
+
+	if assert.Contains(t, byFunction, fReal,
+		"a genuine note content change (same answer) must still surface") {
+		d := byFunction[fReal]
+		require.NotNil(t, d.From)
+		require.NotNil(t, d.To)
+		assert.Equal(t, "Encryption at rest enabled.", derefString(d.From.Notes))
+		assert.Equal(t, "Encryption at rest and in transit enabled.", derefString(d.To.Notes),
+			"stored notes are returned verbatim; only the comparison is normalized")
+	}
+}
+
 // countScoreEvents is a small helper used by the no-op preservation test
 // to assert that read-through Saves do not append event rows.
 func countScoreEvents(t *testing.T, ctx context.Context, conn *pgxpool.Conn, scoreID int32) int {
