@@ -67,7 +67,7 @@ func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 
 	assert.Contains(t, sql, "FULL OUTER JOIN to_scores", "must outer-join the two cycles so one-sided answers surface")
 	assert.Contains(t, sql, "f.functionoptionid IS DISTINCT FROM t.functionoptionid", "must drop rows with an unchanged option")
-	assert.Contains(t, sql, "COALESCE(f.notes, '') IS DISTINCT FROM COALESCE(t.notes, '')", "nil/empty notes must compare equal")
+	assert.Contains(t, sql, `regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g')`, "notes must be whitespace-normalized before comparison (nil/empty equal, spacing-only differences ignored)")
 	assert.Contains(t, sql, "resource = 'public.scores'", "attribution lateral must read score events")
 	assert.Contains(t, sql, "(payload->>'scoreid')::int = t.scoreid", "attribution must key on the later (To) write")
 
