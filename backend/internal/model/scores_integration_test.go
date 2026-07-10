@@ -496,7 +496,15 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 		Role:     "OWNER",
 	})
 
-	before := time.Now().UTC()
+	// Capture "before" from the DATABASE clock, not time.Now(): LastEditedAt
+	// is stamped by Postgres CURRENT_TIMESTAMP (events.createdat), and on
+	// macOS the Docker VM clock wanders tens of ms relative to the host, so a
+	// host-clock 'before' intermittently reads later than the DB-stamped edit
+	// and fails the ordering assertion. Same clock on both sides = exact
+	// comparison with no tolerance, on every platform. (Mirrors Save's own
+	// rationale for reading the stamp back instead of using time.Now().)
+	var before time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&before))
 	saved, err := s.Save(tarkinCtx)
 	require.NoError(t, err)
 	require.NotNil(t, saved)
