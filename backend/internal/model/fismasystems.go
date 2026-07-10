@@ -5,13 +5,26 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
-var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id"}
+var fismaSystemColumns = []string{"fismasystemid", "fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component", "groupacronym", "groupname", "divisionname", "datacenterenvironment", "datacallcontact", "issoemail", "sdl_sync_enabled", "decommissioned", "decommissioned_date", "decommissioned_by", "decommissioned_notes", "reactivated_by", "reactivated_date", "reactivation_notes", "opdiv_id", "hva", "fips", "system_type", "cloud_system", "cloud_service_model", "cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner", "system_owner_email", "legacy", "isso_name", "target_maturity_tier", "target_maturity_justification"}
+
+// validTargetMaturityTiers is the selectable vocabulary for a system's
+// risk-based target maturity level (#398). Deliberately the tier NAMES from
+// Tier(), not CISA stage numbers: the app's score scale is 1-5 (Advanced is
+// 3.10-4.09), so a numeric target could be mis-compared against systemscore.
+// Traditional is not offered - per the GAO response a target below Initial is
+// not a valid risk posture.
+var validTargetMaturityTiers = map[string]bool{
+	"Initial":  true,
+	"Advanced": true,
+	"Optimal":  true,
+}
 
 type FismaSystem struct {
 	FismaSystemID         int32      `json:"fismasystemid"`
@@ -35,6 +48,23 @@ type FismaSystem struct {
 	ReactivatedDate       *time.Time `json:"reactivated_date"`
 	ReactivationNotes     *string    `json:"reactivation_notes"`
 	OpDivID               *int32     `json:"opdiv_id" db:"opdiv_id"`
+	HVA                   *string    `json:"hva" db:"hva"`
+	FIPS                  *string    `json:"fips" db:"fips"`
+	SystemType            *string    `json:"system_type" db:"system_type"`
+	CloudSystem           *string    `json:"cloud_system" db:"cloud_system"`
+	CloudServiceModel     *string    `json:"cloud_service_model" db:"cloud_service_model"`
+	CloudVendor           *string    `json:"cloud_vendor" db:"cloud_vendor"`
+	SystemOperator        *string    `json:"system_operator" db:"system_operator"`
+	GocoCocGoGo           *string    `json:"goco_coco_gogo" db:"goco_coco_gogo"`
+	SystemOwner           *string    `json:"system_owner" db:"system_owner"`
+	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
+	Legacy                *string    `json:"legacy" db:"legacy"`
+	ISSOName              *string    `json:"isso_name" db:"isso_name"`
+	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
+	// yet; the UI presents the Advanced default. Written only via
+	// SaveTargetMaturity, never through Save().
+	TargetMaturityTier          *string `json:"target_maturity_tier" db:"target_maturity_tier"`
+	TargetMaturityJustification *string `json:"target_maturity_justification" db:"target_maturity_justification"`
 }
 
 type FindFismaSystemsInput struct {
@@ -56,6 +86,20 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
+
+	// Resolve a single ISSO display name for the systems table. HHS systems carry
+	// isso_name directly; CMS systems carry only issoemail, which maps to the
+	// ISSO's user record - so COALESCE yields one populated name column for both
+	// populations without a per-row lookup. email is unique, so the correlated
+	// subquery returns at most one row. Read-only: the write path never sets
+	// isso_name from this, so a resolved name is never persisted back. Applied to
+	// the list only; the single-system GET returns the stored value unchanged.
+	for i := range c {
+		if c[i] == "isso_name" {
+			c[i] = "COALESCE(fismasystems.isso_name, " +
+				"(SELECT fullname FROM users WHERE LOWER(email) = LOWER(fismasystems.issoemail) LIMIT 1)) AS isso_name"
+		}
+	}
 	sqlb := stmntBuilder.Select(c...).From("fismasystems")
 
 	// Filter decommissioned systems
@@ -142,6 +186,20 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		return nil, err
 	}
 
+	// datacenterenvironment is validated against the reference table (ztmf#392)
+	// rather than a compiled-in list, so the accepted vocabulary is data. The
+	// check lives here rather than in the pure validate() because it needs the
+	// request context for the DB lookup.
+	if f.DataCenterEnvironment != nil {
+		ok, err := dataCenterEnvironmentExists(ctx, *f.DataCenterEnvironment)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, &InvalidInputError{data: map[string]any{"datacenterenvironment": *f.DataCenterEnvironment}}
+		}
+	}
+
 	if f.FismaSystemID == 0 {
 		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id
 		// is NOT NULL on the table. Callers may pass an explicit OpDivID; if
@@ -154,32 +212,66 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		} else {
 			opdivVal = squirrel.Expr("(SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1)")
 		}
-		insertCols := append(append([]string{}, fismaSystemColumns[1:13]...), "opdiv_id")
+		insertCols := []string{
+			"fismauid", "fismaacronym", "fismaname", "fismasubsystem", "component",
+			"groupacronym", "groupname", "divisionname", "datacenterenvironment",
+			"datacallcontact", "issoemail", "sdl_sync_enabled", "opdiv_id",
+			"hva", "fips", "system_type", "cloud_system", "cloud_service_model",
+			"cloud_vendor", "system_operator", "goco_coco_gogo", "system_owner",
+			"system_owner_email", "legacy", "isso_name",
+		}
 		sqlb = stmntBuilder.
 			Insert("fismasystems").
 			Columns(insertCols...).
 			Values(
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
-				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled,
-				opdivVal,
+				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
+				f.HVA, f.FIPS, f.SystemType, f.CloudSystem, f.CloudServiceModel,
+				f.CloudVendor, f.SystemOperator, f.GocoCocGoGo, f.SystemOwner,
+				f.SystemOwnerEmail, f.Legacy, f.ISSOName,
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
-		// UPDATE - exclude decommissioned fields
-		sqlb = stmntBuilder.Update("fismasystems").
-			Set("fismauid", f.FismaUID).
-			Set("fismaacronym", f.FismaAcronym).
-			Set("fismaname", f.FismaName).
-			Set("fismasubsystem", f.FismaSubsystem).
-			Set("component", f.Component).
-			Set("groupacronym", f.Groupacronym).
-			Set("groupname", f.GroupName).
-			Set("divisionname", f.DivisionName).
-			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("datacallcontact", f.DataCallContact).
-			Set("issoemail", f.ISSOEmail).
-			Set("sdl_sync_enabled", f.SDLSyncEnabled).
+		// UPDATE - exclude decommissioned fields.
+		// Core fields are always written; HHS fields are conditional on non-nil
+		// so a partial PUT (form that omits a field) does not wipe importer data.
+		setCols := squirrel.Eq{
+			"fismauid":              f.FismaUID,
+			"fismaacronym":          f.FismaAcronym,
+			"fismaname":             f.FismaName,
+			"fismasubsystem":        f.FismaSubsystem,
+			"component":             f.Component,
+			"groupacronym":          f.Groupacronym,
+			"groupname":             f.GroupName,
+			"divisionname":          f.DivisionName,
+			"datacenterenvironment": f.DataCenterEnvironment,
+			"datacallcontact":       f.DataCallContact,
+			"issoemail":             f.ISSOEmail,
+			"sdl_sync_enabled":      f.SDLSyncEnabled,
+		}
+		hhsCols := map[string]*string{
+			"hva":                 f.HVA,
+			"fips":                f.FIPS,
+			"system_type":         f.SystemType,
+			"cloud_system":        f.CloudSystem,
+			"cloud_service_model": f.CloudServiceModel,
+			"cloud_vendor":        f.CloudVendor,
+			"system_operator":     f.SystemOperator,
+			"goco_coco_gogo":      f.GocoCocGoGo,
+			"system_owner":        f.SystemOwner,
+			"system_owner_email":  f.SystemOwnerEmail,
+			"legacy":              f.Legacy,
+			"isso_name":           f.ISSOName,
+		}
+		for col, val := range hhsCols {
+			if val != nil {
+				setCols[col] = *val
+			}
+		}
+		sqlb = stmntBuilder.
+			Update("fismasystems").
+			SetMap(setCols).
 			Where("fismasystemid=?", f.FismaSystemID).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	}
@@ -374,6 +466,48 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	return &system, nil
 }
 
+// TargetMaturityInput carries an explicit target-maturity assertion for one
+// system (#398).
+type TargetMaturityInput struct {
+	FismaSystemID int32   `json:"-"`
+	Tier          *string `json:"target_maturity_tier"`
+	Justification *string `json:"target_maturity_justification"`
+}
+
+// SaveTargetMaturity records a system's risk-based target maturity tier and
+// its one-sentence justification. Both are required on every save: the
+// justification IS the deliverable (GAO-audit rationale), so a tier without
+// one is rejected. Kept separate from Save() so the ISSO-writable surface is
+// exactly these two columns and nothing else. queryRow's recordEvent hook
+// audits the write like every other fismasystems mutation.
+func SaveTargetMaturity(ctx context.Context, input TargetMaturityInput) (*FismaSystem, error) {
+	if !isValidIntID(input.FismaSystemID) {
+		return nil, ErrNoData
+	}
+
+	invalid := InvalidInputError{data: map[string]any{}}
+	if input.Tier == nil || !validTargetMaturityTiers[*input.Tier] {
+		invalid.data["target_maturity_tier"] = "must be one of Initial, Advanced, Optimal"
+	}
+	if input.Justification == nil || strings.TrimSpace(*input.Justification) == "" {
+		invalid.data["target_maturity_justification"] = "required"
+	} else if utf8.RuneCountInString(strings.TrimSpace(*input.Justification)) > 1000 {
+		invalid.data["target_maturity_justification"] = "must be 1000 characters or fewer"
+	}
+	if len(invalid.data) > 0 {
+		return nil, &invalid
+	}
+
+	sqlb := stmntBuilder.
+		Update("fismasystems").
+		Set("target_maturity_tier", *input.Tier).
+		Set("target_maturity_justification", strings.TrimSpace(*input.Justification)).
+		Where("fismasystemid=?", input.FismaSystemID).
+		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
+}
+
 func (f *FismaSystem) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
@@ -389,9 +523,8 @@ func (f *FismaSystem) validate() error {
 		err.data["issoemail"] = *f.ISSOEmail
 	}
 
-	if f.DataCenterEnvironment != nil && !isValidDataCenterEnvironment(*f.DataCenterEnvironment) {
-		err.data["datacenterenvironment"] = *f.DataCenterEnvironment
-	}
+	// datacenterenvironment is validated against the datacenterenvironments
+	// reference table in Save(), which has the context needed for the lookup.
 
 	if len(err.data) > 0 {
 		return &err

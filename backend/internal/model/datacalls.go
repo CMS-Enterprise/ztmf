@@ -53,7 +53,7 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
 	sqlb := stmntBuilder.Select(dataCallColumns...).
 		From("datacalls").
-		OrderBy("datecreated DESC")
+		OrderBy("deadline DESC", "datacallid DESC")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCall])
 }
@@ -68,24 +68,27 @@ func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) 
 }
 
 func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
-	// find the *previous* datacall
-	// using dataCallID-1 would not suffice because it could have been deleted
+	// find the *previous* datacall by deadline (not datacallid): once historical
+	// calls are loaded, a backfilled year can out-id the real prior call, so
+	// ordering by datacallid would pick the wrong "previous" for score rollover.
 	prevDcSqlb := stmntBuilder.
 		Select(dataCallColumns...).
 		From("datacalls").
 		Where("datacallid!=?", dataCallID).
-		OrderBy("datacallid DESC"). // descending because the primary key is serial auto-incrementing
+		OrderBy("deadline DESC", "datacallid DESC").
 		Limit(1)
 
 	return queryRow(context.TODO(), prevDcSqlb, pgx.RowToStructByName[DataCall])
 }
 
 func FindLatestDataCall(ctx context.Context) (*DataCall, error) {
-	// Find the latest datacall by sorting on datacallid in descending order
+	// The current/latest datacall is the one with the furthest-out deadline
+	// (datacallid DESC only as a tiebreak): the annual cadence is deadline-driven,
+	// and historical loads can carry a higher datacallid than the real current call.
 	sqlb := stmntBuilder.
 		Select(dataCallColumns...).
 		From("datacalls").
-		OrderBy("datacallid DESC"). // descending because the primary key is serial auto-incrementing
+		OrderBy("deadline DESC", "datacallid DESC").
 		Limit(1)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])

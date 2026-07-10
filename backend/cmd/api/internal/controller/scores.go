@@ -154,6 +154,54 @@ func GetScoresDiff(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, diffs, err)
 }
 
+//	@Summary		Get per-system questionnaire progress for a data call
+//	@Description	Returns, for each FISMA system the caller can see, how many questionnaire functions apply to the system, how many have been genuinely updated in the given data call (answers pre-populated from the previous cycle do not count until touched), and when the most recent update happened. Scoped to the caller's tier: unscoped admins see all systems, OpDiv-scoped admins their OpDivs' systems, and ISSO/ISSM their assigned systems.
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		datacallid		query		int	true	"Data call ID to report progress for"
+//	@Param		fismasystemid	query		int	false	"Limit progress to a single FISMA system"
+//	@Success	200				{object}	apiResponse[[]model.ScoreProgress]
+//	@Failure	400				{object}	apiResponse[any]
+//	@Failure	500				{object}	apiResponse[any]
+//	@Router		/scores/progress [get]
+func GetScoresProgress(w http.ResponseWriter, r *http.Request) {
+	var (
+		progress []*model.ScoreProgress
+		err      error
+	)
+
+	user := model.UserFromContext(r.Context())
+	input := model.FindScoreProgressInput{}
+
+	err = decoder.Decode(&input, r.URL.Query())
+
+	scopeScoreProgressInput(user, &input)
+
+	if err == nil {
+		progress, err = model.FindScoreProgress(r.Context(), input)
+	}
+
+	respond(w, r, progress, err)
+}
+
+// scopeScoreProgressInput applies the caller's tier to the query input. Same
+// tier scoping as ListScores, applied AFTER decode so a client cannot widen
+// scope via query params: unscoped admins see all; OPDIV tiers fail-closed to
+// their granted OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
+// Extracted so the role matrix is unit-testable without a database.
+func scopeScoreProgressInput(user *model.User, input *model.FindScoreProgressInput) {
+	switch {
+	case user.HasUnscopedRead():
+		// no scope filter
+	case user.IsOpDivTier():
+		input.RestrictToOpDivIDs = true
+		_, input.OpDivIDs = user.EffectiveOpDivScope()
+	default:
+		input.UserID = &user.UserID
+	}
+}
+
 //	@Summary	Get aggregated scores
 //	@Tags		scores
 //	@Produce	json

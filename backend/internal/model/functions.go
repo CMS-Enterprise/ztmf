@@ -69,6 +69,17 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 		return nil, err
 	}
 
+	// A function's datacenterenvironment must be a scoring key known to the
+	// datacenterenvironments mapping (ztmf#392). Checked here rather than in the
+	// pure validate() because it needs the request context for the DB lookup.
+	ok, err := isValidScoringKey(ctx, f.DataCenterEnvironment)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, &InvalidInputError{data: map[string]any{"datacenterenvironment": f.DataCenterEnvironment}}
+	}
+
 	if f.FunctionID == 0 {
 		sqlb = stmntBuilder.
 			Insert("functions").
@@ -101,9 +112,8 @@ func (f *Function) validate() error {
 		err.data["description"] = ""
 	}
 
-	if !isValidDataCenterEnvironment(f.DataCenterEnvironment) {
-		err.data["datacenterenvironment"] = f.DataCenterEnvironment
-	}
+	// datacenterenvironment is validated against the datacenterenvironments
+	// reference table in Save(), which has the context needed for the lookup.
 
 	if f.QuestionID != nil && !isValidIntID(f.QuestionID) {
 		err.data["questionid"] = f.QuestionID

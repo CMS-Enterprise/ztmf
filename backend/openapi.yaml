@@ -1,5 +1,12 @@
 components:
   schemas:
+    auth.errorBody:
+      properties:
+        code:
+          type: string
+        error:
+          type: string
+      type: object
     controller.DecommissionRequest:
       properties:
         decommissioned_date:
@@ -33,6 +40,16 @@ components:
         data:
           items:
             $ref: '#/components/schemas/model.DataCall'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_DataCenterEnvironment:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.DataCenterEnvironment'
           type: array
           uniqueItems: false
         error:
@@ -123,6 +140,16 @@ components:
         data:
           items:
             $ref: '#/components/schemas/model.ScoreDiff'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
+    controller.apiResponse-array_model_ScoreProgress:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.ScoreProgress'
           type: array
           uniqueItems: false
         error:
@@ -260,6 +287,23 @@ components:
         deadline:
           type: string
       type: object
+    model.DataCenterEnvironment:
+      properties:
+        category:
+          type: string
+        datacenterenvironment:
+          type: string
+        ordr:
+          type: integer
+        scoring_key:
+          description: |-
+            ScoringKey is the functions.datacenterenvironment set this environment is
+            scored against. NULL means the environment is not scored (e.g. the legacy
+            DECOMMISSIONED marker), so it is a pointer to distinguish that from "".
+          type: string
+        selectable:
+          type: boolean
+      type: object
     model.Event:
       properties:
         action:
@@ -279,6 +323,12 @@ components:
       type: object
     model.FismaSystem:
       properties:
+        cloud_service_model:
+          type: string
+        cloud_system:
+          type: string
+        cloud_vendor:
+          type: string
         component:
           type: string
         datacallcontact:
@@ -295,6 +345,8 @@ components:
           type: string
         divisionname:
           type: string
+        fips:
+          type: string
         fismaacronym:
           type: string
         fismaname:
@@ -305,11 +357,19 @@ components:
           type: integer
         fismauid:
           type: string
+        goco_coco_gogo:
+          type: string
         groupacronym:
           type: string
         groupname:
           type: string
+        hva:
+          type: string
+        isso_name:
+          type: string
         issoemail:
+          type: string
+        legacy:
           type: string
         opdiv_id:
           type: integer
@@ -321,6 +381,22 @@ components:
           type: string
         sdl_sync_enabled:
           type: boolean
+        system_operator:
+          type: string
+        system_owner:
+          type: string
+        system_owner_email:
+          type: string
+        system_type:
+          type: string
+        target_maturity_justification:
+          type: string
+        target_maturity_tier:
+          description: |-
+            Risk-based target maturity (#398). NULL = no ISSO has asserted a target
+            yet; the UI presents the Advanced default. Written only via
+            SaveTargetMaturity, never through Save().
+          type: string
       type: object
     model.Function:
       properties:
@@ -446,6 +522,8 @@ components:
           $ref: '#/components/schemas/model.AuditRef'
         notes:
           type: string
+        notes_is_ai_summary:
+          type: boolean
         scoreid:
           type: integer
       type: object
@@ -490,12 +568,47 @@ components:
           type: integer
         notes:
           type: string
+        notes_is_ai_summary:
+          type: boolean
         optionname:
           type: string
         score:
           type: integer
         scoreid:
           type: integer
+      type: object
+    model.ScoreProgress:
+      properties:
+        fismasystemid:
+          type: integer
+        lastupdatedat:
+          description: |-
+            LastUpdatedAt is the most recent edit event across the system's answers
+            in this data call; nil when nothing has been touched this cycle.
+          type: string
+        questionsexpected:
+          description: |-
+            QuestionsExpected is the number of questionnaire functions applicable to
+            the system, resolved through the datacenterenvironments scoring
+            vocabulary (the same join the questionnaire and the score aggregation
+            use, so the denominator matches what an ISSO actually sees).
+          type: integer
+        questionsupdated:
+          description: |-
+            QuestionsUpdated is the number of distinct functions whose answer in
+            this data call has at least one recorded edit event AND is still
+            applicable to the system's current environment. Counted from the same
+            applicable-function set as QuestionsExpected, so it can never exceed it.
+          type: integer
+        updatedsincestart:
+          description: |-
+            UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
+            it answers the ticket's literal question - "has this system updated
+            since the start of the data call" - by name in the response, so a
+            consumer rendering a boolean chip never touches the numeric fields.
+            The anchor is real: events can only postdate the data call's creation,
+            so any counted edit necessarily happened after the cycle started.
+          type: boolean
       type: object
     model.SystemEnrichment:
       properties:
@@ -504,6 +617,13 @@ components:
         payload:
           type: object
         synced_at:
+          type: string
+      type: object
+    model.TargetMaturityInput:
+      properties:
+        target_maturity_justification:
+          type: string
+        target_maturity_tier:
           type: string
       type: object
     model.User:
@@ -556,6 +676,23 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /auth/logout:
+    post:
+      description: Clears the ZTMF application session cookie and the ALB OIDC session
+        cookies, ending the session. Unauthenticated so an already-expired session
+        can still be cleared. Does not perform IdP-side single logout.
+      responses:
+        "204":
+          description: Session cleared
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/auth.errorBody'
+          description: Forbidden
+      summary: Log out
+      tags:
+      - auth
   /auth/lookup:
     get:
       description: 'Unauthenticated pre-auth lookup the landing page uses to route
@@ -862,6 +999,32 @@ paths:
       summary: Get the latest data call
       tags:
       - datacalls
+  /datacenterenvironments:
+    get:
+      parameters:
+      - description: Only environments offered in the system dropdown
+        in: query
+        name: selectable_only
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_DataCenterEnvironment'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List datacenterenvironment mappings
+      tags:
+      - datacenterenvironments
   /events:
     get:
       parameters:
@@ -1270,6 +1433,63 @@ paths:
       security:
       - bearerAuth: []
       summary: Reactivate a decommissioned FISMA system
+      tags:
+      - fismasystems
+  /fismasystems/{fismasystemid}/target-maturity:
+    put:
+      parameters:
+      - description: FISMA system ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.TargetMaturityInput'
+                description: Target tier (Initial, Advanced, or Optimal) and required
+                  justification
+                summary: body
+        description: Target tier (Initial, Advanced, or Optimal) and required justification
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FismaSystem'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Set a system's target maturity tier and justification
       tags:
       - fismasystems
   /functions:
@@ -1988,6 +2208,50 @@ paths:
       security:
       - bearerAuth: []
       summary: Diff scores between two data calls
+      tags:
+      - scores
+  /scores/progress:
+    get:
+      description: 'Returns, for each FISMA system the caller can see, how many questionnaire
+        functions apply to the system, how many have been genuinely updated in the
+        given data call (answers pre-populated from the previous cycle do not count
+        until touched), and when the most recent update happened. Scoped to the caller''s
+        tier: unscoped admins see all systems, OpDiv-scoped admins their OpDivs''
+        systems, and ISSO/ISSM their assigned systems.'
+      parameters:
+      - description: Data call ID to report progress for
+        in: query
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      - description: Limit progress to a single FISMA system
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_ScoreProgress'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get per-system questionnaire progress for a data call
       tags:
       - scores
   /systemenrichment/{fisma_uuid}:
