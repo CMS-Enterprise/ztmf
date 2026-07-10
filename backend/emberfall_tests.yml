@@ -1570,6 +1570,40 @@ tests:
     expect:
       status: 404
 
+  # ZTMF Insights (issue #416). /insights is a LIST endpoint: scope and the
+  # OpDiv gate yield an empty array (200), never 403/404. Array bodies assert
+  # since aquia-inc/emberfall#36 closed, but only the scalar key columns are
+  # pinned here; the nested jsonb payload and exhaustive scope/gate coverage
+  # live in internal/model/systeminsights_integration_test.go.
+  #
+  # Admin (unscoped) reads a single insight row by key.
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=1003&questionid=1"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              questionid: 1
+
+  # OpDiv gate: RB-1 (1005, REBELLION) HAS an insight row, but REBELLION is not
+  # insights_enabled, so even an unscoped admin gets an empty array. Proves the
+  # gate is the OpDiv flag, not a missing row.
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=1005"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data: []
+
   # massemails only supports this one route
   # test that it errors on invalid input
   - url: http://localhost:8080/api/v1/massemails
@@ -1882,6 +1916,35 @@ tests:
       <<: *issoHeaders
     expect:
       status: 403
+
+  # ISSO can GET /api/v1/insights for an assigned system (Shield Gen, 1003).
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=1003&questionid=1"
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              questionid: 1
+
+  # ISSO reading an assigned but UNSCOPED system gets an empty array, not 403:
+  # /insights filters by users_fismasystems, so an unassigned system (Death Star,
+  # 1001) simply yields no rows rather than a forbidden. This is the list-endpoint
+  # counterpart to the systemenrichment 403 above.
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=1001"
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data: []
 
   # ISSO gets 403 on GET /api/v1/users (user management restricted)
   - url: http://localhost:8080/api/v1/users
