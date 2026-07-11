@@ -571,6 +571,36 @@ INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 
+-- Generic system_insights rows (issue #416), keyed on (fismasystemid, questionid).
+-- The payload is opaque to ztmf core (owned by the insights pipeline); these are
+-- Star Wars themed mocks that mirror the real payload shape (per-source suggested
+-- score/label, evidence_sources, and a nested findings object with id / nist /
+-- description / remediation). They give /insights E2E + integration coverage:
+--   1003 (Shield Gen)  - EMPIRE (insights_enabled), assigned to the Emberfall ISSO
+--   1001 (Death Star)  - EMPIRE (insights_enabled), NOT assigned to that ISSO,
+--                        so an ISSO read must return 1003 but never 1001 (scope)
+INSERT INTO public.system_insights (fismasystemid, questionid, payload, synced_at) VALUES
+  (1003, 1,
+   '{"pillar":"Identity","question_text":"How does the system authorize access?","suggested_score":2,"suggested_label":"Initial","evidence_sources":"Kion, SecurityHub","score_floor_source":"Kion (failing checks)","findings":{"kion":[{"id":"shield-relay-without-mfa","nist_controls":"IA-2","description":"Shield generator control relays must enforce multi-factor authentication for operator access.","remediation":"Enable Force-signature MFA on all shield relay operator accounts."}],"sechub":[{"id":"SG.1","title":"Shield frequency should rotate on a fixed schedule","severity":"MEDIUM","description":"Static shield frequencies are predictable and can be mapped by an adversary.","remediation":"Rotate deflector shield frequency per operational window."}]}}',
+   '2026-05-20 00:00:00+00'),
+  (1003, 2,
+   '{"pillar":"Applications","question_text":"How is application access controlled?","suggested_score":1,"suggested_label":"Traditional","evidence_sources":"SecurityHub","findings":{"sechub":[{"id":"SG.2","title":"Console access should not use shared credentials","severity":"LOW","description":"Shared bridge credentials prevent per-operator attribution.","remediation":"Issue individual operator credentials."}]}}',
+   '2026-05-20 00:00:00+00'),
+  (1001, 1,
+   '{"pillar":"Identity","question_text":"How does the system authorize access?","suggested_score":1,"suggested_label":"Traditional","evidence_sources":"Kion","score_floor_source":"Kion (failing checks)","findings":{"kion":[{"id":"exhaust-port-unshielded","nist_controls":"SC-7","description":"The thermal exhaust port is reachable without boundary protection.","remediation":"Add a ray shield and defensive boundary controls to the exhaust port."}]}}',
+   '2026-05-20 00:00:00+00')
+ON CONFLICT (fismasystemid, questionid) DO NOTHING;
+
+-- Insight row for a REBELLION system (RB-1, 1005). REBELLION has insights_enabled
+-- = FALSE, so the OpDiv gate must hide this row: even an unscoped admin reading
+-- /insights gets no row for it. Proves the gate is the OpDiv flag, not a missing
+-- row or an access failure.
+INSERT INTO public.system_insights (fismasystemid, questionid, payload, synced_at) VALUES
+  (1005, 1,
+   '{"pillar":"Identity","suggested_score":1,"suggested_label":"Traditional","evidence_sources":"Kion","findings":{"kion":[{"id":"base-shield-offline","nist_controls":"SC-7","description":"The base shield is offline during the attack window.","remediation":"Restore shield power before exposure."}]}}',
+   '2026-05-20 00:00:00+00')
+ON CONFLICT (fismasystemid, questionid) DO NOTHING;
+
 -- ============================================================================
 -- EXPANDED EMPIRE FIXTURE (dev/demo): multi-OpDiv org, more systems and
 -- officers, a 4-cycle (FY2022-FY2025) data-call history with maturity that
