@@ -155,6 +155,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_SystemInsight:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.SystemInsight'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_User:
       properties:
         data:
@@ -616,6 +626,17 @@ components:
           type: string
         payload:
           type: object
+        synced_at:
+          type: string
+      type: object
+    model.SystemInsight:
+      properties:
+        fismasystemid:
+          type: integer
+        payload:
+          type: object
+        questionid:
+          type: integer
         synced_at:
           type: string
       type: object
@@ -1668,6 +1689,37 @@ paths:
       summary: List options for a function
       tags:
       - functions
+  /insights:
+    get:
+      parameters:
+      - description: Filter by FISMA system ID
+        in: query
+        name: fismasystemid
+        schema:
+          type: integer
+      - description: Filter by question ID
+        in: query
+        name: questionid
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_SystemInsight'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List per-system per-question insights
+      tags:
+      - insights
   /massemails:
     post:
       requestBody:
