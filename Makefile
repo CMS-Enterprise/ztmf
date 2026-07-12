@@ -133,7 +133,7 @@ backend/compose-dev.yml:
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
 	@echo "    ports:" >> backend/compose-dev.yml
-	@echo "      - \"54321:54321\"" >> backend/compose-dev.yml
+	@echo "      - \"$(DB_PORT):$(DB_PORT)\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
 	@echo "    command: -p $(DB_PORT)" >> backend/compose-dev.yml
