@@ -59,9 +59,11 @@ type FindScoreDiffInput struct {
 // differs between them, each annotated with who made the later change and when.
 //
 // "Differs" means the selected functionoption changed, the notes changed, or
-// the function was answered in exactly one of the two cycles. nil and empty
-// notes are treated as equal so a NULL-vs-"" notes box does not surface as a
-// spurious change (matching scoresEqualForUpdate's normalization).
+// the function was answered in exactly one of the two cycles. Notes are
+// compared with whitespace normalized (nil and empty treated as equal, leading
+// and trailing whitespace trimmed, internal runs collapsed) so neither a
+// NULL-vs-"" notes box nor a spacing-only difference surfaces as a spurious
+// change (see #409).
 //
 // The query is hand-built parameterized SQL rather than squirrel because the
 // FULL OUTER JOIN between the two cycles, the catalog joins for the function /
@@ -114,6 +116,12 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	// because the later write is what "who made the change" refers to; the
 	// partial index events_score_audit_idx serves it. The IS DISTINCT FROM
 	// pair is the "drop the unchanged rows" filter.
+	//
+	// Notes are compared with whitespace normalized (leading/trailing trimmed
+	// and internal runs collapsed to a single space) so a note that differs
+	// only in spacing -- e.g. the FY23 two-spaces-after-a-period vintage vs
+	// FY24 single spaces -- is not reported as a change. Only the comparison is
+	// normalized; the stored notes are returned verbatim (see #409).
 	sql := fmt.Sprintf(`
 WITH from_scores AS (%s),
      to_scores AS (%s)
@@ -141,7 +149,9 @@ LEFT JOIN LATERAL (
 ) le ON TRUE
 LEFT JOIN users eu ON eu.userid = le.userid
 WHERE f.functionoptionid IS DISTINCT FROM t.functionoptionid
-   OR COALESCE(f.notes, '') IS DISTINCT FROM COALESCE(t.notes, '')
+   OR btrim(regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g'))
+      IS DISTINCT FROM
+      btrim(regexp_replace(COALESCE(t.notes, ''), '\s+', ' ', 'g'))
    OR f.notes_is_ai_summary IS DISTINCT FROM t.notes_is_ai_summary
 ORDER BY fismasystemid, fn.ordr, functionid
 `, fromCTE, toCTE)
