@@ -6,6 +6,10 @@ SHELL := /bin/bash
 
 # Single source of truth for the local API port
 API_PORT ?= 8080
+# Postgres host port for the local dev compose stack. Overridable per worktree
+# (e.g. impl sets 54322) so dev and impl can run side by side without colliding
+# on the published host port. Container isolation is handled by COMPOSE_PROJECT_NAME.
+DB_PORT ?= 54321
 
 # Emberfall E2E runner install, resolved per platform. Releases are published as
 # emberfall_{Darwin,Linux}_{arm64,x86_64,i386}.tar.gz, so a hardcoded Linux URL
@@ -79,7 +83,7 @@ dev-setup: backend/compose-dev.yml backend/dev.compose.env
 	cd backend && docker compose -f compose-dev.yml up -d --build
 	@echo "✅ Development environment ready!"
 	@echo "📡 API available at: http://localhost:$(API_PORT)"
-	@echo "🗄️  Database available at: localhost:54321"
+	@echo "🗄️  Database available at: localhost:$(DB_PORT)"
 	@echo ""
 	@echo "🧪 Ready to test! Run:"
 	@echo "  make test-empire-data    # Get JWT tokens for all test users"
@@ -110,12 +114,12 @@ backend/compose-dev.yml:
 	@echo "    env_file:" >> backend/compose-dev.yml
 	@echo "      - dev.compose.env" >> backend/compose-dev.yml
 	@echo "    ports:" >> backend/compose-dev.yml
-	@echo "      - \"54321:54321\"" >> backend/compose-dev.yml
+	@echo "      - \"$(DB_PORT):$(DB_PORT)\"" >> backend/compose-dev.yml
 	@echo "    volumes:" >> backend/compose-dev.yml
 	@echo "      - postgres_data:/var/lib/postgresql/data" >> backend/compose-dev.yml
-	@echo "    command: -p 54321" >> backend/compose-dev.yml
+	@echo "    command: -p $(DB_PORT)" >> backend/compose-dev.yml
 	@echo "    healthcheck:" >> backend/compose-dev.yml
-	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf -p 54321\"]" >> backend/compose-dev.yml
+	@echo "      test: [\"CMD-SHELL\", \"pg_isready -U admin -d ztmf -p $(DB_PORT)\"]" >> backend/compose-dev.yml
 	@echo "      interval: 5s" >> backend/compose-dev.yml
 	@echo "      timeout: 5s" >> backend/compose-dev.yml
 	@echo "      retries: 5" >> backend/compose-dev.yml
@@ -157,10 +161,10 @@ backend/dev.compose.env:
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# Shared by api container (docker compose) and host shell (make test-full, pre-push hook)." >> backend/dev.compose.env
-	@echo "# Host needs localhost:54321 (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
+	@echo "# Host needs localhost:$(DB_PORT) (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
 	@echo "# to the docker service name 'postgre' in compose-dev.yml's environment: block." >> backend/dev.compose.env
 	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
-	@echo "DB_PORT=54321" >> backend/dev.compose.env
+	@echo "DB_PORT=$(DB_PORT)" >> backend/dev.compose.env
 	@echo "DB_NAME=ztmf" >> backend/dev.compose.env
 	@echo "DB_USER=admin" >> backend/dev.compose.env
 	@echo "DB_PASS=localdevpassword" >> backend/dev.compose.env
@@ -466,7 +470,7 @@ full-stack-up:
 	@echo "Services:"
 	@echo "  Frontend UI:  http://localhost:5174"
 	@echo "  Backend API:  http://localhost:$(API_PORT)"
-	@echo "  Database:     localhost:54321"
+	@echo "  Database:     localhost:$(DB_PORT)"
 	@echo ""
 	@echo "Logged in as: Grand Moff Tarkin (ADMIN)"
 	@echo "To switch user: make frontend-env EMAIL=Admiral.Piett@executor.empire"
