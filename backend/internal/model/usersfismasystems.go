@@ -37,11 +37,15 @@ func (uf *UserFismaSystem) Save(ctx context.Context) (*UserFismaSystem, error) {
 		return nil, err
 	}
 
-	// TODO: fix issue where inserting the same (userid, fismasystemid) twice returns error. It should effectively upsert
+	// Idempotent by design: assigning a system the user already has returns the
+	// existing row instead of erroring (#429). DO NOTHING is not enough here —
+	// on conflict it suppresses the insert, RETURNING yields zero rows, and
+	// queryRow surfaces pgx.ErrNoRows as a 404. The no-op DO UPDATE makes the
+	// conflicting row visible to RETURNING, preserving the single-row contract.
 	sqlb := stmntBuilder.Insert("userid, fismasystemid").
 		Into("users_fismasystems").
 		Values(uf.UserID, uf.FismaSystemID).
-		Suffix("ON CONFLICT DO NOTHING RETURNING userid, fismasystemid")
+		Suffix("ON CONFLICT (userid, fismasystemid) DO UPDATE SET userid = EXCLUDED.userid RETURNING userid, fismasystemid")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[UserFismaSystem])
 }
