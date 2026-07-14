@@ -13,6 +13,7 @@ import (
 //	@Param		fismasystemid	query		int	false	"Filter by FISMA system ID"
 //	@Param		questionid		query		int	false	"Filter by question ID"
 //	@Success	200				{object}	apiResponse[[]model.SystemInsight]
+//	@Failure	400				{object}	apiResponse[any]
 //	@Failure	500				{object}	apiResponse[any]
 //	@Router		/insights [get]
 func ListSystemInsights(w http.ResponseWriter, r *http.Request) {

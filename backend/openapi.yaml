@@ -1709,6 +1709,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-array_model_SystemInsight'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "500":
           content:
             application/json:
@@ -2053,6 +2059,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-array_model_Score'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "500":
           content:
             application/json:
