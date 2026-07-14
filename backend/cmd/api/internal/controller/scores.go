@@ -16,6 +16,7 @@ import (
 //	@Param		fismasystemid	query		int	false	"Filter by FISMA system ID"
 //	@Param		datacallid		query		int	false	"Filter by data call ID"
 //	@Success	200				{object}	apiResponse[[]model.Score]
+//	@Failure	400				{object}	apiResponse[any]
 //	@Failure	500				{object}	apiResponse[any]
 //	@Router		/scores [get]
 func ListScores(w http.ResponseWriter, r *http.Request) {

@@ -1308,6 +1308,39 @@ tests:
       headers:
         content-type: "application/json"
 
+  # Malformed query params on GET list endpoints are the caller's fault and must
+  # return 400, not 500 (#420). The gorilla/schema decode fails before scope or
+  # any DB call, so the sanitizeErr mapping is what these pin. A non-numeric int
+  # param on /scores...
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=abc"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
+  # ...and on /insights. The decode error short-circuits before the
+  # insights-enabled gate, so this is 400 regardless of enablement.
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=abc"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
+  - url: "http://localhost:8080/api/v1/insights?questionid=xyz"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
   # PUT returns 204 (No Content) per controller.respond; assert the write
   # path completes cleanly. Audit-on-write is covered by the POST assertion
   # above.
