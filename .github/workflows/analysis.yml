@@ -5,10 +5,16 @@ on:
 
 jobs:
   # Detect whether this change touches Go/backend files so the Go-specific
-  # Analysis jobs (lint go, snyk test) can be skipped on infra-only PRs. Mirrors
-  # the backend diff signal the orchestration workflows use to gate the Backend
-  # deploy. Outside the PR-open context (a merge to main/prod, or any push) the
-  # signal is forced non-empty so the Go scans always run there.
+  # Analysis jobs (lint go, snyk test) can be skipped on infra-only PRs. Outside
+  # the PR-open context (a merge to main/prod, or any push) the signal is forced
+  # non-empty so the Go scans always run there.
+  #
+  # SYNC: orchestration-dev.yml's `diff` job runs the same kind of diff to gate
+  # the backend DEPLOY. This signal is an intentional SUPERSET of it - it also
+  # matches go.mod and the backend/analysis workflow files so CI/dep edits re-run
+  # the scans - which guarantees anything that can deploy has also been scanned.
+  # Keep the shared core (the `backend/` pathspec + the `.go`/`.sum`/`Dockerfile`
+  # grep) in sync across both files.
   changes:
     name: detect backend changes
     runs-on: ubuntu-latest
