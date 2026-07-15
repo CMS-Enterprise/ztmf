@@ -906,6 +906,22 @@ SELECT DISTINCT ON (s.scoreid)
  WHERE s.scoreid >= 9100
  ORDER BY s.scoreid, uf.userid;
 
+-- Seed scores.status to match the just-seeded audit trail (ztmf#435). This
+-- runs after migrations, so the migration's one-time backfill has already
+-- executed against an empty table and does NOT see these seed rows; mirror
+-- its exact logic here so the seed DB's progress numbers agree with what the
+-- events above imply. A score with a seeded 'updated' event is 'done'; the
+-- rest keep the not_started default. Keeps this consistent automatically as
+-- the events seed above changes (it currently events only scoreid >= 9100).
+UPDATE public.scores s
+SET status = 'done'
+WHERE EXISTS (
+    SELECT 1
+    FROM public.events e
+    WHERE e.resource = 'public.scores'
+      AND (e.payload->>'scoreid')::int = s.scoreid
+);
+
 -- Reset every SERIAL sequence to its current table max. Use
 -- pg_get_serial_sequence() so the right name is resolved at runtime: some
 -- environments have historically renamed tables (e.g. functionscores -> scores)

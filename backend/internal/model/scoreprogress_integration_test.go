@@ -13,11 +13,13 @@ import (
 
 // TestFindScoreProgressIntegration pins the central semantic of ztmf#299
 // against the real SQL: an answer pre-populated by copyPreviousScores does
-// NOT count as updated (the copy records no events), and the same answer
-// counts the moment a user actually saves it (the write path records an
-// event). Unit tests over the generated SQL cannot see this - it depends on
-// the interplay between the copy path, the event trigger in queryRow, and
-// the INNER lateral in the progress query.
+// NOT count as updated (the copy sets status = 'not_started'), and the same
+// answer counts the moment a user actually saves it (Save sets status =
+// 'done' in the same statement). It also pins ztmf#435's answered/total: the
+// carried-forward answer counts as QuestionsAnswered throughout, since it has
+// a row regardless of status. Unit tests over the generated SQL cannot see
+// this - it depends on the interplay between the copy path, the status
+// transition in Save, and the status filter in the progress query.
 //
 // Requires DB_* env vars pointing at a seeded ZTMF database (the dev compose
 // stack). Skipped under `go test -short`.
@@ -119,13 +121,16 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	before := findForSystem()
 	assert.Equal(t, int32(0), before.QuestionsUpdated,
 		"pre-populated answers must not count as updated")
+	assert.Equal(t, int32(1), before.QuestionsAnswered,
+		"the carried-forward answer has a row, so it counts as answered even before it is touched")
 	assert.False(t, before.UpdatedSinceStart)
 	assert.Nil(t, before.LastUpdatedAt)
-	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(0),
-		"expected count resolves through the environment mapping")
+	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(1),
+		"expected count resolves through the environment mapping and includes the applicable answered function")
 
 	// Phase 2: a user saves the copied answer through the normal write path,
-	// which records an edit event. Progress must now count it.
+	// which transitions status to 'done' in the same statement. Progress must
+	// now count it as updated.
 	var copiedScoreID int32
 	err = conn.QueryRow(ctx, `
 		SELECT scoreid FROM scores
@@ -162,6 +167,8 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	after := findForSystem()
 	assert.Equal(t, int32(1), after.QuestionsUpdated,
 		"a genuinely edited answer must count as updated")
+	assert.Equal(t, int32(1), after.QuestionsAnswered,
+		"the answer still has a row, so answered is unchanged by the edit")
 	assert.True(t, after.UpdatedSinceStart)
 	assert.LessOrEqual(t, after.QuestionsUpdated, after.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
@@ -263,6 +270,8 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 
 	assert.Greater(t, p.QuestionsExpected, int32(0),
 		"the system has applicable functions of its own")
+	assert.Equal(t, int32(0), p.QuestionsAnswered,
+		"an answer for a non-applicable function must not count as answered either - the answered numerator uses the same applicability join")
 	assert.Equal(t, int32(0), p.QuestionsUpdated,
 		"an edited answer for a non-applicable function must not count as updated")
 	assert.False(t, p.UpdatedSinceStart,
