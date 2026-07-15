@@ -4,8 +4,43 @@ on:
   workflow_call:
 
 jobs:
+  # Detect whether this change touches Go/backend files so the Go-specific
+  # Analysis jobs (lint go, snyk test) can be skipped on infra-only PRs. Outside
+  # the PR-open context (a merge to main/prod, or any push) the signal is forced
+  # non-empty so the Go scans always run there.
+  #
+  # SYNC: orchestration-dev.yml's `diff` job runs the same kind of diff to gate
+  # the backend DEPLOY. This signal is an intentional SUPERSET of it - it also
+  # matches go.mod and the backend/analysis workflow files so CI/dep edits re-run
+  # the scans - which guarantees anything that can deploy has also been scanned.
+  # Keep the shared core (the `backend/` pathspec + the `.go`/`.sum`/`Dockerfile`
+  # grep) in sync across both files.
+  changes:
+    name: detect backend changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      backend: ${{ steps.backend.outputs.backend }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in backend/
+        id: backend
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ] || [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            echo "backend=always" >> $GITHUB_OUTPUT
+          else
+            echo "backend=$(git --no-pager diff --name-only "origin/${{ github.base_ref }}" -- backend/ .github/workflows/backend.yml .github/workflows/analysis.yml | grep -E '\.go$|go\.mod$|\.sum$|Dockerfile|workflows/(backend|analysis)\.yml' | head -n 1)" >> $GITHUB_OUTPUT
+          fi
+
   Lint-Go:
     name: lint go
+    needs: changes
+    if: ${{ needs.changes.outputs.backend != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -81,6 +116,8 @@ jobs:
 
   Snyk-Test:
     name: snyk test
+    needs: changes
+    if: ${{ needs.changes.outputs.backend != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
