@@ -1,0 +1,148 @@
+name: Nightly sync main -> impl
+
+# Opens a PR that brings `main` into `impl` each night for a human to review and
+# SQUASH-MERGE. Merging pushes to `impl`, which triggers the impl deploy via
+# orchestration-impl (backend image build + terraform apply).
+#
+# WHY -X theirs + squash: main and impl are both squash-merged, so they share no
+# real ancestry (stale merge-base). Merging `main` into an impl-based branch with
+# `-X theirs` makes main deterministically win every overlap, keeps impl-only
+# non-conflicting files, and leaves nothing to hand-resolve. ztmf is squash-only
+# by policy (allow_merge_commit=false; `impl` requires linear history), so this PR
+# is SQUASH-merged. A squash records no shared ancestry, so git keeps diffing
+# against the stale base -- but `-X theirs` resolves that deterministically and the
+# result settles (verified in a scratch worktree: a no-change night produces no
+# PR; the first reconciliation is large but auto-resolved, then nightly deltas are
+# small). This is the backend counterpart to ztmf-ui's sync, which merges as a
+# MERGE COMMIT because its `impl` has no such policy; on ztmf we stay in content-
+# sync rather than closing the ancestry gap.
+#
+# WHY a PAT (not GITHUB_TOKEN): the CMS-Enterprise org prohibits GitHub Actions
+# from creating pull requests (GITHUB_TOKEN -> 409); a GitHub App needs org-owner
+# install approval (declined); admins recommend a PAT. PROVISION ONCE: add repo
+# secret SYNC_PAT = a fine-grained PAT scoped to this repo, permissions Contents:
+# read/write + Pull requests: read/write. Prefer a shared machine/service account;
+# set a rotation reminder (it expires -> 401 -> no PR).
+#
+# WHY no exact-midnight guard: cron is UTC and ignores DST; a strict hour==00 guard
+# was brittle (a scheduler delay tipped it past midnight and skipped whole nights).
+# Both DST crons run; "skip if a sync PR is already open" dedupes to one PR/night.
+#
+# TIMING: fires at :15, ~5 min ahead of ztmf-ui's :20 sync, so the backend PR opens
+# first (API leads UI). Note the deploy fires on MERGE, not on PR open -- so "API
+# up before UI" is realized by merging this PR before the ztmf-ui one.
+
+on:
+  schedule:
+    - cron: '15 8 * * *' # ~midnight PST / ~01:15 PDT
+    - cron: '15 7 * * *' # ~midnight PDT / ~23:15 PST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read # writes are done with the PAT, not GITHUB_TOKEN
+
+concurrency:
+  group: nightly-impl-sync
+  cancel-in-progress: false
+
+env:
+  SYNC_BRANCH: automation/sync-main-to-impl
+
+jobs:
+  open-sync-pr:
+    name: Open main -> impl sync PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
+
+      - name: Skip if a sync PR is already open
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_PAT }}
+        run: |
+          num="$(gh pr list --base impl --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // ""')"
+          if [ -n "$num" ]; then
+            echo "Sync PR #$num is still open -- leaving it for review, not clobbering in-progress work."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Don't clobber a hand-edited sync branch
+        id: handedited
+        if: steps.existing.outputs.skip != 'true'
+        run: |
+          # Safety: if the remote sync branch exists and its tip was NOT pushed
+          # by the automation (e.g. someone added a cherry-pick or manual fix),
+          # leave it alone rather than force-resetting it to main.
+          if git ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$SYNC_BRANCH"
+            author="$(git log -1 --format='%an' FETCH_HEAD)"
+            if [ "$author" != "github-actions[bot]" ]; then
+              echo "::warning::$SYNC_BRANCH tip is authored by '$author', not the automation -- skipping to avoid clobbering manual work."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the sync branch (main wins overlaps)
+        id: build
+        if: steps.existing.outputs.skip != 'true' && steps.handedited.outputs.skip != 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Base on impl; merge main with -X theirs so main wins every overlap.
+          git checkout -B "$SYNC_BRANCH" origin/impl
+          if ! git merge -X theirs --no-edit origin/main; then
+            echo "::error::merge -X theirs hit a conflict it could not auto-resolve (e.g. modify/delete). Manual intervention needed."
+            git merge --abort || true
+            exit 1
+          fi
+          # If merging main brought nothing new, the result equals impl -- skip.
+          if git diff --quiet origin/impl HEAD; then
+            echo "Merging main into impl produced no change; nothing to sync."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the sync branch
+        if: steps.build.outputs.changed == 'true'
+        run: |
+          # --force-with-lease: only overwrite the remote branch if it still
+          # points where we expect (fails safe if it moved under us).
+          lease="$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | cut -f1)"
+          if [ -n "$lease" ]; then
+            git push --force-with-lease="$SYNC_BRANCH:$lease" origin "$SYNC_BRANCH"
+          else
+            git push origin "$SYNC_BRANCH"
+          fi
+
+      - name: Open the PR into impl
+        if: steps.build.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_PAT }}
+          PR_BODY: |
+            Automated nightly sync of `main` into `impl` — **main wins every overlap**.
+
+            This branch is `impl` with `main` merged in using `-X theirs`, so the result is deterministic: main's version wins any conflict, and impl-only files that don't conflict are preserved. There should be nothing to hand-resolve.
+
+            **Squash-merge this PR** — `impl` is squash-only by policy (linear history). Because `main` and `impl` share no squash ancestry the diff is computed against a stale base, but `-X theirs` makes it deterministic and the content settles (a no-change night opens no PR). Unlike ztmf-ui (which merges as a merge commit), this stays in content-sync rather than closing the ancestry gap.
+
+            - Review the net change, then **squash-merge**. Merging pushes to `impl` and triggers the impl deploy (orchestration-impl: backend image build + terraform apply).
+            - To smoke-test in the impl environment first, run **Manual Deploy to IMPL** with `--ref automation/sync-main-to-impl`.
+
+            _Opened by the nightly-impl-sync workflow._
+        run: |
+          date_pt="$(TZ='America/Los_Angeles' date +%Y-%m-%d)"
+          gh pr create \
+            --base impl \
+            --head "$SYNC_BRANCH" \
+            --title "Nightly sync: main -> impl ($date_pt)" \
+            --body "$PR_BODY"
