@@ -1341,6 +1341,56 @@ tests:
       headers:
         content-type: "application/json"
 
+  # System assignment is idempotent (#429). Save uses ON CONFLICT ... DO UPDATE
+  # ... RETURNING so a duplicate POST returns the existing row; the old
+  # DO NOTHING RETURNING produced zero rows on conflict, which surfaced as a
+  # 404. Target user must have a version-4 UUID: FindUserByID and validate()
+  # gate on the v4-strict isValidUUID, so the all-digits placeholder users
+  # (11111111-..., 22222222-...) 404 before reaching Save. Thrawn (aa000088-...)
+  # is v4 and carries no seed assignments.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Identical POST again - the regression target. Must return the same row,
+  # not 404/500.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Remove the assignment so Thrawn's scope stays as seeded for any tests
+  # that follow.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems/1003"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+
   # PUT returns 204 (No Content) per controller.respond; assert the write
   # path completes cleanly. Audit-on-write is covered by the POST assertion
   # above.

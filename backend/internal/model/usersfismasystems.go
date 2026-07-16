@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -37,13 +38,28 @@ func (uf *UserFismaSystem) Save(ctx context.Context) (*UserFismaSystem, error) {
 		return nil, err
 	}
 
-	// TODO: fix issue where inserting the same (userid, fismasystemid) twice returns error. It should effectively upsert
+	// Idempotent by design: assigning a system the user already has is a no-op
+	// success that returns the existing row instead of erroring (#429). On
+	// conflict, DO NOTHING inserts nothing, so RETURNING yields zero rows and
+	// queryRow surfaces that as ErrNoData. We treat that as success and return
+	// the in-memory row, which for this two-column junction table is identical
+	// to the stored row. This mirrors UserOpDiv.Save and, unlike a no-op
+	// DO UPDATE, avoids recording a phantom "created" audit event (queryRow
+	// fires recordEvent only when a row is returned) and a dead-tuple write.
 	sqlb := stmntBuilder.Insert("userid, fismasystemid").
 		Into("users_fismasystems").
 		Values(uf.UserID, uf.FismaSystemID).
-		Suffix("ON CONFLICT DO NOTHING RETURNING userid, fismasystemid")
+		Suffix("ON CONFLICT (userid, fismasystemid) DO NOTHING RETURNING userid, fismasystemid")
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByName[UserFismaSystem])
+	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByName[UserFismaSystem])
+	if err != nil {
+		if errors.Is(err, ErrNoData) {
+			return uf, nil
+		}
+		return nil, err
+	}
+
+	return saved, nil
 }
 
 func (uf *UserFismaSystem) Delete(ctx context.Context) error {
