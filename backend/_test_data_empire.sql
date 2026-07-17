@@ -177,6 +177,13 @@ INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
 INSERT INTO public.datacalls VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+-- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
+-- outside the app - its scores are seeded below with NO events rows, so every
+-- answer keeps status 'not_started' and carries no editor/timestamp. This is
+-- the shape that makes a closed call read 0/N under the "updated" lens while
+-- QuestionsAnswered still reports it complete; keep it event-free on purpose
+-- so that behavior stays reproducible locally.
+INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
@@ -879,6 +886,22 @@ BEGIN
         END LOOP;
     END LOOP;
 END $$;
+
+-- Imported-history scores for the FY2020 archives cycle (datacallid 6). Clone
+-- the FY2024 (datacallid 3) answer set so every (system, functionoption) pair
+-- is known-applicable to its system's environment, offset scoreids by +49 to
+-- stay below 9100 - the events seed below only covers scoreid >= 9100, so
+-- these rows get NO events and keep the 'not_started' status default. That is
+-- the point: an imported closed call has answers (QuestionsAnswered > 0) but
+-- no edit provenance (QuestionsUpdated = 0, LastUpdatedAt null), reproducing
+-- the production imported-history shape locally without any real data.
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid)
+SELECT s.scoreid + 49, s.fismasystemid, '2020-06-01 00:00:00+00',
+       'Recovered from the Imperial Archives - assessor records lost',
+       s.functionoptionid, 6
+  FROM public.scores s
+ WHERE s.datacallid = 3 AND s.scoreid < 9100
+ON CONFLICT DO NOTHING;
 
 -- Audit trail for the seeded scores. last_edited_at / last_edited_by are NOT
 -- stored on scores; FindScores derives them from the events table (the most

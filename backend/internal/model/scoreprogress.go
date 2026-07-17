@@ -20,9 +20,12 @@ import (
 //   - QuestionsUpdated ("touched THIS cycle") drives the active-call progress
 //     chip. A carried-forward answer does not count until re-saved (ztmf#299).
 //   - QuestionsAnswered ("has an answer at all") is the completion signal a
-//     PAST call needs: once a cycle closes, nobody touches it again, so
-//     QuestionsUpdated is 0 for every system and only QuestionsAnswered
-//     reflects that the call was in fact complete (ztmf-ui#537).
+//     PAST call needs. A closed cycle stops accumulating updates, and history
+//     imported from outside the app never had any (no events to backfill), so
+//     QuestionsUpdated says nothing about whether a historical call was in
+//     fact complete - QuestionsAnswered does (ztmf-ui#537). Cycles genuinely
+//     worked in-app keep their backfilled updated counts; accurate history,
+//     just not a completion signal.
 //
 // Both are now read from persisted state (scores.status and score-row
 // presence) rather than reconstructed from the events audit log; see
