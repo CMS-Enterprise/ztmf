@@ -231,6 +231,32 @@ func TestFismaSystem_Validate(t *testing.T) {
 	}
 }
 
+// TestBlankToNil pins the ztmf#442 primitive: "" -> nil (clear to NULL), while
+// a genuine nil and a real value pass through untouched. Save uses the nil vs
+// "" distinction on UPDATE to tell "leave unchanged" (nil) from "clear" ("").
+func TestBlankToNil(t *testing.T) {
+	assert.Nil(t, blankToNil(stringPtr("")), `"" collapses to nil so the column clears to NULL`)
+	assert.Nil(t, blankToNil(nil), "nil (omitted/null) stays nil -> leave unchanged")
+	if got := blankToNil(stringPtr("Moderate")); assert.NotNil(t, got) {
+		assert.Equal(t, "Moderate", *got, "a real value passes through")
+	}
+}
+
+// TestFismaSystem_Validate_BlankEmails pins that a blanked contact email is
+// treated as unset, not invalid (ztmf#442). Save collapses "" -> nil for the
+// two email fields before validate(); before the fix, an empty issoemail reached
+// isValidEmail("") and 400'd the whole save.
+func TestFismaSystem_Validate_BlankEmails(t *testing.T) {
+	fs := FismaSystem{
+		FismaUID:        "CDC8767221",
+		FismaAcronym:    "TEST",
+		FismaName:       "Test System",
+		DataCallContact: blankToNil(stringPtr("")),
+		ISSOEmail:       blankToNil(stringPtr("")),
+	}
+	assert.NoError(t, fs.validate(), "a blanked email is unset, not invalid")
+}
+
 // TestDeleteFismaSystem_WithCustomDate tests decommission with custom date
 func TestDeleteFismaSystem_WithCustomDate(t *testing.T) {
 	if testing.Short() {

@@ -182,6 +182,15 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 
 	var sqlb SqlBuilder
 
+	// A blanked contact email arrives as "" from the edit form (a cleared input
+	// is "", not null). These are always written, so collapse "" to nil now:
+	// otherwise validate() below runs isValidEmail("") and 400s the whole save,
+	// and the column would store "" instead of NULL (ztmf#442). The metadata
+	// fields are handled per-path below, where "" (clear) must stay
+	// distinguishable from nil (omitted → leave unchanged).
+	f.DataCallContact = blankToNil(f.DataCallContact)
+	f.ISSOEmail = blankToNil(f.ISSOEmail)
+
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
@@ -227,15 +236,17 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
 				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
-				f.HVA, f.FIPS, f.SystemType, f.CloudSystem, f.CloudServiceModel,
-				f.CloudVendor, f.SystemOperator, f.GocoCocGoGo, f.SystemOwner,
-				f.SystemOwnerEmail, f.Legacy, f.ISSOName,
+				// A blank optional field on create is NULL, not "" (ztmf#442).
+				blankToNil(f.HVA), blankToNil(f.FIPS), blankToNil(f.SystemType),
+				blankToNil(f.CloudSystem), blankToNil(f.CloudServiceModel),
+				blankToNil(f.CloudVendor), blankToNil(f.SystemOperator),
+				blankToNil(f.GocoCocGoGo), blankToNil(f.SystemOwner),
+				blankToNil(f.SystemOwnerEmail), blankToNil(f.Legacy),
+				blankToNil(f.ISSOName),
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 	} else {
-		// UPDATE - exclude decommissioned fields.
-		// Core fields are always written; HHS fields are conditional on non-nil
-		// so a partial PUT (form that omits a field) does not wipe importer data.
+		// UPDATE - exclude decommissioned fields. Core fields are always written.
 		setCols := squirrel.Eq{
 			"fismauid":              f.FismaUID,
 			"fismaacronym":          f.FismaAcronym,
@@ -250,6 +261,16 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			"issoemail":             f.ISSOEmail,
 			"sdl_sync_enabled":      f.SDLSyncEnabled,
 		}
+		// Metadata fields distinguish three request states (ztmf#442):
+		//   - omitted / null (nil pointer) -> leave the stored value untouched,
+		//     so a partial PUT never wipes importer data (and a scoped-admin edit,
+		//     whose HHS fields copyHHSMetadata has set to the stored values, is a
+		//     no-op here);
+		//   - "" (a cleared form input) -> write NULL, so a blank actually clears
+		//     the value rather than persisting "" or being silently ignored;
+		//   - a value -> write it.
+		// blankToNil folds the "" case into a nil *string, which pgx encodes as
+		// NULL; nil-guarding the assignment keeps the omitted case untouched.
 		hhsCols := map[string]*string{
 			"hva":                 f.HVA,
 			"fips":                f.FIPS,
@@ -266,7 +287,7 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		}
 		for col, val := range hhsCols {
 			if val != nil {
-				setCols[col] = *val
+				setCols[col] = blankToNil(val)
 			}
 		}
 		sqlb = stmntBuilder.
@@ -506,6 +527,17 @@ func SaveTargetMaturity(ctx context.Context, input TargetMaturityInput) (*FismaS
 		Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
+}
+
+// blankToNil returns nil for a pointer to an empty string, so a blank input
+// clears the column to NULL instead of persisting "" (ztmf#442). A genuine nil
+// (field absent or null in the request) is returned untouched, which the UPDATE
+// path relies on to tell "clear this" ("") apart from "leave unchanged" (nil).
+func blankToNil(p *string) *string {
+	if p != nil && *p == "" {
+		return nil
+	}
+	return p
 }
 
 func (f *FismaSystem) validate() error {
