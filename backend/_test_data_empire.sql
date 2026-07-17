@@ -177,6 +177,13 @@ INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
 INSERT INTO public.datacalls VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+-- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
+-- outside the app - its scores are seeded below with NO events rows, so every
+-- answer keeps status 'not_started' and carries no editor/timestamp. This is
+-- the shape that makes a closed call read 0/N under the "updated" lens while
+-- QuestionsAnswered still reports it complete; keep it event-free on purpose
+-- so that behavior stays reproducible locally.
+INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
@@ -880,6 +887,22 @@ BEGIN
     END LOOP;
 END $$;
 
+-- Imported-history scores for the FY2020 archives cycle (datacallid 6). Clone
+-- the FY2024 (datacallid 3) answer set so every (system, functionoption) pair
+-- is known-applicable to its system's environment, offset scoreids by +49 to
+-- stay below 9100 - the events seed below only covers scoreid >= 9100, so
+-- these rows get NO events and keep the 'not_started' status default. That is
+-- the point: an imported closed call has answers (QuestionsAnswered > 0) but
+-- no edit provenance (QuestionsUpdated = 0, LastUpdatedAt null), reproducing
+-- the production imported-history shape locally without any real data.
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid)
+SELECT s.scoreid + 49, s.fismasystemid, '2020-06-01 00:00:00+00',
+       'Recovered from the Imperial Archives - assessor records lost',
+       s.functionoptionid, 6
+  FROM public.scores s
+ WHERE s.datacallid = 3 AND s.scoreid < 9100
+ON CONFLICT DO NOTHING;
+
 -- Audit trail for the seeded scores. last_edited_at / last_edited_by are NOT
 -- stored on scores; FindScores derives them from the events table (the most
 -- recent 'public.scores' write whose payload scoreid matches). Seed data
@@ -905,6 +928,47 @@ SELECT DISTINCT ON (s.scoreid)
   JOIN public.users_fismasystems uf ON uf.fismasystemid = s.fismasystemid
  WHERE s.scoreid >= 9100
  ORDER BY s.scoreid, uf.userid;
+
+-- Import provenance for the FY2020 archives cycle (datacallid 6): a service
+-- account plus one 'imported' event per archived score, mirroring how
+-- externally-loaded history is attributed in real environments (ztmf#435). These
+-- give the archived rows a who/when (last-updated shows the import instead of
+-- blank) but use action 'imported', which the status-sync below deliberately
+-- excludes - so the archived answers keep status 'not_started' despite carrying
+-- events. This is the shape that proves imported != updated: answers present,
+-- provenance present, never 'done'.
+INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provider)
+VALUES ('00000000-0000-4000-8000-000000000001', 'svc-importer@empire.test',
+        'Imperial Archives Import Service', 'HHS_READONLY_ADMIN', false, 'okta')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.events (userid, action, resource, createdat, payload)
+SELECT '00000000-0000-4000-8000-000000000001', 'imported', 'public.scores',
+       '2020-06-01 00:00:00+00',
+       jsonb_build_object('scoreid', s.scoreid, 'fismasystemid', s.fismasystemid,
+                          'functionoptionid', s.functionoptionid,
+                          'datacallid', s.datacallid, 'notes', s.notes)
+  FROM public.scores s
+ WHERE s.datacallid = 6;
+
+-- Seed scores.status to match the just-seeded audit trail (ztmf#435). This
+-- runs after migrations, so the migration's one-time backfill has already
+-- executed against an empty table and does NOT see these seed rows; mirror
+-- its exact logic here so the seed DB's progress numbers agree with what the
+-- events above imply. A score with a seeded 'created'/'updated' event is 'done';
+-- the rest keep the not_started default. Imported-provenance events (see the
+-- FY2020 archives block) are excluded via the same action filter the migration
+-- uses, so imported history stays not_started. Keeps this consistent
+-- automatically as the events seed above changes.
+UPDATE public.scores s
+SET status = 'done'
+WHERE EXISTS (
+    SELECT 1
+    FROM public.events e
+    WHERE e.resource = 'public.scores'
+      AND e.action IN ('created', 'updated')
+      AND (e.payload->>'scoreid')::int = s.scoreid
+);
 
 -- Reset every SERIAL sequence to its current table max. Use
 -- pg_get_serial_sequence() so the right name is resolved at runtime: some
