@@ -36,12 +36,18 @@ ALTER TABLE public.scores
 -- progress query used, which the events_score_audit_idx partial index (0037)
 -- serves directly, so the backfill is index-assisted rather than a seq scan
 -- per row.
+--
+-- Only genuine in-app edits (action 'created'/'updated') count as done. Data
+-- loaded outside the app is attributed with 'imported' provenance events so it
+-- carries a who/when, but an import is not a human answering this cycle - those
+-- events must NOT flip the row to done, so they are excluded here.
 UPDATE public.scores s
 SET status = 'done'
 WHERE EXISTS (
     SELECT 1
     FROM public.events e
     WHERE e.resource = 'public.scores'
+      AND e.action IN ('created', 'updated')
       AND (e.payload->>'scoreid')::int = s.scoreid
 );
 		`,

@@ -411,3 +411,46 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 	assert.Equal(t, int32(0), questionsUpdated(),
 		"a no-op re-save must leave QuestionsUpdated at zero")
 }
+
+// TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration pins the
+// imported-history contract (ztmf#435): externally-loaded rows are attributed
+// with 'imported' provenance events (so last-updated shows who/when instead of
+// blank) but must NOT be marked done - an import is not a human answering this
+// cycle. The status backfill / seed status-sync only count 'created'/'updated'
+// events, so imported rows stay not_started despite carrying events. The empire
+// seed's FY2020 archives cycle (datacallid 6) is exactly this shape.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	const archivesDataCallID = 6
+	var total, notStarted, withImported, withEdit int
+	err = conn.QueryRow(ctx, `
+		SELECT
+		  count(*),
+		  count(*) FILTER (WHERE s.status = 'not_started'),
+		  count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action='imported'
+		        AND (e.payload->>'scoreid')::int = s.scoreid)),
+		  count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action IN ('created','updated')
+		        AND (e.payload->>'scoreid')::int = s.scoreid))
+		FROM public.scores s
+		WHERE s.datacallid = $1
+	`, archivesDataCallID).Scan(&total, &notStarted, &withImported, &withEdit)
+	require.NoError(t, err)
+
+	require.Greater(t, total, 0, "FY2020 archives fixture must seed imported scores")
+	assert.Equal(t, total, notStarted, "imported archive rows must stay not_started")
+	assert.Equal(t, total, withImported, "every archived row must carry an 'imported' provenance event")
+	assert.Equal(t, 0, withEdit, "archived rows must have no created/updated events (import is not an edit)")
+}

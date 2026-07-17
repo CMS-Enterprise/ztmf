@@ -929,19 +929,44 @@ SELECT DISTINCT ON (s.scoreid)
  WHERE s.scoreid >= 9100
  ORDER BY s.scoreid, uf.userid;
 
+-- Import provenance for the FY2020 archives cycle (datacallid 6): a service
+-- account plus one 'imported' event per archived score, mirroring how
+-- externally-loaded history is attributed in real environments (ztmf#435). These
+-- give the archived rows a who/when (last-updated shows the import instead of
+-- blank) but use action 'imported', which the status-sync below deliberately
+-- excludes - so the archived answers keep status 'not_started' despite carrying
+-- events. This is the shape that proves imported != updated: answers present,
+-- provenance present, never 'done'.
+INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provider)
+VALUES ('00000000-0000-4000-8000-000000000001', 'svc-importer@empire.test',
+        'Imperial Archives Import Service', 'HHS_READONLY_ADMIN', false, 'okta')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.events (userid, action, resource, createdat, payload)
+SELECT '00000000-0000-4000-8000-000000000001', 'imported', 'public.scores',
+       '2020-06-01 00:00:00+00',
+       jsonb_build_object('scoreid', s.scoreid, 'fismasystemid', s.fismasystemid,
+                          'functionoptionid', s.functionoptionid,
+                          'datacallid', s.datacallid, 'notes', s.notes)
+  FROM public.scores s
+ WHERE s.datacallid = 6;
+
 -- Seed scores.status to match the just-seeded audit trail (ztmf#435). This
 -- runs after migrations, so the migration's one-time backfill has already
 -- executed against an empty table and does NOT see these seed rows; mirror
 -- its exact logic here so the seed DB's progress numbers agree with what the
--- events above imply. A score with a seeded 'updated' event is 'done'; the
--- rest keep the not_started default. Keeps this consistent automatically as
--- the events seed above changes (it currently events only scoreid >= 9100).
+-- events above imply. A score with a seeded 'created'/'updated' event is 'done';
+-- the rest keep the not_started default. Imported-provenance events (see the
+-- FY2020 archives block) are excluded via the same action filter the migration
+-- uses, so imported history stays not_started. Keeps this consistent
+-- automatically as the events seed above changes.
 UPDATE public.scores s
 SET status = 'done'
 WHERE EXISTS (
     SELECT 1
     FROM public.events e
     WHERE e.resource = 'public.scores'
+      AND e.action IN ('created', 'updated')
       AND (e.payload->>'scoreid')::int = s.scoreid
 );
 
