@@ -279,3 +279,135 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 	assert.LessOrEqual(t, p.QuestionsUpdated, p.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
 }
+
+// TestScoreNoOpReSavePreservesNotStartedIntegration pins the ztmf#299 guard at
+// the status level: a carried-forward answer re-saved WITHOUT a real change
+// (the questionnaire UI PUTs on every Next click) must keep status =
+// 'not_started', so it never counts as updated this cycle. The sibling progress
+// test only proves not_started -> done on a genuine edit; this proves the no-op
+// guard (scoreUpdateIsNoOp) leaves status untouched, which is the exact path a
+// broken guard would regress - silently flipping carried rows to done and
+// over-counting progress, the bug this whole change exists to kill.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Two cycles anchored above every existing deadline so findPreviousDataCall
+	// (latest, excluding the target) resolves prevDC as the previous of newDC and
+	// not a seed cycle. Same reasoning as TestFindScoreProgressIntegration.
+	var prevDC, newDC int32
+	var maxDeadline time.Time
+	err = conn.QueryRow(ctx, `SELECT COALESCE(MAX(deadline), NOW()) FROM datacalls`).Scan(&maxDeadline)
+	require.NoError(t, err)
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snoop_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snoop_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
+	require.NoError(t, err)
+
+	// A valid (system, functionoption) pair whose function is applicable to the
+	// system's environment, so the carried answer surfaces in the progress query
+	// (same selection as the sibling progress test).
+	var fismaSystemID, functionOptionID int32
+	err = conn.QueryRow(ctx, `
+		SELECT s.fismasystemid, s.functionoptionid
+		FROM scores s
+		INNER JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		INNER JOIN functions f ON f.functionid = fo.functionid
+		INNER JOIN datacenterenvironments dce
+			ON dce.datacenterenvironment = fs.datacenterenvironment
+			AND dce.scoring_key = f.datacenterenvironment
+		INNER JOIN questions q ON q.questionid = f.questionid
+		WHERE fs.decommissioned = FALSE
+		LIMIT 1
+	`).Scan(&fismaSystemID, &functionOptionID)
+	require.NoError(t, err, "need one seeded score on an active system whose function is applicable to its environment")
+
+	// Seed the previous-cycle answer, then carry it forward. copyPreviousScores
+	// sets status = 'not_started' on the copied row.
+	notes := "noop preservation marker"
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+		VALUES ($1, $2, $3, $4)
+	`, fismaSystemID, functionOptionID, prevDC, notes)
+	require.NoError(t, err)
+
+	copyPreviousScores(newDC)
+
+	var copiedScoreID int32
+	var seededStatus string
+	err = conn.QueryRow(ctx, `
+		SELECT scoreid, status FROM scores
+		WHERE datacallid = $1 AND fismasystemid = $2 AND functionoptionid = $3
+	`, newDC, fismaSystemID, functionOptionID).Scan(&copiedScoreID, &seededStatus)
+	require.NoError(t, err, "the carried-forward row must exist in the new datacall")
+	require.Equal(t, "not_started", seededStatus,
+		"copyPreviousScores must seed the carried row as not_started")
+
+	readStatus := func() string {
+		t.Helper()
+		var s string
+		require.NoError(t, conn.QueryRow(ctx, `SELECT status FROM scores WHERE scoreid = $1`, copiedScoreID).Scan(&s))
+		return s
+	}
+	questionsUpdated := func() int32 {
+		t.Helper()
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{DataCallID: &newDC, FismaSystemID: &fismaSystemID})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		return rows[0].QuestionsUpdated
+	}
+
+	require.Equal(t, int32(0), questionsUpdated(),
+		"a carried, untouched answer is not updated")
+
+	// Re-save the carried answer with identical fields - the read-through PUT the
+	// questionnaire UI issues on every Next click. This hits the no-op guard,
+	// which returns before any write, so status must NOT transition to 'done'. A
+	// real seeded editor is used so that IF the guard ever regressed and the
+	// write fired, recordEvent would attribute correctly rather than fail the
+	// test for the wrong reason.
+	var editorID, editorRole string
+	err = conn.QueryRow(ctx, `SELECT userid, role FROM users ORDER BY (role = 'OWNER') DESC LIMIT 1`).Scan(&editorID, &editorRole)
+	require.NoError(t, err, "need at least one seeded user to attribute a potential edit to")
+	editorCtx := UserToContext(ctx, &User{UserID: editorID, Role: editorRole})
+
+	sameNotes := notes
+	noop := &Score{
+		ScoreID:          copiedScoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       newDC,
+		Notes:            &sameNotes,
+	}
+	_, err = noop.Save(editorCtx)
+	require.NoError(t, err, "a no-op re-save must succeed")
+
+	assert.Equal(t, "not_started", readStatus(),
+		"a no-op re-save must not transition a carried answer to done (ztmf#299)")
+	assert.Equal(t, int32(0), questionsUpdated(),
+		"a no-op re-save must leave QuestionsUpdated at zero")
+}
