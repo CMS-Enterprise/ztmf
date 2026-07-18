@@ -56,6 +56,15 @@ func SaveMassEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// No deliverable recipients: a group where every system/user is contactless
+	// (far more reachable now that imported systems carry NULL emails). Skip the
+	// goroutine so we don't dial/auth/quit the SMTP relay for zero recipients;
+	// return the empty list so the caller sees nobody was targeted.
+	if len(recipients) == 0 {
+		respond(w, r, recipients, nil)
+		return
+	}
+
 	go mail.Send(m.Subject, m.Body, recipients)
 
 	respond(w, r, recipients, nil)

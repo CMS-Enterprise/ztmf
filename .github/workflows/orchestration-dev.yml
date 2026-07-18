@@ -31,6 +31,13 @@ jobs:
       # Run the backend job when backend code OR the backend workflow itself
       # changes, so edits to backend.yml (e.g. action version bumps) are
       # validated by the smoke test rather than shipping unexercised.
+      #
+      # SYNC: analysis.yml's `changes` job runs the same kind of diff to gate the
+      # Go scans. That one is an intentional SUPERSET (it also matches go.mod and
+      # analysis.yml so CI/dep edits re-run the scans); this one gates the DEPLOY
+      # and is deliberately narrower. Keep the shared core (the `backend/`
+      # pathspec + the `.go`/`.sum`/`Dockerfile` grep) in sync across both, or a
+      # change could deploy without being scanned.
       - name: Check for changes in backend/ or its workflow
         id: backend
         run: echo "backend=$(git --no-pager diff --name-only origin/main -- backend/ .github/workflows/backend.yml | grep -E '\.go$|\.sum$|Dockerfile|workflows/backend.yml' | head -n 1)" >> $GITHUB_OUTPUT

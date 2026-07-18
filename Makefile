@@ -4,30 +4,12 @@
 # treats `echo -n` as a literal argument, breaking JWT generation).
 SHELL := /bin/bash
 
-# Select per-environment overrides. Auto-detects from current git branch:
-#   impl, feature/impl-* -> Makefile.impl
-#   anything else        -> Makefile.main
-# Override explicitly: make ZTMF_ENV=impl dev-setup
-ZTMF_ENV ?= $(shell git branch --show-current 2>/dev/null | grep -qE '^(impl|feature/impl-)' && echo impl || echo main)
--include Makefile.$(ZTMF_ENV)
-
-# Local-only overrides (gitignored), loaded last so they win over env fragments
--include Makefile.local
-
-# Default ports (Makefile.main keeps these; Makefile.impl shifts them so both
-# worktrees can run side-by-side on the same host)
+# Single source of truth for the local API port
 API_PORT ?= 8080
+# Postgres host port for the local dev compose stack. Overridable per worktree
+# (e.g. impl sets 54322) so dev and impl can run side by side without colliding
+# on the published host port. Container isolation is handled by COMPOSE_PROJECT_NAME.
 DB_PORT ?= 54321
-TEST_API_PORT ?= 8090
-TEST_DB_PORT ?= 54399
-FRONTEND_PORT ?= 5174
-COMPOSE_PROJECT_NAME ?= ztmf
-
-# Exported so docker compose picks them up for ${VAR} interpolation in
-# compose-test.yml and so child shells inherit COMPOSE_PROJECT_NAME.
-export COMPOSE_PROJECT_NAME
-export TEST_API_PORT
-export TEST_DB_PORT
 
 # Emberfall E2E runner install, resolved per platform. Releases are published as
 # emberfall_{Darwin,Linux}_{arm64,x86_64,i386}.tar.gz, so a hardcoded Linux URL
@@ -180,7 +162,7 @@ backend/dev.compose.env:
 	@echo "POSTGRES_PASSWORD=localdevpassword" >> backend/dev.compose.env
 	@echo "" >> backend/dev.compose.env
 	@echo "# Shared by api container (docker compose) and host shell (make test-full, pre-push hook)." >> backend/dev.compose.env
-	@echo "# Host needs localhost:54321 (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
+	@echo "# Host needs localhost:$(DB_PORT) (port-mapped); the api container's DB_ENDPOINT is overridden" >> backend/dev.compose.env
 	@echo "# to the docker service name 'postgre' in compose-dev.yml's environment: block." >> backend/dev.compose.env
 	@echo "DB_ENDPOINT=localhost" >> backend/dev.compose.env
 	@echo "DB_PORT=$(DB_PORT)" >> backend/dev.compose.env
