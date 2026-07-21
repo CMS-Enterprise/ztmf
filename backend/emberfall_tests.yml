@@ -2169,6 +2169,60 @@ tests:
     expect:
       status: 403
 
+  # Headline capability: delegate CAN write a data-call answer on its assigned
+  # system (1001, open Audit cycle 5). The role's whole reason to exist - a
+  # regression that neutered it (e.g. a stray IsSystemDelegate 403 copied into
+  # SaveScore) must fail here. Response echoes the delegate as the editor.
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 1
+        datacallid: 5
+        notes: "delegate audit answer - assigned system"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1001
+            functionoptionid: 1
+            last_edited_by:
+              email: "Delegate.User@nowhere.xyz"
+              role: "SYSTEM_DELEGATE"
+
+  # Delegate CANNOT mark a system it is NOT assigned to (Shield Gen 1003) complete.
+  # (The assigned-system mark-complete path is exercised by the ISSO/admin suites;
+  # re-marking an already-enrolled system is a 404 by the endpoint's INSERT ...
+  # ON CONFLICT DO NOTHING semantics, independent of role, so it is not asserted here.)
+  - url: http://localhost:8080/api/v1/datacalls/5/fismasystems/1003
+    method: PUT
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate CANNOT write an answer for an unassigned system (Shield Gen 1003).
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        functionoptionid: 1
+        datacallid: 5
+        notes: "delegate write to unassigned system - should be blocked"
+    expect:
+      status: 403
+
   # Delegate CAN read scores for its assigned system (1001).
   - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
     method: GET
