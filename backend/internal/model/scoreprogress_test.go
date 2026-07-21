@@ -41,8 +41,10 @@ func TestFindScoreProgressInputValidate(t *testing.T) {
 //     both the system env and the function's scoring key), which is what stops
 //     a carried-over answer to a now-inapplicable function from inflating the
 //     numerator past 100%;
-//   - the updated CTE keys on edit events via an INNER lateral, excluding
-//     pre-populated rows (copyPreviousScores records no events);
+//   - the updated count filters on the persisted scores.status column
+//     (status = 'done'), excluding pre-populated rows, rather than requiring
+//     an edit event; the events lateral is now LEFT and feeds only
+//     lastupdatedat;
 //   - both halves LEFT JOIN back onto scoped_systems so a zero-activity or
 //     unmapped-environment system still returns a row (0 of N).
 func TestBuildScoreProgressSQL_Shape(t *testing.T) {
@@ -58,12 +60,14 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, "INNER JOIN pillars p ON p.pillarid = q.pillarid", "applicability mirrors FindQuestionsByFismaSystem")
 	// updated re-checks applicability against the system's CURRENT environment.
 	assert.Contains(t, sql, "dce.scoring_key = f.datacenterenvironment", "an answered function must still be applicable to the system's current environment")
-	assert.Equal(t, 2, strings.Count(sql, "COUNT(DISTINCT f.functionid)"), "both halves count distinct applicable functions from the same set")
-	assert.Contains(t, sql, "INNER JOIN LATERAL", "updated count must require an edit event so pre-populated rows drop out")
-	assert.Contains(t, sql, "resource = 'public.scores'", "the lateral must read score events")
+	assert.Equal(t, 3, strings.Count(sql, "COUNT(DISTINCT f.functionid)"), "expected, answered, and updated all count distinct applicable functions from the same set")
+	assert.Contains(t, sql, "FILTER (WHERE s.status = 'done')", "updated is the answered set filtered to genuinely-saved rows via the persisted status column")
+	assert.Contains(t, sql, "LEFT JOIN LATERAL", "the events lateral is now LEFT (audit timeline only), not the filter for the count")
+	assert.Contains(t, sql, "resource = 'public.scores'", "the lateral must read score events for lastupdatedat")
 	assert.Contains(t, sql, "LEFT JOIN expected", "unmapped-environment systems must still return a row")
 	assert.Contains(t, sql, "LEFT JOIN updated", "zero-activity systems must still return a row")
-	assert.Contains(t, sql, "COALESCE(u.questionsupdated, 0)", "zero-activity systems report 0, not NULL")
+	assert.Contains(t, sql, "COALESCE(u.questionsanswered, 0)", "zero-activity systems report 0 answered, not NULL")
+	assert.Contains(t, sql, "COALESCE(u.questionsupdated, 0)", "zero-activity systems report 0 updated, not NULL")
 	assert.Contains(t, sql, "COALESCE(ex.questionsexpected, 0)", "unmapped-environment systems report 0 expected, not NULL")
 
 	// No scope filters: the single arg is the data call id.

@@ -94,11 +94,20 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		}
 	}
 
+	// status is set to 'done' in the same INSERT/UPDATE statement as the
+	// answer (ztmf#435). Because it rides the same write, the state can never
+	// disagree with the row it describes - unlike the old events-derived
+	// progress, which depended on a fire-and-forget, non-transactional,
+	// context-gated event write landing separately. Reaching this point means
+	// a genuine create (scoreid == 0) or a change that cleared the no-op guard
+	// above, which is exactly what "updated this cycle" means. A read-through
+	// PUT short-circuits before here and never touches status, so a carried-over
+	// row stays not_started (ztmf#299 preserved).
 	if s.ScoreID == 0 {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
-			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid").
-			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID).
+			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
+			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, "done").
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
 	} else {
 		setCols := squirrel.Eq{
@@ -106,6 +115,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			"notes":            s.Notes,
 			"functionoptionid": s.FunctionOptionID,
 			"datacallid":       s.DataCallID,
+			"status":           "done",
 		}
 		if s.NotesIsAISummary != nil {
 			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
@@ -777,8 +787,15 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// functionoption no longer resolves is silently dropped instead of aborting
 	// the entire batch - the all-or-nothing INSERT...SELECT was the ztmf#411
 	// foot-gun where a single bad row emptied the whole rollover.
+	//
+	// status is seeded as the 'not_started' literal (ztmf#435): the answer value
+	// carries forward in functionoptionid, but its review state for THIS cycle is
+	// reset, so a carried-over-but-untouched answer reads as not updated - the
+	// semantic the events lateral used to derive from "no event exists"
+	// (ztmf#299). The literal is a selected column so it lands in the same
+	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
 	prevScoresSqlb := squirrel.
-		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID)).
+		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), "'not_started' as status").
 		From("scores s").
 		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
 		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").
@@ -786,7 +803,7 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 
 	sqlb := squirrel.
 		Insert("scores").
-		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid").
+		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
 		Select(prevScoresSqlb).
 		PlaceholderFormat(squirrel.Dollar)
 

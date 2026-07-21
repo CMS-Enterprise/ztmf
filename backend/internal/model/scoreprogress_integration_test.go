@@ -13,11 +13,13 @@ import (
 
 // TestFindScoreProgressIntegration pins the central semantic of ztmf#299
 // against the real SQL: an answer pre-populated by copyPreviousScores does
-// NOT count as updated (the copy records no events), and the same answer
-// counts the moment a user actually saves it (the write path records an
-// event). Unit tests over the generated SQL cannot see this - it depends on
-// the interplay between the copy path, the event trigger in queryRow, and
-// the INNER lateral in the progress query.
+// NOT count as updated (the copy sets status = 'not_started'), and the same
+// answer counts the moment a user actually saves it (Save sets status =
+// 'done' in the same statement). It also pins ztmf#435's answered/total: the
+// carried-forward answer counts as QuestionsAnswered throughout, since it has
+// a row regardless of status. Unit tests over the generated SQL cannot see
+// this - it depends on the interplay between the copy path, the status
+// transition in Save, and the status filter in the progress query.
 //
 // Requires DB_* env vars pointing at a seeded ZTMF database (the dev compose
 // stack). Skipped under `go test -short`.
@@ -121,13 +123,16 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	before := findForSystem()
 	assert.Equal(t, int32(0), before.QuestionsUpdated,
 		"pre-populated answers must not count as updated")
+	assert.Equal(t, int32(1), before.QuestionsAnswered,
+		"the carried-forward answer has a row, so it counts as answered even before it is touched")
 	assert.False(t, before.UpdatedSinceStart)
 	assert.Nil(t, before.LastUpdatedAt)
-	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(0),
-		"expected count resolves through the environment mapping")
+	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(1),
+		"expected count resolves through the environment mapping and includes the applicable answered function")
 
 	// Phase 2: a user saves the copied answer through the normal write path,
-	// which records an edit event. Progress must now count it.
+	// which transitions status to 'done' in the same statement. Progress must
+	// now count it as updated.
 	var copiedScoreID int32
 	err = conn.QueryRow(ctx, `
 		SELECT scoreid FROM scores
@@ -164,6 +169,8 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	after := findForSystem()
 	assert.Equal(t, int32(1), after.QuestionsUpdated,
 		"a genuinely edited answer must count as updated")
+	assert.Equal(t, int32(1), after.QuestionsAnswered,
+		"the answer still has a row, so answered is unchanged by the edit")
 	assert.True(t, after.UpdatedSinceStart)
 	assert.LessOrEqual(t, after.QuestionsUpdated, after.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
@@ -265,10 +272,188 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 
 	assert.Greater(t, p.QuestionsExpected, int32(0),
 		"the system has applicable functions of its own")
+	assert.Equal(t, int32(0), p.QuestionsAnswered,
+		"an answer for a non-applicable function must not count as answered either - the answered numerator uses the same applicability join")
 	assert.Equal(t, int32(0), p.QuestionsUpdated,
 		"an edited answer for a non-applicable function must not count as updated")
 	assert.False(t, p.UpdatedSinceStart,
 		"updating only a non-applicable answer is not questionnaire progress")
 	assert.LessOrEqual(t, p.QuestionsUpdated, p.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
+}
+
+// TestScoreNoOpReSavePreservesNotStartedIntegration pins the ztmf#299 guard at
+// the status level: a carried-forward answer re-saved WITHOUT a real change
+// (the questionnaire UI PUTs on every Next click) must keep status =
+// 'not_started', so it never counts as updated this cycle. The sibling progress
+// test only proves not_started -> done on a genuine edit; this proves the no-op
+// guard (scoreUpdateIsNoOp) leaves status untouched, which is the exact path a
+// broken guard would regress - silently flipping carried rows to done and
+// over-counting progress, the bug this whole change exists to kill.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Two cycles anchored above every existing deadline so findPreviousDataCall
+	// (latest, excluding the target) resolves prevDC as the previous of newDC and
+	// not a seed cycle. Same reasoning as TestFindScoreProgressIntegration.
+	var prevDC, newDC int32
+	var maxDeadline time.Time
+	err = conn.QueryRow(ctx, `SELECT COALESCE(MAX(deadline), NOW()) FROM datacalls`).Scan(&maxDeadline)
+	require.NoError(t, err)
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snoop_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snoop_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
+	require.NoError(t, err)
+
+	// A valid (system, functionoption) pair whose function is applicable to the
+	// system's environment, so the carried answer surfaces in the progress query
+	// (same selection as the sibling progress test).
+	var fismaSystemID, functionOptionID int32
+	err = conn.QueryRow(ctx, `
+		SELECT s.fismasystemid, s.functionoptionid
+		FROM scores s
+		INNER JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		INNER JOIN functions f ON f.functionid = fo.functionid
+		INNER JOIN datacenterenvironments dce
+			ON dce.datacenterenvironment = fs.datacenterenvironment
+			AND dce.scoring_key = f.datacenterenvironment
+		INNER JOIN questions q ON q.questionid = f.questionid
+		WHERE fs.decommissioned = FALSE
+		LIMIT 1
+	`).Scan(&fismaSystemID, &functionOptionID)
+	require.NoError(t, err, "need one seeded score on an active system whose function is applicable to its environment")
+
+	// Seed the previous-cycle answer, then carry it forward. copyPreviousScores
+	// sets status = 'not_started' on the copied row.
+	notes := "noop preservation marker"
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+		VALUES ($1, $2, $3, $4)
+	`, fismaSystemID, functionOptionID, prevDC, notes)
+	require.NoError(t, err)
+
+	_, err = copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
+
+	var copiedScoreID int32
+	var seededStatus string
+	err = conn.QueryRow(ctx, `
+		SELECT scoreid, status FROM scores
+		WHERE datacallid = $1 AND fismasystemid = $2 AND functionoptionid = $3
+	`, newDC, fismaSystemID, functionOptionID).Scan(&copiedScoreID, &seededStatus)
+	require.NoError(t, err, "the carried-forward row must exist in the new datacall")
+	require.Equal(t, "not_started", seededStatus,
+		"copyPreviousScores must seed the carried row as not_started")
+
+	readStatus := func() string {
+		t.Helper()
+		var s string
+		require.NoError(t, conn.QueryRow(ctx, `SELECT status FROM scores WHERE scoreid = $1`, copiedScoreID).Scan(&s))
+		return s
+	}
+	questionsUpdated := func() int32 {
+		t.Helper()
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{DataCallID: &newDC, FismaSystemID: &fismaSystemID})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		return rows[0].QuestionsUpdated
+	}
+
+	require.Equal(t, int32(0), questionsUpdated(),
+		"a carried, untouched answer is not updated")
+
+	// Re-save the carried answer with identical fields - the read-through PUT the
+	// questionnaire UI issues on every Next click. This hits the no-op guard,
+	// which returns before any write, so status must NOT transition to 'done'. A
+	// real seeded editor is used so that IF the guard ever regressed and the
+	// write fired, recordEvent would attribute correctly rather than fail the
+	// test for the wrong reason.
+	var editorID, editorRole string
+	err = conn.QueryRow(ctx, `SELECT userid, role FROM users ORDER BY (role = 'OWNER') DESC LIMIT 1`).Scan(&editorID, &editorRole)
+	require.NoError(t, err, "need at least one seeded user to attribute a potential edit to")
+	editorCtx := UserToContext(ctx, &User{UserID: editorID, Role: editorRole})
+
+	sameNotes := notes
+	noop := &Score{
+		ScoreID:          copiedScoreID,
+		FismaSystemID:    fismaSystemID,
+		FunctionOptionID: functionOptionID,
+		DataCallID:       newDC,
+		Notes:            &sameNotes,
+	}
+	_, err = noop.Save(editorCtx)
+	require.NoError(t, err, "a no-op re-save must succeed")
+
+	assert.Equal(t, "not_started", readStatus(),
+		"a no-op re-save must not transition a carried answer to done (ztmf#299)")
+	assert.Equal(t, int32(0), questionsUpdated(),
+		"a no-op re-save must leave QuestionsUpdated at zero")
+}
+
+// TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration pins the
+// imported-history contract (ztmf#435): externally-loaded rows are attributed
+// with 'imported' provenance events (so last-updated shows who/when instead of
+// blank) but must NOT be marked done - an import is not a human answering this
+// cycle. The status backfill / seed status-sync only count 'created'/'updated'
+// events, so imported rows stay not_started despite carrying events. The empire
+// seed's FY2020 archives cycle (datacallid 6) is exactly this shape.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	const archivesDataCallID = 6
+	var total, notStarted, withImported, withEdit int
+	err = conn.QueryRow(ctx, `
+		SELECT
+		  count(*),
+		  count(*) FILTER (WHERE s.status = 'not_started'),
+		  count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action='imported'
+		        AND (e.payload->>'scoreid')::int = s.scoreid)),
+		  count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action IN ('created','updated')
+		        AND (e.payload->>'scoreid')::int = s.scoreid))
+		FROM public.scores s
+		WHERE s.datacallid = $1
+	`, archivesDataCallID).Scan(&total, &notStarted, &withImported, &withEdit)
+	require.NoError(t, err)
+
+	require.Greater(t, total, 0, "FY2020 archives fixture must seed imported scores")
+	assert.Equal(t, total, notStarted, "imported archive rows must stay not_started")
+	assert.Equal(t, total, withImported, "every archived row must carry an 'imported' provenance event")
+	assert.Equal(t, 0, withEdit, "archived rows must have no created/updated events (import is not an edit)")
 }
