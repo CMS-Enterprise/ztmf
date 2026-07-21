@@ -450,6 +450,26 @@ func TestListUserFismaSystems_ISSOForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- ListAssignableFismaSystems ---
+
+func TestListAssignableFismaSystems_ReadonlyAdminAllowed(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/v1/users/11111111-1111-1111-1111-111111111111/assignablefismasystems", nil)
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	ListAssignableFismaSystems(w, r)
+	assert.NotEqual(t, http.StatusForbidden, w.Code)
+}
+
+func TestListAssignableFismaSystems_ISSOForbidden(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/v1/users/11111111-1111-1111-1111-111111111111/assignablefismasystems", nil)
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	ListAssignableFismaSystems(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 // --- CreateUserFismaSystem ---
 
 func TestCreateUserFismaSystem_ReadonlyAdminForbidden(t *testing.T) {

@@ -154,6 +154,15 @@ func (u *User) CanManageFismaSystem(opdivID *int32) bool {
 	return opdivID != nil && u.IsAssignedOpDiv(*opdivID)
 }
 
+// CanBeAssignedFismaSystem reports whether a system in the given OpDiv may be
+// assigned to this (target) user: the system's OpDiv must be one the user holds
+// a grant for. Fail closed - a nil OpDiv or a user with no grants can hold no
+// system. Independent of the acting admin's tier; this closes the OWNER/HHS_ADMIN
+// cross-OpDiv gap in the assignment write (#449).
+func (u *User) CanBeAssignedFismaSystem(opdivID *int32) bool {
+	return opdivID != nil && u.IsAssignedOpDiv(*opdivID)
+}
+
 // CanAssignRole reports whether this user may assign the given role to another
 // user. Prevents tier escalation: an OPDIV_ADMIN can only mint roles at or below
 // the OpDiv tier, an HHS_ADMIN can mint anything except the platform OWNER tier,
