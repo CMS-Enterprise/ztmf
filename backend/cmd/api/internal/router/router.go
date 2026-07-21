@@ -80,6 +80,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}", controller.DeleteUser).Methods("DELETE")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/restore", controller.RestoreUser).Methods("PUT")
 
+	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignablefismasystems", controller.ListAssignableFismaSystems).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.ListUserFismaSystems).Methods("GET")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems", controller.CreateUserFismaSystem).Methods("POST")
 	router.HandleFunc("/api/v1/users/{userid:"+userIdPattern+"}/assignedfismasystems/{fismasystemid:[0-9]+}", controller.DeleteUserFismaSystem).Methods("DELETE")

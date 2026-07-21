@@ -73,6 +73,26 @@ func TestUser_IsAssignedOpDiv(t *testing.T) {
 	assert.False(t, empty.IsAssignedOpDiv(1))
 }
 
+func TestUser_CanBeAssignedFismaSystem(t *testing.T) {
+	id1, id2 := int32(1), int32(2)
+	target := &User{AssignedOpDivIDs: []*int32{&id1, &id2}}
+
+	// System's OpDiv is one the target holds a grant for.
+	assert.True(t, target.CanBeAssignedFismaSystem(&id1))
+	assert.True(t, target.CanBeAssignedFismaSystem(&id2))
+
+	// System's OpDiv is not in the target's set.
+	other := int32(3)
+	assert.False(t, target.CanBeAssignedFismaSystem(&other))
+
+	// Fail closed on a nil OpDiv (system without an OpDiv should never be assigned).
+	assert.False(t, target.CanBeAssignedFismaSystem(nil))
+
+	// Fail closed on a target with no OpDiv grants (e.g. a not-yet-provisioned user).
+	empty := &User{}
+	assert.False(t, empty.CanBeAssignedFismaSystem(&id1))
+}
+
 func TestUser_CanAccessFismaSystem(t *testing.T) {
 	opdivCMS := int32(2)
 	opdivCDC := int32(3)

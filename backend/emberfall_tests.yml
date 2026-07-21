@@ -1424,6 +1424,70 @@ tests:
     expect:
       status: 200
 
+  # ---- #449: the assignment write must not grant a system whose OpDiv the
+  # target user does not hold, regardless of the acting admin's tier, and the
+  # path userid is authoritative over any userid in the request body. ----
+
+  # OWNER (unscoped) assigning a REBELLION system (1005) to Thrawn, who holds
+  # EMPIRE only, is rejected. Before #449 both admin-side guards
+  # (guardManageFismaSystem + CanManageUser) passed for an unscoped admin and
+  # the cross-OpDiv row was written (201); now the target-OpDiv check blocks it.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1005
+    expect:
+      status: 403
+
+  # Path userid wins over a body userid. Assigning an in-OpDiv system (1003)
+  # with a different "userid" in the body still writes to the path user
+  # (Thrawn) - a body override was the way to reopen the #449 gap by validating
+  # one user and persisting another. The body value here is a DIFFERENT real,
+  # valid-v4 user (Opdiv.Admin, 88888888-...), so pre-fix Save would have
+  # succeeded and persisted the row to that user (201 with their userid); the
+  # assertion data.userid == the path user therefore proves the retarget is
+  # blocked, not merely that a malformed id was rejected.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        userid: "88888888-8888-4888-8888-888888888888"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Clean up the assignment written by the body-override case.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems/1003"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+
+  # #449 read endpoint: the assignable-systems picker returns 200 for an
+  # unscoped admin. The scoped-caller intersection and the sharesOpDiv target
+  # gate are covered by the controller/model tests.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignablefismasystems"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
   # PUT returns 204 (No Content) per controller.respond; assert the write
   # path completes cleanly. Audit-on-write is covered by the POST assertion
   # above.

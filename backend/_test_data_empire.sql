@@ -133,7 +133,12 @@ SELECT u.userid, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
         'Emperor.Palpatine@coruscant.empire',
         'Captain.Needa@executor.empire',
         'Opdiv.Admin@empire.test',
-        'Opdiv.Readonly@empire.test'
+        'Opdiv.Readonly@empire.test',
+        -- Thrawn is the assignment-test fixture. Since #449 an assignment write
+        -- rejects any system whose OpDiv the target does not hold (fail closed:
+        -- no OpDiv grant -> no assignable systems), so a properly-provisioned
+        -- ISSO must hold an OpDiv before systems can be assigned to them.
+        'Grand.Admiral.Thrawn@chiss.empire'
        )
 ON CONFLICT DO NOTHING;
 
