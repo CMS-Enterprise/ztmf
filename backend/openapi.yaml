@@ -2663,6 +2663,48 @@ paths:
       summary: Create or update a user
       tags:
       - users
+  /users/{userid}/assignablefismasystems:
+    get:
+      description: 'Systems that may be assigned to the target user: those in the
+        target''s OpDivs, intersected with the caller''s own OpDivs when the caller
+        is OpDiv-scoped.'
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_FismaSystem'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List the FISMA systems assignable to a user
+      tags:
+      - users
   /users/{userid}/assignedfismasystems:
     get:
       parameters:
