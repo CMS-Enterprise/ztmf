@@ -99,7 +99,9 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	`, fismaSystemID, functionOptionID, prevDC, notes)
 	require.NoError(t, err)
 
-	copyPreviousScores(newDC)
+	if _, err := copyPreviousScores(ctx, newDC); err != nil {
+		t.Fatalf("copyPreviousScores: %v", err)
+	}
 
 	findForSystem := func() *ScoreProgress {
 		t.Helper()

@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -45,7 +46,18 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 		return nil, err
 	}
 
-	go copyPreviousScores(dataCall.DataCallID)
+	// Roll the previous cycle's answers into a *newly created* data call only.
+	// Never on update: re-running the copy on an edit would duplicate every
+	// carried-over score (ztmf#411). Run it synchronously so the outcome is
+	// observable, but do not fail the create on a copy error - the datacall row
+	// is already committed and is valid without a rollover (the first-ever cycle
+	// legitimately copies zero rows). copyPreviousScores emits the loud
+	// ROLLOVER_ANOMALY signal on any zero/partial/errored copy.
+	if d.DataCallID == 0 {
+		if _, err := copyPreviousScores(ctx, dataCall.DataCallID); err != nil {
+			log.Println(err)
+		}
+	}
 
 	return dataCall, nil
 }
