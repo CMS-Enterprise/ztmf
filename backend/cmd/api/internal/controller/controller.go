@@ -97,6 +97,15 @@ func sanitizeErr(err error) (int, string, error) {
 	switch err.(type) {
 	case *model.InvalidInputError:
 		return 400, "", err
+	case schema.MultiError, schema.ConversionError, *schema.ConversionError,
+		schema.UnknownKeyError, *schema.UnknownKeyError,
+		schema.EmptyFieldError, *schema.EmptyFieldError:
+		// A gorilla/schema decode failure means the caller sent a query param
+		// that can't be parsed into the input struct (e.g. fismasystemid=abc).
+		// That's a client error across every GET list handler using the shared
+		// decoder.Decode + respond() pattern, so surface a clean 400 rather than
+		// falling through to a 500 that inflates 5xx metrics. (#420)
+		return 400, "", ErrInvalidQueryParam
 	}
 
 	var (

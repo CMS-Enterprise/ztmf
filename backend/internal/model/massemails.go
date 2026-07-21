@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -84,9 +85,43 @@ func (m *MassEmail) Recipients(ctx context.Context) ([]string, error) {
 
 	sqlb := massEmailGroups[m.Group]()
 
-	// log.Println(sqlb.ToSql())
+	// Scan into *string, not string: recipient sources include nullable columns
+	// (fismasystems.issoemail, datacallcontact), and imported systems in
+	// particular carry NULL emails. pgx.RowTo[string] cannot scan a SQL NULL, so
+	// a single contactless system used to abort the entire send with an opaque
+	// error before any mail was dialed (ztmf#440).
+	raw, err := query(ctx, sqlb, pgx.RowTo[*string])
+	if err != nil {
+		return nil, err
+	}
 
-	return query(ctx, sqlb, pgx.RowTo[string])
+	return dedupeRecipients(raw), nil
+}
+
+// dedupeRecipients drops NULL and blank recipient emails and de-duplicates
+// case-insensitively. NULLs come from nullable sources (issoemail,
+// datacallcontact); blanks come from string_to_table splitting a trailing or
+// doubled ';'. De-duping means a person listed via both a user row and a
+// system's issoemail is emailed once, not twice.
+func dedupeRecipients(raw []*string) []string {
+	seen := make(map[string]struct{}, len(raw))
+	emails := make([]string, 0, len(raw))
+	for _, e := range raw {
+		if e == nil {
+			continue
+		}
+		addr := strings.TrimSpace(*e)
+		if addr == "" {
+			continue
+		}
+		key := strings.ToLower(addr)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		emails = append(emails, addr)
+	}
+	return emails
 }
 
 func sqlForISSO() squirrel.SelectBuilder {

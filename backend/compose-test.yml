@@ -6,10 +6,6 @@
 # `network_mode: host` container ports to the host, so host networking silently
 # broke both targets on Apple Silicon; published ports behave identically on
 # Linux/CI. See CMS-Enterprise/ztmf#384.
-#
-# impl: the host-published ports are parametrized (TEST_DB_PORT / TEST_API_PORT)
-# so the impl test stack can run alongside main's without clobbering host ports.
-# Container ports and the service-name wiring stay fixed. See Makefile.$(ZTMF_ENV).
 
 services:
   test-db:
@@ -19,7 +15,7 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: testpass
     ports:
-      - "${TEST_DB_PORT:-54399}:54399"
+      - "54399:54399"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d ztmf -p 54399"]
       interval: 2s
@@ -44,7 +40,7 @@ services:
       AUTH_HEADER_FIELD: Authorization
       ENVIRONMENT: test
     ports:
-      - "${TEST_API_PORT:-8090}:8090"
+      - "8090:8090"
     volumes:
       - ./_test_data_empire.sql:/app/_test_data_empire.sql:ro
     depends_on:

@@ -1,0 +1,39 @@
+name: Manual Deploy to IMPL
+
+# Deploy a chosen branch to the IMPL environment on demand.
+#   - Primary use: smoke-test the nightly main -> impl sync candidate BEFORE
+#     merging it. Run:
+#       gh workflow run "Manual Deploy to IMPL" --ref automation/sync-main-to-impl
+#   - The deploy AT merge is automatic (orchestration-impl on push to impl). This
+#     workflow is the optional pre-merge preview against the shared impl env.
+# The rollout IS the terraform apply (backend.yml only builds/pushes the image;
+# ecs.tf reads the tag from the ztmf-impl_api_tag SSM param), so infrastructure
+# always runs. Caveat: re-running on an unchanged SHA fails the immutable ECR tag
+# push -- land a commit first so the build gets a new tag.
+on:
+  workflow_dispatch:
+
+jobs:
+  analysis:
+    name: Analysis
+    uses: ./.github/workflows/analysis.yml
+    secrets: inherit
+
+  backend:
+    name: Backend
+    needs:
+      - analysis
+    uses: ./.github/workflows/backend.yml
+    with:
+      environment: IMPL
+    secrets: inherit
+
+  infrastructure:
+    name: Infrastructure
+    needs:
+      - analysis
+      - backend
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: IMPL
+    secrets: inherit

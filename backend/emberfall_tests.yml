@@ -612,6 +612,39 @@ tests:
           data:
             <<: *hhsExpected
 
+  # Test A2 — clearing values (ztmf#442). On the same system (still holding the
+  # HHS values Test A preserved), an OWNER PUT that sends hva as "" clears it to
+  # NULL, and a blanked issoemail no longer 400s the whole save. HHS fields still
+  # omitted from the body stay untouched (partial-PUT contract from Test A).
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+        issoemail: "" # blanked email must not 400 (it clears to NULL)
+        hva: "" # cleared metadata field -> NULL
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            hva: null # "" cleared the column to NULL, not "" or unchanged
+            issoemail: null # blanked email cleared to NULL, no 400
+            system_owner: "Grand Moff Tarkin" # omitted HHS field preserved
+            cloud_system: "Yes" # omitted HHS field preserved
+
   # Test B — Scoped admin RBAC gate.
   #
   # Part 1: opDivAdmin POSTs a system with HHS fields → clearHHSMetadata
@@ -1307,6 +1340,89 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # Malformed query params on GET list endpoints are the caller's fault and must
+  # return 400, not 500 (#420). The gorilla/schema decode fails before scope or
+  # any DB call, so the sanitizeErr mapping is what these pin. A non-numeric int
+  # param on /scores...
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=abc"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
+  # ...and on /insights. The decode error short-circuits before the
+  # insights-enabled gate, so this is 400 regardless of enablement.
+  - url: "http://localhost:8080/api/v1/insights?fismasystemid=abc"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
+  - url: "http://localhost:8080/api/v1/insights?questionid=xyz"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+      headers:
+        content-type: "application/json"
+
+  # System assignment is idempotent (#429). Save uses ON CONFLICT ... DO UPDATE
+  # ... RETURNING so a duplicate POST returns the existing row; the old
+  # DO NOTHING RETURNING produced zero rows on conflict, which surfaced as a
+  # 404. Target user must have a version-4 UUID: FindUserByID and validate()
+  # gate on the v4-strict isValidUUID, so the all-digits placeholder users
+  # (11111111-..., 22222222-...) 404 before reaching Save. Thrawn (aa000088-...)
+  # is v4 and carries no seed assignments.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Identical POST again - the regression target. Must return the same row,
+  # not 404/500.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Remove the assignment so Thrawn's scope stays as seeded for any tests
+  # that follow.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems/1003"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
 
   # PUT returns 204 (No Content) per controller.respond; assert the write
   # path completes cleanly. Audit-on-write is covered by the POST assertion

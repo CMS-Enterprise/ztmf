@@ -594,8 +594,19 @@ components:
         lastupdatedat:
           description: |-
             LastUpdatedAt is the most recent edit event across the system's answers
-            in this data call; nil when nothing has been touched this cycle.
+            in this data call; nil when nothing has been touched this cycle. This is
+            a legitimately observational use of the events table (audit timeline),
+            kept even though the counts no longer read events.
           type: string
+        questionsanswered:
+          description: |-
+            QuestionsAnswered is the number of distinct applicable functions that
+            have an answer row in this data call, regardless of whether it was
+            touched this cycle. Counted from the same applicable-function set as
+            QuestionsExpected, so it can never exceed it. This is the answered/total
+            count a historical (closed) data call reports - carried-forward answers
+            count here even though they do not count as QuestionsUpdated.
+          type: integer
         questionsexpected:
           description: |-
             QuestionsExpected is the number of questionnaire functions applicable to
@@ -606,9 +617,11 @@ components:
         questionsupdated:
           description: |-
             QuestionsUpdated is the number of distinct functions whose answer in
-            this data call has at least one recorded edit event AND is still
-            applicable to the system's current environment. Counted from the same
-            applicable-function set as QuestionsExpected, so it can never exceed it.
+            this data call reached status = 'done' (genuinely saved this cycle) AND
+            is still applicable to the system's current environment. Counted from
+            the same applicable-function set as QuestionsExpected, so it can never
+            exceed it. Read from the persisted scores.status column, not from the
+            events audit log.
           type: integer
         updatedsincestart:
           description: |-
@@ -616,8 +629,6 @@ components:
             it answers the ticket's literal question - "has this system updated
             since the start of the data call" - by name in the response, so a
             consumer rendering a boolean chip never touches the numeric fields.
-            The anchor is real: events can only postdate the data call's creation,
-            so any counted edit necessarily happened after the cycle started.
           type: boolean
       type: object
     model.SystemEnrichment:
@@ -1709,6 +1720,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-array_model_SystemInsight'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "500":
           content:
             application/json:
@@ -2053,6 +2070,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-array_model_Score'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "500":
           content:
             application/json:
