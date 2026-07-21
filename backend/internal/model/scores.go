@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -737,26 +738,68 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 	return sql, args
 }
 
-// dataCallID is meant to be passed the *latest* datacall most recently created so the previous can be selected
-func copyPreviousScores(dataCallID int32) {
-	prevDataCall, err := findPreviousDataCall(dataCallID)
-
+// copyPreviousScores rolls the previous cycle's answers forward into the
+// newly created data call identified by dataCallID (the *latest* datacall; the
+// previous one is discovered via findPreviousDataCall). It returns the number
+// of score rows copied.
+//
+// The rollover is best-effort enrichment - it never invalidates the new data
+// call - but a zero, partial, or errored copy is surfaced loudly via the
+// ROLLOVER_ANOMALY log token (wired to a CloudWatch metric alarm) so an empty
+// cycle is detected rather than shipped silently. See ztmf#411.
+func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
+	prevDataCall, err := findPreviousDataCall(ctx, dataCallID)
 	if err != nil {
-		log.Println(err)
-		return
+		// No previous cycle (the first-ever data call) is the expected, benign
+		// case: nothing to roll forward, and not an anomaly.
+		if errors.Is(err, ErrNoData) {
+			return 0, nil
+		}
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
 	}
 
-	// select the previous scores but set the datacallid to be the latest.
-	// status is seeded as the 'not_started' literal (ztmf#435): the answer
-	// value carries forward in functionoptionid, but its review state for THIS
-	// cycle is reset, so a carried-over-but-untouched answer reads as not
-	// updated - the semantic the events lateral used to derive from "no event
-	// exists" (ztmf#299). The literal is a selected column so it lands in the
-	// same INSERT...SELECT as the copy, keeping the reset atomic with the row.
-	prevScoresSqlb := squirrel.
-		Select("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), "'not_started' as status").
+	// skip convenience methods to avoid recording events for this operation
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+	defer conn.Release()
+
+	// Total candidate rows in the previous cycle, including any that are no
+	// longer referentially valid. Compared against the count actually copied to
+	// detect a partial (or empty) rollover.
+	var expected int64
+	countSql, countArgs, _ := squirrel.
+		Select("COUNT(*)").
 		From("scores").
-		Where("datacallid=?", prevDataCall.DataCallID)
+		Where("datacallid=?", prevDataCall.DataCallID).
+		PlaceholderFormat(squirrel.Dollar).
+		ToSql()
+	if err = conn.QueryRow(ctx, countSql, countArgs...).Scan(&expected); err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+
+	// Copy the previous scores into the new cycle, rewriting datacallid to the
+	// latest. INNER JOIN the FK parents so a score whose fismasystem or
+	// functionoption no longer resolves is silently dropped instead of aborting
+	// the entire batch - the all-or-nothing INSERT...SELECT was the ztmf#411
+	// foot-gun where a single bad row emptied the whole rollover.
+	//
+	// status is seeded as the 'not_started' literal (ztmf#435): the answer value
+	// carries forward in functionoptionid, but its review state for THIS cycle is
+	// reset, so a carried-over-but-untouched answer reads as not updated - the
+	// semantic the events lateral used to derive from "no event exists"
+	// (ztmf#299). The literal is a selected column so it lands in the same
+	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
+	prevScoresSqlb := squirrel.
+		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), "'not_started' as status").
+		From("scores s").
+		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
+		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").
+		Where("s.datacallid=?", prevDataCall.DataCallID)
 
 	sqlb := squirrel.
 		Insert("scores").
@@ -764,18 +807,20 @@ func copyPreviousScores(dataCallID int32) {
 		Select(prevScoresSqlb).
 		PlaceholderFormat(squirrel.Dollar)
 
-	// skip convenience methods to avoid recording events for this operation
-	conn, err := db.Conn(context.TODO())
-	if err != nil {
-		return
-	}
-	defer conn.Release()
-
 	sql, args, _ := sqlb.ToSql()
 
-	_, err = conn.Exec(context.TODO(), sql, args...)
-
+	tag, err := conn.Exec(ctx, sql, args...)
 	if err != nil {
-		log.Println(err)
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
+		return 0, err
 	}
+
+	copied := tag.RowsAffected()
+	if copied < expected {
+		// Either zero-when-expected, or a partial copy where dead-FK rows were
+		// dropped by the JOIN. Both warrant an operator signal.
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d err=<none>", dataCallID, expected, copied)
+	}
+
+	return copied, nil
 }

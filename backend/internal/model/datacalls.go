@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -45,7 +46,18 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 		return nil, err
 	}
 
-	go copyPreviousScores(dataCall.DataCallID)
+	// Roll the previous cycle's answers into a *newly created* data call only.
+	// Never on update: re-running the copy on an edit would duplicate every
+	// carried-over score (ztmf#411). Run it synchronously so the outcome is
+	// observable, but do not fail the create on a copy error - the datacall row
+	// is already committed and is valid without a rollover (the first-ever cycle
+	// legitimately copies zero rows). copyPreviousScores emits the loud
+	// ROLLOVER_ANOMALY signal on any zero/partial/errored copy.
+	if d.DataCallID == 0 {
+		if _, err := copyPreviousScores(ctx, dataCall.DataCallID); err != nil {
+			log.Println(err)
+		}
+	}
 
 	return dataCall, nil
 }
@@ -67,10 +79,15 @@ func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 }
 
-func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
+func findPreviousDataCall(ctx context.Context, dataCallID int32) (*DataCall, error) {
 	// find the *previous* datacall by deadline (not datacallid): once historical
 	// calls are loaded, a backfilled year can out-id the real prior call, so
 	// ordering by datacallid would pick the wrong "previous" for score rollover.
+	//
+	// Known limitation (ztmf#448): this picks the globally-latest OTHER call, not
+	// the latest call with a deadline earlier than this one. Creating a backfill
+	// data call with a deadline before existing cycles resolves "previous" to a
+	// future cycle. Out of scope here; tracked separately.
 	prevDcSqlb := stmntBuilder.
 		Select(dataCallColumns...).
 		From("datacalls").
@@ -78,7 +95,7 @@ func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
 		OrderBy("deadline DESC", "datacallid DESC").
 		Limit(1)
 
-	return queryRow(context.TODO(), prevDcSqlb, pgx.RowToStructByName[DataCall])
+	return queryRow(ctx, prevDcSqlb, pgx.RowToStructByName[DataCall])
 }
 
 func FindLatestDataCall(ctx context.Context) (*DataCall, error) {
