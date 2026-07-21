@@ -276,9 +276,13 @@ func TestSaveFismaSystemTargetMaturity_ISSONotAssignedForbidden(t *testing.T) {
 // grant these surfaces, so a passing row proves the carve-out fires on the role,
 // not merely on a missing assignment.
 func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
+	// Identity matches the SYSTEM_DELEGATE row in _test_data_empire.sql so the
+	// delegate is the same conceptual user across this unit test and the Emberfall
+	// E2E. (The value is inert here - this test never hits the DB - but a shared
+	// identity avoids the confusion of a mismatched or seed-colliding UUID.)
 	delegate := &model.User{
-		UserID:               "44444444-4444-4444-4444-444444444444",
-		Email:                "delegate@test.com",
+		UserID:               "55555555-5555-4555-8555-555555555555",
+		Email:                "Delegate.User@nowhere.xyz",
 		Role:                 "SYSTEM_DELEGATE",
 		AssignedFismaSystems: []*int32{int32Ptr(1)},
 	}
