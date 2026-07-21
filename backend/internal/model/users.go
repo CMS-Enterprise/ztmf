@@ -105,6 +105,14 @@ func (u *User) HasAdminRead() bool {
 // and carrying none of the admin/OpDiv classifications - with one deliberate
 // carve-out: a delegate is barred from writing a system's target maturity (the
 // ISSO/ISSM risk assertion, #398), because that is not a data-call answer.
+//
+// Invariant: a delegate may reach nothing an ISSO can that is not a data-call
+// answer. That invariant is enforced by explicit IsSystemDelegate() rejections,
+// not a central guard, so it must be maintained by hand. Current carve-out site:
+//   - SaveFismaSystemTargetMaturity (controller/fismasystems.go)
+// If you add another ISSO/ISSM-writable surface that is not a data-call answer,
+// add the same guard there AND a row to TestSystemDelegate_ForbiddenNonAnswerSurfaces
+// (controller/authorization_test.go) so the invariant fails loudly when next touched.
 func (u *User) IsSystemDelegate() bool { return u.Role == "SYSTEM_DELEGATE" }
 
 // IsAssignedOpDiv reports whether the user has a grant in users_opdivs for

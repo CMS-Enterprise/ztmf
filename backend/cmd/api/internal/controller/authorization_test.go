@@ -265,28 +265,55 @@ func TestSaveFismaSystemTargetMaturity_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
-// A System Delegate assigned to the system is still forbidden from writing target
-// maturity (#455): it is answers-only, and target maturity is not an answer. This
-// asserts the carve-out fires on assignment, not merely the not-assigned path.
-func TestSaveFismaSystemTargetMaturity_SystemDelegateForbidden(t *testing.T) {
+// TestSystemDelegate_ForbiddenNonAnswerSurfaces pins the delegate invariant
+// (#455): a delegate may reach nothing an ISSO can that is not a data-call
+// answer. The carve-out is enforced by explicit IsSystemDelegate() rejections
+// rather than a central guard, so this table is the loud tripwire - if a future
+// PR adds an ISSO/ISSM-writable non-answer surface without guarding it, add a row
+// here and it will fail until the guard is in place.
+//
+// The delegate is assigned to the target system on purpose: assignment must NOT
+// grant these surfaces, so a passing row proves the carve-out fires on the role,
+// not merely on a missing assignment.
+func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
 	delegate := &model.User{
 		UserID:               "44444444-4444-4444-4444-444444444444",
 		Email:                "delegate@test.com",
 		Role:                 "SYSTEM_DELEGATE",
 		AssignedFismaSystems: []*int32{int32Ptr(1)},
 	}
-	body := jsonBody(t, map[string]any{
-		"target_maturity_tier":          "Advanced",
-		"target_maturity_justification": "should never write",
-	})
-	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/target-maturity", body)
-	r.Header.Set("Content-Type", "application/json")
-	r = mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
-	r = withUser(r, delegate)
-	w := httptest.NewRecorder()
 
-	SaveFismaSystemTargetMaturity(w, r)
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		request func() *http.Request
+	}{
+		{
+			name:    "target maturity write",
+			handler: SaveFismaSystemTargetMaturity,
+			request: func() *http.Request {
+				body := jsonBody(t, map[string]any{
+					"target_maturity_tier":          "Advanced",
+					"target_maturity_justification": "should never write",
+				})
+				r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/target-maturity", body)
+				r.Header.Set("Content-Type", "application/json")
+				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+			},
+		},
+		// Add a row when a new ISSO/ISSM-writable non-answer surface lands, and
+		// add the matching IsSystemDelegate() guard to its handler.
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := withUser(tc.request(), delegate)
+			w := httptest.NewRecorder()
+			tc.handler(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code,
+				"delegate must be forbidden from non-answer surface %q", tc.name)
+		})
+	}
 }
 
 // --- ListScores ---
