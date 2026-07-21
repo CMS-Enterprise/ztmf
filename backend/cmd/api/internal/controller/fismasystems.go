@@ -420,6 +420,13 @@ func SaveFismaSystemTargetMaturity(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
+	// System Delegates are answers-only (#455): target maturity is the ISSO/ISSM
+	// risk assertion (#398), not a data-call answer, so it is off-limits to them
+	// even on a system they are assigned to.
+	if authdUser.IsSystemDelegate() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
 	if !authdUser.IsAdmin() && !authdUser.IsAssignedFismaSystem(fismaSystemID) {
 		respond(w, r, nil, ErrForbidden)
 		return

@@ -15,11 +15,12 @@ var (
 	// 1. we don't need to allocate memory (for the life of the process) for things that might not be used
 	// 2. placing all the stmntBuilder.Select()... statements here would read like a jumbled mess
 	massEmailGroups = map[string]func() squirrel.SelectBuilder{
-		"ISSO":  sqlForISSO,
-		"ISSM":  sqlForISSM,
-		"DCC":   sqlForDCC,
-		"ALL":   sqlForALL, // ISSO, ISSM, DCC; excludes every admin tier
-		"ADMIN": sqlForADMIN,
+		"ISSO":            sqlForISSO,
+		"ISSM":            sqlForISSM,
+		"SYSTEM_DELEGATE": sqlForSystemDelegate,
+		"DCC":             sqlForDCC,
+		"ALL":             sqlForALL, // ISSO, ISSM, SYSTEM_DELEGATE, DCC; excludes every admin tier
+		"ADMIN":           sqlForADMIN,
 	}
 )
 
@@ -170,6 +171,17 @@ func sqlForISSM() squirrel.SelectBuilder {
 		Where("role='ISSM'")
 }
 
+// sqlForSystemDelegate selects the contractor/support-staff delegates (#455).
+// Like ISSM, delegates are addressed purely by role from the users table (there
+// is no per-system delegate contact column on fismasystems). They do data-call
+// work, so admins need a way to reach the cohort directly and via ALL.
+func sqlForSystemDelegate() squirrel.SelectBuilder {
+	return stmntBuilder.
+		Select("email").
+		From("users").
+		Where("role='SYSTEM_DELEGATE'")
+}
+
 func sqlForDCC() squirrel.SelectBuilder {
 	return stmntBuilder.
 		Select("DISTINCT string_to_table(datacallcontact,';') AS email").
@@ -178,11 +190,12 @@ func sqlForDCC() squirrel.SelectBuilder {
 
 func sqlForALL() squirrel.SelectBuilder {
 	issm, _, _ := sqlForISSM().ToSql()
+	delegate, _, _ := sqlForSystemDelegate().ToSql()
 	dcc, _, _ := sqlForDCC().ToSql()
 	issoU, _, _ := sqlForISSOUsers().ToSql()
 	issoFs, _, _ := sqlForISSOFismaSystems().ToSql()
 
 	return stmntBuilder.
 		Select("DISTINCT email as email").
-		From(fmt.Sprintf("(%s UNION ALL %s UNION ALL %s UNION ALL %s)", issm, dcc, issoU, issoFs))
+		From(fmt.Sprintf("(%s UNION ALL %s UNION ALL %s UNION ALL %s UNION ALL %s)", issm, delegate, dcc, issoU, issoFs))
 }
