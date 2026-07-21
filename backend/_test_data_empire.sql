@@ -562,19 +562,48 @@ ON CONFLICT (idm_name) DO NOTHING;
 -- Shield Gen (1003), which the Emberfall ISSO is assigned to. Gives the
 -- /systemenrichment endpoint E2E coverage via the users_fismasystems join.
 -- The payload is opaque to ztmf core (owned by the enrichment pipeline).
+-- data_center_environment ('CMS-Cloud-AWS', a canonical vocabulary value from
+-- migration 0045) deliberately disagrees with the system's own value
+-- ('Forest-Moon'), making this THE visible /datacentermismatches row (issue
+-- #239) with cfacts_value_known = TRUE.
 INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     'E1D00198-36D4-4EAB-8C00-501E1D000999',
-    '{"fisma_acronym":"SLD-GEN","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '{"fisma_acronym":"SLD-GEN","data_center_environment":"CMS-Cloud-AWS","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
+-- Enrichment for the Executor (1002, EMPIRE, active): CFACTS agrees with the
+-- system's own value ('Imperial-Fleet'), so /datacentermismatches must exclude
+-- it. Proves matching systems are filtered out, not merely absent from the data
+-- (pinned by datacentermismatches_integration_test.go against the fresh seed).
+-- Note: mid-way through the emberfall suite a PUT flips the system to 'Other',
+-- after which the row legitimately reports; the e2e assertion covers that
+-- post-edit state.
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'E0EC0100-1980-4C3D-9A7B-00F020240000',
+    '{"fisma_acronym":"SSD-EX","data_center_environment":"Imperial-Fleet","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"High"}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
+-- Enrichment for the Death Star (1001, EMPIRE, decommissioned): CFACTS
+-- disagrees ('CMS-Cloud-MAG' vs 'Space-Station'), but the system is
+-- decommissioned, so /datacentermismatches must exclude it (decommissioned
+-- drift is expected, not actionable).
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'DEA75100-1977-4A1F-8B2E-A1DE0AA00404',
+    '{"fisma_acronym":"DS-1","data_center_environment":"CMS-Cloud-MAG","cfacts":{"lifecycle_phase":"Retired","fips_impact_level":"High"}}',
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 
 -- Enrichment row for a REBELLION system (RB-1, 1005). REBELLION has
 -- insights_enabled = FALSE, so the OpDiv gate must hide this row: a read returns
 -- 404 even though the payload exists and the caller is authorized. Proves the
--- gate is the OpDiv flag, not merely a missing row.
+-- gate is the OpDiv flag, not merely a missing row. Its data_center_environment
+-- also disagrees ('Endor-Cloud' vs 'Jungle-Moon'), proving the same gate keeps
+-- non-enabled OpDivs out of /datacentermismatches.
 INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     'A1B2C300-1977-4E5F-9D0A-1234567890AB',
-    '{"fisma_acronym":"RB-1","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Low"},"scoring":{"suggested_score":1,"suggested_label":"Traditional","evidence_sources":["Kion"]}}',
+    '{"fisma_acronym":"RB-1","data_center_environment":"Endor-Cloud","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Low"},"scoring":{"suggested_score":1,"suggested_label":"Traditional","evidence_sources":["Kion"]}}',
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 
