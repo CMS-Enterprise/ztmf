@@ -33,9 +33,9 @@ type DataCenterMismatch struct {
 	// datacenterenvironments reference table. FALSE flags vocabulary drift:
 	// fixing the system would first require a new mapping row (ztmf#392), so
 	// those rows need different handling than a simple wrong value.
-	CFACTSValueKnown bool       `json:"cfacts_value_known" db:"cfacts_value_known"`
-	OpDivID          *int32     `json:"opdiv_id" db:"opdiv_id"`
-	SyncedAt         time.Time  `json:"synced_at" db:"synced_at"`
+	CFACTSValueKnown bool      `json:"cfacts_value_known" db:"cfacts_value_known"`
+	OpDivID          *int32    `json:"opdiv_id" db:"opdiv_id"`
+	SyncedAt         time.Time `json:"synced_at" db:"synced_at"`
 }
 
 // FindDataCenterMismatchesInput scopes the report. OpDivIDs /
@@ -73,13 +73,24 @@ func FindDataCenterMismatches(ctx context.Context, in FindDataCenterMismatchesIn
 			"se.synced_at",
 		).
 		From("system_enrichment se").
-		InnerJoin("fismasystems fs ON LOWER(fs.fismauid) = LOWER(se.fisma_uuid)").
+		// fismasystems.fismauid isn't unique, so a plain JOIN to the PK-keyed
+		// enrichment row fans out to every sibling system, attributing one OpDiv's
+		// payload to another (cross-OpDiv leak). LATERAL ... LIMIT 1 collapses to
+		// one system per uuid (lowest id, like FindFismaSystemByUUID).
+		JoinClause(`INNER JOIN LATERAL (
+			SELECT fs.fismasystemid, fs.fismaacronym, fs.fismaname,
+			       fs.datacenterenvironment, fs.opdiv_id
+			FROM fismasystems fs
+			WHERE LOWER(fs.fismauid) = LOWER(se.fisma_uuid)
+			  AND fs.decommissioned = FALSE
+			ORDER BY fs.fismasystemid
+			LIMIT 1
+		) fs ON TRUE`).
 		InnerJoin("opdivs o ON o.opdiv_id = fs.opdiv_id AND o.insights_enabled = TRUE").
-		Where("fs.decommissioned = FALSE").
-		Where("NULLIF(" + cfactsDC + ", '') IS NOT NULL").
+		Where("NULLIF("+cfactsDC+", '') IS NOT NULL").
 		// IS DISTINCT FROM (not <>) so a NULL ZTMF value still reports: CFACTS
 		// holding a value ZTMF lacks is a mismatch, not a non-comparison.
-		Where("LOWER(" + cfactsDC + ") IS DISTINCT FROM LOWER(TRIM(fs.datacenterenvironment))").
+		Where("LOWER("+cfactsDC+") IS DISTINCT FROM LOWER(TRIM(fs.datacenterenvironment))").
 		OrderBy("fs.fismaacronym", "fs.fismasystemid")
 
 	// OpDiv-scoped admin tiers (fail-closed): restrict to systems in the admin's

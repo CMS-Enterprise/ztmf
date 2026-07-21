@@ -110,6 +110,27 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, rows)
 	})
+
+	t.Run("DuplicateFismauidDoesNotFanOut", func(t *testing.T) {
+		// Two active systems sharing a fismauid + one (PK-keyed) enrichment row
+		// must yield ONE report row (lowest id), not one per system -- the fan-out
+		// that leaks one OpDiv's payload to another.
+		lowerID, higherID := insertDuplicateUUIDFixture(t, ctx, "ztmf239-dup-uid", "CMSDC")
+
+		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{})
+		require.NoError(t, err)
+
+		assert.NotNil(t, findMismatchBySystemID(rows, lowerID), "the lowest-fismasystemid sibling should be the single reported row")
+		assert.Nil(t, findMismatchBySystemID(rows, higherID), "the duplicate-fismauid sibling must not produce a second (phantom) row")
+
+		count := 0
+		for _, r := range rows {
+			if r.FismaSystemID == lowerID || r.FismaSystemID == higherID {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count, "a single enrichment row must not fan out across systems sharing a fismauid")
+	})
 }
 
 // insertTempMismatchFixture creates an active EMPIRE system (ztmfDCE may be ""
@@ -163,4 +184,50 @@ func findMismatchBySystemID(rows []*DataCenterMismatch, fsid int32) *DataCenterM
 		}
 	}
 	return nil
+}
+
+// insertDuplicateUUIDFixture stages the fan-out hazard: two active EMPIRE
+// systems sharing one fismauid + a single enrichment row whose CFACTS value
+// mismatches both. Returns the two fismasystemids ascending (lower = the one
+// the LATERAL's ORDER BY fismasystemid must pick). Self-cleaning.
+func insertDuplicateUUIDFixture(t *testing.T, ctx context.Context, uid, cfactsDCE string) (lowerID, higherID int32) {
+	t.Helper()
+
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	insertSystem := func(acronym, ztmfDCE string) int32 {
+		var fsid int32
+		err := conn.QueryRow(ctx, `
+			INSERT INTO fismasystems (fismauid, fismaacronym, fismaname, datacenterenvironment, opdiv_id)
+			VALUES ($1, $2, $3, $4, (SELECT opdiv_id FROM opdivs WHERE code = 'EMPIRE'))
+			RETURNING fismasystemid
+		`, uid, acronym, acronym+" dup-uuid fixture (ztmf#239)", ztmfDCE).Scan(&fsid)
+		require.NoError(t, err)
+		return fsid
+	}
+
+	// Inserted in order so the first gets the lower fismasystemid (SERIAL); both
+	// values mismatch cfactsDCE so both would report under a fan-out.
+	lowerID = insertSystem("ZTMF239-DUP-A", "Forest-Moon")
+	higherID = insertSystem("ZTMF239-DUP-B", "Endor-Orbit")
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO system_enrichment (fisma_uuid, payload)
+		VALUES ($1, jsonb_build_object('data_center_environment', $2::text))
+	`, uid, cfactsDCE)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		c, err := db.Conn(context.Background())
+		if err != nil {
+			return
+		}
+		defer c.Release()
+		_, _ = c.Exec(context.Background(), `DELETE FROM system_enrichment WHERE fisma_uuid = $1`, uid)
+		_, _ = c.Exec(context.Background(), `DELETE FROM fismasystems WHERE fismasystemid = ANY($1)`, []int32{lowerID, higherID})
+	})
+
+	return lowerID, higherID
 }
