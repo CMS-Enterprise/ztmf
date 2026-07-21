@@ -1229,3 +1229,63 @@ func TestScoringResolvesEnvironmentAliasIntegration(t *testing.T) {
 	assert.InDelta(t, base[0].SystemScore, aliased[0].SystemScore, 1e-9,
 		"an alias pointing at the same scoring_key must not change the score")
 }
+
+// TestFindPreviousDataCallByDeadlineIntegration pins the ztmf#448 fix:
+// findPreviousDataCall must resolve the most recent cycle whose deadline is
+// strictly earlier than the target call's deadline - never the globally-latest
+// other call. The bug surfaced with backfill data calls whose deadline sits
+// before existing cycles: the old query would resolve a FUTURE cycle as the
+// "previous" one and roll its answers backward.
+func TestFindPreviousDataCallByDeadlineIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	suffix := time.Now().UnixNano()
+	mk := func(name, deadline string) int32 {
+		var id int32
+		err := conn.QueryRow(ctx, `
+			INSERT INTO datacalls (datacall, datecreated, deadline)
+			VALUES ($1, NOW(), $2::timestamptz)
+			RETURNING datacallid
+		`, fmt.Sprintf("%s%s_%d", integrationTestPrefix, name, suffix), deadline).Scan(&id)
+		require.NoError(t, err)
+		return id
+	}
+
+	// Two cycles far beyond every seed deadline, plus a backfill whose deadline
+	// sits BETWEEN them. "Previous" of the backfill must be the earlier cycle,
+	// never the later (future) one.
+	before := mk("prevdc_before", "2100-01-01T00:00:00Z")
+	after := mk("prevdc_after", "2102-01-01T00:00:00Z")
+	backfill := mk("prevdc_backfill", "2101-01-01T00:00:00Z")
+
+	prev, err := findPreviousDataCall(ctx, backfill)
+	require.NoError(t, err)
+	assert.Equal(t, before, prev.DataCallID,
+		"previous of a backfill must be the earlier cycle")
+	assert.NotEqual(t, after, prev.DataCallID,
+		"previous must never resolve to a cycle with a later deadline (ztmf#448)")
+
+	// Sanity: the normal forward case still resolves the real prior cycle - the
+	// latest-deadline call before `after` is `backfill` (2101), then `before`.
+	prevOfAfter, err := findPreviousDataCall(ctx, after)
+	require.NoError(t, err)
+	assert.Equal(t, backfill, prevOfAfter.DataCallID,
+		"previous of the latest cycle is the next-earlier deadline")
+
+	// A call earlier than every existing cycle has no previous: ErrNoData, which
+	// copyPreviousScores treats as benign (nothing to roll forward).
+	earliest := mk("prevdc_earliest", "1901-01-01T00:00:00Z")
+	_, err = findPreviousDataCall(ctx, earliest)
+	assert.ErrorIs(t, err, ErrNoData,
+		"a call before all cycles has no previous, not a future one")
+}
