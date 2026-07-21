@@ -164,8 +164,9 @@ INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
--- IDs are intentionally ordered chronologically so FindLatestDataCall
--- (ORDER BY datacallid DESC) returns the open Audit cycle as current.
+-- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
+-- as tiebreak; #393), so the open Audit cycle below wins via its far-future
+-- deadline. IDs stay chronological for readability only.
 INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
