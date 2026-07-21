@@ -1686,6 +1686,62 @@ tests:
     expect:
       status: 404
 
+  # Wrong-data-center report (issue #239). Two rows at this point in the run:
+  #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
+  #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
+  #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
+  #     the "preserve HHS data" PUT above (*system1002WithHHSData) flips the
+  #     system to "Other" mid-suite, so by now it reports - proving the report
+  #     tracks live system edits. The fresh-seed "matching row is excluded"
+  #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
+  # Still excluded here: the Death Star (1001) mismatches but is decommissioned,
+  # and RB-1 (1005) mismatches but REBELLION is not insights_enabled (gated).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              fismaacronym: "SLD-GEN"
+              datacenterenvironment: "Forest-Moon"
+              cfacts_datacenterenvironment: "CMS-Cloud-AWS"
+              cfacts_value_known: true
+            - fismasystemid: 1002
+              fismaacronym: "SSD-EX"
+              datacenterenvironment: "Other"
+              cfacts_datacenterenvironment: "Imperial-Fleet"
+              cfacts_value_known: true
+
+  # The report is admin-tier only: ISSO/ISSM get 403 (the ISSO-facing
+  # "report a difference" flow is a separate ticket, not this endpoint).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # HHS_READONLY_ADMIN has unscoped read, so the report returns for it too.
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+            - fismasystemid: 1002
+
   # ZTMF Insights (issue #416). /insights is a LIST endpoint: scope and the
   # OpDiv gate yield an empty array (200), never 403/404. Array bodies assert
   # since aquia-inc/emberfall#36 closed, but only the scalar key columns are

@@ -108,6 +108,8 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/datacenterenvironments", controller.ListDataCenterEnvironments).Methods("GET")
 
+	router.HandleFunc("/api/v1/datacentermismatches", controller.ListDataCenterMismatches).Methods("GET")
+
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
 
 	router.HandleFunc("/api/v1/systemenrichment/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetSystemEnrichment).Methods("GET")
