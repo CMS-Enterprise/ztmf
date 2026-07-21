@@ -79,10 +79,15 @@ func FindDataCallByID(ctx context.Context, dataCallID int32) (*DataCall, error) 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 }
 
-func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
+func findPreviousDataCall(ctx context.Context, dataCallID int32) (*DataCall, error) {
 	// find the *previous* datacall by deadline (not datacallid): once historical
 	// calls are loaded, a backfilled year can out-id the real prior call, so
 	// ordering by datacallid would pick the wrong "previous" for score rollover.
+	//
+	// Known limitation (ztmf#448): this picks the globally-latest OTHER call, not
+	// the latest call with a deadline earlier than this one. Creating a backfill
+	// data call with a deadline before existing cycles resolves "previous" to a
+	// future cycle. Out of scope here; tracked separately.
 	prevDcSqlb := stmntBuilder.
 		Select(dataCallColumns...).
 		From("datacalls").
@@ -90,7 +95,7 @@ func findPreviousDataCall(dataCallID int32) (*DataCall, error) {
 		OrderBy("deadline DESC", "datacallid DESC").
 		Limit(1)
 
-	return queryRow(context.TODO(), prevDcSqlb, pgx.RowToStructByName[DataCall])
+	return queryRow(ctx, prevDcSqlb, pgx.RowToStructByName[DataCall])
 }
 
 func FindLatestDataCall(ctx context.Context) (*DataCall, error) {

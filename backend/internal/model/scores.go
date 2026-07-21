@@ -748,7 +748,7 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 // ROLLOVER_ANOMALY log token (wired to a CloudWatch metric alarm) so an empty
 // cycle is detected rather than shipped silently. See ztmf#411.
 func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
-	prevDataCall, err := findPreviousDataCall(dataCallID)
+	prevDataCall, err := findPreviousDataCall(ctx, dataCallID)
 	if err != nil {
 		// No previous cycle (the first-ever data call) is the expected, benign
 		// case: nothing to roll forward, and not an anomaly.
