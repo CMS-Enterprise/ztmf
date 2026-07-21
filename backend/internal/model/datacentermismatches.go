@@ -76,7 +76,7 @@ func FindDataCenterMismatches(ctx context.Context, in FindDataCenterMismatchesIn
 		// fismasystems.fismauid isn't unique, so a plain JOIN to the PK-keyed
 		// enrichment row fans out to every sibling system, attributing one OpDiv's
 		// payload to another (cross-OpDiv leak). LATERAL ... LIMIT 1 collapses to
-		// one system per uuid (lowest id, like FindFismaSystemByUUID).
+		// one active system per uuid, picking the lowest fismasystemid.
 		JoinClause(`INNER JOIN LATERAL (
 			SELECT fs.fismasystemid, fs.fismaacronym, fs.fismaname,
 			       fs.datacenterenvironment, fs.opdiv_id
