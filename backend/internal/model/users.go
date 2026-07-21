@@ -100,6 +100,13 @@ func (u *User) HasAdminRead() bool {
 	return u.IsAdmin() || u.IsReadOnlyAdmin()
 }
 
+// IsSystemDelegate reports the contractor/support-staff tier (#455). It is
+// system-scoped exactly like ISSO/ISSM - gated everywhere by IsAssignedFismaSystem
+// and carrying none of the admin/OpDiv classifications - with one deliberate
+// carve-out: a delegate is barred from writing a system's target maturity (the
+// ISSO/ISSM risk assertion, #398), because that is not a data-call answer.
+func (u *User) IsSystemDelegate() bool { return u.Role == "SYSTEM_DELEGATE" }
+
 // IsAssignedOpDiv reports whether the user has a grant in users_opdivs for
 // the given OpDiv id. Used in scope predicates that need to confirm an
 // OpDiv-scoped admin owns the resource they are touching.
@@ -166,7 +173,7 @@ func (u *User) CanAssignRole(role string) bool {
 		return role != "OWNER"
 	case "OPDIV_ADMIN":
 		switch role {
-		case "OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", "ISSO", "ISSM":
+		case "OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", "ISSO", "ISSM", "SYSTEM_DELEGATE":
 			return true
 		}
 	}

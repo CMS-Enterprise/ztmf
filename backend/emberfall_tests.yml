@@ -22,6 +22,12 @@ opDivAdminHeaders: &opDivAdminHeaders
 opDivReadonlyHeaders: &opDivReadonlyHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
 
+# System Delegate (#455): contractor/support-staff, system-scoped like ISSO but
+# answers-only. Assigned to Death Star (1001) only. Email claim
+# delegate.user@nowhere.xyz. Must 403 on target maturity even for 1001.
+delegateHeaders: &delegateHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImRlbGVnYXRlLnVzZXJAbm93aGVyZS54eXoifQ.yo5KvkCAnmcBbTGRNQZEfnaE8uXSe8zfgmofOiaL_rU"
+
 # Data definitions using YAML anchors.
 # The deadline is intentionally far-future — beyond the empire seed's
 # furthest-out call (Audit Fields Smoke Cycle, 2099-12-31) — so this
@@ -2127,6 +2133,92 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # ==========================================================================
+  # System Delegate RBAC (#455)
+  # delegateHeaders is assigned to Death Star (1001) only. It behaves exactly
+  # like an ISSO EXCEPT it is barred from writing target maturity (answers-only).
+  # ==========================================================================
+
+  # Delegate can authenticate; role is distinguishable from ISSO in the response.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Delegate.User@nowhere.xyz"
+            role: "SYSTEM_DELEGATE"
+
+  # Carve-out: delegate is FORBIDDEN from writing target maturity even on its
+  # assigned system (1001). This is the one behavioral difference from ISSO/ISSM.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "delegate must never write this"
+    expect:
+      status: 403
+
+  # Delegate CAN read scores for its assigned system (1001).
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Delegate reading an UNASSIGNED system (Shield Gen, 1003) gets empty data, not
+  # 403 - same system-scoped list behavior as ISSO.
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1003&include_pillars=true
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Delegate is locked out of the admin surface: audit trail 403.
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate is locked out of user management: list 403.
+  - url: http://localhost:8080/api/v1/users
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate cannot create users (write blocked).
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "blocked@example.com"
+        fullname: "Blocked User"
+        role: "ISSO"
+    expect:
+      status: 403
 
   # ==========================================================================
   # OpDiv-scoped RBAC enforcement (feature/opdiv-rbac-enforcement)

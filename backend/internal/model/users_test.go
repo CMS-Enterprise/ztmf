@@ -35,6 +35,9 @@ var roleMatrix = []roleMatrixRow{
 	// System-scoped tiers (unchanged)
 	{role: "ISSO"},
 	{role: "ISSM"},
+	// Contractor/support-staff tier (#455): system-scoped like ISSO/ISSM, so
+	// every admin/OpDiv helper is false, same as those rows.
+	{role: "SYSTEM_DELEGATE"},
 	// Unknown roles - all helpers must return false.
 	{role: ""},
 	{role: "UNKNOWN"},
@@ -52,6 +55,13 @@ func TestUser_RoleHelpers(t *testing.T) {
 			assert.Equal(t, tt.isReadOnlyAdmin, u.IsReadOnlyAdmin(), "IsReadOnlyAdmin")
 			assert.Equal(t, tt.hasAdminRead, u.HasAdminRead(), "HasAdminRead")
 		})
+	}
+}
+
+func TestUser_IsSystemDelegate(t *testing.T) {
+	assert.True(t, (&User{Role: "SYSTEM_DELEGATE"}).IsSystemDelegate(), "delegate role")
+	for _, role := range []string{"ISSO", "ISSM", "OPDIV_ADMIN", "OWNER", "HHS_ADMIN", "", "UNKNOWN"} {
+		assert.False(t, (&User{Role: role}).IsSystemDelegate(), role+" is not a delegate")
 	}
 }
 
@@ -204,8 +214,13 @@ func TestUser_CanAssignRole(t *testing.T) {
 		{"OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", true},
 		{"OPDIV_ADMIN", "ISSO", true},
 		{"OPDIV_ADMIN", "ISSM", true},
-		{"OPDIV_READONLY_ADMIN", "ISSO", false}, // read-only cannot assign at all
+		{"OPDIV_ADMIN", "SYSTEM_DELEGATE", true},
+		{"HHS_ADMIN", "SYSTEM_DELEGATE", true},
+		{"OWNER", "SYSTEM_DELEGATE", true},
+		{"OPDIV_READONLY_ADMIN", "ISSO", false},            // read-only cannot assign at all
+		{"OPDIV_READONLY_ADMIN", "SYSTEM_DELEGATE", false}, // read-only cannot assign at all
 		{"ISSO", "ISSO", false},
+		{"SYSTEM_DELEGATE", "SYSTEM_DELEGATE", false}, // delegate cannot assign roles
 	}
 	for _, tt := range tests {
 		t.Run(tt.actor+"->"+tt.target, func(t *testing.T) {

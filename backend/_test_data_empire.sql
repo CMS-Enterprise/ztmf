@@ -94,6 +94,14 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
 
+-- System Delegate fixture (#455): contractor/support-staff tier, system-scoped
+-- like ISSO but answers-only (barred from target maturity). Assigned to Death Star
+-- (1001), which is enrolled in the open Audit cycle so E2E can exercise score writes.
+-- v4-conforming UUID so it satisfies isValidUUID when used as a path param.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('55555555-5555-4555-8555-555555555555', 'Delegate.User@nowhere.xyz', 'System Delegate Test User', 'SYSTEM_DELEGATE', 'okta')
+    ON CONFLICT DO NOTHING;
+
 -- Pre-deleted user fixture for RestoreUser tests.
 -- UUID is v4-conforming (4 at position 14, 8 at position 19) so it satisfies
 -- isValidUUID's strict regex when used as a path param.
@@ -322,6 +330,7 @@ INSERT INTO public.users_fismasystems VALUES ('22222222-2222-2222-2222-222222222
 INSERT INTO public.users_fismasystems VALUES ('33333333-3333-3333-3333-333333333333', 1001) ON CONFLICT DO NOTHING; -- Veers -> Death Star  
 INSERT INTO public.users_fismasystems VALUES ('44444444-4444-4444-4444-444444444444', 1003) ON CONFLICT DO NOTHING; -- Krennic -> Shield Gen
 INSERT INTO public.users_fismasystems VALUES ('66666666-6666-6666-6666-666666666666', 1003) ON CONFLICT DO NOTHING; -- Emberfall ISSO -> Shield Gen (for system_enrichment access E2E tests)
+INSERT INTO public.users_fismasystems VALUES ('55555555-5555-4555-8555-555555555555', 1001) ON CONFLICT DO NOTHING; -- System Delegate -> Death Star (answers-only E2E: score write allowed, target maturity 403)
 
 -- DataCall-System Assignments (Systems participating in audits)
 INSERT INTO public.datacalls_fismasystems VALUES (3, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review

@@ -265,6 +265,30 @@ func TestSaveFismaSystemTargetMaturity_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// A System Delegate assigned to the system is still forbidden from writing target
+// maturity (#455): it is answers-only, and target maturity is not an answer. This
+// asserts the carve-out fires on assignment, not merely the not-assigned path.
+func TestSaveFismaSystemTargetMaturity_SystemDelegateForbidden(t *testing.T) {
+	delegate := &model.User{
+		UserID:               "44444444-4444-4444-4444-444444444444",
+		Email:                "delegate@test.com",
+		Role:                 "SYSTEM_DELEGATE",
+		AssignedFismaSystems: []*int32{int32Ptr(1)},
+	}
+	body := jsonBody(t, map[string]any{
+		"target_maturity_tier":          "Advanced",
+		"target_maturity_justification": "should never write",
+	})
+	r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/target-maturity", body)
+	r.Header.Set("Content-Type", "application/json")
+	r = mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+	r = withUser(r, delegate)
+	w := httptest.NewRecorder()
+
+	SaveFismaSystemTargetMaturity(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 // --- ListScores ---
 
 func TestListScores_ReadonlyAdminAllowed(t *testing.T) {
