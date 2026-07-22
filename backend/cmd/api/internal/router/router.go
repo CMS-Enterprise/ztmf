@@ -51,6 +51,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/fismasystems", controller.ListDataCallFismaSystems).Methods("GET")
 
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export", controller.GetDatacallExport).Methods("GET")
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/export/timespent", controller.GetDatacallTimeSpentExport).Methods("GET")
 
 	router.HandleFunc("/api/v1/fismasystems", controller.ListFismaSystems).Methods("GET")
 	router.HandleFunc("/api/v1/fismasystems", controller.SaveFismaSystem).Methods("POST")
@@ -112,6 +113,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacentermismatches", controller.ListDataCenterMismatches).Methods("GET")
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
+	// records that a user opened a questionnaire question (time-spent analytics)
+	router.HandleFunc("/api/v1/events/view", controller.RecordQuestionView).Methods("POST")
 
 	router.HandleFunc("/api/v1/systemenrichment/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetSystemEnrichment).Methods("GET")
 

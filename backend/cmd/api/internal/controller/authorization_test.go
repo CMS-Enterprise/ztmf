@@ -791,3 +791,50 @@ func TestGetScoresProgress_MissingDataCall_BadRequest(t *testing.T) {
 		})
 	}
 }
+
+// --- RecordQuestionView ---
+
+// TestRecordQuestionView_ReadonlyAdminAllowed pins the #368 loosening: a
+// read-only session is now RECORDED (its readonly flag routes the dwell to
+// viewer time) rather than rejected with 403. A read-only HHS admin has
+// unscoped read, so guardViewFismaSystem short-circuits without a DB hit; the
+// handler must not return Forbidden. It may fail later with a 5xx trying to
+// write the event with no DB, which is fine - we only assert it is not gated.
+func TestRecordQuestionView_ReadonlyAdminAllowed(t *testing.T) {
+	body := jsonBody(t, model.QuestionViewInput{
+		FismaSystemID: 1,
+		DataCallID:    2,
+		QuestionID:    3,
+		ReadOnly:      true,
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/events/view", body)
+	r.Header.Set("Content-Type", "application/json")
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	RecordQuestionView(w, r)
+
+	assert.NotEqual(t, http.StatusForbidden, w.Code, "read-only sessions must now be recorded, not rejected")
+}
+
+// TestRecordQuestionView_UnrelatedSystemForbidden confirms the remaining gate:
+// an ISSO/ISSM with no relationship to the target system is still rejected, so
+// analytics never accrue for a system the caller cannot see. issoUser has no
+// assigned systems, so guardViewFismaSystem falls through to a scoped access
+// check; with no DB, FindFismaSystem errors, but the not-assigned path is
+// exercised (it must not be silently allowed as a 204).
+func TestRecordQuestionView_UnrelatedSystemNotAllowed(t *testing.T) {
+	body := jsonBody(t, model.QuestionViewInput{
+		FismaSystemID: 999,
+		DataCallID:    2,
+		QuestionID:    3,
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/events/view", body)
+	r.Header.Set("Content-Type", "application/json")
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	RecordQuestionView(w, r)
+
+	assert.NotEqual(t, http.StatusNoContent, w.Code, "an unrelated system must not be recorded")
+}

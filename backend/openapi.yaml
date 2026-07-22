@@ -555,6 +555,21 @@ components:
         questionid:
           type: integer
       type: object
+    model.QuestionViewInput:
+      properties:
+        datacallid:
+          type: integer
+        fismasystemid:
+          type: integer
+        questionid:
+          type: integer
+        readonly:
+          description: |-
+            ReadOnly is true when the caller opened the question in a read-only
+            session. It decides whether this view's dwell counts as viewer time
+            (true) or editor time (false) in the time-spent analytics.
+          type: boolean
+      type: object
     model.Score:
       properties:
         datacallid:
@@ -984,6 +999,47 @@ paths:
       summary: Export a data call's answers as an xlsx spreadsheet
       tags:
       - datacalls
+  /datacalls/{datacallid}/export/timespent:
+    get:
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      - description: FISMA system IDs to filter by
+        in: query
+        name: fsids
+        schema:
+          items:
+            type: integer
+          type: array
+      responses:
+        "200":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+          description: xlsx spreadsheet of the data call's time-spent analytics
+        "400":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "500":
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Export a data call's questionnaire time-spent analytics as an xlsx
+        spreadsheet
+      tags:
+      - datacalls
   /datacalls/{datacallid}/fismasystems:
     get:
       parameters:
@@ -1132,7 +1188,7 @@ paths:
         name: userid
         schema:
           type: string
-      - description: 'Filter by action: created, updated, or deleted'
+      - description: 'Filter by action: created, updated, deleted, or viewed'
         in: query
         name: action
         schema:
@@ -1184,6 +1240,52 @@ paths:
       security:
       - bearerAuth: []
       summary: List audit-trail events
+      tags:
+      - events
+  /events/view:
+    post:
+      description: Appends a 'viewed' event marking that the caller opened a questionnaire
+        question, so time-spent analytics can bound how long the question was worked
+        on before the next event. Recorded for any caller who can see the system (read-only
+        sessions included, via the readonly flag which splits the dwell into viewer
+        vs editor time); a caller may only record views for a system they have a relationship
+        to (admins any, OpDiv-scoped admins their OpDivs, ISSO/ISSM their assigned
+        systems).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.QuestionViewInput'
+                description: Question view to record
+                summary: body
+        description: Question view to record
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Record a questionnaire question view
       tags:
       - events
   /fismasystems:
