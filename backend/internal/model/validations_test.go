@@ -26,6 +26,7 @@ func TestIsValidRole(t *testing.T) {
 		// System-scoped roles, unchanged across the transition.
 		{"ISSO is valid", "ISSO", true},
 		{"ISSM is valid", "ISSM", true},
+		{"SYSTEM_DELEGATE is valid", "SYSTEM_DELEGATE", true},
 
 		// Negative cases.
 		{"lowercase admin is invalid", "admin", false},

@@ -94,6 +94,14 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
 
+-- System Delegate fixture (#455): contractor/support-staff tier, system-scoped
+-- like ISSO but answers-only (barred from target maturity). Assigned to Death Star
+-- (1001), which is enrolled in the open Audit cycle so E2E can exercise score writes.
+-- v4-conforming UUID so it satisfies isValidUUID when used as a path param.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('55555555-5555-4555-8555-555555555555', 'Delegate.User@nowhere.xyz', 'System Delegate Test User', 'SYSTEM_DELEGATE', 'okta')
+    ON CONFLICT DO NOTHING;
+
 -- Pre-deleted user fixture for RestoreUser tests.
 -- UUID is v4-conforming (4 at position 14, 8 at position 19) so it satisfies
 -- isValidUUID's strict regex when used as a path param.
@@ -133,7 +141,12 @@ SELECT u.userid, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE')
         'Emperor.Palpatine@coruscant.empire',
         'Captain.Needa@executor.empire',
         'Opdiv.Admin@empire.test',
-        'Opdiv.Readonly@empire.test'
+        'Opdiv.Readonly@empire.test',
+        -- Thrawn is the assignment-test fixture. Since #449 an assignment write
+        -- rejects any system whose OpDiv the target does not hold (fail closed:
+        -- no OpDiv grant -> no assignable systems), so a properly-provisioned
+        -- ISSO must hold an OpDiv before systems can be assigned to them.
+        'Grand.Admiral.Thrawn@chiss.empire'
        )
 ON CONFLICT DO NOTHING;
 
@@ -164,8 +177,9 @@ INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
 INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
--- IDs are intentionally ordered chronologically so FindLatestDataCall
--- (ORDER BY datacallid DESC) returns the open Audit cycle as current.
+-- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
+-- as tiebreak; #393), so the open Audit cycle below wins via its far-future
+-- deadline. IDs stay chronological for readability only.
 INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
@@ -322,6 +336,7 @@ INSERT INTO public.users_fismasystems VALUES ('22222222-2222-2222-2222-222222222
 INSERT INTO public.users_fismasystems VALUES ('33333333-3333-3333-3333-333333333333', 1001) ON CONFLICT DO NOTHING; -- Veers -> Death Star  
 INSERT INTO public.users_fismasystems VALUES ('44444444-4444-4444-4444-444444444444', 1003) ON CONFLICT DO NOTHING; -- Krennic -> Shield Gen
 INSERT INTO public.users_fismasystems VALUES ('66666666-6666-6666-6666-666666666666', 1003) ON CONFLICT DO NOTHING; -- Emberfall ISSO -> Shield Gen (for system_enrichment access E2E tests)
+INSERT INTO public.users_fismasystems VALUES ('55555555-5555-4555-8555-555555555555', 1001) ON CONFLICT DO NOTHING; -- System Delegate -> Death Star (answers-only E2E: score write allowed, target maturity 403)
 
 -- DataCall-System Assignments (Systems participating in audits)
 INSERT INTO public.datacalls_fismasystems VALUES (3, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review
@@ -562,19 +577,48 @@ ON CONFLICT (idm_name) DO NOTHING;
 -- Shield Gen (1003), which the Emberfall ISSO is assigned to. Gives the
 -- /systemenrichment endpoint E2E coverage via the users_fismasystems join.
 -- The payload is opaque to ztmf core (owned by the enrichment pipeline).
+-- data_center_environment ('CMS-Cloud-AWS', a canonical vocabulary value from
+-- migration 0045) deliberately disagrees with the system's own value
+-- ('Forest-Moon'), making this THE visible /datacentermismatches row (issue
+-- #239) with cfacts_value_known = TRUE.
 INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     'E1D00198-36D4-4EAB-8C00-501E1D000999',
-    '{"fisma_acronym":"SLD-GEN","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '{"fisma_acronym":"SLD-GEN","data_center_environment":"CMS-Cloud-AWS","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Moderate"},"scoring":{"suggested_score":2,"suggested_label":"Initial","evidence_sources":["Kion","Hardenize"]}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
+-- Enrichment for the Executor (1002, EMPIRE, active): CFACTS agrees with the
+-- system's own value ('Imperial-Fleet'), so /datacentermismatches must exclude
+-- it. Proves matching systems are filtered out, not merely absent from the data
+-- (pinned by datacentermismatches_integration_test.go against the fresh seed).
+-- Note: mid-way through the emberfall suite a PUT flips the system to 'Other',
+-- after which the row legitimately reports; the e2e assertion covers that
+-- post-edit state.
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'E0EC0100-1980-4C3D-9A7B-00F020240000',
+    '{"fisma_acronym":"SSD-EX","data_center_environment":"Imperial-Fleet","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"High"}}',
+    '2026-05-20 00:00:00+00'
+) ON CONFLICT (fisma_uuid) DO NOTHING;
+
+-- Enrichment for the Death Star (1001, EMPIRE, decommissioned): CFACTS
+-- disagrees ('CMS-Cloud-MAG' vs 'Space-Station'), but the system is
+-- decommissioned, so /datacentermismatches must exclude it (decommissioned
+-- drift is expected, not actionable).
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
+    'DEA75100-1977-4A1F-8B2E-A1DE0AA00404',
+    '{"fisma_acronym":"DS-1","data_center_environment":"CMS-Cloud-MAG","cfacts":{"lifecycle_phase":"Retired","fips_impact_level":"High"}}',
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 
 -- Enrichment row for a REBELLION system (RB-1, 1005). REBELLION has
 -- insights_enabled = FALSE, so the OpDiv gate must hide this row: a read returns
 -- 404 even though the payload exists and the caller is authorized. Proves the
--- gate is the OpDiv flag, not merely a missing row.
+-- gate is the OpDiv flag, not merely a missing row. Its data_center_environment
+-- also disagrees ('Endor-Cloud' vs 'Jungle-Moon'), proving the same gate keeps
+-- non-enabled OpDivs out of /datacentermismatches.
 INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES (
     'A1B2C300-1977-4E5F-9D0A-1234567890AB',
-    '{"fisma_acronym":"RB-1","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Low"},"scoring":{"suggested_score":1,"suggested_label":"Traditional","evidence_sources":["Kion"]}}',
+    '{"fisma_acronym":"RB-1","data_center_environment":"Endor-Cloud","cfacts":{"lifecycle_phase":"Operational","fips_impact_level":"Low"},"scoring":{"suggested_score":1,"suggested_label":"Traditional","evidence_sources":["Kion"]}}',
     '2026-05-20 00:00:00+00'
 ) ON CONFLICT (fisma_uuid) DO NOTHING;
 

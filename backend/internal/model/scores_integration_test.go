@@ -337,7 +337,9 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	// Run the rollover. copyPreviousScores is unexported and accepts
 	// the *latest* datacallid — it discovers the previous one via
 	// findPreviousDataCall.
-	copyPreviousScores(newDC)
+	copied, err := copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, copied, "copyPreviousScores must report the one row it carried forward")
 
 	// After copy: the new datacall has at least the marker score.
 	var afterCount int
@@ -350,6 +352,66 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, afterCount,
 		"copyPreviousScores must carry the marker (system, functionoption) into the new datacall")
+}
+
+// TestCopyPreviousScoresEmptyPreviousIntegration covers the benign zero-row
+// rollover: a previous cycle that exists but holds no scores. This must be
+// handled cleanly - copied == 0, no error, and NO ROLLOVER_ANOMALY - so it is
+// distinguishable from the failure case where a non-empty previous cycle copies
+// zero rows. See ztmf#411.
+//
+// Note on the resilient INNER JOIN in copyPreviousScores: it drops previous-cycle
+// score rows whose fismasystem/functionoption FK parents no longer resolve, so a
+// single bad row can no longer abort the whole batch. That dead-FK state cannot
+// be manufactured here - scores.fismasystemid/functionoptionid are NOT NULL FKs
+// and their parents are ON DELETE RESTRICT, so the DB refuses to create or orphan
+// such a row. The JOIN is therefore defense-in-depth against a state the schema
+// currently prevents; the happy-path test above proves it does not drop VALID
+// rows (copied == 1), and this test proves the expected-vs-copied accounting does
+// not false-alarm on a legitimately empty previous cycle.
+func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	// Same two-datacall setup as the happy path (deadlines beat every seed row so
+	// prevDC is the unambiguous previous of newDC), but seed NO scores under
+	// prevDC.
+	var prevDC, newDC int32
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sprev_empty_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snew_empty_%d", integrationTestPrefix, suffix)).Scan(&newDC)
+	require.NoError(t, err)
+
+	copied, err := copyPreviousScores(ctx, newDC)
+	require.NoError(t, err, "an empty previous cycle is benign, not an error")
+	assert.EqualValues(t, 0, copied, "an empty previous cycle copies zero rows")
+
+	var afterCount int
+	err = conn.QueryRow(ctx,
+		`SELECT COUNT(*) FROM scores WHERE datacallid = $1`, newDC,
+	).Scan(&afterCount)
+	require.NoError(t, err)
+	assert.Equal(t, 0, afterCount, "newDC must remain empty when the previous cycle had no scores")
 }
 
 // TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by
@@ -1166,4 +1228,64 @@ func TestScoringResolvesEnvironmentAliasIntegration(t *testing.T) {
 	require.Len(t, aliased, len(base), "same system + scores must yield the same number of aggregate rows")
 	assert.InDelta(t, base[0].SystemScore, aliased[0].SystemScore, 1e-9,
 		"an alias pointing at the same scoring_key must not change the score")
+}
+
+// TestFindPreviousDataCallByDeadlineIntegration pins the ztmf#448 fix:
+// findPreviousDataCall must resolve the most recent cycle whose deadline is
+// strictly earlier than the target call's deadline - never the globally-latest
+// other call. The bug surfaced with backfill data calls whose deadline sits
+// before existing cycles: the old query would resolve a FUTURE cycle as the
+// "previous" one and roll its answers backward.
+func TestFindPreviousDataCallByDeadlineIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	suffix := time.Now().UnixNano()
+	mk := func(name, deadline string) int32 {
+		var id int32
+		err := conn.QueryRow(ctx, `
+			INSERT INTO datacalls (datacall, datecreated, deadline)
+			VALUES ($1, NOW(), $2::timestamptz)
+			RETURNING datacallid
+		`, fmt.Sprintf("%s%s_%d", integrationTestPrefix, name, suffix), deadline).Scan(&id)
+		require.NoError(t, err)
+		return id
+	}
+
+	// Two cycles far beyond every seed deadline, plus a backfill whose deadline
+	// sits BETWEEN them. "Previous" of the backfill must be the earlier cycle,
+	// never the later (future) one.
+	before := mk("prevdc_before", "2100-01-01T00:00:00Z")
+	after := mk("prevdc_after", "2102-01-01T00:00:00Z")
+	backfill := mk("prevdc_backfill", "2101-01-01T00:00:00Z")
+
+	prev, err := findPreviousDataCall(ctx, backfill)
+	require.NoError(t, err)
+	assert.Equal(t, before, prev.DataCallID,
+		"previous of a backfill must be the earlier cycle")
+	assert.NotEqual(t, after, prev.DataCallID,
+		"previous must never resolve to a cycle with a later deadline (ztmf#448)")
+
+	// Sanity: the normal forward case still resolves the real prior cycle - the
+	// latest-deadline call before `after` is `backfill` (2101), then `before`.
+	prevOfAfter, err := findPreviousDataCall(ctx, after)
+	require.NoError(t, err)
+	assert.Equal(t, backfill, prevOfAfter.DataCallID,
+		"previous of the latest cycle is the next-earlier deadline")
+
+	// A call earlier than every existing cycle has no previous: ErrNoData, which
+	// copyPreviousScores treats as benign (nothing to roll forward).
+	earliest := mk("prevdc_earliest", "1901-01-01T00:00:00Z")
+	_, err = findPreviousDataCall(ctx, earliest)
+	assert.ErrorIs(t, err, ErrNoData,
+		"a call before all cycles has no previous, not a future one")
 }

@@ -21,6 +21,7 @@ var roles = map[string]interface{}{
 	"OPDIV_READONLY_ADMIN": nil, // single-OpDiv read-only, scoped via users_opdivs
 	"ISSO":                 nil, // system-scoped via users_fismasystems
 	"ISSM":                 nil, // system-scoped via users_fismasystems
+	"SYSTEM_DELEGATE":      nil, // contractor/support staff: system-scoped, data-call answers only (#455)
 }
 
 var rgxUUID = regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")

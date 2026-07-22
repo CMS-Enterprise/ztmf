@@ -52,7 +52,7 @@ func TestMassEmailRecipientsSkipsNullIntegration(t *testing.T) {
 
 	// Every group whose recipient query touches a nullable column must now
 	// succeed rather than error on the NULL.
-	for _, group := range []string{"ISSO", "DCC", "ALL"} {
+	for _, group := range []string{"ISSO", "ISSM", "SYSTEM_DELEGATE", "DCC", "ALL"} {
 		t.Run(group, func(t *testing.T) {
 			m := &MassEmail{Group: group, Subject: "regression subject", Body: "regression body"}
 			recipients, err := m.Recipients(ctx)

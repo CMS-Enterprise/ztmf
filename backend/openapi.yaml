@@ -55,6 +55,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_DataCenterMismatch:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.DataCenterMismatch'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_Event:
       properties:
         data:
@@ -313,6 +323,37 @@ components:
           type: string
         selectable:
           type: boolean
+      type: object
+    model.DataCenterMismatch:
+      properties:
+        cfacts_datacenterenvironment:
+          description: |-
+            CFACTSDataCenterEnvironment is the pipeline-reported value, trimmed but
+            otherwise verbatim so the report shows exactly what CFACTS holds.
+          type: string
+        cfacts_value_known:
+          description: |-
+            CFACTSValueKnown reports whether the CFACTS value appears in the
+            datacenterenvironments reference table. FALSE flags vocabulary drift:
+            fixing the system would first require a new mapping row (ztmf#392), so
+            those rows need different handling than a simple wrong value.
+          type: boolean
+        datacenterenvironment:
+          description: |-
+            DataCenterEnvironment is ZTMF's own (self-reported) value. NULL when the
+            system has none recorded; that still counts as a mismatch, since CFACTS
+            reporting a value ZTMF lacks is drift worth surfacing.
+          type: string
+        fismaacronym:
+          type: string
+        fismaname:
+          type: string
+        fismasystemid:
+          type: integer
+        opdiv_id:
+          type: integer
+        synced_at:
+          type: string
       type: object
     model.Event:
       properties:
@@ -1057,6 +1098,32 @@ paths:
       summary: List datacenterenvironment mappings
       tags:
       - datacenterenvironments
+  /datacentermismatches:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_DataCenterMismatch'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List systems whose CFACTS data center environment disagrees with ZTMF's
+      tags:
+      - datacentermismatches
   /events:
     get:
       parameters:
@@ -2594,6 +2661,48 @@ paths:
       security:
       - bearerAuth: []
       summary: Create or update a user
+      tags:
+      - users
+  /users/{userid}/assignablefismasystems:
+    get:
+      description: 'Systems that may be assigned to the target user: those in the
+        target''s OpDivs, intersected with the caller''s own OpDivs when the caller
+        is OpDiv-scoped.'
+      parameters:
+      - description: User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_FismaSystem'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List the FISMA systems assignable to a user
       tags:
       - users
   /users/{userid}/assignedfismasystems:

@@ -101,7 +101,9 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	`, fismaSystemID, functionOptionID, prevDC, notes)
 	require.NoError(t, err)
 
-	copyPreviousScores(newDC)
+	if _, err := copyPreviousScores(ctx, newDC); err != nil {
+		t.Fatalf("copyPreviousScores: %v", err)
+	}
 
 	findForSystem := func() *ScoreProgress {
 		t.Helper()
@@ -355,7 +357,8 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 	`, fismaSystemID, functionOptionID, prevDC, notes)
 	require.NoError(t, err)
 
-	copyPreviousScores(newDC)
+	_, err = copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
 
 	var copiedScoreID int32
 	var seededStatus string

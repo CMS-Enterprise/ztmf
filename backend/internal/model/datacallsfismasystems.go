@@ -54,7 +54,11 @@ func FindFismaSystemDataCalls(ctx context.Context, fismasystemID int32) ([]*Data
 		From("datacalls dc").
 		InnerJoin("datacalls_fismasystems dcfs ON dc.datacallid = dcfs.datacallid").
 		Where("dcfs.fismasystemid = ?", fismasystemID).
-		OrderBy("dc.datecreated DESC")
+		// Deadline ordering (datacallid as tiebreak) to match FindDataCalls /
+		// FindLatestDataCall (#393): a backfilled historical call carries a
+		// recent datecreated, so datecreated ordering would sort it above the
+		// real current cycle.
+		OrderBy("dc.deadline DESC", "dc.datacallid DESC")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCall])
 }
