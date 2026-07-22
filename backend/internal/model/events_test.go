@@ -53,11 +53,11 @@ func TestUserToContext_Overwrite(t *testing.T) {
 func TestQuestionViewInputValidate(t *testing.T) {
 	t.Run("AllPresent", func(t *testing.T) {
 		in := QuestionViewInput{FismaSystemID: 1, DataCallID: 2, QuestionID: 3}
-		assert.NoError(t, in.validate())
+		assert.NoError(t, in.Validate())
 	})
 
 	t.Run("AllMissing", func(t *testing.T) {
-		err := QuestionViewInput{}.validate()
+		err := QuestionViewInput{}.Validate()
 		iie, ok := err.(*InvalidInputError)
 		if assert.True(t, ok, "want *InvalidInputError, got %T", err) {
 			assert.Contains(t, iie.Data(), "fismasystemid")
@@ -67,7 +67,7 @@ func TestQuestionViewInputValidate(t *testing.T) {
 	})
 
 	t.Run("PartialMissing", func(t *testing.T) {
-		err := QuestionViewInput{FismaSystemID: 1, DataCallID: 2}.validate()
+		err := QuestionViewInput{FismaSystemID: 1, DataCallID: 2}.Validate()
 		iie, ok := err.(*InvalidInputError)
 		if assert.True(t, ok, "want *InvalidInputError, got %T", err) {
 			assert.Contains(t, iie.Data(), "questionid")
@@ -79,7 +79,7 @@ func TestQuestionViewInputValidate(t *testing.T) {
 	// still validate, so a zero-value ReadOnly is never treated as missing.
 	t.Run("ReadOnlyNotRequired", func(t *testing.T) {
 		in := QuestionViewInput{FismaSystemID: 1, DataCallID: 2, QuestionID: 3, ReadOnly: false}
-		assert.NoError(t, in.validate())
+		assert.NoError(t, in.Validate())
 	})
 }
 

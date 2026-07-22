@@ -111,13 +111,17 @@ type QuestionViewInput struct {
 	FismaSystemID int32 `json:"fismasystemid"`
 	DataCallID    int32 `json:"datacallid"`
 	QuestionID    int32 `json:"questionid"`
-	// ReadOnly is true when the caller opened the question in a read-only
-	// session. It decides whether this view's dwell counts as viewer time
-	// (true) or editor time (false) in the time-spent analytics.
-	ReadOnly bool `json:"readonly"`
+	// ReadOnly decides whether this view's dwell counts as viewer time (true) or
+	// editor time (false). It is NOT part of the request contract (`json:"-"`):
+	// the controller derives it server-side from the caller's role and the data
+	// call's deadline, so a client cannot choose how its time is classified.
+	ReadOnly bool `json:"-"`
 }
 
-func (i QuestionViewInput) validate() error {
+// Validate is exported so the controller can reject a malformed body before
+// doing any access/data-call lookups; RecordQuestionView also calls it as a
+// backstop.
+func (i QuestionViewInput) Validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
 	if i.FismaSystemID == 0 {
@@ -138,8 +142,8 @@ func (i QuestionViewInput) validate() error {
 
 // RecordQuestionView appends a 'viewed' event to the audit log marking that the
 // current user opened a questionnaire question. Time-spent analytics pair each
-// view with the next event by the same user in the same system+data call (a
-// save, or the next view) to bound how long the question was worked on.
+// view with the NEXT VIEW by the same user in the same system+data call to
+// bound how long the question was worked on (saves are not boundaries).
 //
 // Unlike recordEvent - which fires as a side effect of a write and derives its
 // action from the SqlBuilder shape - this records an explicit event: a view is
@@ -149,7 +153,7 @@ func (i QuestionViewInput) validate() error {
 // score-audit lookups), and it returns the insert error so the caller can
 // surface a failure rather than swallow it.
 func RecordQuestionView(ctx context.Context, input QuestionViewInput) error {
-	if err := input.validate(); err != nil {
+	if err := input.Validate(); err != nil {
 		return err
 	}
 

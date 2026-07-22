@@ -563,12 +563,6 @@ components:
           type: integer
         questionid:
           type: integer
-        readonly:
-          description: |-
-            ReadOnly is true when the caller opened the question in a read-only
-            session. It decides whether this view's dwell counts as viewer time
-            (true) or editor time (false) in the time-spent analytics.
-          type: boolean
       type: object
     model.Score:
       properties:
@@ -999,47 +993,6 @@ paths:
       summary: Export a data call's answers as an xlsx spreadsheet
       tags:
       - datacalls
-  /datacalls/{datacallid}/export/timespent:
-    get:
-      parameters:
-      - description: Data call ID
-        in: path
-        name: datacallid
-        required: true
-        schema:
-          type: integer
-      - description: FISMA system IDs to filter by
-        in: query
-        name: fsids
-        schema:
-          items:
-            type: integer
-          type: array
-      responses:
-        "200":
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                type: string
-          description: xlsx spreadsheet of the data call's time-spent analytics
-        "400":
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                $ref: '#/components/schemas/controller.apiResponse-any'
-          description: Bad Request
-        "500":
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                $ref: '#/components/schemas/controller.apiResponse-any'
-          description: Internal Server Error
-      security:
-      - bearerAuth: []
-      summary: Export a data call's questionnaire time-spent analytics as an xlsx
-        spreadsheet
-      tags:
-      - datacalls
   /datacalls/{datacallid}/fismasystems:
     get:
       parameters:
@@ -1246,11 +1199,12 @@ paths:
     post:
       description: Appends a 'viewed' event marking that the caller opened a questionnaire
         question, so time-spent analytics can bound how long the question was worked
-        on before the next event. Recorded for any caller who can see the system (read-only
-        sessions included, via the readonly flag which splits the dwell into viewer
-        vs editor time); a caller may only record views for a system they have a relationship
-        to (admins any, OpDiv-scoped admins their OpDivs, ISSO/ISSM their assigned
-        systems).
+        on before the next view. Editor-vs-viewer is derived server-side (from the
+        caller's role and the data call deadline), not sent by the client. Recorded
+        for any caller who can see the system; a caller may only record views for
+        a system they have a relationship to (admins any, OpDiv-scoped admins their
+        OpDivs, ISSO/ISSM/SYSTEM_DELEGATE their assigned systems). Returns 404 if
+        the system or data call does not exist.
       requestBody:
         content:
           application/json:
@@ -1277,6 +1231,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
         "500":
           content:
             application/json:

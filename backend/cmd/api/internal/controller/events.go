@@ -2,12 +2,13 @@ package controller
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 )
 
 //	@Summary		Record a questionnaire question view
-//	@Description	Appends a 'viewed' event marking that the caller opened a questionnaire question, so time-spent analytics can bound how long the question was worked on before the next event. Recorded for any caller who can see the system (read-only sessions included, via the readonly flag which splits the dwell into viewer vs editor time); a caller may only record views for a system they have a relationship to (admins any, OpDiv-scoped admins their OpDivs, ISSO/ISSM their assigned systems).
+//	@Description	Appends a 'viewed' event marking that the caller opened a questionnaire question, so time-spent analytics can bound how long the question was worked on before the next view. Editor-vs-viewer is derived server-side (from the caller's role and the data call deadline), not sent by the client. Recorded for any caller who can see the system; a caller may only record views for a system they have a relationship to (admins any, OpDiv-scoped admins their OpDivs, ISSO/ISSM/SYSTEM_DELEGATE their assigned systems). Returns 404 if the system or data call does not exist.
 //	@Tags		events
 //	@Accept		json
 //	@Produce	json
@@ -16,6 +17,7 @@ import (
 //	@Success	204		"No Content"
 //	@Failure	400		{object}	apiResponse[any]
 //	@Failure	403		{object}	apiResponse[any]
+//	@Failure	404		{object}	apiResponse[any]
 //	@Failure	500		{object}	apiResponse[any]
 //	@Router		/events/view [post]
 func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
@@ -27,16 +29,36 @@ func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject a malformed body up front, before any access/data-call lookups.
+	if err := input.Validate(); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
 	// A caller may only record views for a system they could SEE (read scope),
 	// so analytics never accrue for a system the user has no relationship to.
-	// Read-only sessions ARE recorded: their input.ReadOnly flag routes the
-	// dwell to viewer time rather than editor time. CanAccessFismaSystem needs
-	// the system's OpDiv for the OpDiv-scoped tiers, so load the system first;
-	// unscoped-read and assigned-system callers short-circuit before that.
+	// CanAccessFismaSystem needs the system's OpDiv for the OpDiv-scoped tiers,
+	// so load the system first; unscoped-read and assigned-system callers
+	// short-circuit before that.
 	if err := guardViewFismaSystem(r.Context(), user, input.FismaSystemID); err != nil {
 		respond(w, r, nil, err)
 		return
 	}
+
+	// Load the data call: this validates it exists (a bad/unknown id is rejected
+	// rather than recorded) and provides the deadline used to classify the view.
+	dc, err := model.FindDataCallByID(r.Context(), input.DataCallID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	// Derive read-only server-side; never trust a client-sent value. It decides
+	// whether this view's dwell counts as viewer or editor time, so a client
+	// must not be able to choose it. Mirrors the questionnaire's rule: a
+	// read-only admin is always viewing, and any non-admin is viewing (not
+	// editing) once the data call's deadline has passed.
+	input.ReadOnly = user.IsReadOnlyAdmin() || (!user.IsAdmin() && time.Now().After(dc.Deadline))
 
 	// On error let respond() map it to a status; on success write 204 directly
 	// (respond() would treat a nil-body POST as 201-with-empty-body, and this
