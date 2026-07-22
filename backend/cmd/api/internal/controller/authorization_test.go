@@ -805,7 +805,6 @@ func TestRecordQuestionView_ReadonlyAdminAllowed(t *testing.T) {
 		FismaSystemID: 1,
 		DataCallID:    2,
 		QuestionID:    3,
-		ReadOnly:      true,
 	})
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/events/view", body)
 	r.Header.Set("Content-Type", "application/json")

@@ -58,12 +58,12 @@ func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
 	// must not be able to choose it. Mirrors the questionnaire's rule: a
 	// read-only admin is always viewing, and any non-admin is viewing (not
 	// editing) once the data call's deadline has passed.
-	input.ReadOnly = user.IsReadOnlyAdmin() || (!user.IsAdmin() && time.Now().After(dc.Deadline))
+	readOnly := user.IsReadOnlyAdmin() || (!user.IsAdmin() && time.Now().After(dc.Deadline))
 
 	// On error let respond() map it to a status; on success write 204 directly
 	// (respond() would treat a nil-body POST as 201-with-empty-body, and this
 	// fire-and-forget ping has no entity to return).
-	if err := model.RecordQuestionView(r.Context(), input); err != nil {
+	if err := model.RecordQuestionView(r.Context(), input, readOnly); err != nil {
 		respond(w, r, nil, err)
 		return
 	}

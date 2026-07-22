@@ -104,18 +104,14 @@ func insertEvent(ctx context.Context, userID, action, resource string, payload a
 	return err
 }
 
-// QuestionViewInput carries the identifiers for a questionnaire "viewed" event:
-// which question, on which system, in which data call. userid is never taken
-// from the client - it comes from the auth context in RecordQuestionView.
+// QuestionViewInput carries the client-supplied identifiers for a questionnaire
+// "viewed" event: which question, on which system, in which data call. userid
+// comes from the auth context, and the editor/viewer (readOnly) classification
+// is derived server-side - neither is part of this request shape.
 type QuestionViewInput struct {
 	FismaSystemID int32 `json:"fismasystemid"`
 	DataCallID    int32 `json:"datacallid"`
 	QuestionID    int32 `json:"questionid"`
-	// ReadOnly decides whether this view's dwell counts as viewer time (true) or
-	// editor time (false). It is NOT part of the request contract (`json:"-"`):
-	// the controller derives it server-side from the caller's role and the data
-	// call's deadline, so a client cannot choose how its time is classified.
-	ReadOnly bool `json:"-"`
 }
 
 // Validate is exported so the controller can reject a malformed body before
@@ -141,9 +137,11 @@ func (i QuestionViewInput) Validate() error {
 }
 
 // RecordQuestionView appends a 'viewed' event to the audit log marking that the
-// current user opened a questionnaire question. Time-spent analytics pair each
-// view with the NEXT VIEW by the same user in the same system+data call to
-// bound how long the question was worked on (saves are not boundaries).
+// current user opened a questionnaire question. readOnly (derived server-side by
+// the caller) classifies the dwell as viewer (true) or editor (false) time.
+// Time-spent analytics pair each view with the NEXT VIEW by the same user in the
+// same system+data call to bound how long the question was worked on (saves are
+// not boundaries).
 //
 // Unlike recordEvent - which fires as a side effect of a write and derives its
 // action from the SqlBuilder shape - this records an explicit event: a view is
@@ -152,7 +150,7 @@ func (i QuestionViewInput) Validate() error {
 // ('questionnaire', not 'public.scores', so these rows never touch the
 // score-audit lookups), and it returns the insert error so the caller can
 // surface a failure rather than swallow it.
-func RecordQuestionView(ctx context.Context, input QuestionViewInput) error {
+func RecordQuestionView(ctx context.Context, input QuestionViewInput, readOnly bool) error {
 	if err := input.Validate(); err != nil {
 		return err
 	}
@@ -169,7 +167,7 @@ func RecordQuestionView(ctx context.Context, input QuestionViewInput) error {
 		FismaSystemID: &input.FismaSystemID,
 		DataCallID:    &input.DataCallID,
 		QuestionID:    &input.QuestionID,
-		ReadOnly:      &input.ReadOnly,
+		ReadOnly:      &readOnly,
 	}
 
 	return insertEvent(ctx, user.UserID, "viewed", "questionnaire", p)

@@ -74,13 +74,6 @@ func TestQuestionViewInputValidate(t *testing.T) {
 			assert.NotContains(t, iie.Data(), "fismasystemid")
 		}
 	})
-
-	// readonly is not a required field: a false value (an editor view) must
-	// still validate, so a zero-value ReadOnly is never treated as missing.
-	t.Run("ReadOnlyNotRequired", func(t *testing.T) {
-		in := QuestionViewInput{FismaSystemID: 1, DataCallID: 2, QuestionID: 3, ReadOnly: false}
-		assert.NoError(t, in.Validate())
-	})
 }
 
 // TestPayloadReadOnlyMarshal pins the wire contract of the readonly flag stored
