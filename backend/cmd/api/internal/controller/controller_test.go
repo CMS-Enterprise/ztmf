@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/stretchr/testify/assert"
 )
@@ -64,4 +65,13 @@ func TestSanitizeErrMapping(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, status)
 		})
 	}
+}
+
+// The administrator-required rejection carries a machine-readable code the FE
+// branches on (#467), like the auth middleware's ACCOUNT_NOT_PROVISIONED.
+func TestSanitizeErrDelegateRequiresAdminCarriesCode(t *testing.T) {
+	status, code, out := sanitizeErr(model.ErrDelegateRequiresAdmin)
+	assert.Equal(t, 400, status)
+	assert.Equal(t, auth.CodeDelegateRequiresAdmin, code)
+	assert.Equal(t, model.ErrDelegateRequiresAdmin, out, "human-readable message is preserved alongside the code")
 }

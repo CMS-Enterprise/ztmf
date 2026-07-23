@@ -397,6 +397,143 @@ tests:
   # response templater cannot substitute the underscore-keyed opdiv_id from the
   # create response, so a capture-dependent PUT case is omitted here.
 
+  # System Delegate role toggle (#467, decision 7): Owner + HHS admin only. The
+  # CanWriteHHSWide gate runs before any DB work, so an OPDIV_ADMIN (though
+  # IsAdmin) and an ISSO are 403 regardless of the target OpDiv. opdiv_id 1 is a
+  # real seeded OpDiv, so the OWNER case actually updates and returns 200.
+  - url: http://localhost:8080/api/v1/opdivs/1/system-delegate-enabled
+    method: PUT
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        enabled: true
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/opdivs/1/system-delegate-enabled
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        enabled: true
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/opdivs/1/system-delegate-enabled
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        enabled: true
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # System Delegate self-service (#467). Scope is anchored to the system in the
+  # path; a non-owner is 404 (not-leak). Death Star (1001, EMPIRE) has the
+  # capability enabled in the seed; the ISSO fixture (Isso.User) is assigned to
+  # Shield Gen (1003), not the Death Star.
+  #
+  # A delegate can never manage delegates, even on a system it is assigned to
+  # (the ISSO invariant): 404 rather than a 403 that would confirm the system.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "should-not@matter.test"
+        fullname: "Nope"
+    expect:
+      status: 404
+
+  # An ISSO not assigned to the target system cannot see or manage its delegates.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "new.delegate@empire.test"
+        fullname: "New Delegate"
+    expect:
+      status: 404
+
+  # An ISSO assigned to the system may list its delegates.
+  - url: http://localhost:8080/api/v1/fismasystems/1003/delegates
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Success-path sequence (must run in order): Isso.User is assigned to Shield Gen
+  # (1003, EMPIRE, capability enabled). Reuse.Delegate is a seeded EMPIRE delegate
+  # not yet on any system, so the ISSO can attach (201), renew (200), then remove
+  # (204). Uses the seeded delegate's fixed UUID so the PATCH/DELETE paths are known
+  # without capturing the POST response.
+  - url: http://localhost:8080/api/v1/fismasystems/1003/delegates
+    method: POST
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "Reuse.Delegate@empire.test"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+
+  - url: http://localhost:8080/api/v1/fismasystems/1003/delegates/5e1e6a7e-0000-4000-8000-000000000001
+    method: PATCH
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        access_expires_at: "2030-01-01T00:00:00Z"
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  - url: http://localhost:8080/api/v1/fismasystems/1003/delegates/5e1e6a7e-0000-4000-8000-000000000001
+    method: DELETE
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 204
+
+  # Invariant: an ISSO can only ever affect SYSTEM_DELEGATE records. Isso.User is
+  # assigned to Shield Gen (1003), as is Director Krennic (an ISSO). Trying to
+  # remove a co-ISSO via the delegate endpoint must be 404 (target is not a
+  # delegate), not a 204 that would let an ISSO unassign a peer.
+  - url: http://localhost:8080/api/v1/fismasystems/1003/delegates/44444444-4444-4444-4444-444444444444
+    method: DELETE
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 404
+
   # DataCalls Endpoints
   - id: createDataCall
     url: http://localhost:8080/api/v1/datacalls
