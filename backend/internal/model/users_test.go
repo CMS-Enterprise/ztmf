@@ -35,6 +35,9 @@ var roleMatrix = []roleMatrixRow{
 	// System-scoped tiers (unchanged)
 	{role: "ISSO"},
 	{role: "ISSM"},
+	// Contractor/support-staff tier (#455): system-scoped like ISSO/ISSM, so
+	// every admin/OpDiv helper is false, same as those rows.
+	{role: "SYSTEM_DELEGATE"},
 	// Unknown roles - all helpers must return false.
 	{role: ""},
 	{role: "UNKNOWN"},
@@ -55,6 +58,13 @@ func TestUser_RoleHelpers(t *testing.T) {
 	}
 }
 
+func TestUser_IsSystemDelegate(t *testing.T) {
+	assert.True(t, (&User{Role: "SYSTEM_DELEGATE"}).IsSystemDelegate(), "delegate role")
+	for _, role := range []string{"ISSO", "ISSM", "OPDIV_ADMIN", "OWNER", "HHS_ADMIN", "", "UNKNOWN"} {
+		assert.False(t, (&User{Role: role}).IsSystemDelegate(), role+" is not a delegate")
+	}
+}
+
 func TestUser_IsAssignedOpDiv(t *testing.T) {
 	id1, id2 := int32(1), int32(2)
 	u := &User{AssignedOpDivIDs: []*int32{&id1, &id2}}
@@ -71,6 +81,26 @@ func TestUser_IsAssignedOpDiv(t *testing.T) {
 	// Empty / unset slice returns false rather than panicking.
 	empty := &User{}
 	assert.False(t, empty.IsAssignedOpDiv(1))
+}
+
+func TestUser_CanBeAssignedFismaSystem(t *testing.T) {
+	id1, id2 := int32(1), int32(2)
+	target := &User{AssignedOpDivIDs: []*int32{&id1, &id2}}
+
+	// System's OpDiv is one the target holds a grant for.
+	assert.True(t, target.CanBeAssignedFismaSystem(&id1))
+	assert.True(t, target.CanBeAssignedFismaSystem(&id2))
+
+	// System's OpDiv is not in the target's set.
+	other := int32(3)
+	assert.False(t, target.CanBeAssignedFismaSystem(&other))
+
+	// Fail closed on a nil OpDiv (system without an OpDiv should never be assigned).
+	assert.False(t, target.CanBeAssignedFismaSystem(nil))
+
+	// Fail closed on a target with no OpDiv grants (e.g. a not-yet-provisioned user).
+	empty := &User{}
+	assert.False(t, empty.CanBeAssignedFismaSystem(&id1))
 }
 
 func TestUser_CanAccessFismaSystem(t *testing.T) {
@@ -204,8 +234,13 @@ func TestUser_CanAssignRole(t *testing.T) {
 		{"OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", true},
 		{"OPDIV_ADMIN", "ISSO", true},
 		{"OPDIV_ADMIN", "ISSM", true},
-		{"OPDIV_READONLY_ADMIN", "ISSO", false}, // read-only cannot assign at all
+		{"OPDIV_ADMIN", "SYSTEM_DELEGATE", true},
+		{"HHS_ADMIN", "SYSTEM_DELEGATE", true},
+		{"OWNER", "SYSTEM_DELEGATE", true},
+		{"OPDIV_READONLY_ADMIN", "ISSO", false},            // read-only cannot assign at all
+		{"OPDIV_READONLY_ADMIN", "SYSTEM_DELEGATE", false}, // read-only cannot assign at all
 		{"ISSO", "ISSO", false},
+		{"SYSTEM_DELEGATE", "SYSTEM_DELEGATE", false}, // delegate cannot assign roles
 	}
 	for _, tt := range tests {
 		t.Run(tt.actor+"->"+tt.target, func(t *testing.T) {

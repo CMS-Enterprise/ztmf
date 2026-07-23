@@ -265,6 +265,61 @@ func TestSaveFismaSystemTargetMaturity_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// TestSystemDelegate_ForbiddenNonAnswerSurfaces pins the delegate invariant
+// (#455): a delegate may reach nothing an ISSO can that is not a data-call
+// answer. The carve-out is enforced by explicit IsSystemDelegate() rejections
+// rather than a central guard, so this table is the loud tripwire - if a future
+// PR adds an ISSO/ISSM-writable non-answer surface without guarding it, add a row
+// here and it will fail until the guard is in place.
+//
+// The delegate is assigned to the target system on purpose: assignment must NOT
+// grant these surfaces, so a passing row proves the carve-out fires on the role,
+// not merely on a missing assignment.
+func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
+	// Identity matches the SYSTEM_DELEGATE row in _test_data_empire.sql so the
+	// delegate is the same conceptual user across this unit test and the Emberfall
+	// E2E. (The value is inert here - this test never hits the DB - but a shared
+	// identity avoids the confusion of a mismatched or seed-colliding UUID.)
+	delegate := &model.User{
+		UserID:               "55555555-5555-4555-8555-555555555555",
+		Email:                "Delegate.User@nowhere.xyz",
+		Role:                 "SYSTEM_DELEGATE",
+		AssignedFismaSystems: []*int32{int32Ptr(1)},
+	}
+
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		request func() *http.Request
+	}{
+		{
+			name:    "target maturity write",
+			handler: SaveFismaSystemTargetMaturity,
+			request: func() *http.Request {
+				body := jsonBody(t, map[string]any{
+					"target_maturity_tier":          "Advanced",
+					"target_maturity_justification": "should never write",
+				})
+				r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1/target-maturity", body)
+				r.Header.Set("Content-Type", "application/json")
+				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+			},
+		},
+		// Add a row when a new ISSO/ISSM-writable non-answer surface lands, and
+		// add the matching IsSystemDelegate() guard to its handler.
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := withUser(tc.request(), delegate)
+			w := httptest.NewRecorder()
+			tc.handler(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code,
+				"delegate must be forbidden from non-answer surface %q", tc.name)
+		})
+	}
+}
+
 // --- ListScores ---
 
 func TestListScores_ReadonlyAdminAllowed(t *testing.T) {
@@ -447,6 +502,26 @@ func TestListUserFismaSystems_ISSOForbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	ListUserFismaSystems(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// --- ListAssignableFismaSystems ---
+
+func TestListAssignableFismaSystems_ReadonlyAdminAllowed(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/v1/users/11111111-1111-1111-1111-111111111111/assignablefismasystems", nil)
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	ListAssignableFismaSystems(w, r)
+	assert.NotEqual(t, http.StatusForbidden, w.Code)
+}
+
+func TestListAssignableFismaSystems_ISSOForbidden(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/v1/users/11111111-1111-1111-1111-111111111111/assignablefismasystems", nil)
+	r = withUser(r, issoUser)
+	w := httptest.NewRecorder()
+
+	ListAssignableFismaSystems(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 

@@ -22,6 +22,12 @@ opDivAdminHeaders: &opDivAdminHeaders
 opDivReadonlyHeaders: &opDivReadonlyHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
 
+# System Delegate (#455): contractor/support-staff, system-scoped like ISSO but
+# answers-only. Assigned to Death Star (1001) only. Email claim
+# delegate.user@nowhere.xyz. Must 403 on target maturity even for 1001.
+delegateHeaders: &delegateHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImRlbGVnYXRlLnVzZXJAbm93aGVyZS54eXoifQ.yo5KvkCAnmcBbTGRNQZEfnaE8uXSe8zfgmofOiaL_rU"
+
 # Data definitions using YAML anchors.
 # The deadline is intentionally far-future — beyond the empire seed's
 # furthest-out call (Audit Fields Smoke Cycle, 2099-12-31) — so this
@@ -1424,6 +1430,70 @@ tests:
     expect:
       status: 200
 
+  # ---- #449: the assignment write must not grant a system whose OpDiv the
+  # target user does not hold, regardless of the acting admin's tier, and the
+  # path userid is authoritative over any userid in the request body. ----
+
+  # OWNER (unscoped) assigning a REBELLION system (1005) to Thrawn, who holds
+  # EMPIRE only, is rejected. Before #449 both admin-side guards
+  # (guardManageFismaSystem + CanManageUser) passed for an unscoped admin and
+  # the cross-OpDiv row was written (201); now the target-OpDiv check blocks it.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1005
+    expect:
+      status: 403
+
+  # Path userid wins over a body userid. Assigning an in-OpDiv system (1003)
+  # with a different "userid" in the body still writes to the path user
+  # (Thrawn) - a body override was the way to reopen the #449 gap by validating
+  # one user and persisting another. The body value here is a DIFFERENT real,
+  # valid-v4 user (Opdiv.Admin, 88888888-...), so pre-fix Save would have
+  # succeeded and persisted the row to that user (201 with their userid); the
+  # assertion data.userid == the path user therefore proves the retarget is
+  # blocked, not merely that a malformed id was rejected.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        userid: "88888888-8888-4888-8888-888888888888"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            userid: "aa000088-8888-4888-8888-888888888888"
+            fismasystemid: 1003
+
+  # Clean up the assignment written by the body-override case.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignedfismasystems/1003"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+
+  # #449 read endpoint: the assignable-systems picker returns 200 for an
+  # unscoped admin. The scoped-caller intersection and the sharesOpDiv target
+  # gate are covered by the controller/model tests.
+  - url: "http://localhost:8080/api/v1/users/aa000088-8888-4888-8888-888888888888/assignablefismasystems"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
   # PUT returns 204 (No Content) per controller.respond; assert the write
   # path completes cleanly. Audit-on-write is covered by the POST assertion
   # above.
@@ -1685,6 +1755,62 @@ tests:
       <<: *commonHeaders
     expect:
       status: 404
+
+  # Wrong-data-center report (issue #239). Two rows at this point in the run:
+  #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
+  #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
+  #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
+  #     the "preserve HHS data" PUT above (*system1002WithHHSData) flips the
+  #     system to "Other" mid-suite, so by now it reports - proving the report
+  #     tracks live system edits. The fresh-seed "matching row is excluded"
+  #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
+  # Still excluded here: the Death Star (1001) mismatches but is decommissioned,
+  # and RB-1 (1005) mismatches but REBELLION is not insights_enabled (gated).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              fismaacronym: "SLD-GEN"
+              datacenterenvironment: "Forest-Moon"
+              cfacts_datacenterenvironment: "CMS-Cloud-AWS"
+              cfacts_value_known: true
+            - fismasystemid: 1002
+              fismaacronym: "SSD-EX"
+              datacenterenvironment: "Other"
+              cfacts_datacenterenvironment: "Imperial-Fleet"
+              cfacts_value_known: true
+
+  # The report is admin-tier only: ISSO/ISSM get 403 (the ISSO-facing
+  # "report a difference" flow is a separate ticket, not this endpoint).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # HHS_READONLY_ADMIN has unscoped read, so the report returns for it too.
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+            - fismasystemid: 1002
 
   # ZTMF Insights (issue #416). /insights is a LIST endpoint: scope and the
   # OpDiv gate yield an empty array (200), never 403/404. Array bodies assert
@@ -2127,6 +2253,146 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # ==========================================================================
+  # System Delegate RBAC (#455)
+  # delegateHeaders is assigned to Death Star (1001) only. It behaves exactly
+  # like an ISSO EXCEPT it is barred from writing target maturity (answers-only).
+  # ==========================================================================
+
+  # Delegate can authenticate; role is distinguishable from ISSO in the response.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Delegate.User@nowhere.xyz"
+            role: "SYSTEM_DELEGATE"
+
+  # Carve-out: delegate is FORBIDDEN from writing target maturity even on its
+  # assigned system (1001). This is the one behavioral difference from ISSO/ISSM.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/target-maturity
+    method: PUT
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        target_maturity_tier: "Advanced"
+        target_maturity_justification: "delegate must never write this"
+    expect:
+      status: 403
+
+  # Headline capability: delegate CAN write a data-call answer on its assigned
+  # system (1001, open Audit cycle 5). The role's whole reason to exist - a
+  # regression that neutered it (e.g. a stray IsSystemDelegate 403 copied into
+  # SaveScore) must fail here. Response echoes the delegate as the editor.
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 1
+        datacallid: 5
+        notes: "delegate audit answer - assigned system"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1001
+            functionoptionid: 1
+            last_edited_by:
+              email: "Delegate.User@nowhere.xyz"
+              role: "SYSTEM_DELEGATE"
+
+  # Delegate CANNOT mark a system it is NOT assigned to (Shield Gen 1003) complete.
+  # (The assigned-system mark-complete path is exercised by the ISSO/admin suites;
+  # re-marking an already-enrolled system is a 404 by the endpoint's INSERT ...
+  # ON CONFLICT DO NOTHING semantics, independent of role, so it is not asserted here.)
+  - url: http://localhost:8080/api/v1/datacalls/5/fismasystems/1003
+    method: PUT
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate CANNOT write an answer for an unassigned system (Shield Gen 1003).
+  - url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        functionoptionid: 1
+        datacallid: 5
+        notes: "delegate write to unassigned system - should be blocked"
+    expect:
+      status: 403
+
+  # Delegate CAN read scores for its assigned system (1001).
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Delegate reading an UNASSIGNED system (Shield Gen, 1003) gets empty data, not
+  # 403 - same system-scoped list behavior as ISSO.
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1003&include_pillars=true
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Delegate is locked out of the admin surface: audit trail 403.
+  - url: http://localhost:8080/api/v1/events
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate is locked out of user management: list 403.
+  - url: http://localhost:8080/api/v1/users
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 403
+
+  # Delegate cannot create users (write blocked).
+  - url: http://localhost:8080/api/v1/users
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        email: "blocked@example.com"
+        fullname: "Blocked User"
+        role: "ISSO"
+    expect:
+      status: 403
 
   # ==========================================================================
   # OpDiv-scoped RBAC enforcement (feature/opdiv-rbac-enforcement)
