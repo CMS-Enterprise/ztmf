@@ -23,6 +23,10 @@ const (
 	CodeForbiddenOrigin       = "FORBIDDEN_ORIGIN"
 	CodeAccountNotProvisioned = "ACCOUNT_NOT_PROVISIONED"
 	CodeSelfDeleteForbidden = "SELF_DELETE_FORBIDDEN"
+	// Set by the controller (sanitizeErr), not the middleware: the ISSO delegate add
+	// flow rejected an existing account it cannot self-serve, so the FE renders "an
+	// administrator must handle this user" instead of a generic validation error (#467).
+	CodeDelegateRequiresAdmin = "DELEGATE_REQUIRES_ADMIN"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a
@@ -153,6 +157,19 @@ func Middleware(next http.Handler) http.Handler {
 			log.Printf("deleted user attempted to access the API: %s\n", user.Email)
 			writeJSONError(w, http.StatusForbidden,
 				"Your ZTMF account is no longer active. Contact your administrator.",
+				CodeAccountNotProvisioned)
+			return
+		}
+
+		if user.IsExpired() {
+			// A System Delegate whose access_expires_at has passed (#467). Denied
+			// through the same rejection path and code as a soft-deleted user, so
+			// the FE renders the same terminal "contact your administrator" copy.
+			// The row and its assignments are retained for renewal and audit; this
+			// is a lazy, authoritative check with no scheduled job.
+			log.Printf("expired delegate attempted to access the API: %s\n", user.Email)
+			writeJSONError(w, http.StatusForbidden,
+				"Your ZTMF delegate access has expired. Contact your administrator.",
 				CodeAccountNotProvisioned)
 			return
 		}

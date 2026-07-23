@@ -286,15 +286,23 @@ func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
 		Role:                 "SYSTEM_DELEGATE",
 		AssignedFismaSystems: []*int32{int32Ptr(1)},
 	}
+	const delegateID = "66666666-6666-4666-8666-666666666666"
 
+	// wantStatus is per-case because the two surfaces deny differently on purpose:
+	// target maturity is an explicit IsSystemDelegate() 403, while the delegate
+	// self-service endpoints fail closed with 404 (not-leak) since a delegate is
+	// neither an admin nor an ISSO. Both are denials; the point of the table is
+	// that assignment to the system never opens the surface to a delegate.
 	cases := []struct {
-		name    string
-		handler http.HandlerFunc
-		request func() *http.Request
+		name       string
+		handler    http.HandlerFunc
+		request    func() *http.Request
+		wantStatus int
 	}{
 		{
-			name:    "target maturity write",
-			handler: SaveFismaSystemTargetMaturity,
+			name:       "target maturity write",
+			handler:    SaveFismaSystemTargetMaturity,
+			wantStatus: http.StatusForbidden,
 			request: func() *http.Request {
 				body := jsonBody(t, map[string]any{
 					"target_maturity_tier":          "Advanced",
@@ -305,8 +313,39 @@ func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
 				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
 			},
 		},
+		{
+			name:       "add system delegate",
+			handler:    AddSystemDelegate,
+			wantStatus: http.StatusNotFound,
+			request: func() *http.Request {
+				body := jsonBody(t, map[string]any{"email": "x@y.z", "fullname": "X"})
+				r := httptest.NewRequest("POST", "/api/v1/fismasystems/1/delegates", body)
+				r.Header.Set("Content-Type", "application/json")
+				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+			},
+		},
+		{
+			name:       "remove system delegate",
+			handler:    RemoveSystemDelegate,
+			wantStatus: http.StatusNotFound,
+			request: func() *http.Request {
+				r := httptest.NewRequest("DELETE", "/api/v1/fismasystems/1/delegates/"+delegateID, nil)
+				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1", "userid": delegateID})
+			},
+		},
+		{
+			name:       "renew system delegate",
+			handler:    RenewSystemDelegate,
+			wantStatus: http.StatusNotFound,
+			request: func() *http.Request {
+				body := jsonBody(t, map[string]any{"access_expires_at": "2030-01-01T00:00:00Z"})
+				r := httptest.NewRequest("PATCH", "/api/v1/fismasystems/1/delegates/"+delegateID, body)
+				r.Header.Set("Content-Type", "application/json")
+				return mux.SetURLVars(r, map[string]string{"fismasystemid": "1", "userid": delegateID})
+			},
+		},
 		// Add a row when a new ISSO/ISSM-writable non-answer surface lands, and
-		// add the matching IsSystemDelegate() guard to its handler.
+		// add the matching guard to its handler.
 	}
 
 	for _, tc := range cases {
@@ -314,8 +353,8 @@ func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
 			r := withUser(tc.request(), delegate)
 			w := httptest.NewRecorder()
 			tc.handler(w, r)
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"delegate must be forbidden from non-answer surface %q", tc.name)
+			assert.Equal(t, tc.wantStatus, w.Code,
+				"delegate must be denied on non-answer surface %q", tc.name)
 		})
 	}
 }
@@ -642,7 +681,6 @@ func TestDeleteUser_OtherDeleteSucceeds(t *testing.T) {
 		deleteUser = prevDel
 	})
 
-	
 	variants := map[string]string{
 		"lower-cased": otherIDLower,
 		"upper-cased": strings.ToUpper(otherIDLower),

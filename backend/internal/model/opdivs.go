@@ -25,6 +25,12 @@ type OpDiv struct {
 	// an update that omits it must leave the column untouched, not reset it to
 	// false (which would silently disable enrichment for an enabled OpDiv).
 	InsightsEnabled *bool `json:"insights_enabled" db:"insights_enabled"`
+	// SystemDelegateEnabled gates the ISSO System Delegate self-service capability
+	// (#467) for systems in this OpDiv: the "Add System Delegate Role" toggle on
+	// the Manage OpDivs panel. Pointer for the same reason as the flags above.
+	// Only Owner / HHS admin may set it (see SetOpDivSystemDelegateEnabled and the
+	// controller gate); the ISSO add flow is refused when it is false.
+	SystemDelegateEnabled *bool `json:"system_delegate_enabled" db:"system_delegate_enabled"`
 }
 
 // FindOpDivsInput holds optional filters for listing OpDivs.
@@ -37,7 +43,7 @@ type FindOpDivsInput struct {
 // and by the onboarding workbook importer to validate opdiv codes.
 func FindOpDivs(ctx context.Context, input FindOpDivsInput) ([]*OpDiv, error) {
 	sqlb := stmntBuilder.
-		Select("opdiv_id", "code", "name", "is_parent", "active", "insights_enabled").
+		Select("opdiv_id", "code", "name", "is_parent", "active", "insights_enabled", "system_delegate_enabled").
 		From("public.opdivs").
 		OrderBy("(NOT is_parent), code")
 
@@ -85,14 +91,18 @@ func (o *OpDiv) Save(ctx context.Context) (*OpDiv, error) {
 	var sqlb SqlBuilder
 	if o.OpDivID == 0 {
 		// Create: a new OpDiv is always active; is_parent and insights_enabled
-		// default to false when the optional fields are omitted.
+		// default to false when the optional fields are omitted. system_delegate_enabled
+		// is left to its migration default (false) and, for now, set through
+		// SetOpDivSystemDelegateEnabled (the Owner + HHS admin toggle, #467) so the
+		// capability's write gate stays in one place. Current product decision, not a
+		// hard rule - revisit if Save should manage it too.
 		isParent := o.IsParent != nil && *o.IsParent
 		insightsEnabled := o.InsightsEnabled != nil && *o.InsightsEnabled
 		sqlb = stmntBuilder.
 			Insert("public.opdivs").
 			Columns("code", "name", "is_parent", "active", "insights_enabled").
 			Values(o.Code, o.Name, isParent, true, insightsEnabled).
-			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled")
+			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled, system_delegate_enabled")
 	} else {
 		ub := stmntBuilder.
 			Update("public.opdivs").
@@ -110,9 +120,13 @@ func (o *OpDiv) Save(ctx context.Context) (*OpDiv, error) {
 		if o.InsightsEnabled != nil {
 			ub = ub.Set("insights_enabled", *o.InsightsEnabled)
 		}
+		// system_delegate_enabled is not set here for now: the capability toggle is
+		// written through SetOpDivSystemDelegateEnabled (Owner + HHS admin, #467) so
+		// its write gate stays in one place. Current product decision - revisit if
+		// Save should manage it too.
 		sqlb = ub.
 			Where("opdiv_id=?", o.OpDivID).
-			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled")
+			Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled, system_delegate_enabled")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByName[OpDiv])
@@ -126,4 +140,30 @@ func (o *OpDiv) Save(ctx context.Context) (*OpDiv, error) {
 		return nil, err
 	}
 	return saved, nil
+}
+
+// FindOpDivByID returns a single OpDiv by id, including its capability flags.
+// Used by the System Delegate add flow to read the request system's OpDiv code
+// (for identity-provider derivation) and its system_delegate_enabled toggle.
+func FindOpDivByID(ctx context.Context, opdivID int32) (*OpDiv, error) {
+	sqlb := stmntBuilder.
+		Select("opdiv_id", "code", "name", "is_parent", "active", "insights_enabled", "system_delegate_enabled").
+		From("public.opdivs").
+		Where("opdiv_id=?", opdivID)
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[OpDiv])
+}
+
+// SetOpDivSystemDelegateEnabled flips the per-OpDiv "Add System Delegate Role"
+// toggle (#467 decisions 6 and 7). It is intentionally separate from Save (which
+// is OWNER-only, tenant-boundary) so the controller can gate it to Owner + HHS
+// admin without widening Save. Audited automatically via queryRow.
+func SetOpDivSystemDelegateEnabled(ctx context.Context, opdivID int32, enabled bool) (*OpDiv, error) {
+	sqlb := stmntBuilder.
+		Update("public.opdivs").
+		Set("system_delegate_enabled", enabled).
+		Where("opdiv_id=?", opdivID).
+		Suffix("RETURNING opdiv_id, code, name, is_parent, active, insights_enabled, system_delegate_enabled")
+
+	return queryRow(ctx, sqlb, pgx.RowToStructByName[OpDiv])
 }

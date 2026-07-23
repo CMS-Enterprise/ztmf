@@ -151,6 +151,12 @@ func SaveUser(w http.ResponseWriter, r *http.Request) {
 		user.UserID = v
 	}
 
+	// access_expires_at is owned exclusively by the System Delegate flow
+	// (AddSystemDelegate / SetDelegateExpiry, #467). Regular users never expire,
+	// so blank any client-supplied value here; otherwise a body carrying
+	// access_expires_at would let this admin path set an expiry on a non-delegate.
+	user.AccessExpiresAt = nil
+
 	// Tier escalation guard: the acting admin may not assign a role above their
 	// own authority (an OPDIV_ADMIN can't mint HHS/OWNER tiers, etc.).
 	if user.Role != "" && !authdUser.CanAssignRole(user.Role) {
