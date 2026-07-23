@@ -75,3 +75,13 @@ func TestSanitizeErrDelegateRequiresAdminCarriesCode(t *testing.T) {
 	assert.Equal(t, auth.CodeDelegateRequiresAdmin, code)
 	assert.Equal(t, model.ErrDelegateRequiresAdmin, out, "human-readable message is preserved alongside the code")
 }
+
+// The capability-off rejection is a 403 that also carries a code, so the FE can
+// render an in-dialog guard rather than let the global auth interceptor swallow
+// the bare 403 into a generic toast.
+func TestSanitizeErrDelegatesNotEnabledCarriesCode(t *testing.T) {
+	status, code, out := sanitizeErr(model.ErrDelegatesNotEnabled)
+	assert.Equal(t, 403, status)
+	assert.Equal(t, auth.CodeDelegateNotEnabled, code)
+	assert.Equal(t, model.ErrDelegatesNotEnabled, out, "human-readable message is preserved alongside the code")
+}

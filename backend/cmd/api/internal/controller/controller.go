@@ -128,9 +128,14 @@ func sanitizeErr(err error) (int, string, error) {
 		status = 403
 		code = auth.CodeSelfDeleteForbidden
 	case errors.Is(err, ErrForbidden),
-		errors.Is(err, model.ErrPastDeadline),
-		errors.Is(err, model.ErrDelegatesNotEnabled):
+		errors.Is(err, model.ErrPastDeadline):
 		status = 403
+	case errors.Is(err, model.ErrDelegatesNotEnabled):
+		// Capability-off for the OpDiv. 403 with a code so the FE can render an
+		// in-dialog guard instead of the global interceptor swallowing the bare
+		// 403 into a generic toast.
+		status = 403
+		code = auth.CodeDelegateNotEnabled
 	case errors.Is(err, model.ErrDelegateRequiresAdmin):
 		// Well-formed request, but the target account needs an administrator. 400
 		// (not 403) so it does not collide with the FE's global auth handling; the

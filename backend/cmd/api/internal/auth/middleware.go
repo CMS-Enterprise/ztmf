@@ -27,6 +27,12 @@ const (
 	// flow rejected an existing account it cannot self-serve, so the FE renders "an
 	// administrator must handle this user" instead of a generic validation error (#467).
 	CodeDelegateRequiresAdmin = "DELEGATE_REQUIRES_ADMIN"
+	// Set by the controller (sanitizeErr): the delegate add flow was refused because
+	// the OpDiv does not have the System Delegate capability enabled. Carries a code
+	// so the FE renders an in-dialog "not enabled for this OpDiv" guard rather than
+	// keying on the bare 403, which the global auth interceptor would otherwise
+	// swallow into a generic toast.
+	CodeDelegateNotEnabled = "DELEGATE_NOT_ENABLED"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a
