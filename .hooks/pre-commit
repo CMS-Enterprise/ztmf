@@ -71,6 +71,27 @@ if echo "$STAGED_FILES" | grep -q '\.go$'; then
     fi
     echo "✓ Go compilation successful"
 
+    # --- OpenAPI spec sync (#391) -----------------------------------------
+    # swag parses the whole backend tree (--dir ./ --parseInternal), so any
+    # staged backend Go change can affect the generated spec. Regen costs ~1s,
+    # so it always runs rather than guessing which files are API-relevant (a
+    # wrong guess costs the CI round-trip this hook exists to prevent).
+    # Limitation: swag reads the working tree, not the index — with partially
+    # staged Go files the spec may include unstaged edits. CI's
+    # OpenAPI-Spec-Check remains the backstop for that case.
+    echo "→ Regenerating OpenAPI spec..."
+    if ! SWAG_OUT=$(make generate-openapi 2>&1); then
+        echo "$SWAG_OUT"
+        echo "❌ OpenAPI generation failed. Fix annotations before committing."
+        exit 1
+    fi
+    if ! git diff --quiet -- backend/openapi.yaml; then
+        git add backend/openapi.yaml
+        echo "✓ openapi.yaml regenerated and staged"
+    else
+        echo "✓ openapi.yaml already up to date"
+    fi
+
     echo "→ Running unit tests..."
     # Source dev.compose.env so tests that read DB_* env (e.g. controller tests
     # that touch pgx) point at the local compose-dev Postgres on :54321 instead
