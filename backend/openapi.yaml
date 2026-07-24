@@ -555,6 +555,15 @@ components:
         questionid:
           type: integer
       type: object
+    model.QuestionViewInput:
+      properties:
+        datacallid:
+          type: integer
+        fismasystemid:
+          type: integer
+        questionid:
+          type: integer
+      type: object
     model.Score:
       properties:
         datacallid:
@@ -1132,7 +1141,7 @@ paths:
         name: userid
         schema:
           type: string
-      - description: 'Filter by action: created, updated, or deleted'
+      - description: 'Filter by action: created, updated, deleted, or viewed'
         in: query
         name: action
         schema:
@@ -1184,6 +1193,59 @@ paths:
       security:
       - bearerAuth: []
       summary: List audit-trail events
+      tags:
+      - events
+  /events/view:
+    post:
+      description: Appends a 'viewed' event marking that the caller opened a questionnaire
+        question, so time-spent analytics can bound how long the question was worked
+        on before the next view. Editor-vs-viewer is derived server-side (from the
+        caller's role and the data call deadline), not sent by the client. Recorded
+        for any caller who can see the system; a caller may only record views for
+        a system they have a relationship to (admins any, OpDiv-scoped admins their
+        OpDivs, ISSO/ISSM/SYSTEM_DELEGATE their assigned systems). Returns 404 if
+        the system or data call does not exist.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.QuestionViewInput'
+                description: Question view to record
+                summary: body
+        description: Question view to record
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Record a questionnaire question view
       tags:
       - events
   /fismasystems:
