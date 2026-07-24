@@ -112,6 +112,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacentermismatches", controller.ListDataCenterMismatches).Methods("GET")
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")
+	// records that a user opened a questionnaire question (time-spent analytics)
+	router.HandleFunc("/api/v1/events/view", controller.RecordQuestionView).Methods("POST")
 
 	router.HandleFunc("/api/v1/systemenrichment/{fisma_uuid:[a-zA-Z0-9-]+}", controller.GetSystemEnrichment).Methods("GET")
 

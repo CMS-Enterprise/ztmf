@@ -25,6 +25,10 @@ type payload struct {
 	ScoreID       *int32  `schema:"scoreid" json:"scoreid,omitempty"`
 	DataCallID    *int32  `schema:"datacallid" json:"datacallid,omitempty"`
 	QuestionID    *int32  `schema:"questionid" json:"questionid,omitempty"`
+	// ReadOnly records whether a 'viewed' event was made in a read-only session.
+	// A pointer so it is omitted from non-view payloads and only stamped on
+	// views: true attributes the dwell to viewer time, false to editor time.
+	ReadOnly *bool `schema:"readonly" json:"readonly,omitempty"`
 }
 
 type FindEventsInput struct {
@@ -77,15 +81,96 @@ func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 		return
 	}
 
-	e.UserID = user.UserID
+	// Fire-and-forget: the outer write already succeeded, so a failed event
+	// insert must not fail the response (see the doc comment above). The error
+	// is discarded here but logged inside queryRow.
+	insertEvent(ctx, user.UserID, e.Action, e.Resource, e.Payload)
+}
 
-	sqlb = stmntBuilder.
+// insertEvent appends a single row to the events audit log. It is the shared
+// write behind both recordEvent (the write-derived side-effect hook, which
+// discards the error) and RecordQuestionView (an explicit, purpose-built event,
+// which returns it). The insert flows through queryRow, whose recordEvent hook
+// short-circuits on resource == "events", so recording an event never recurses
+// into recording another.
+func insertEvent(ctx context.Context, userID, action, resource string, payload any) error {
+	sqlb := stmntBuilder.
 		Insert("events").
 		Columns("userid", "action", "resource", "payload").
-		Values(e.UserID, e.Action, e.Resource, e.Payload).
+		Values(userID, action, resource, payload).
 		Suffix("Returning *")
 
-	queryRow(ctx, sqlb, pgx.RowToStructByName[Event])
+	_, err := queryRow(ctx, sqlb, pgx.RowToStructByName[Event])
+	return err
+}
+
+// QuestionViewInput carries the client-supplied identifiers for a questionnaire
+// "viewed" event: which question, on which system, in which data call. userid
+// comes from the auth context, and the editor/viewer (readOnly) classification
+// is derived server-side - neither is part of this request shape.
+type QuestionViewInput struct {
+	FismaSystemID int32 `json:"fismasystemid"`
+	DataCallID    int32 `json:"datacallid"`
+	QuestionID    int32 `json:"questionid"`
+}
+
+// Validate is exported so the controller can reject a malformed body before
+// doing any access/data-call lookups; RecordQuestionView also calls it as a
+// backstop.
+func (i QuestionViewInput) Validate() error {
+	err := InvalidInputError{data: map[string]any{}}
+
+	if i.FismaSystemID == 0 {
+		err.data["fismasystemid"] = "required"
+	}
+	if i.DataCallID == 0 {
+		err.data["datacallid"] = "required"
+	}
+	if i.QuestionID == 0 {
+		err.data["questionid"] = "required"
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+	return nil
+}
+
+// RecordQuestionView appends a 'viewed' event to the audit log marking that the
+// current user opened a questionnaire question. readOnly (derived server-side by
+// the caller) classifies the dwell as viewer (true) or editor (false) time.
+// Time-spent analytics pair each view with the NEXT VIEW by the same user in the
+// same system+data call to bound how long the question was worked on (saves are
+// not boundaries).
+//
+// Unlike recordEvent - which fires as a side effect of a write and derives its
+// action from the SqlBuilder shape - this records an explicit event: a view is
+// not a table mutation, so no write path produces it. It shares recordEvent's
+// insertEvent primitive but supplies its own action ('viewed') and resource
+// ('questionnaire', not 'public.scores', so these rows never touch the
+// score-audit lookups), and it returns the insert error so the caller can
+// surface a failure rather than swallow it.
+func RecordQuestionView(ctx context.Context, input QuestionViewInput, readOnly bool) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+
+	user := UserFromContext(ctx)
+	if user == nil {
+		// Every route that reaches here is behind auth.Middleware, so a nil
+		// user is not reachable in practice; mirror recordEvent and skip
+		// rather than fabricate an event with no initiator.
+		return nil
+	}
+
+	p := payload{
+		FismaSystemID: &input.FismaSystemID,
+		DataCallID:    &input.DataCallID,
+		QuestionID:    &input.QuestionID,
+		ReadOnly:      &readOnly,
+	}
+
+	return insertEvent(ctx, user.UserID, "viewed", "questionnaire", p)
 }
 
 func FindEvents(ctx context.Context, input *FindEventsInput) ([]*Event, error) {
