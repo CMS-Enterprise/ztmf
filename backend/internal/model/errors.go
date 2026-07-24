@@ -19,6 +19,16 @@ var (
 	ErrNoReference  = errors.New("reference not found")
 	ErrPastDeadline = errors.New("deadline has passed")
 	ErrNotesTooLong = errors.New("notes exceed maximum length of 2000 characters")
+	// ErrDelegatesNotEnabled is returned when the System Delegate add flow targets
+	// a system whose OpDiv has the "Add System Delegate Role" capability off (#467).
+	// Mapped to 403 in the controller's sanitizeErr.
+	ErrDelegatesNotEnabled = errors.New("system delegate role is not enabled for this opdiv")
+	// ErrDelegateRequiresAdmin is returned when the ISSO add flow is given an
+	// existing email it cannot self-serve (a non-delegate, a delegate in a
+	// different OpDiv, or a soft-deleted account). The controller maps it to a
+	// machine-readable code so the FE can branch to "an administrator must handle
+	// this user" copy rather than string-matching (#467).
+	ErrDelegateRequiresAdmin = errors.New("this user must be added by an administrator")
 )
 
 type InvalidInputError struct {

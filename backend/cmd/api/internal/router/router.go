@@ -63,6 +63,15 @@ func Handler() http.Handler {
 	// returns a list of data calls that this fisma system has marked complete
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/datacalls", controller.ListFismaSystemDataCalls).Methods("GET")
 
+	// System Delegate self-service (#467): ISSO-reachable add/remove/renew, scoped
+	// to the system in the path. Not behind the admin-only user write paths.
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/delegates", controller.ListSystemDelegates).Methods("GET")
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/delegates", controller.AddSystemDelegate).Methods("POST")
+	// Existing delegates eligible to attach to this system (FE attach picker, #598).
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/delegate-candidates", controller.ListDelegateCandidates).Methods("GET")
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/delegates/{userid:"+userIdPattern+"}", controller.RemoveSystemDelegate).Methods("DELETE")
+	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/delegates/{userid:"+userIdPattern+"}", controller.RenewSystemDelegate).Methods("PATCH")
+
 	// TODO: deprecate this in favor of non-nested URIs
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListFismaSystemQuestions).Methods("GET")
 
@@ -71,6 +80,8 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
 	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
 	router.HandleFunc("/api/v1/opdivs/{opdiv_id:[0-9]+}", controller.SaveOpDiv).Methods("PUT")
+	// "Add System Delegate Role" per-OpDiv toggle (#467); Owner + HHS admin only.
+	router.HandleFunc("/api/v1/opdivs/{opdiv_id:[0-9]+}/system-delegate-enabled", controller.SetOpDivSystemDelegateEnabled).Methods("PUT")
 
 	router.HandleFunc("/api/v1/users", controller.ListUsers).Methods("GET")
 	router.HandleFunc("/api/v1/users", controller.SaveUser).Methods("POST")
