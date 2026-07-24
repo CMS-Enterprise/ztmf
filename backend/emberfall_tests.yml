@@ -1245,19 +1245,21 @@ tests:
   # Math correctness, response field presence, and Tier(score)==tier
   # consistency are all pinned in internal/model/scores_integration_test.go,
   # which runs against the real schema as part of `make test-full`.
-  # Emberfall's body assertion is exact-match (body.text is full-body
-  # equality, body.json equality fails on array-typed responses due to
-  # aquia-inc/emberfall#36), so these HTTP-layer smokes cover what we
-  # can express cleanly: cardinality contract, auth gates, and content
-  # type. Anything that survives unit + integration but breaks at the
-  # HTTP boundary still shows up here.
+  # These HTTP-layer smokes pin the cardinality contract, auth gates, and
+  # content type. Array body.json assertions work since aquia-inc/emberfall#36
+  # was fixed (v0.4.1), so row keys are pinned exactly below; score values
+  # stay in the integration suite.
   #
-  # The DS-1 seed (fismasystemid=1001) has 12 score rows across datacalls
-  # 3 and 4 in _test_data_empire.sql, guaranteeing a non-empty response.
+  # The DS-1 seed (fismasystemid=1001) has score rows in datacalls 3, 4, 6,
+  # and the HHS historical calls 101-103 in _test_data_empire.sql,
+  # guaranteeing a non-empty response.
 
   # 1. Scored system returns a populated aggregate via the full HTTP
   #    path. Regression target: 5xx anywhere in the new aggregation SQL,
-  #    JSON serialization of the new tier fields, content negotiation.
+  #    JSON serialization of the new tier fields, content negotiation. The
+  #    exact row assertion (one per seeded datacall with 1001 scores,
+  #    ordered by datacallid) also fails fast on the cartesian-join
+  #    regression case 2 describes.
   - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
     method: GET
     headers:
@@ -1266,6 +1268,21 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+              datacallid: 3
+            - fismasystemid: 1001
+              datacallid: 4
+            - fismasystemid: 1001
+              datacallid: 6
+            - fismasystemid: 1001
+              datacallid: 101
+            - fismasystemid: 1001
+              datacallid: 102
+            - fismasystemid: 1001
+              datacallid: 103
 
   # 2. Unscored system returns an empty data array. Regression target:
   #    an accidental cartesian fismasystems x datacalls join that
@@ -1334,10 +1351,11 @@ tests:
               email: "Test.User@nowhere.xyz"
               role: "OWNER"
 
-  # GET the score list back through the same lateral-join path. Array
-  # response so no body.json assertion (aquia-inc/emberfall#36); status +
-  # content-type are the regression target here. The POST above carries
-  # the per-field audit assertion against the single-object response.
+  # GET the score list back through the same lateral-join path. Exactly one
+  # datacall-5 score exists for 1001 at this point (the POST above), so the
+  # array is pinned end to end: the list path must resolve the same audit
+  # fields the single-object POST response carried (ztmf-ui#310). Subset
+  # match ignores scoreid / last_edited_at / datecalculated.
   - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=5"
     method: GET
     headers:
@@ -1346,6 +1364,16 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+              functionoptionid: 1
+              datacallid: 5
+              notes: "Audit field smoke - created by Emberfall"
+              last_edited_by:
+                email: "Test.User@nowhere.xyz"
+                role: "OWNER"
 
   # Malformed query params on GET list endpoints are the caller's fault and must
   # return 400, not 500 (#420). The gorilla/schema decode fails before scope or
@@ -1514,8 +1542,9 @@ tests:
   # Test C — notes_is_ai_summary flag semantics.
   #
   # 1. POST with notes_is_ai_summary: true simulates an AI import; the 201
-  #    response body must carry the flag set. (GET /scores returns an array
-  #    so body assertions aren't available there — aquia-inc/emberfall#36.)
+  #    response body must carry the flag set. The single-object POST response
+  #    is the natural place to pin it; the list path's row/audit contract is
+  #    pinned by the read-back assertion above.
   - id: createAIScore
     url: http://localhost:8080/api/v1/scores
     method: POST
@@ -1585,9 +1614,9 @@ tests:
   #   2. ISSO write to an unassigned system is rejected at the controller
   #      authz gate (403) -- the audit fields don't even come into play.
   #   3. ISSO list scoping still resolves audit fields for rows the ISSO
-  #      can see. Status assertion only because /scores returns an array
-  #      and body.json on arrays is broken (aquia-inc/emberfall#36); the
-  #      ISSO scope + audit join is covered by the integration test
+  #      can see. Status assertion only because the unfiltered list's row
+  #      set and order depend on how much of the suite has run before it;
+  #      the ISSO scope + audit join is covered by the integration test
   #      TestFindScoresISSOScopeRetainsAuditFieldsIntegration in
   #      backend/internal/model/scores_integration_test.go.
   #
@@ -2233,8 +2262,13 @@ tests:
   # Regression: ISSO requesting scores for a specific assigned system should only
   # get that system's data, not all their assigned systems' scores.
   # Previously FismaSystemID filter was ignored when FismaSystemIDs was pre-populated.
-  # NOTE: body assertion omitted — Emberfall panics on array comparison (aquia-inc/emberfall#36)
-  # TODO: add body assertion (data[0].fismasystemid == 1003) once Emberfall fix ships
+  # Rows are pinned exactly (aggregate order is datacallid, fismasystemid): the
+  # seeded 1003 scores (datacalls 4 and the HHS historical calls 101-103) plus
+  # the datacall-5 score issoCreateScoreOwnSystem posts earlier in the suite.
+  # Any other system's rows appearing fails on array length. This fixture is
+  # assigned to 1003 only, so the narrow filter-ignored case is
+  # indistinguishable here; that path stays pinned by the model
+  # integration tests.
   - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1003&include_pillars=true
     method: GET
     headers:
@@ -2243,8 +2277,23 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              datacallid: 4
+            - fismasystemid: 1003
+              datacallid: 5
+            - fismasystemid: 1003
+              datacallid: 101
+            - fismasystemid: 1003
+              datacallid: 102
+            - fismasystemid: 1003
+              datacallid: 103
 
-  # ISSO requesting a system they are NOT assigned to should get empty data, not a 403
+  # ISSO requesting a system they are NOT assigned to should get empty data, not
+  # a 403. Exact empty-body match: if scope ever leaks 1001's aggregates to an
+  # unassigned ISSO, this fails on content, not just status.
   - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
     method: GET
     headers:
@@ -2253,6 +2302,8 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        text: "{\"data\":[]}"
 
   # ==========================================================================
   # System Delegate RBAC (#455)
