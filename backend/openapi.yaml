@@ -389,9 +389,16 @@ components:
     model.FismaSystem:
       properties:
         cloud_service_model:
-          type: string
+          description: |-
+            CloudServiceModel is a decomposed multi-select stored as a text[] column;
+            nil = omitted/NULL, an empty slice clears it, a populated slice is the set
+            of canonical values (IaaS/PaaS/SaaS/Other), enforced by a DB CHECK.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         cloud_system:
-          type: string
+          type: boolean
         cloud_vendor:
           type: string
         component:
@@ -429,13 +436,16 @@ components:
         groupname:
           type: string
         hva:
-          type: string
+          description: |-
+            HHS metadata typed by ztmf#433. Booleans are *bool so NULL stays "unknown"
+            (the epic rule: never coerce a missing value to false/No).
+          type: boolean
         isso_name:
           type: string
         issoemail:
           type: string
         legacy:
-          type: string
+          type: boolean
         opdiv_id:
           type: integer
         reactivated_by:
