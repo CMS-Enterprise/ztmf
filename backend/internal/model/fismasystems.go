@@ -214,6 +214,64 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		}
 	}
 
+	// Extended HHS metadata is validated against the systemattributes reference
+	// table (ztmf#395) for a friendly field-level 400 before the ztmf#433 CHECK
+	// constraints would reject an off-canon value at the DB. NULL/"" (omitted or
+	// cleared) is always valid - these fields are never required. The booleans
+	// (hva/cloud_system/legacy) are type-enforced by the column, so they need no
+	// vocabulary check here.
+	invalid := InvalidInputError{data: map[string]any{}}
+	enumFields := []struct {
+		field string
+		val   *string
+	}{
+		{"fips", f.FIPS},
+		{"system_type", f.SystemType},
+		{"system_operator", f.SystemOperator},
+		{"goco_coco_gogo", f.GocoCocGoGo},
+	}
+	for _, ef := range enumFields {
+		if ef.val == nil || *ef.val == "" {
+			continue
+		}
+		ok, err := systemAttributeValueExists(ctx, ef.field, *ef.val)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			invalid.data[ef.field] = *ef.val
+		}
+	}
+
+	// cloud_service_model is a decomposed text[] (ztmf#433); every element must be
+	// a canonical atomic value.
+	for _, part := range f.CloudServiceModel {
+		ok, err := systemAttributeValueExists(ctx, "cloud_service_model", part)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			invalid.data["cloud_service_model"] = part
+			break
+		}
+	}
+
+	// Cross-field rule (ztmf#431): a non-cloud system carries no cloud service
+	// model or vendor. Enforced only when cloud_system is explicitly false (nil =
+	// unknown, so we do not infer from a stored value on a partial update).
+	if f.CloudSystem != nil && !*f.CloudSystem {
+		if len(f.CloudServiceModel) > 0 {
+			invalid.data["cloud_service_model"] = "must be empty when cloud_system is No"
+		}
+		if f.CloudVendor != nil && *f.CloudVendor != "" {
+			invalid.data["cloud_vendor"] = "must be empty when cloud_system is No"
+		}
+	}
+
+	if len(invalid.data) > 0 {
+		return nil, &invalid
+	}
+
 	if f.FismaSystemID == 0 {
 		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id
 		// is NOT NULL on the table. Callers may pass an explicit OpDivID; if
