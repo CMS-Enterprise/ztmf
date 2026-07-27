@@ -48,18 +48,23 @@ type FismaSystem struct {
 	ReactivatedDate       *time.Time `json:"reactivated_date"`
 	ReactivationNotes     *string    `json:"reactivation_notes"`
 	OpDivID               *int32     `json:"opdiv_id" db:"opdiv_id"`
-	HVA                   *string    `json:"hva" db:"hva"`
-	FIPS                  *string    `json:"fips" db:"fips"`
-	SystemType            *string    `json:"system_type" db:"system_type"`
-	CloudSystem           *string    `json:"cloud_system" db:"cloud_system"`
-	CloudServiceModel     *string    `json:"cloud_service_model" db:"cloud_service_model"`
-	CloudVendor           *string    `json:"cloud_vendor" db:"cloud_vendor"`
-	SystemOperator        *string    `json:"system_operator" db:"system_operator"`
-	GocoCocGoGo           *string    `json:"goco_coco_gogo" db:"goco_coco_gogo"`
-	SystemOwner           *string    `json:"system_owner" db:"system_owner"`
-	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
-	Legacy                *string    `json:"legacy" db:"legacy"`
-	ISSOName              *string    `json:"isso_name" db:"isso_name"`
+	// HHS metadata typed by ztmf#433. Booleans are *bool so NULL stays "unknown"
+	// (the epic rule: never coerce a missing value to false/No).
+	HVA         *bool   `json:"hva" db:"hva"`
+	FIPS        *string `json:"fips" db:"fips"`
+	SystemType  *string `json:"system_type" db:"system_type"`
+	CloudSystem *bool   `json:"cloud_system" db:"cloud_system"`
+	// CloudServiceModel is a decomposed multi-select stored as a text[] column;
+	// nil = omitted/NULL, an empty slice clears it, a populated slice is the set
+	// of canonical values (IaaS/PaaS/SaaS/Other), enforced by a DB CHECK.
+	CloudServiceModel []string `json:"cloud_service_model" db:"cloud_service_model"`
+	CloudVendor       *string  `json:"cloud_vendor" db:"cloud_vendor"`
+	SystemOperator    *string  `json:"system_operator" db:"system_operator"`
+	GocoCocGoGo       *string  `json:"goco_coco_gogo" db:"goco_coco_gogo"`
+	SystemOwner      *string `json:"system_owner" db:"system_owner"`
+	SystemOwnerEmail *string `json:"system_owner_email" db:"system_owner_email"`
+	Legacy           *bool   `json:"legacy" db:"legacy"`
+	ISSOName         *string `json:"isso_name" db:"isso_name"`
 	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
 	// yet; the UI presents the Advanced default. Written only via
 	// SaveTargetMaturity, never through Save().
@@ -236,12 +241,15 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
 				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
-				// A blank optional field on create is NULL, not "" (ztmf#442).
-				blankToNil(f.HVA), blankToNil(f.FIPS), blankToNil(f.SystemType),
-				blankToNil(f.CloudSystem), blankToNil(f.CloudServiceModel),
+				// A blank optional text field on create is NULL, not "" (ztmf#442).
+				// The typed HHS fields (ztmf#433) pass through raw: a nil *bool
+				// encodes NULL (unknown, never false), and an empty slice is nulled
+				// so a blank multi-select writes NULL rather than an empty array.
+				f.HVA, blankToNil(f.FIPS), blankToNil(f.SystemType),
+				f.CloudSystem, emptyToNil(f.CloudServiceModel),
 				blankToNil(f.CloudVendor), blankToNil(f.SystemOperator),
 				blankToNil(f.GocoCocGoGo), blankToNil(f.SystemOwner),
-				blankToNil(f.SystemOwnerEmail), blankToNil(f.Legacy),
+				blankToNil(f.SystemOwnerEmail), f.Legacy,
 				blankToNil(f.ISSOName),
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
@@ -262,33 +270,45 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			"sdl_sync_enabled":      f.SDLSyncEnabled,
 		}
 		// Metadata fields distinguish three request states (ztmf#442):
-		//   - omitted / null (nil pointer) -> leave the stored value untouched,
-		//     so a partial PUT never wipes importer data (and a scoped-admin edit,
-		//     whose HHS fields copyHHSMetadata has set to the stored values, is a
-		//     no-op here);
-		//   - "" (a cleared form input) -> write NULL, so a blank actually clears
-		//     the value rather than persisting "" or being silently ignored;
+		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
+		//     untouched, so a partial PUT never wipes importer data (and a
+		//     scoped-admin edit, whose HHS fields copyHHSMetadata has set to the
+		//     stored values, is a no-op here);
+		//   - "" (a cleared text input) / empty slice -> write NULL, so a blank
+		//     actually clears the value rather than persisting "" / an empty array;
 		//   - a value -> write it.
 		// blankToNil folds the "" case into a nil *string, which pgx encodes as
 		// NULL; nil-guarding the assignment keeps the omitted case untouched.
 		hhsCols := map[string]*string{
-			"hva":                 f.HVA,
-			"fips":                f.FIPS,
-			"system_type":         f.SystemType,
-			"cloud_system":        f.CloudSystem,
-			"cloud_service_model": f.CloudServiceModel,
-			"cloud_vendor":        f.CloudVendor,
-			"system_operator":     f.SystemOperator,
-			"goco_coco_gogo":      f.GocoCocGoGo,
-			"system_owner":        f.SystemOwner,
-			"system_owner_email":  f.SystemOwnerEmail,
-			"legacy":              f.Legacy,
-			"isso_name":           f.ISSOName,
+			"fips":               f.FIPS,
+			"system_type":        f.SystemType,
+			"cloud_vendor":       f.CloudVendor,
+			"system_operator":    f.SystemOperator,
+			"goco_coco_gogo":     f.GocoCocGoGo,
+			"system_owner":       f.SystemOwner,
+			"system_owner_email": f.SystemOwnerEmail,
+			"isso_name":          f.ISSOName,
 		}
 		for col, val := range hhsCols {
 			if val != nil {
 				setCols[col] = blankToNil(val)
 			}
+		}
+		// The typed HHS fields (ztmf#433) use the same three-state semantics with
+		// their own types. A nil *bool / nil slice means omitted (leave unchanged);
+		// a provided *bool is written as-is (true/false); a provided-but-empty
+		// slice clears cloud_service_model to NULL via emptyToNil.
+		if f.HVA != nil {
+			setCols["hva"] = *f.HVA
+		}
+		if f.CloudSystem != nil {
+			setCols["cloud_system"] = *f.CloudSystem
+		}
+		if f.Legacy != nil {
+			setCols["legacy"] = *f.Legacy
+		}
+		if f.CloudServiceModel != nil {
+			setCols["cloud_service_model"] = emptyToNil(f.CloudServiceModel)
 		}
 		sqlb = stmntBuilder.
 			Update("fismasystems").
@@ -538,6 +558,18 @@ func blankToNil(p *string) *string {
 		return nil
 	}
 	return p
+}
+
+// emptyToNil returns a nil slice for an empty (or nil) slice so a cleared
+// multi-select writes SQL NULL instead of an empty array '{}' (ztmf#433) -
+// the text[] analogue of blankToNil. Callers nil-guard before calling this so a
+// genuinely omitted field (nil slice) stays "leave unchanged" rather than being
+// turned into a clear.
+func emptyToNil(s []string) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	return s
 }
 
 func (f *FismaSystem) validate() error {
