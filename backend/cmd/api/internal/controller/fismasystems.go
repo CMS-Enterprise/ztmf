@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -201,14 +204,26 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f := &model.FismaSystem{}
-
-	err := getJSON(r.Body, f)
+	// Buffer the body so we can both decode it and inspect which keys it carried.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Println(err)
 		respond(w, r, nil, ErrMalformed)
 		return
 	}
+
+	f := &model.FismaSystem{}
+	if err := getJSON(bytes.NewReader(body), f); err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+
+	// Capture which tri-state boolean keys the request actually sent, so Save can
+	// tell an explicit null (clear to Unknown) from an omitted field (leave
+	// unchanged) - a decoded *bool collapses both to nil. Drives the Yes/No/
+	// Unknown control on ztmf-ui#460 (see model.WithPresentBoolFields).
+	presentBools := presentJSONKeys(body, "hva", "cloud_system", "legacy")
 
 	vars := mux.Vars(r)
 	if v, ok := vars["fismasystemid"]; ok {
@@ -249,7 +264,7 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		copyHHSMetadata(existing, f)
 	}
 
-	f, err = f.Save(r.Context())
+	f, err = f.Save(r.Context(), model.WithPresentBoolFields(presentBools))
 
 	if err != nil {
 		respond(w, r, nil, err)
@@ -257,6 +272,25 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, r, f, nil)
+}
+
+// presentJSONKeys reports which of the given top-level keys appear in the JSON
+// object body, regardless of value (an explicit null counts as present). Used to
+// distinguish a field sent as null from an omitted one, which a decoded pointer
+// cannot. Returns an empty map on malformed JSON; the caller has already
+// validated the body via getJSON, so that path is not expected.
+func presentJSONKeys(body []byte, keys ...string) map[string]bool {
+	present := make(map[string]bool, len(keys))
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return present
+	}
+	for _, k := range keys {
+		if _, ok := raw[k]; ok {
+			present[k] = true
+		}
+	}
+	return present
 }
 
 // DecommissionRequest contains optional parameters for decommissioning
