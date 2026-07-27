@@ -35,7 +35,7 @@ func pathFismaSystemID(r *http.Request) (int32, bool) {
 // management gate: only an admin write tier, or an ISSO assigned to this
 // system, may proceed. An OPDIV_ADMIN passes here and is narrowed to its OpDiv
 // after the system loads. Pure (no I/O), so the role boundary stays assertable
-// with no database (#478).
+// with no database.
 func mayManageDelegates(u *model.User, id int32) bool {
 	return u.IsAdmin() || (u.Role == "ISSO" && u.IsAssignedFismaSystem(id))
 }

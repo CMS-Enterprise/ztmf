@@ -119,7 +119,7 @@ func TestListDelegateCandidates_DeniedActorsNotFound(t *testing.T) {
 // Asserted against the pure pre-check rather than the full handler: past the
 // gate the handler does real DB work, so its status depends on the environment
 // (an absent DB errors, a live one 404s unless the seed carries this system),
-// which made the handler-level assertion pass only when the DB was unreachable (#478).
+// which made the handler-level assertion pass only when the DB was unreachable.
 func TestAddSystemDelegate_AllowedActorsPassGate(t *testing.T) {
 	issoAssigned := &model.User{UserID: "33333333-3333-4333-8333-333333333333", Role: "ISSO", AssignedFismaSystems: []*int32{int32Ptr(1)}}
 	for name, u := range map[string]*model.User{"ISSO assigned": issoAssigned, "OWNER": adminUser} {

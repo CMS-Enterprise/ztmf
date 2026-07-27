@@ -4,7 +4,7 @@ package migrations is used internally to specify DB schema updates that need to 
 All migrations should be registered by calling appendMigration from an init() function in a file
 dedicated to the migration. Registration is pure (append to a slice, no I/O): the database
 connection is only opened by Run(), so importing this package — e.g. from its test binary —
-never requires a reachable database (#471).
+never requires a reachable database.
 Be aware that multiple init() funcs are executed in lexical file name order, so when adding multiple
 changes in a single PR be sure to name the files in a way that applies them in the right order if the order matters.
 */

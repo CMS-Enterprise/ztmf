@@ -4,7 +4,7 @@ import "testing"
 
 // TestRegistryPopulated pins the package's registration contract: init() funcs
 // only append to the registry, so building the test binary and running the
-// -short suite must work with no database reachable (#471). If this test can
+// -short suite must work with no database reachable. If this test can
 // run at all, registration stayed I/O-free; it then checks the registry
 // actually carries the migrations Run() will execute.
 func TestRegistryPopulated(t *testing.T) {
