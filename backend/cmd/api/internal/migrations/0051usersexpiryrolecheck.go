@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"constrain users.access_expires_at to SYSTEM_DELEGATE rows only",
 		`
 -- Defense-in-depth for the System Delegate expiry invariant: only a

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add isso_name column to fismasystems",
 		`
 -- isso_name was omitted from migration 0043 which added the other 11 HHS

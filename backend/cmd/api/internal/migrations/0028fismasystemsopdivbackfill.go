@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"backfill fismasystems.opdiv_id to CMS",
 		`
 -- Every fismasystem row predates the multi-OpDiv schema and belongs to CMS by

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add HHS onboarding columns to fismasystems and notes_is_ai_summary to scores",
 		`
 -- Eleven new nullable varchar columns on fismasystems to hold HHS inventory

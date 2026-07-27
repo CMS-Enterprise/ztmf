@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add index on fismasystems.opdiv_id for OpDiv scope predicates",
 		`
 -- OpDiv-scoped RBAC enforcement filters fismasystems by opdiv_id on every

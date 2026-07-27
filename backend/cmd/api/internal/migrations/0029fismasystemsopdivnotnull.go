@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"enforce NOT NULL on fismasystems.opdiv_id and add index",
 		`
 ALTER TABLE IF EXISTS public.fismasystems

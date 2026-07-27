@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add users.access_expires_at for System Delegate expiry (nullable, null = never)",
 		`
 -- System Delegate accounts (ISSO#467) carry a mandatory expiration set at the

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add target maturity tier and justification to fismasystems",
 		`
 -- Risk-based target maturity level per system (#398, GAO audit response).

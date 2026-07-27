@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"create opdivs reference table and seed HHS + OpDivs",
 		`
 CREATE TABLE IF NOT EXISTS public.opdivs (

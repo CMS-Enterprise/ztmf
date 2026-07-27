@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add per-answer status to scores (state machine replacing events-derived progress)",
 		`
 -- Persist each answer's review state for its data call as a first-class column
