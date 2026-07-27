@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"datacalls new columnds",
 		`ALTER TABLE IF EXISTS public.datacalls ADD COLUMN IF NOT EXISTS "emailsubject" varchar(100);
 		ALTER TABLE IF EXISTS public.datacalls ADD COLUMN IF NOT EXISTS "emailbody" varchar(2000);

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"widen users.role column to fit new OpDiv role names",
 		`
 -- The new role constants (OPDIV_READONLY_ADMIN at 20 chars, HHS_READONLY_ADMIN

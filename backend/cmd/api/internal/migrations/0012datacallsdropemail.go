@@ -4,7 +4,7 @@ package migrations
 // every id in the array indicates
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"datacalls remove email; create datacalls_fismasystems",
 		`CREATE TABLE IF NOT EXISTS public.datacalls_fismasystems
 		(

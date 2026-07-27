@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"drop cfacts_systems table",
 		`
 DROP TABLE IF EXISTS public.cfacts_systems;

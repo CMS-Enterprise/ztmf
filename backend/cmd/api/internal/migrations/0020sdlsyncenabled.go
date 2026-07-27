@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add sdl_sync_enabled toggle to fismasystems",
 		// UP: Backfill existing rows as enabled (true), then change the column
 		// default to false so new systems must explicitly opt in to SDL sync.

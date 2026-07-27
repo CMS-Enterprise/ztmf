@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		// change char to varchar to avoid padding characters
 		"users table role type",
 		`ALTER TABLE public.users ALTER COLUMN role TYPE varchar(5);`,

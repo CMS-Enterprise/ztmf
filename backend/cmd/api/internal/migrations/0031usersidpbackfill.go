@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"backfill users.identity_provider to okta",
 		`
 -- Every pre-multi-IdP user is a CMS user authenticating via Okta. HHS OpDiv

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add audit-read indexes on events",
 		`
 -- Per-resource audit fields (ztmf-ui#310) read events via a LATERAL

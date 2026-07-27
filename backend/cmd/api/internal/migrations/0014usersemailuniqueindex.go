@@ -4,7 +4,7 @@ package migrations
 // remove the unique constraint and add a unique index instead
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"users unique index",
 		`ALTER TABLE IF EXISTS public.users DROP CONSTRAINT IF EXISTS users_email_key;
 		 CREATE UNIQUE INDEX email_unique_idx on users (LOWER(email));`,

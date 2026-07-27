@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"initial schema",
 		`
 CREATE TABLE IF NOT EXISTS public.pillars

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"ordering columns",
 		`ALTER TABLE IF EXISTS public.functions ADD COLUMN IF NOT EXISTS "ordr" smallint DEFAULT 0;
 		`,

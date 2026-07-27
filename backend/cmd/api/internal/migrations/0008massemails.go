@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		// this table will only ever hold 1 row which will be updated when emails are sent
 		// change history will then be captured in the events log
 		"massemails table",
