@@ -183,7 +183,35 @@ func FindFismaSystemByUUID(ctx context.Context, fismaUUID string) (*FismaSystem,
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
-func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
+// SaveOption configures a Save call. Options carry request-shape intent that is
+// not part of the persisted entity (e.g. which optional fields the client
+// actually sent), so the model can keep clean domain types while the HTTP layer
+// tells it how to interpret a partial write.
+type SaveOption func(*saveConfig)
+
+type saveConfig struct {
+	// presentBoolFields lists which of the tri-state boolean columns (hva,
+	// cloud_system, legacy) were present in the request body. Nil means the
+	// caller supplied no presence info (internal callers), which falls back to
+	// the nil-guard (write only a non-nil value).
+	presentBoolFields map[string]bool
+}
+
+// WithPresentBoolFields records which tri-state boolean fields the request
+// included, so Save can honor the Yes/No/Unknown control (ztmf-ui#460): a field
+// present as explicit JSON null clears the column to NULL (Unknown), while an
+// omitted field is left unchanged (the ztmf#442 partial-PUT protection). Only
+// the controller, which can see the raw request keys, passes this.
+func WithPresentBoolFields(present map[string]bool) SaveOption {
+	return func(c *saveConfig) { c.presentBoolFields = present }
+}
+
+func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSystem, error) {
+
+	var cfg saveConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 
 	var sqlb SqlBuilder
 
@@ -352,19 +380,34 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				setCols[col] = blankToNil(val)
 			}
 		}
-		// The typed HHS fields (ztmf#433) use the same three-state semantics with
-		// their own types. A nil *bool / nil slice means omitted (leave unchanged);
-		// a provided *bool is written as-is (true/false); a provided-but-empty
-		// slice clears cloud_service_model to NULL via emptyToNil.
-		if f.HVA != nil {
-			setCols["hva"] = *f.HVA
+		// Tri-state booleans (hva, cloud_system, legacy) - the Yes/No/Unknown
+		// control on ztmf-ui#460. A plain *bool can't tell "sent as null" (clear
+		// to Unknown) from "omitted" (leave unchanged) - both decode to nil - so
+		// the controller passes WithPresentBoolFields with the keys the request
+		// actually included:
+		//   - present -> write the pointer as-is: nil encodes SQL NULL (Unknown),
+		//     true/false sets the value;
+		//   - absent  -> skip, leaving the stored value untouched (partial-PUT /
+		//     importer protection, ztmf#442).
+		// With no presence info (internal callers pass no option) fall back to the
+		// nil-guard: write only a non-nil value, never clear.
+		boolCols := map[string]*bool{
+			"hva":          f.HVA,
+			"cloud_system": f.CloudSystem,
+			"legacy":       f.Legacy,
 		}
-		if f.CloudSystem != nil {
-			setCols["cloud_system"] = *f.CloudSystem
+		for col, val := range boolCols {
+			switch {
+			case cfg.presentBoolFields != nil:
+				if cfg.presentBoolFields[col] {
+					setCols[col] = val
+				}
+			case val != nil:
+				setCols[col] = *val
+			}
 		}
-		if f.Legacy != nil {
-			setCols["legacy"] = *f.Legacy
-		}
+		// cloud_service_model (text[]) keeps its own three-state: nil = omitted
+		// (leave), empty slice = clear to NULL, non-empty = set.
 		if f.CloudServiceModel != nil {
 			setCols["cloud_service_model"] = emptyToNil(f.CloudServiceModel)
 		}
