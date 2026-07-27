@@ -2820,3 +2820,40 @@ tests:
       <<: *issoHeaders
     expect:
       status: 200
+
+  # systemattributes metadata vocabulary (ztmf#395). Backend-driven source for
+  # the extended-metadata selects. Open to any authenticated user.
+  - url: "http://localhost:8080/api/v1/systemattributes?selectable_only=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # field filter returns a single attribute's values.
+  - url: "http://localhost:8080/api/v1/systemattributes?field=fips"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Full vocabulary also returns to an ISSO.
+  - url: http://localhost:8080/api/v1/systemattributes
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+  # Unauthenticated request is rejected.
+  - url: http://localhost:8080/api/v1/systemattributes
+    method: GET
+    expect:
+      status: 401
