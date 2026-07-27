@@ -31,6 +31,15 @@ func pathFismaSystemID(r *http.Request) (int32, bool) {
 	return id, id != 0
 }
 
+// mayManageDelegates is the cheap fail-closed pre-check of the delegate
+// management gate: only an admin write tier, or an ISSO assigned to this
+// system, may proceed. An OPDIV_ADMIN passes here and is narrowed to its OpDiv
+// after the system loads. Pure (no I/O), so the role boundary stays assertable
+// with no database (#478).
+func mayManageDelegates(u *model.User, id int32) bool {
+	return u.IsAdmin() || (u.Role == "ISSO" && u.IsAssignedFismaSystem(id))
+}
+
 // guardManageDelegates verifies the acting user may manage delegates on the
 // system and returns the system for the caller to reuse. A missing system, an
 // OpDiv-less system, or an unauthorized actor all return ErrNotFound so the
@@ -43,10 +52,7 @@ func pathFismaSystemID(r *http.Request) (int32, bool) {
 // The OpDiv-scope tightening for an OPDIV_ADMIN needs the system's OpDiv, so it
 // runs after the load via the authoritative CanManageSystemDelegates check.
 func guardManageDelegates(r *http.Request, authdUser *model.User, id int32) (*model.FismaSystem, error) {
-	// Cheap fail-closed pre-check: only an admin write tier, or an ISSO assigned
-	// to this system, may proceed. An OPDIV_ADMIN passes here and is narrowed to
-	// its OpDiv after the system loads.
-	if !authdUser.IsAdmin() && !(authdUser.Role == "ISSO" && authdUser.IsAssignedFismaSystem(id)) {
+	if !mayManageDelegates(authdUser, id) {
 		return nil, ErrNotFound
 	}
 
