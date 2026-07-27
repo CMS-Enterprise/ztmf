@@ -23,6 +23,10 @@ UPDATE public.opdivs SET is_parent = TRUE WHERE LOWER(code) = 'empire';
 -- migration only enables code='CMS', so set the test OpDiv explicitly here.
 -- REBELLION is intentionally left disabled to exercise the OpDiv-gated 404.
 UPDATE public.opdivs SET insights_enabled = TRUE WHERE LOWER(code) = 'empire';
+-- Enable the System Delegate self-service capability (#467) for EMPIRE so the
+-- ISSO add flow is exercisable; REBELLION is left disabled (migration default
+-- false) to exercise the toggle-off refusal (ErrDelegatesNotEnabled).
+UPDATE public.opdivs SET system_delegate_enabled = TRUE WHERE LOWER(code) = 'empire';
 
 -- 13 sister divisions of the Empire.
 INSERT INTO public.opdivs (code, name, is_parent, active) VALUES
@@ -337,6 +341,27 @@ INSERT INTO public.users_fismasystems VALUES ('33333333-3333-3333-3333-333333333
 INSERT INTO public.users_fismasystems VALUES ('44444444-4444-4444-4444-444444444444', 1003) ON CONFLICT DO NOTHING; -- Krennic -> Shield Gen
 INSERT INTO public.users_fismasystems VALUES ('66666666-6666-6666-6666-666666666666', 1003) ON CONFLICT DO NOTHING; -- Emberfall ISSO -> Shield Gen (for system_enrichment access E2E tests)
 INSERT INTO public.users_fismasystems VALUES ('55555555-5555-4555-8555-555555555555', 1001) ON CONFLICT DO NOTHING; -- System Delegate -> Death Star (answers-only E2E: score write allowed, target maturity 403)
+
+-- System Delegate self-service fixtures (#467). All are SYSTEM_DELEGATEs so the
+-- reuse-vs-reject branches of the add flow are exercisable against Death Star
+-- (system 1001, EMPIRE OpDiv, capability enabled above).
+--   - Reuse.Delegate: already a delegate holding EMPIRE and NOT yet on any system,
+--     so the existing-eligible path can attach it.
+--   - Wrong.Opdiv.Delegate: a delegate holding REBELLION (not EMPIRE), so the add
+--     flow must reject it as administrator-required.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('5e1e6a7e-0000-4000-8000-000000000001', 'Reuse.Delegate@empire.test', 'Reuse Delegate', 'SYSTEM_DELEGATE', 'entra')
+    ON CONFLICT DO NOTHING;
+INSERT INTO public.users_opdivs (userid, opdiv_id)
+    SELECT '5e1e6a7e-0000-4000-8000-000000000001', opdiv_id FROM public.opdivs WHERE code = 'EMPIRE'
+    ON CONFLICT DO NOTHING;
+
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('5e1e6a7e-0000-4000-8000-000000000002', 'Wrong.Opdiv.Delegate@rebellion.test', 'Wrong OpDiv Delegate', 'SYSTEM_DELEGATE', 'entra')
+    ON CONFLICT DO NOTHING;
+INSERT INTO public.users_opdivs (userid, opdiv_id)
+    SELECT '5e1e6a7e-0000-4000-8000-000000000002', opdiv_id FROM public.opdivs WHERE code = 'REBELLION'
+    ON CONFLICT DO NOTHING;
 
 -- DataCall-System Assignments (Systems participating in audits)
 INSERT INTO public.datacalls_fismasystems VALUES (3, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2024 review

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/stretchr/testify/assert"
 )
@@ -64,4 +65,23 @@ func TestSanitizeErrMapping(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, status)
 		})
 	}
+}
+
+// The administrator-required rejection carries a machine-readable code the FE
+// branches on (#467), like the auth middleware's ACCOUNT_NOT_PROVISIONED.
+func TestSanitizeErrDelegateRequiresAdminCarriesCode(t *testing.T) {
+	status, code, out := sanitizeErr(model.ErrDelegateRequiresAdmin)
+	assert.Equal(t, 400, status)
+	assert.Equal(t, auth.CodeDelegateRequiresAdmin, code)
+	assert.Equal(t, model.ErrDelegateRequiresAdmin, out, "human-readable message is preserved alongside the code")
+}
+
+// The capability-off rejection is a 403 that also carries a code, so the FE can
+// render an in-dialog guard rather than let the global auth interceptor swallow
+// the bare 403 into a generic toast.
+func TestSanitizeErrDelegatesNotEnabledCarriesCode(t *testing.T) {
+	status, code, out := sanitizeErr(model.ErrDelegatesNotEnabled)
+	assert.Equal(t, 403, status)
+	assert.Equal(t, auth.CodeDelegateNotEnabled, code)
+	assert.Equal(t, model.ErrDelegatesNotEnabled, out, "human-readable message is preserved alongside the code")
 }

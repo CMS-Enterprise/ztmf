@@ -19,6 +19,15 @@ components:
         notes:
           type: string
       type: object
+    controller.addDelegateBody:
+      properties:
+        access_expires_at:
+          type: string
+        email:
+          type: string
+        fullname:
+          type: string
+      type: object
     controller.apiResponse-any:
       properties:
         data: {}
@@ -277,6 +286,11 @@ components:
         idp:
           type: string
       type: object
+    controller.renewDelegateBody:
+      properties:
+        access_expires_at:
+          type: string
+      type: object
     controller.setUserOpDivsInput:
       properties:
         opdiv_ids:
@@ -517,6 +531,14 @@ components:
           type: string
         opdiv_id:
           type: integer
+        system_delegate_enabled:
+          description: |-
+            SystemDelegateEnabled gates the ISSO System Delegate self-service capability
+            (#467) for systems in this OpDiv: the "Add System Delegate Role" toggle on
+            the Manage OpDivs panel. Pointer for the same reason as the flags above.
+            Only Owner / HHS admin may set it (see SetOpDivSystemDelegateEnabled and the
+            controller gate); the ISSO add flow is refused when it is false.
+          type: boolean
       type: object
     model.Pillar:
       properties:
@@ -552,6 +574,15 @@ components:
           type: integer
         question:
           type: string
+        questionid:
+          type: integer
+      type: object
+    model.QuestionViewInput:
+      properties:
+        datacallid:
+          type: integer
+        fismasystemid:
+          type: integer
         questionid:
           type: integer
       type: object
@@ -701,6 +732,13 @@ components:
       type: object
     model.User:
       properties:
+        access_expires_at:
+          description: |-
+            AccessExpiresAt is the System Delegate expiry (#467). Null for every non-
+            delegate user (they never expire). A delegate whose AccessExpiresAt is in
+            the past is denied at authentication (see IsExpired and the auth middleware),
+            while the row and its assignments are retained for renewal and audit.
+          type: string
         assignedopdivids:
           items:
             type: integer
@@ -1132,7 +1170,7 @@ paths:
         name: userid
         schema:
           type: string
-      - description: 'Filter by action: created, updated, or deleted'
+      - description: 'Filter by action: created, updated, deleted, or viewed'
         in: query
         name: action
         schema:
@@ -1184,6 +1222,59 @@ paths:
       security:
       - bearerAuth: []
       summary: List audit-trail events
+      tags:
+      - events
+  /events/view:
+    post:
+      description: Appends a 'viewed' event marking that the caller opened a questionnaire
+        question, so time-spent analytics can bound how long the question was worked
+        on before the next view. Editor-vs-viewer is derived server-side (from the
+        caller's role and the data call deadline), not sent by the client. Recorded
+        for any caller who can see the system; a caller may only record views for
+        a system they have a relationship to (admins any, OpDiv-scoped admins their
+        OpDivs, ISSO/ISSM/SYSTEM_DELEGATE their assigned systems). Returns 404 if
+        the system or data call does not exist.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.QuestionViewInput'
+                description: Question view to record
+                summary: body
+        description: Question view to record
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Record a questionnaire question view
       tags:
       - events
   /fismasystems:
@@ -1446,6 +1537,249 @@ paths:
       summary: List data calls a FISMA system has completed
       tags:
       - fismasystems
+  /fismasystems/{fismasystemid}/delegate-candidates:
+    get:
+      description: Existing SYSTEM_DELEGATE users in the system's OpDiv that are not
+        already assigned to it - the set the add flow would accept. Backs the FE attach
+        picker (#598).
+      parameters:
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      - description: Filter by email or name (substring)
+        in: query
+        name: q
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_User'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List existing delegates eligible to attach to a FISMA system
+      tags:
+      - delegates
+  /fismasystems/{fismasystemid}/delegates:
+    get:
+      parameters:
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_User'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List the System Delegates assigned to a FISMA system
+      tags:
+      - delegates
+    post:
+      parameters:
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.addDelegateBody'
+                description: Delegate to add
+                summary: body
+        description: Delegate to add
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Add or invite a System Delegate on a FISMA system
+      tags:
+      - delegates
+  /fismasystems/{fismasystemid}/delegates/{userid}:
+    delete:
+      parameters:
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      - description: Delegate User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Remove a System Delegate from a FISMA system
+      tags:
+      - delegates
+    patch:
+      parameters:
+      - description: FISMA System ID
+        in: path
+        name: fismasystemid
+        required: true
+        schema:
+          type: integer
+      - description: Delegate User ID
+        in: path
+        name: userid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.renewDelegateBody'
+                description: New expiration
+                summary: body
+        description: New expiration
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_User'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Renew or adjust a System Delegate's expiration
+      tags:
+      - delegates
   /fismasystems/{fismasystemid}/questions:
     get:
       parameters:
@@ -1962,6 +2296,64 @@ paths:
       security:
       - bearerAuth: []
       summary: Create or update an OpDiv
+      tags:
+      - opdivs
+  /opdivs/{opdiv_id}/system-delegate-enabled:
+    put:
+      parameters:
+      - description: OpDiv ID
+        in: path
+        name: opdiv_id
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - properties:
+                  enabled:
+                    type: boolean
+                title: body
+                type: object
+        description: Toggle state
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_OpDiv'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Enable or disable the System Delegate role for an OpDiv
       tags:
       - opdivs
   /questions:

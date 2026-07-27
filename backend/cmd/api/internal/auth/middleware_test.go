@@ -214,6 +214,72 @@ func TestMiddleware(t *testing.T) {
 		assert.Equal(t, CodeAccountNotProvisioned, body.Code)
 	})
 
+	t.Run("authed + expired delegate -> 403 ACCOUNT_NOT_PROVISIONED", func(t *testing.T) {
+		past := time.Now().Add(-time.Hour)
+		stubFindUserByEmail(t, func(_ context.Context, email string) (*model.User, error) {
+			return &model.User{
+				UserID:          "55555555-5555-4555-8555-555555555555",
+				Email:           email,
+				Role:            "SYSTEM_DELEGATE",
+				AccessExpiresAt: &past,
+			}, nil
+		})
+
+		var called bool
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
+		r.Header.Set(cfg.Auth.HeaderField, "Bearer "+mintBearer(t, "expired.delegate@empire.test"))
+		w := httptest.NewRecorder()
+
+		Middleware(nextFn(&called)).ServeHTTP(w, r)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.False(t, called, "expired delegate must not reach the next handler")
+		body := decodeBody(t, w)
+		assert.Equal(t, CodeAccountNotProvisioned, body.Code)
+	})
+
+	t.Run("authed + delegate not yet expired -> pass through", func(t *testing.T) {
+		future := time.Now().Add(24 * time.Hour)
+		stubFindUserByEmail(t, func(_ context.Context, email string) (*model.User, error) {
+			return &model.User{
+				UserID:          "55555555-5555-4555-8555-555555555555",
+				Email:           email,
+				Role:            "SYSTEM_DELEGATE",
+				AccessExpiresAt: &future,
+			}, nil
+		})
+
+		var called bool
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
+		r.Header.Set(cfg.Auth.HeaderField, "Bearer "+mintBearer(t, "active.delegate@empire.test"))
+		w := httptest.NewRecorder()
+
+		Middleware(nextFn(&called)).ServeHTTP(w, r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.True(t, called, "a delegate with a future expiry must pass through")
+	})
+
+	t.Run("authed + regular user with null expiry -> pass through", func(t *testing.T) {
+		stubFindUserByEmail(t, func(_ context.Context, email string) (*model.User, error) {
+			return &model.User{
+				UserID: "11111111-1111-1111-1111-111111111111",
+				Email:  email,
+				Role:   "ISSO",
+			}, nil
+		})
+
+		var called bool
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
+		r.Header.Set(cfg.Auth.HeaderField, "Bearer "+mintBearer(t, "regular@empire.test"))
+		w := httptest.NewRecorder()
+
+		Middleware(nextFn(&called)).ServeHTTP(w, r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.True(t, called, "a non-delegate with null expiry is never expired")
+	})
+
 	t.Run("authed + lookup errors (non-ErrNoData) -> 500", func(t *testing.T) {
 		stubFindUserByEmail(t, func(context.Context, string) (*model.User, error) {
 			return nil, errors.New("simulated db connection blip")
