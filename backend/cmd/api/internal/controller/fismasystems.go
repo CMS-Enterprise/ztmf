@@ -154,6 +154,31 @@ func guardManageFismaSystem(ctx context.Context, user *model.User, id int32) (*m
 	return sys, nil
 }
 
+// guardViewFismaSystem verifies the acting user may READ the given system, the
+// permissive-but-scoped gate used before recording a questionnaire view: any
+// caller who could see the system is allowed (unscoped-read admins, OpDiv-scoped
+// admins for their OpDivs, and ISSO/ISSM for their assigned systems), so a
+// read-only session's dwell is still captured. Callers that can see every
+// system (unscoped read) or already hold the system assignment short-circuit
+// without a DB hit; only the OpDiv-scoped tiers need the system's OpDiv loaded.
+// A missing system stays a NotFound rather than leaking existence via a 403.
+func guardViewFismaSystem(ctx context.Context, user *model.User, id int32) error {
+	if user.HasUnscopedRead() || user.IsAssignedFismaSystem(id) {
+		return nil
+	}
+	sys, err := model.FindFismaSystem(ctx, model.FindFismaSystemsInput{FismaSystemID: &id})
+	if err != nil {
+		return err
+	}
+	if sys == nil {
+		return ErrNotFound
+	}
+	if !user.CanAccessFismaSystem(sys.OpDivID, id) {
+		return ErrForbidden
+	}
+	return nil
+}
+
 //	@Summary	Create or update a FISMA system
 //	@Tags		fismasystems
 //	@Accept		json

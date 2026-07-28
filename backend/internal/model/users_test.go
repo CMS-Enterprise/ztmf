@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -355,3 +356,122 @@ func TestUser_Validate(t *testing.T) {
 		})
 	}
 }
+
+// --- System Delegate self-service (#467) ---
+
+func TestUser_IsExpired(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+	delegate := func(exp *time.Time) *User { return &User{Role: "SYSTEM_DELEGATE", AccessExpiresAt: exp} }
+
+	assert.False(t, (&User{}).IsExpired(), "nil expiry (regular user) is never expired")
+	assert.False(t, delegate(nil).IsExpired(), "delegate with nil expiry is not expired")
+	assert.False(t, delegate(&future).IsExpired(), "delegate with future expiry is not expired")
+	assert.True(t, delegate(&past).IsExpired(), "delegate with past expiry is expired")
+	// Role gate (defense-in-depth): a user re-roled away from delegate is never
+	// locked out by a stale expiry, even if the column was not yet cleared.
+	assert.False(t, (&User{Role: "ISSO", AccessExpiresAt: &past}).IsExpired(),
+		"a non-delegate with a stale past expiry must not be treated as expired")
+}
+
+func TestUser_CanWriteHHSWide(t *testing.T) {
+	for _, role := range []string{"OWNER", "HHS_ADMIN"} {
+		assert.True(t, (&User{Role: role}).CanWriteHHSWide(), role+" may set HHS-wide toggles")
+	}
+	for _, role := range []string{"HHS_READONLY_ADMIN", "OPDIV_ADMIN", "OPDIV_READONLY_ADMIN", "ISSO", "ISSM", "SYSTEM_DELEGATE", ""} {
+		assert.False(t, (&User{Role: role}).CanWriteHHSWide(), role+" may not set HHS-wide toggles")
+	}
+}
+
+func TestUser_CanManageSystemDelegates(t *testing.T) {
+	opdiv := int32(2)
+	other := int32(9)
+	sysID := int32(1)
+
+	tests := []struct {
+		name string
+		user *User
+		want bool
+	}{
+		{"OWNER unscoped", &User{Role: "OWNER"}, true},
+		{"HHS_ADMIN unscoped", &User{Role: "HHS_ADMIN"}, true},
+		{"OPDIV_ADMIN holding the system's OpDiv", &User{Role: "OPDIV_ADMIN", AssignedOpDivIDs: []*int32{&opdiv}}, true},
+		{"OPDIV_ADMIN holding a different OpDiv", &User{Role: "OPDIV_ADMIN", AssignedOpDivIDs: []*int32{&other}}, false},
+		{"ISSO assigned to the system", &User{Role: "ISSO", AssignedFismaSystems: []*int32{&sysID}}, true},
+		{"ISSO not assigned", &User{Role: "ISSO"}, false},
+		{"ISSM assigned (excluded)", &User{Role: "ISSM", AssignedFismaSystems: []*int32{&sysID}}, false},
+		{"delegate assigned (excluded)", &User{Role: "SYSTEM_DELEGATE", AssignedFismaSystems: []*int32{&sysID}}, false},
+		{"HHS_READONLY_ADMIN", &User{Role: "HHS_READONLY_ADMIN"}, false},
+		{"OPDIV_READONLY_ADMIN with grant", &User{Role: "OPDIV_READONLY_ADMIN", AssignedOpDivIDs: []*int32{&opdiv}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.user.CanManageSystemDelegates(sysID, &opdiv))
+		})
+	}
+}
+
+// TestAddSystemDelegate_PreDBValidation covers the checks that run before any
+// database access, so they need no DB: the OpDiv capability gate, email
+// validation, and the mandatory future-expiry rule.
+func TestAddSystemDelegate_PreDBValidation(t *testing.T) {
+	opdivID := int32(2)
+	sys := &FismaSystem{FismaSystemID: 1, OpDivID: &opdivID}
+	enabled := &OpDiv{OpDivID: 2, Code: "REBELLION", SystemDelegateEnabled: boolPtr(true)}
+	disabled := &OpDiv{OpDivID: 2, Code: "REBELLION", SystemDelegateEnabled: boolPtr(false)}
+	past := time.Now().Add(-time.Hour)
+
+	t.Run("toggle off -> ErrDelegatesNotEnabled", func(t *testing.T) {
+		_, err := AddSystemDelegate(context.Background(), sys, disabled, adminUUID, "new@empire.test", "New", nil)
+		assert.ErrorIs(t, err, ErrDelegatesNotEnabled)
+	})
+
+	t.Run("invalid email -> InvalidInputError", func(t *testing.T) {
+		_, err := AddSystemDelegate(context.Background(), sys, enabled, adminUUID, "not-an-email", "New", nil)
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+
+	t.Run("past expiry -> InvalidInputError", func(t *testing.T) {
+		_, err := AddSystemDelegate(context.Background(), sys, enabled, adminUUID, "new@empire.test", "New", &past)
+		var iie *InvalidInputError
+		assert.ErrorAs(t, err, &iie)
+	})
+}
+
+func TestSetDelegateExpiry_PastDateRejected(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	_, err := SetDelegateExpiry(context.Background(), adminUUID, &past)
+	var iie *InvalidInputError
+	assert.ErrorAs(t, err, &iie)
+}
+
+func TestResolveDelegateExpiry(t *testing.T) {
+	// nil defaults to ~3 months out (a lower bound of ~2.5mo tolerates clock skew).
+	got, err := resolveDelegateExpiry(nil)
+	assert.NoError(t, err)
+	assert.True(t, got.After(time.Now().AddDate(0, 2, 20)), "nil must default to roughly three months")
+
+	// An explicit future date passes through unchanged.
+	future := time.Now().Add(24 * time.Hour)
+	got, err = resolveDelegateExpiry(&future)
+	assert.NoError(t, err)
+	assert.WithinDuration(t, future, got, time.Second)
+
+	// A past date is rejected.
+	past := time.Now().Add(-time.Hour)
+	_, err = resolveDelegateExpiry(&past)
+	var iie *InvalidInputError
+	assert.ErrorAs(t, err, &iie)
+}
+
+func TestIdentityProviderForOpDivCode(t *testing.T) {
+	assert.Equal(t, "okta", identityProviderForOpDivCode("CMS"), "CMS routes to Okta")
+	for _, code := range []string{"REBELLION", "CDC", "NIH", ""} {
+		assert.Equal(t, "entra", identityProviderForOpDivCode(code), code+" routes to Entra")
+	}
+}
+
+// adminUUID is a valid v4-shaped UUID (version nibble 4, variant nibble 8) so it
+// passes isValidUUID; the all-1s form used elsewhere as a display id does not.
+const adminUUID = "11111111-1111-4111-8111-111111111111"

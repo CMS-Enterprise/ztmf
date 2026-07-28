@@ -77,3 +77,58 @@ func SaveOpDiv(w http.ResponseWriter, r *http.Request) {
 	o, err := o.Save(r.Context())
 	respond(w, r, o, err)
 }
+
+// SetOpDivSystemDelegateEnabled flips the per-OpDiv "Add System Delegate Role"
+// capability (#467 decisions 6 and 7). It is a dedicated endpoint rather than a
+// field on SaveOpDiv because SaveOpDiv is OWNER-only (the OpDiv list is the tenant
+// boundary), whereas this toggle is settable by both Owner and HHS admin - and by
+// no one else, so an OPDIV_ADMIN (who is IsAdmin) is rejected here.
+//
+//	@Summary	Enable or disable the System Delegate role for an OpDiv
+//	@Tags		opdivs
+//	@Accept		json
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		opdiv_id	path		int										true	"OpDiv ID"
+//	@Param		body		body		object{enabled=bool}					true	"Toggle state"
+//	@Success	200			{object}	apiResponse[model.OpDiv]
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/opdivs/{opdiv_id}/system-delegate-enabled [put]
+func SetOpDivSystemDelegateEnabled(w http.ResponseWriter, r *http.Request) {
+	authdUser := model.UserFromContext(r.Context())
+	if !authdUser.CanWriteHHSWide() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	var opdivID int32
+	if v, ok := mux.Vars(r)["opdiv_id"]; ok {
+		fmt.Sscan(v, &opdivID)
+	}
+	if opdivID == 0 {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+
+	body := struct {
+		Enabled *bool `json:"enabled"`
+	}{}
+	if err := getJSON(r.Body, &body); err != nil || body.Enabled == nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+
+	o, err := model.SetOpDivSystemDelegateEnabled(r.Context(), opdivID, *body.Enabled)
+	// PUT-as-action: return 200 with the updated OpDiv (like RestoreUser /
+	// ReactivateFismaSystem). respond() would treat PUT as an in-place 204 that
+	// drops the body, but the FE needs the new flag value back.
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	respondOK(w, o)
+}

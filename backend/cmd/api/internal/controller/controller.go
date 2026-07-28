@@ -55,6 +55,11 @@ func respond(w http.ResponseWriter, r *http.Request, data any, err error) {
 		} else {
 			status = 204
 		}
+	default:
+		// PATCH and any other verb: default to 200 so a handler that reaches
+		// respond() on a success path never emits WriteHeader(0). (PATCH success
+		// paths that want the body use respondOK; this is the defensive floor.)
+		status = 200
 	}
 
 	res := response{
@@ -125,6 +130,18 @@ func sanitizeErr(err error) (int, string, error) {
 	case errors.Is(err, ErrForbidden),
 		errors.Is(err, model.ErrPastDeadline):
 		status = 403
+	case errors.Is(err, model.ErrDelegatesNotEnabled):
+		// Capability-off for the OpDiv. 403 with a code so the FE can render an
+		// in-dialog guard instead of the global interceptor swallowing the bare
+		// 403 into a generic toast.
+		status = 403
+		code = auth.CodeDelegateNotEnabled
+	case errors.Is(err, model.ErrDelegateRequiresAdmin):
+		// Well-formed request, but the target account needs an administrator. 400
+		// (not 403) so it does not collide with the FE's global auth handling; the
+		// FE branches on the code, not the status.
+		status = 400
+		code = auth.CodeDelegateRequiresAdmin
 	case errors.Is(err, model.ErrNotUnique),
 		errors.Is(err, ErrMalformed),
 		errors.Is(err, model.ErrNotesTooLong),
