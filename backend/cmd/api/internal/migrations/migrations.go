@@ -1,7 +1,10 @@
 /*
 package migrations is used internally to specify DB schema updates that need to run on process start
 
-All migrations should be appended using the init() function in a file dedicated to the migration.
+All migrations should be registered by calling appendMigration from an init() function in a file
+dedicated to the migration. Registration is pure (append to a slice, no I/O): the database
+connection is only opened by Run(), so importing this package — e.g. from its test binary —
+never requires a reachable database.
 Be aware that multiple init() funcs are executed in lexical file name order, so when adding multiple
 changes in a single PR be sure to name the files in a way that applies them in the right order if the order matters.
 */
@@ -10,26 +13,51 @@ package migrations
 import (
 	"context"
 	"log"
-	"sync"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/jackc/tern/v2/migrate"
 )
 
-var (
-	migrator *migrate.Migrator
-	once     sync.Once
-)
+type migration struct {
+	name    string
+	upSQL   string
+	downSQL string
+}
+
+// registry holds migrations in registration (= lexical file name) order.
+var registry []migration
+
+func appendMigration(name, upSQL, downSQL string) {
+	registry = append(registry, migration{name, upSQL, downSQL})
+}
 
 func Run() {
 	log.Println("executing migrations...")
-	err := getMigrator().Migrate(context.Background())
+
+	ctx := context.Background()
+
+	conn, err := db.MigrationConn(ctx)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	migrator = nil
+
+	migrator, err := migrate.NewMigrator(ctx, conn, "dbversions")
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	for _, m := range registry {
+		migrator.AppendMigration(m.name, m.upSQL, m.downSQL)
+	}
+
+	err = migrator.Migrate(ctx)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 
 	cfg := config.GetInstance()
 
@@ -48,23 +76,4 @@ func Run() {
 			log.Fatal(err)
 		}
 	}
-}
-
-func getMigrator() *migrate.Migrator {
-	if migrator == nil {
-		once.Do(func() {
-			conn, err := db.MigrationConn(context.Background())
-			if err != nil {
-				log.Fatal(err)
-				return
-			}
-
-			migrator, err = migrate.NewMigrator(context.Background(), conn, "dbversions")
-			if err != nil {
-				log.Fatal(err)
-				return
-			}
-		})
-	}
-	return migrator
 }

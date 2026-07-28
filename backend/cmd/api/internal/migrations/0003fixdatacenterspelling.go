@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"fix mispelling",
 		`UPDATE public.fismasystems SET datacenterenvironment='DECOMMISSIONED' where datacenterenvironment='DECOMISSIONED';`,
 		"")

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add opdivs.system_delegate_enabled toggle (default off, opt-in per OpDiv)",
 		`
 -- The System Delegate self-service capability (ISSO#467) is enabled per OpDiv

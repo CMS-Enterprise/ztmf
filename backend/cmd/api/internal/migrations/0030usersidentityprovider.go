@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add users.identity_provider (nullable) per ztmf#266",
 		`
 ALTER TABLE IF EXISTS public.users

@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add opdivs.insights_enabled flag and enable it for CMS",
 		`
 -- System enrichment (ZTMF Insights) is only available for OpDivs that have an

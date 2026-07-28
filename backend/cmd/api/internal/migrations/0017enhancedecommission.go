@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"enhance fismasystems decommission",
 		`
 -- Drop incorrectly typed column if exists from failed migration

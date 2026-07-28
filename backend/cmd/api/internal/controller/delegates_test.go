@@ -115,16 +115,16 @@ func TestListDelegateCandidates_DeniedActorsNotFound(t *testing.T) {
 	}
 }
 
-// An ISSO assigned to the system, and an unscoped admin, both pass the gate; with
-// no DB they fail downstream, but must not be gated with 403/404.
+// An ISSO assigned to the system, and an unscoped admin, both pass the gate.
+// Asserted against the pure pre-check rather than the full handler: past the
+// gate the handler does real DB work, so its status depends on the environment
+// (an absent DB errors, a live one 404s unless the seed carries this system),
+// which made the handler-level assertion pass only when the DB was unreachable.
 func TestAddSystemDelegate_AllowedActorsPassGate(t *testing.T) {
 	issoAssigned := &model.User{UserID: "33333333-3333-4333-8333-333333333333", Role: "ISSO", AssignedFismaSystems: []*int32{int32Ptr(1)}}
 	for name, u := range map[string]*model.User{"ISSO assigned": issoAssigned, "OWNER": adminUser} {
 		t.Run(name, func(t *testing.T) {
-			w, r := delegateReq(t, "POST", "body", u, map[string]string{"fismasystemid": delegateSystemID})
-			AddSystemDelegate(w, r)
-			assert.NotEqual(t, http.StatusNotFound, w.Code, "gate must pass for %s", name)
-			assert.NotEqual(t, http.StatusForbidden, w.Code, "gate must pass for %s", name)
+			assert.True(t, mayManageDelegates(u, 1), "gate must pass for %s", name)
 		})
 	}
 }

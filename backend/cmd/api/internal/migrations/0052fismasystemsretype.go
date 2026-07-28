@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"retype fismasystems HHS metadata columns: booleans, enum CHECKs, and a cloud_service_model text[]",
 		`
 -- ztmf#433: the HHS onboarding metadata columns were added as free-text

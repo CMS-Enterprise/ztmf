@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"Stage D: reject legacy ADMIN / READONLY_ADMIN role values",
 		`
 -- Stage D role cleanup. The Stage B swap (0036usersroleswap.go) already
