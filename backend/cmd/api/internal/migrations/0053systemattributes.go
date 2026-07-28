@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"create systemattributes reference table and seed canonical HHS metadata vocabulary",
 		`
 -- Canonical allowed values per FISMA system attribute (ztmf#395). Serves the
