@@ -30,20 +30,20 @@ func TestFindSystemAttributesIntegration(t *testing.T) {
 		assert.Equal(t, "High", rows[2].Value)
 	})
 
-	t.Run("SelectableOnlyHidesHelpRow", func(t *testing.T) {
+	t.Run("LegacyOffersYesNoWithNoHelpRow", func(t *testing.T) {
 		field := "legacy"
 		yes := true
 		sel, err := FindSystemAttributes(ctx, FindSystemAttributesInput{Field: &field, SelectableOnly: &yes})
 		require.NoError(t, err)
 		for _, r := range sel {
 			assert.True(t, r.Selectable)
-			assert.NotEqual(t, "", r.Value, "the value='' help row must not appear in selectable_only")
+			assert.NotEqual(t, "", r.Value)
 		}
 		assert.Len(t, sel, 2, "legacy offers Yes/No")
 
 		all, err := FindSystemAttributes(ctx, FindSystemAttributesInput{Field: &field})
 		require.NoError(t, err)
-		assert.Greater(t, len(all), len(sel), "full list also carries the value='' help row")
+		assert.Equal(t, len(sel), len(all), "vocab carries no non-selectable help rows; help copy lives in the UI")
 	})
 
 	t.Run("SevenCanonicalSystemTypes", func(t *testing.T) {

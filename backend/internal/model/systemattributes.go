@@ -13,16 +13,13 @@ import (
 // selects from the backend and writes validate against the same source
 // (ztmf#395), the pattern #392 established for datacenterenvironments.
 type SystemAttribute struct {
-	Field string `json:"field" db:"field"`
-	Value string `json:"value" db:"value"`
-	// Description is optional per-value or per-field help text (NULL when none),
-	// so it is a pointer to distinguish "no help" from "".
-	Description *string `json:"description" db:"description"`
-	Selectable  bool    `json:"selectable" db:"selectable"`
-	Ordr        int     `json:"ordr" db:"ordr"`
+	Field      string `json:"field" db:"field"`
+	Value      string `json:"value" db:"value"`
+	Selectable bool   `json:"selectable" db:"selectable"`
+	Ordr       int    `json:"ordr" db:"ordr"`
 }
 
-var systemAttributeColumns = []string{"field", "value", "description", "selectable", "ordr"}
+var systemAttributeColumns = []string{"field", "value", "selectable", "ordr"}
 
 // FindSystemAttributesInput holds optional filters for listing attributes.
 type FindSystemAttributesInput struct {

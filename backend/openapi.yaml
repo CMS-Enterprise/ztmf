@@ -725,11 +725,6 @@ components:
       type: object
     model.SystemAttribute:
       properties:
-        description:
-          description: |-
-            Description is optional per-value or per-field help text (NULL when none),
-            so it is a pointer to distinguish "no help" from "".
-          type: string
         field:
           type: string
         ordr:

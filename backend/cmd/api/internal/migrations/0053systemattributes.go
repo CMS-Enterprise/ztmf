@@ -18,18 +18,16 @@ func init() {
 -- value would make app validation accept a write the #433 CHECK then rejects.
 --
 --   field        the fismasystems column the value belongs to
---   value        an atomic allowed value; '' is reserved for a field-level help
---                row that carries only a description (never a real value)
---   description  optional per-value or per-field help text (e.g. the legacy
---                definition), surfaced by the frontend as hover help
---   selectable   TRUE for values offered in the add/edit dropdown; FALSE marks
---                the non-value help rows
+--   value        an atomic allowed value
+--   selectable   TRUE for values offered in the add/edit dropdown
 --   ordr         dropdown ordering within a field
+--
+-- The endpoint serves a plain allowed-values list (no per-value help text): help
+-- copy for a field lives in the frontend, not here.
 
 CREATE TABLE IF NOT EXISTS public.systemattributes (
     field       VARCHAR(64)  NOT NULL,
     value       VARCHAR(255) NOT NULL,
-    description VARCHAR(1024),
     selectable  BOOLEAN NOT NULL DEFAULT TRUE,
     ordr        SMALLINT NOT NULL DEFAULT 0,
     PRIMARY KEY (field, value)
@@ -77,13 +75,6 @@ INSERT INTO public.systemattributes (field, value, selectable, ordr) VALUES
 
     ('legacy',              'Yes',                     TRUE, 10),
     ('legacy',              'No',                      TRUE, 20)
-ON CONFLICT DO NOTHING;
-
--- Field-level help row: value '' carries the field's definition for hover help.
--- TODO(ztmf#395): confirm the final legacy definition wording with danielbowne
--- before this ships. Straw-man from the #395 thread below.
-INSERT INTO public.systemattributes (field, value, description, selectable, ordr) VALUES
-    ('legacy', '', 'A legacy system runs end-of-life/unsupported software or OS, depends on an unsupported vendor, or has no active development team.', FALSE, 0)
 ON CONFLICT DO NOTHING;
 		`,
 		`
