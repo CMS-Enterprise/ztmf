@@ -48,18 +48,23 @@ type FismaSystem struct {
 	ReactivatedDate       *time.Time `json:"reactivated_date"`
 	ReactivationNotes     *string    `json:"reactivation_notes"`
 	OpDivID               *int32     `json:"opdiv_id" db:"opdiv_id"`
-	HVA                   *string    `json:"hva" db:"hva"`
-	FIPS                  *string    `json:"fips" db:"fips"`
-	SystemType            *string    `json:"system_type" db:"system_type"`
-	CloudSystem           *string    `json:"cloud_system" db:"cloud_system"`
-	CloudServiceModel     *string    `json:"cloud_service_model" db:"cloud_service_model"`
-	CloudVendor           *string    `json:"cloud_vendor" db:"cloud_vendor"`
-	SystemOperator        *string    `json:"system_operator" db:"system_operator"`
-	GocoCocGoGo           *string    `json:"goco_coco_gogo" db:"goco_coco_gogo"`
-	SystemOwner           *string    `json:"system_owner" db:"system_owner"`
-	SystemOwnerEmail      *string    `json:"system_owner_email" db:"system_owner_email"`
-	Legacy                *string    `json:"legacy" db:"legacy"`
-	ISSOName              *string    `json:"isso_name" db:"isso_name"`
+	// HHS metadata typed by ztmf#433. Booleans are *bool so NULL stays "unknown"
+	// (the epic rule: never coerce a missing value to false/No).
+	HVA         *bool   `json:"hva" db:"hva"`
+	FIPS        *string `json:"fips" db:"fips"`
+	SystemType  *string `json:"system_type" db:"system_type"`
+	CloudSystem *bool   `json:"cloud_system" db:"cloud_system"`
+	// CloudServiceModel is a decomposed multi-select stored as a text[] column;
+	// nil = omitted/NULL, an empty slice clears it, a populated slice is the set
+	// of canonical values (IaaS/PaaS/SaaS/Other), enforced by a DB CHECK.
+	CloudServiceModel []string `json:"cloud_service_model" db:"cloud_service_model"`
+	CloudVendor       *string  `json:"cloud_vendor" db:"cloud_vendor"`
+	SystemOperator    *string  `json:"system_operator" db:"system_operator"`
+	GocoCocGoGo       *string  `json:"goco_coco_gogo" db:"goco_coco_gogo"`
+	SystemOwner      *string `json:"system_owner" db:"system_owner"`
+	SystemOwnerEmail *string `json:"system_owner_email" db:"system_owner_email"`
+	Legacy           *bool   `json:"legacy" db:"legacy"`
+	ISSOName         *string `json:"isso_name" db:"isso_name"`
 	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
 	// yet; the UI presents the Advanced default. Written only via
 	// SaveTargetMaturity, never through Save().
@@ -178,7 +183,35 @@ func FindFismaSystemByUUID(ctx context.Context, fismaUUID string) (*FismaSystem,
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FismaSystem])
 }
 
-func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
+// SaveOption configures a Save call. Options carry request-shape intent that is
+// not part of the persisted entity (e.g. which optional fields the client
+// actually sent), so the model can keep clean domain types while the HTTP layer
+// tells it how to interpret a partial write.
+type SaveOption func(*saveConfig)
+
+type saveConfig struct {
+	// presentBoolFields lists which of the tri-state boolean columns (hva,
+	// cloud_system, legacy) were present in the request body. Nil means the
+	// caller supplied no presence info (internal callers), which falls back to
+	// the nil-guard (write only a non-nil value).
+	presentBoolFields map[string]bool
+}
+
+// WithPresentBoolFields records which tri-state boolean fields the request
+// included, so Save can honor the Yes/No/Unknown control (ztmf-ui#460): a field
+// present as explicit JSON null clears the column to NULL (Unknown), while an
+// omitted field is left unchanged (the ztmf#442 partial-PUT protection). Only
+// the controller, which can see the raw request keys, passes this.
+func WithPresentBoolFields(present map[string]bool) SaveOption {
+	return func(c *saveConfig) { c.presentBoolFields = present }
+}
+
+func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSystem, error) {
+
+	var cfg saveConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 
 	var sqlb SqlBuilder
 
@@ -209,6 +242,64 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 		}
 	}
 
+	// Extended HHS metadata is validated against the systemattributes reference
+	// table (ztmf#395) for a friendly field-level 400 before the ztmf#433 CHECK
+	// constraints would reject an off-canon value at the DB. NULL/"" (omitted or
+	// cleared) is always valid - these fields are never required. The booleans
+	// (hva/cloud_system/legacy) are type-enforced by the column, so they need no
+	// vocabulary check here.
+	invalid := InvalidInputError{data: map[string]any{}}
+	enumFields := []struct {
+		field string
+		val   *string
+	}{
+		{"fips", f.FIPS},
+		{"system_type", f.SystemType},
+		{"system_operator", f.SystemOperator},
+		{"goco_coco_gogo", f.GocoCocGoGo},
+	}
+	for _, ef := range enumFields {
+		if ef.val == nil || *ef.val == "" {
+			continue
+		}
+		ok, err := systemAttributeValueExists(ctx, ef.field, *ef.val)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			invalid.data[ef.field] = *ef.val
+		}
+	}
+
+	// cloud_service_model is a decomposed text[] (ztmf#433); every element must be
+	// a canonical atomic value.
+	for _, part := range f.CloudServiceModel {
+		ok, err := systemAttributeValueExists(ctx, "cloud_service_model", part)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			invalid.data["cloud_service_model"] = part
+			break
+		}
+	}
+
+	// Cross-field rule (ztmf#431): a non-cloud system carries no cloud service
+	// model or vendor. Enforced only when cloud_system is explicitly false (nil =
+	// unknown, so we do not infer from a stored value on a partial update).
+	if f.CloudSystem != nil && !*f.CloudSystem {
+		if len(f.CloudServiceModel) > 0 {
+			invalid.data["cloud_service_model"] = "must be empty when cloud_system is No"
+		}
+		if f.CloudVendor != nil && *f.CloudVendor != "" {
+			invalid.data["cloud_vendor"] = "must be empty when cloud_system is No"
+		}
+	}
+
+	if len(invalid.data) > 0 {
+		return nil, &invalid
+	}
+
 	if f.FismaSystemID == 0 {
 		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id
 		// is NOT NULL on the table. Callers may pass an explicit OpDivID; if
@@ -236,12 +327,15 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
 				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
-				// A blank optional field on create is NULL, not "" (ztmf#442).
-				blankToNil(f.HVA), blankToNil(f.FIPS), blankToNil(f.SystemType),
-				blankToNil(f.CloudSystem), blankToNil(f.CloudServiceModel),
+				// A blank optional text field on create is NULL, not "" (ztmf#442).
+				// The typed HHS fields (ztmf#433) pass through raw: a nil *bool
+				// encodes NULL (unknown, never false), and an empty slice is nulled
+				// so a blank multi-select writes NULL rather than an empty array.
+				f.HVA, blankToNil(f.FIPS), blankToNil(f.SystemType),
+				f.CloudSystem, emptyToNil(f.CloudServiceModel),
 				blankToNil(f.CloudVendor), blankToNil(f.SystemOperator),
 				blankToNil(f.GocoCocGoGo), blankToNil(f.SystemOwner),
-				blankToNil(f.SystemOwnerEmail), blankToNil(f.Legacy),
+				blankToNil(f.SystemOwnerEmail), f.Legacy,
 				blankToNil(f.ISSOName),
 			).
 			Suffix("RETURNING " + strings.Join(fismaSystemColumns, ", "))
@@ -262,33 +356,60 @@ func (f *FismaSystem) Save(ctx context.Context) (*FismaSystem, error) {
 			"sdl_sync_enabled":      f.SDLSyncEnabled,
 		}
 		// Metadata fields distinguish three request states (ztmf#442):
-		//   - omitted / null (nil pointer) -> leave the stored value untouched,
-		//     so a partial PUT never wipes importer data (and a scoped-admin edit,
-		//     whose HHS fields copyHHSMetadata has set to the stored values, is a
-		//     no-op here);
-		//   - "" (a cleared form input) -> write NULL, so a blank actually clears
-		//     the value rather than persisting "" or being silently ignored;
+		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
+		//     untouched, so a partial PUT never wipes importer data (and a
+		//     scoped-admin edit, whose HHS fields copyHHSMetadata has set to the
+		//     stored values, is a no-op here);
+		//   - "" (a cleared text input) / empty slice -> write NULL, so a blank
+		//     actually clears the value rather than persisting "" / an empty array;
 		//   - a value -> write it.
 		// blankToNil folds the "" case into a nil *string, which pgx encodes as
 		// NULL; nil-guarding the assignment keeps the omitted case untouched.
 		hhsCols := map[string]*string{
-			"hva":                 f.HVA,
-			"fips":                f.FIPS,
-			"system_type":         f.SystemType,
-			"cloud_system":        f.CloudSystem,
-			"cloud_service_model": f.CloudServiceModel,
-			"cloud_vendor":        f.CloudVendor,
-			"system_operator":     f.SystemOperator,
-			"goco_coco_gogo":      f.GocoCocGoGo,
-			"system_owner":        f.SystemOwner,
-			"system_owner_email":  f.SystemOwnerEmail,
-			"legacy":              f.Legacy,
-			"isso_name":           f.ISSOName,
+			"fips":               f.FIPS,
+			"system_type":        f.SystemType,
+			"cloud_vendor":       f.CloudVendor,
+			"system_operator":    f.SystemOperator,
+			"goco_coco_gogo":     f.GocoCocGoGo,
+			"system_owner":       f.SystemOwner,
+			"system_owner_email": f.SystemOwnerEmail,
+			"isso_name":          f.ISSOName,
 		}
 		for col, val := range hhsCols {
 			if val != nil {
 				setCols[col] = blankToNil(val)
 			}
+		}
+		// Tri-state booleans (hva, cloud_system, legacy) - the Yes/No/Unknown
+		// control on ztmf-ui#460. A plain *bool can't tell "sent as null" (clear
+		// to Unknown) from "omitted" (leave unchanged) - both decode to nil - so
+		// the controller passes WithPresentBoolFields with the keys the request
+		// actually included:
+		//   - present -> write the pointer as-is: nil encodes SQL NULL (Unknown),
+		//     true/false sets the value;
+		//   - absent  -> skip, leaving the stored value untouched (partial-PUT /
+		//     importer protection, ztmf#442).
+		// With no presence info (internal callers pass no option) fall back to the
+		// nil-guard: write only a non-nil value, never clear.
+		boolCols := map[string]*bool{
+			"hva":          f.HVA,
+			"cloud_system": f.CloudSystem,
+			"legacy":       f.Legacy,
+		}
+		for col, val := range boolCols {
+			switch {
+			case cfg.presentBoolFields != nil:
+				if cfg.presentBoolFields[col] {
+					setCols[col] = val
+				}
+			case val != nil:
+				setCols[col] = *val
+			}
+		}
+		// cloud_service_model (text[]) keeps its own three-state: nil = omitted
+		// (leave), empty slice = clear to NULL, non-empty = set.
+		if f.CloudServiceModel != nil {
+			setCols["cloud_service_model"] = emptyToNil(f.CloudServiceModel)
 		}
 		sqlb = stmntBuilder.
 			Update("fismasystems").
@@ -538,6 +659,18 @@ func blankToNil(p *string) *string {
 		return nil
 	}
 	return p
+}
+
+// emptyToNil returns a nil slice for an empty (or nil) slice so a cleared
+// multi-select writes SQL NULL instead of an empty array '{}' (ztmf#433) -
+// the text[] analogue of blankToNil. Callers nil-guard before calling this so a
+// genuinely omitted field (nil slice) stays "leave unchanged" rather than being
+// turned into a clear.
+func emptyToNil(s []string) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	return s
 }
 
 func (f *FismaSystem) validate() error {

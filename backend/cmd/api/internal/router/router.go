@@ -120,6 +120,8 @@ func Handler() http.Handler {
 
 	router.HandleFunc("/api/v1/datacenterenvironments", controller.ListDataCenterEnvironments).Methods("GET")
 
+	router.HandleFunc("/api/v1/systemattributes", controller.ListSystemAttributes).Methods("GET")
+
 	router.HandleFunc("/api/v1/datacentermismatches", controller.ListDataCenterMismatches).Methods("GET")
 
 	router.HandleFunc("/api/v1/events", controller.GetEvents).Methods("GET")

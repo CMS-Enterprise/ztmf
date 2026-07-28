@@ -174,6 +174,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_SystemAttribute:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.SystemAttribute'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_SystemInsight:
       properties:
         data:
@@ -389,9 +399,16 @@ components:
     model.FismaSystem:
       properties:
         cloud_service_model:
-          type: string
+          description: |-
+            CloudServiceModel is a decomposed multi-select stored as a text[] column;
+            nil = omitted/NULL, an empty slice clears it, a populated slice is the set
+            of canonical values (IaaS/PaaS/SaaS/Other), enforced by a DB CHECK.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         cloud_system:
-          type: string
+          type: boolean
         cloud_vendor:
           type: string
         component:
@@ -429,13 +446,16 @@ components:
         groupname:
           type: string
         hva:
-          type: string
+          description: |-
+            HHS metadata typed by ztmf#433. Booleans are *bool so NULL stays "unknown"
+            (the epic rule: never coerce a missing value to false/No).
+          type: boolean
         isso_name:
           type: string
         issoemail:
           type: string
         legacy:
-          type: string
+          type: boolean
         opdiv_id:
           type: integer
         reactivated_by:
@@ -702,6 +722,17 @@ components:
             since the start of the data call" - by name in the response, so a
             consumer rendering a boolean chip never touches the numeric fields.
           type: boolean
+      type: object
+    model.SystemAttribute:
+      properties:
+        field:
+          type: string
+        ordr:
+          type: integer
+        selectable:
+          type: boolean
+        value:
+          type: string
       type: object
     model.SystemEnrichment:
       properties:
@@ -2788,6 +2819,37 @@ paths:
       summary: Get per-system questionnaire progress for a data call
       tags:
       - scores
+  /systemattributes:
+    get:
+      parameters:
+      - description: Restrict to a single attribute (e.g. system_type)
+        in: query
+        name: field
+        schema:
+          type: string
+      - description: Only values offered in the add/edit selects
+        in: query
+        name: selectable_only
+        schema:
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_SystemAttribute'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List system metadata attribute vocabulary
+      tags:
+      - systemattributes
   /systemenrichment/{fisma_uuid}:
     get:
       parameters:
