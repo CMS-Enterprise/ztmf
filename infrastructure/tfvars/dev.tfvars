@@ -24,3 +24,15 @@ alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "dev"
 cert_rotation_domain        = "dev.ztmf.cms.gov"
+
+# Aurora PITR. Dev keeps the 1-day default it already runs at: nothing here is
+# a system of record, and the long-horizon protection prod needs would be paid
+# for on data we would never restore.
+db_backup_retention_days = 1
+
+# Monthly logical backup to S3. Enabled in dev first so the schedule, task and
+# staleness alarm are exercised on real data before prod depends on them. Dev
+# also stays enrolled in the AWS Backup d15_w90 plan (~$0.02/month) on purpose:
+# the tag-selection path has never executed in this account, so dev is where we
+# confirm the CMS-managed selection role can actually back up Aurora.
+db_dump_enabled = true
