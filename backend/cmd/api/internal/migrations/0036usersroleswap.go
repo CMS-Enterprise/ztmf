@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"swap legacy roles to multi-OpDiv role taxonomy",
 		`
 -- Stage B: role swap. Maps the legacy ADMIN / READONLY_ADMIN values onto the

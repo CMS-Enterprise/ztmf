@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"user events",
 		`CREATE TABLE IF NOT EXISTS public.events
 		 (

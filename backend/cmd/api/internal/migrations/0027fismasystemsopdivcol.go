@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add fismasystems.opdiv_id (nullable) with FK to opdivs",
 		`
 ALTER TABLE IF EXISTS public.fismasystems

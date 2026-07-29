@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"create datacenterenvironments mapping table, seed it, rename OPDC, add MAG and data-center-gov function sets",
 		`
 -- ZTMF scores a system by matching its datacenterenvironment against the

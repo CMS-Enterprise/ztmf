@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add fismasystems reactivation audit columns",
 		`
 -- Drop incorrectly typed columns if they exist from a failed prior migration attempt.

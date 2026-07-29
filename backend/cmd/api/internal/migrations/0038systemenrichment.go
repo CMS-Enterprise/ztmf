@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add generic system_enrichment extension table",
 		// UP: Generic, enrichment-agnostic extension point owned by ztmf core. The
 		// CMS-specific enrichment pipeline (private repo) populates the jsonb payload,

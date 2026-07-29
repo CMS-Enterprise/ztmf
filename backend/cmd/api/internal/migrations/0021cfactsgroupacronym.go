@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add group_acronym to cfacts_systems",
 		`
 ALTER TABLE public.cfacts_systems ADD COLUMN IF NOT EXISTS group_acronym VARCHAR(50);

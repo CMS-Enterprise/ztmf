@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"create idm_scoring lookup table for identity enrichment",
 		`
 CREATE TABLE IF NOT EXISTS public.idm_scoring (

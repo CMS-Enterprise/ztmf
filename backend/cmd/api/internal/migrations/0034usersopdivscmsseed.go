@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"seed users_opdivs with CMS grant for every existing user",
 		`
 -- Day 1 of the multi-OpDiv schema: every pre-existing user is a CMS user.
