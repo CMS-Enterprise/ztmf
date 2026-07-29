@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add generic system_insights extension table",
 		// UP: Generic, insight-agnostic per-question extension point owned by ztmf
 		// core. The ztmf-insights sync lambda populates the jsonb payload from

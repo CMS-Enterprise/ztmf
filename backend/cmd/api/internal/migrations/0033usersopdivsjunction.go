@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"create users_opdivs junction table",
 		`
 CREATE TABLE IF NOT EXISTS public.users_opdivs (

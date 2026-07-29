@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"add auth_methods and fips_impact_level to cfacts_systems",
 		`
 ALTER TABLE public.cfacts_systems ADD COLUMN IF NOT EXISTS auth_methods TEXT;

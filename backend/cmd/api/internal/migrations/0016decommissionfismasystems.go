@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"fismasystems decommission",
 		`
 ALTER TABLE IF EXISTS public.fismasystems

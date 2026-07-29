@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		"enforce NOT NULL on users.identity_provider",
 		`
 ALTER TABLE IF EXISTS public.users

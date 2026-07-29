@@ -1,7 +1,7 @@
 package migrations
 
 func init() {
-	getMigrator().AppendMigration(
+	appendMigration(
 		// add group column to massemails
 		"massemails group column",
 		`ALTER TABLE IF EXISTS public.massemails ADD COLUMN "group" varchar(5);`,
