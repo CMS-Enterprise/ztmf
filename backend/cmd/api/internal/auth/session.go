@@ -186,10 +186,15 @@ func SessionHandler(w http.ResponseWriter, r *http.Request) {
 func SetSessionCookie(w http.ResponseWriter, token string) {
 	cfg := config.GetInstance()
 	http.SetCookie(w, &http.Cookie{
-		Name:     cfg.Auth.SessionCookieName,
-		Value:    token,
-		Path:     "/",
-		Domain:   cfg.Auth.CookieDomain,
+		Name:  cfg.Auth.SessionCookieName,
+		Value: token,
+		Path:  "/",
+		// No Domain: omitting the attribute makes this a host-only cookie, so
+		// the browser returns it only to the exact host that issued it. An
+		// explicit Domain scopes a cookie to that domain and every subdomain
+		// beneath it, and in prod the deployed hostname is the bare apex, so
+		// naming it here would attach a prod session to requests for the dev
+		// and impl hostnames underneath it.
 		MaxAge:   cfg.Auth.SessionTTL,
 		HttpOnly: true,
 		Secure:   true,
@@ -202,10 +207,13 @@ func SetSessionCookie(w http.ResponseWriter, token string) {
 func ClearSessionCookie(w http.ResponseWriter) {
 	cfg := config.GetInstance()
 	http.SetCookie(w, &http.Cookie{
-		Name:     cfg.Auth.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		Domain:   cfg.Auth.CookieDomain,
+		Name:  cfg.Auth.SessionCookieName,
+		Value: "",
+		Path:  "/",
+		// No Domain, matching SetSessionCookie. A browser only removes a cookie
+		// when the expiring cookie's Domain matches the one it was stored with,
+		// so a Domain here would create a separate domain-scoped cookie and
+		// leave the host-only session in place.
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,
