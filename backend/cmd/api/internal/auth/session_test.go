@@ -69,14 +69,8 @@ func TestParseSession_RejectsForeignTokens(t *testing.T) {
 }
 
 func TestSetSessionCookie_Attributes(t *testing.T) {
-	// A configured cookie domain must not reach the cookie. The domain is set
-	// here because it is empty in the test environment, so without it the
-	// host-only assertion below would pass no matter what the setter does.
-	cfg := config.GetInstance()
-	orig := cfg.Auth.CookieDomain
-	cfg.Auth.CookieDomain = "ztmf.cms.gov"
-	defer func() { cfg.Auth.CookieDomain = orig }()
-
+	// No configuration feeds the cookie's Domain any more, so the host-only
+	// assertion below is the guard against reintroducing one.
 	w := httptest.NewRecorder()
 	SetSessionCookie(w, "tok123")
 
@@ -99,9 +93,6 @@ func TestClearSessionCookie_Attributes(t *testing.T) {
 	// issued; a Domain here would create a separate domain-scoped cookie and
 	// leave the session in place.
 	cfg := config.GetInstance()
-	orig := cfg.Auth.CookieDomain
-	cfg.Auth.CookieDomain = "ztmf.cms.gov"
-	defer func() { cfg.Auth.CookieDomain = orig }()
 
 	w := httptest.NewRecorder()
 	ClearSessionCookie(w)

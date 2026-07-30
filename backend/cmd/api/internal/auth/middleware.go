@@ -205,12 +205,12 @@ func isSafeMethod(method string) bool {
 }
 
 // sameOrigin checks that a state-changing request originated from our own site.
-// It compares the Origin (then Referer) host against the configured cookie
-// domain, falling back to the request Host. A request with neither header is
+// It compares the Origin (then Referer) host against the configured origin
+// host, falling back to the request Host. A request with neither header is
 // allowed: SameSite=Strict already prevents a cross-site context from sending
 // the session cookie, so this header check is additive, not the sole gate.
 func sameOrigin(r *http.Request) bool {
-	expected := config.GetInstance().Auth.CookieDomain
+	expected := config.GetInstance().Auth.OriginHost
 	if expected == "" {
 		expected = hostOnly(r.Host)
 	}
