@@ -10,6 +10,8 @@ ecs_service_task_count = 1
 entra_enabled = false
 
 
+alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
+
 # TLS cert rotation Lambda
 # ACM ARN sourced from SSM Parameter Store /ztmf/prod/cert-rotation/acm-arn
 enable_cert_rotation_lambda = true

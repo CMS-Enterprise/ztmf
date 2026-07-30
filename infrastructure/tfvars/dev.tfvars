@@ -18,7 +18,7 @@ entra_enabled = true
 # the dev Entra pilot. Replace it with a shared team inbox or a Slack webhook
 # before this routing is relied on beyond dev / before prod, so paging never
 # depends on one person being reachable.
-alarm_notification_email = "jono@aquia.us"
+alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
 # TLS cert rotation Lambda
 # ACM ARN sourced from SSM Parameter Store /ztmf/dev/cert-rotation/acm-arn
