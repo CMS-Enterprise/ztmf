@@ -12,12 +12,11 @@ ecs_service_task_count = 1
 entra_enabled = true
 
 
-# Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS topic
-# (confirm the AWS subscription email once after first apply).
-# INTERIM destination only — an individual address used to stand up alerting for
-# the dev Entra pilot. Replace it with a shared team inbox or a Slack webhook
-# before this routing is relied on beyond dev / before prod, so paging never
-# depends on one person being reachable.
+# Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS topic.
+# A shared inbox rather than an individual, so paging never depends on one
+# person being reachable. AWS sends a subscription confirmation email that has
+# to be clicked once before anything is delivered, and changing this address
+# replaces the subscription, so an edit here means confirming again.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
 # TLS cert rotation Lambda
