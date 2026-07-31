@@ -494,3 +494,39 @@ func TestDerefString(t *testing.T) {
 			"pointer to empty string is distinct from nil and must round-trip")
 	})
 }
+
+// TestMatchesRolloverHardcodeTarget covers the name gate on the ztmf#500
+// rollover override. The gate is what scopes the hardcode to the FY2026 cycle
+// alone, so that deleting the block after FY26 is created is ordinary cleanup
+// rather than a deadline: until it is deleted, every non-FY26 data call must
+// fall through to the normal findPreviousDataCall path.
+//
+// Both naming conventions are accepted because the two source cycles disagree
+// ("FY2025 Q3" vs "FY25 ZTM") and the FY26 name is typed by the operator.
+//
+// DELETE THIS TEST with the override it covers.
+func TestMatchesRolloverHardcodeTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		want  bool
+		about string
+	}{
+		{"FY2026 Q1", true, "long-form convention, as FY2025 Q3 uses"},
+		{"FY26 ZTM", true, "short-form convention, as FY25 ZTM uses"},
+		{"FY2026", true, "bare year"},
+		{"fy2026 q1", true, "gate is case-insensitive - the operator types this"},
+		{"  FY2026 Q1  ", true, "surrounding whitespace is tolerated"},
+
+		{"FY2027 Q1", false, "the next cycle must NOT be hijacked if removal slips"},
+		{"FY27 ZTM", false, "next cycle, short form"},
+		{"FY2025 Q3", false, "a source cycle is never a target"},
+		{"FY25 ZTM", false, "a source cycle is never a target"},
+		{"FY2024 Backfill", false, "backfills roll forward normally (ztmf#448)"},
+		{"Audit Fields Smoke Cycle", false, "unrelated cycle"},
+		{"", false, "empty name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, matchesRolloverHardcodeTarget(tc.name), tc.about)
+		})
+	}
+}
