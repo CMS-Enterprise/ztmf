@@ -784,10 +784,19 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 //	  JOIN opdivs o ON o.opdiv_id = fs.opdiv_id
 //	 WHERE fs.fismasystemid IN (SELECT fismasystemid FROM scores
 //	                             WHERE datacallid IN (<cms>, <other>))
-//	   AND fs.fismasystemid NOT IN (
-//	         SELECT fismasystemid FROM scores WHERE datacallid =
-//	           CASE WHEN o.code = 'CMS' THEN <cms> ELSE <other> END)
+//	   AND NOT EXISTS (
+//	         SELECT 1 FROM scores sc
+//	           JOIN functionoptions fo ON fo.functionoptionid = sc.functionoptionid
+//	          WHERE sc.fismasystemid = fs.fismasystemid
+//	            AND sc.datacallid = CASE WHEN o.code = 'CMS' THEN <cms> ELSE <other> END)
 //	 GROUP BY o.code;
+//
+// The JOIN to functionoptions is load-bearing: "has rows in the assigned cycle"
+// is not the same question as "has rows the copy can carry". A system whose only
+// answers are functionoptionid = -1 sentinels passes the first test and still
+// rolls forward empty. Omitting the join under-reports - it predicted 8 against
+// an actual 9 on the prod-like snapshot, and the one it missed was exactly that
+// case.
 //
 // A second accepted consequence: exclusion carries mis-filed rows
 // (ztmf-misc#256) forward with no escape hatch. A system whose assigned cycle
@@ -923,6 +932,13 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 	//
 	// status is seeded as the 'not_started' literal, same as the normal path
 	// (ztmf#435) - the answer carries forward, its review state does not.
+	//
+	// The ::int casts on the CASE branches are REQUIRED, not decoration. Both
+	// branches are bind parameters, so with nothing to infer from Postgres resolves
+	// the CASE result type to text and the comparison becomes integer = text, which
+	// fails the whole copy at runtime with SQLSTATE 42883 ("operator does not
+	// exist"). It cannot be caught by testing the query with literal ids
+	// substituted - literals carry their own type and resolve fine. Do not remove.
 	const copySQL = `
 		INSERT INTO scores (fismasystemid, datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status)
 		SELECT DISTINCT ON (s.fismasystemid, fo.functionid)
@@ -932,7 +948,7 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 		  JOIN fismasystems fs     ON fs.fismasystemid    = s.fismasystemid
 		  JOIN functionoptions fo  ON fo.functionoptionid = s.functionoptionid
 		  JOIN opdivs o            ON o.opdiv_id          = fs.opdiv_id
-		 WHERE s.datacallid = CASE WHEN o.code = $4 THEN $2 ELSE $3 END
+		 WHERE s.datacallid = CASE WHEN o.code = $4 THEN $2::int ELSE $3::int END
 		 ORDER BY s.fismasystemid, fo.functionid, s.scoreid DESC`
 
 	tag, err := conn.Exec(ctx, copySQL, dataCallID, cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv)
@@ -974,7 +990,17 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 	// scoring_key (the DECOMMISSIONED marker, migration 0045), matches no function
 	// at all and would otherwise report as 100% mis-filed. Those are counted
 	// separately as unscored_env - a different condition with a different fix.
-	var fromCMS, fromOther, cmsSystems, otherSystems, cmsStranded, otherStranded, misfiled, unscoredEnv, srcRows, selectedRows int64
+	//
+	// dropped_unresolvable counts assigned rows the copy silently discards because
+	// functionoptionid resolves to nothing. Do NOT assume the FK makes this
+	// impossible: scores_functionoptionid_fkey reports convalidated = t, but it was
+	// created against an empty table and bulk loads run under
+	// session_replication_role = replica, which bypasses FK triggers entirely. The
+	// prod snapshot really does contain rows the schema calls impossible - 33 of
+	// them in FY2025 Q3, all functionoptionid = -1 sentinels across 11 systems. The
+	// copy's INNER JOIN drops them, so this is a genuine partial-copy signal, not a
+	// theoretical one.
+	var fromCMS, fromOther, cmsSystems, otherSystems, cmsStranded, otherStranded, misfiled, unscoredEnv, srcRows, selectedRows, droppedUnresolvable int64
 	diagErr := conn.QueryRow(ctx, `
 		WITH assigned AS (
 			SELECT s.scoreid, s.fismasystemid, s.datacallid, fo.functionid, o.code AS opdiv_code
@@ -982,7 +1008,7 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
 			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 			  JOIN opdivs o           ON o.opdiv_id          = fs.opdiv_id
-			 WHERE s.datacallid = CASE WHEN o.code = $3 THEN $1 ELSE $2 END
+			 WHERE s.datacallid = CASE WHEN o.code = $3 THEN $1::int ELSE $2::int END
 		),
 		winners AS (
 			SELECT DISTINCT ON (fismasystemid, functionid) datacallid AS won_from
@@ -1026,27 +1052,39 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 			  WHERE s.datacallid = $4
 			    AND dce2.scoring_key IS NULL),
 			(SELECT COUNT(*) FROM scores WHERE datacallid IN ($1, $2)),
-			(SELECT COUNT(*) FROM assigned)`,
+			(SELECT COUNT(*) FROM assigned),
+			(SELECT COUNT(*)
+			   FROM scores s
+			   JOIN fismasystems fs4 ON fs4.fismasystemid = s.fismasystemid
+			   JOIN opdivs o4        ON o4.opdiv_id       = fs4.opdiv_id
+			   LEFT JOIN functionoptions fo4 ON fo4.functionoptionid = s.functionoptionid
+			  WHERE s.datacallid = CASE WHEN o4.code = $3 THEN $1::int ELSE $2::int END
+			    AND fo4.functionoptionid IS NULL)`,
 		cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv, dataCallID,
-	).Scan(&fromCMS, &fromOther, &cmsSystems, &otherSystems, &cmsStranded, &otherStranded, &misfiled, &unscoredEnv, &srcRows, &selectedRows)
+	).Scan(&fromCMS, &fromOther, &cmsSystems, &otherSystems, &cmsStranded, &otherStranded, &misfiled, &unscoredEnv, &srcRows, &selectedRows, &droppedUnresolvable)
 	if diagErr != nil {
 		log.Printf("ROLLOVER_HARDCODE datacall=%d status=active copied=%d diagnostics_err=%v", dataCallID, copied, diagErr)
 		return copied, true, nil
 	}
 
-	log.Printf("ROLLOVER_HARDCODE datacall=%d status=active mode=exclusion cms_source=%d(%q) other_source=%d(%q) cms_systems=%d other_systems=%d src_rows=%d selected_rows=%d excluded_rows=%d copied=%d deduped=%d from_cms_source=%d from_other_source=%d cms_stranded=%d other_stranded=%d misfiled_carried=%d unscored_env=%d",
+	log.Printf("ROLLOVER_HARDCODE datacall=%d status=active mode=exclusion cms_source=%d(%q) other_source=%d(%q) cms_systems=%d other_systems=%d src_rows=%d selected_rows=%d excluded_rows=%d copied=%d deduped=%d dropped_unresolvable=%d from_cms_source=%d from_other_source=%d cms_stranded=%d other_stranded=%d misfiled_carried=%d unscored_env=%d",
 		dataCallID, cmsSourceID, rolloverHardcodeCMSSource, otherSourceID, rolloverHardcodeOtherSource,
-		cmsSystems, otherSystems, srcRows, selectedRows, srcRows-selectedRows, copied, selectedRows-copied,
+		cmsSystems, otherSystems, srcRows, selectedRows, srcRows-selectedRows, copied, selectedRows-copied, droppedUnresolvable,
 		fromCMS, fromOther, cmsStranded, otherStranded, misfiled, unscoredEnv)
 
-	// Zero-copy detection, the ztmf#411 semantic. Deliberately NOT a partial-copy
-	// check: scores has enforced FKs to fismasystems and functionoptions, so the
-	// copy's INNER JOINs cannot drop a row, and INSERT...SELECT is atomic - there
-	// is no partial mode to detect. (Comparing copied against fromCMS+fromOther
-	// would be worse than useless: the winners CTE applies the same joins and
-	// filters as the copy, so the two are equal by construction and the check
-	// could never fire.) A nonzero source with an empty result is the one failure
-	// this path can actually have, and it is the one that must not ship silently.
+	// Partial-copy detection. An earlier revision of this comment claimed the
+	// enforced FKs made a partial copy impossible and that the check could never
+	// fire. That was wrong, and measurably so - see dropped_unresolvable above.
+	// Rows whose functionoptionid resolves to nothing exist in the real data and
+	// the copy's INNER JOIN discards them without a word.
+	if droppedUnresolvable > 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d err=<none> reason=hardcode_unresolvable_rows dropped=%d",
+			dataCallID, selectedRows+droppedUnresolvable, copied, droppedUnresolvable)
+	}
+
+	// Zero-copy detection, the ztmf#411 semantic. A nonzero source with an empty
+	// result is the failure that must not ship silently - it is what the missing
+	// ::int casts produced (integer = text, SQLSTATE 42883) before they were added.
 	//
 	// Compared against selected_rows, not src_rows: under exclusion a zero copy
 	// with a nonzero src_rows is legitimate if the exclusion discarded everything,
