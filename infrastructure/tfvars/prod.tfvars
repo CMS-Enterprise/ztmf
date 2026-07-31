@@ -4,10 +4,13 @@ domain_name_prefix     = ""
 ecs_service_task_count = 1
 # job_code = "ZTMF_SCORING_USER"
 
-# Entra dual-IdP. Keep false until validated on dev and both secrets are
-# seeded in the prod account (scripts/bootstrap-entra-secrets.sh), then flip to
-# true to enable the second identity provider in production.
-entra_enabled = false
+# Entra dual-IdP. Validated on dev since #350 (2026-06-17), so flipping this to
+# true adds the per-IdP ALB rules, moves /api/* off ALB OIDC to backend session
+# validation, and injects the Entra + session env into the API task. Okta login
+# is unchanged. Required for the 2026 data call: HHS/OpDiv participants
+# authenticate via Entra (users.identity_provider, migration 0030) and have no
+# login path in prod while this is false.
+entra_enabled = true
 
 # Login/OIDC alarm routing. Subscribes this address to the ztmf-alarms SNS topic.
 # A shared inbox rather than an individual, so paging never depends on one
