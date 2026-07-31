@@ -13,6 +13,7 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // rawQuery wraps a hand-built SQL string and its arguments so it can flow
@@ -738,6 +739,322 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 	return sql, args
 }
 
+// ---------------------------------------------------------------------------
+// TEMPORARY HARD-CODE - ztmf#500. DELETE THIS ENTIRE BLOCK after the FY2026
+// data call has been created, along with the call site in copyPreviousScores.
+//
+// Rule: CMS systems roll forward from CMS's own hand-entered cycle; every other
+// OpDiv rolls forward from the HHS import cycle. Replaces the single global
+// predecessor (findPreviousDataCall) for the FY2026 cycle only.
+//
+// EXCLUSION, not preference: a system's OpDiv selects exactly one source cycle
+// and the other is not read at all. The two cycles are separate lineages, and
+// where they overlap the CMS entry is the record. A system with no rows in its
+// assigned cycle therefore rolls forward EMPTY - see cms_stranded below.
+//
+// Sources resolve by NAME, not id: datacalls.datacall is UNIQUE (migration 0013)
+// and ids differ per environment. If either name is missing the override is inert
+// and the caller falls through to the global path unchanged.
+const (
+	rolloverHardcodeCMSSource   = "FY2025 Q3" // CMS's own hand-entered cycle
+	rolloverHardcodeOtherSource = "FY25 ZTM"  // HHS import
+	// Compared case-insensitively via UPPER() at every site. opdivs.code is
+	// editable through PUT /opdivs/{id} (OpDiv.Save updates it unconditionally,
+	// validate only trims) and migration 0026's uniqueness index is on
+	// LOWER(code), so renaming CMS to "cms" saves cleanly. An exact-case compare
+	// would then match no rows, drop every system to the ELSE branch, and source
+	// the whole estate from the HHS cycle - this PR's own bug, reproduced. Keep
+	// this constant uppercase.
+	rolloverHardcodeCMSOpDiv = "CMS" // opdivs.code seeded by migration 0026
+)
+
+// Gated to the FY2026 cycle on three independent conditions so it cannot leak
+// onto another data call before this block is deleted:
+//
+//  1. the target's name starts with one of these prefixes
+//  2. its deadline is later than both sources' - the ztmf#448 invariant, which
+//     this path must carry itself since it bypasses findPreviousDataCall
+//  3. it is the FIRST cycle matching these prefixes (see
+//     earlierRolloverHardcodeTargets) - without it a second same-year call
+//     re-sources from the 2025 cycles and discards everything FY2026 accrued
+//
+// BOTH year forms are accepted on purpose. FY2026 is the single unified cycle
+// covering all of HHS including CMS - merging the two 2025 lineages into one is
+// the entire point of this change, so there is no separate HHS import cycle to
+// keep out. The final name is not fixed yet and the two prior conventions
+// disagree ("FY2025 Q3" four-digit, "FY25 ZTM" two-digit), so excluding either
+// form risks the override silently declining on the real cycle - which ships the
+// P0 this exists to prevent. Gate 3 is what keeps the broad prefix safe: only the
+// first matching cycle is ever treated as the target.
+var rolloverHardcodeTargetPrefixes = []string{"FY2026", "FY26"}
+
+// earlierRolloverHardcodeTargets returns the names of FY26-prefixed data calls
+// that precede the target, ordered ahead of it by (deadline, datacallid) - the
+// same ordering findPreviousDataCall uses. A non-empty result means the target is
+// not the first FY26 cycle and the override must not apply.
+func earlierRolloverHardcodeTargets(ctx context.Context, conn *pgxpool.Conn, dataCallID int32, targetDeadline time.Time) ([]string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT datacall FROM datacalls
+		 WHERE datacallid <> $1
+		   AND (deadline < $2 OR (deadline = $2 AND datacallid < $1))`,
+		dataCallID, targetDeadline)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var earlier []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		if matchesRolloverHardcodeTarget(name) {
+			earlier = append(earlier, name)
+		}
+	}
+	return earlier, rows.Err()
+}
+
+func matchesRolloverHardcodeTarget(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	for _, prefix := range rolloverHardcodeTargetPrefixes {
+		if strings.HasPrefix(upper, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// copyPreviousScoresOpDivHardcoded performs the OpDiv-keyed rollover. handled is
+// false when the override does not apply (missing source, target is a source, or
+// either gate rejects it), in which case the caller falls back to the global path.
+// Every decline logs a specific reason.
+func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (copied int64, handled bool, err error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return 0, false, nil // fall through; the normal path reports the error
+	}
+	defer conn.Release()
+
+	var (
+		cmsSourceID, otherSourceID int32
+		latestSourceDeadline       time.Time
+		targetName                 string
+		targetDeadline             time.Time
+	)
+	// The id subqueries MUST stay ahead of the GREATEST: a missing source name
+	// yields NULL, which fails the scan into int32 and takes the inactive path.
+	// GREATEST alone would not catch it - it ignores NULL arguments.
+	err = conn.QueryRow(ctx, `
+		SELECT
+			(SELECT datacallid FROM datacalls WHERE datacall = $1),
+			(SELECT datacallid FROM datacalls WHERE datacall = $2),
+			GREATEST(
+				(SELECT deadline FROM datacalls WHERE datacall = $1),
+				(SELECT deadline FROM datacalls WHERE datacall = $2)),
+			(SELECT datacall FROM datacalls WHERE datacallid = $3),
+			(SELECT deadline FROM datacalls WHERE datacallid = $3)`,
+		rolloverHardcodeCMSSource, rolloverHardcodeOtherSource, dataCallID,
+	).Scan(&cmsSourceID, &otherSourceID, &latestSourceDeadline, &targetName, &targetDeadline)
+	if err != nil {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=source_lookup err=%v", dataCallID, err)
+		return 0, false, nil
+	}
+	if dataCallID == cmsSourceID || dataCallID == otherSourceID {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=target_is_a_source", dataCallID)
+		return 0, false, nil
+	}
+
+	if !matchesRolloverHardcodeTarget(targetName) {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=target_name_not_fy2026 name=%q want_prefix=%v",
+			dataCallID, targetName, rolloverHardcodeTargetPrefixes)
+		return 0, false, nil
+	}
+
+	// ztmf#448: a call named FY26 but deadlined before either source is a backfill.
+	if !targetDeadline.After(latestSourceDeadline) {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=target_deadline_not_after_sources name=%q target_deadline=%s latest_source_deadline=%s",
+			dataCallID, targetName, targetDeadline.Format(time.RFC3339), latestSourceDeadline.Format(time.RFC3339))
+		return 0, false, nil
+	}
+
+	// Gate 3: the target must be the FIRST FY26-prefixed cycle. Without this, a
+	// second same-year call (FY2026 Q4, a redo, a mid-year backfill) passes gates
+	// 1 and 2 and re-sources from the 2025 cycles, discarding everything the real
+	// FY26 cycle accumulated. This path REPLACES findPreviousDataCall, so it would
+	// not be missing the right answer - it would be overriding it. FY2025 Q3
+	// establishes quarter suffixes as the convention, so a second FY26 call is the
+	// likelier hazard, not FY2027.
+	//
+	// The candidate list is filtered in Go with the same matcher the name gate
+	// uses, so the two can never disagree. datacalls holds single-digit row counts.
+	earlier, err := earlierRolloverHardcodeTargets(ctx, conn, dataCallID, targetDeadline)
+	if err != nil {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=predecessor_scan err=%v", dataCallID, err)
+		return 0, false, nil
+	}
+	if len(earlier) > 0 {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=not_first_fy2026_cycle name=%q earlier=%v",
+			dataCallID, targetName, earlier)
+		return 0, false, nil
+	}
+
+	// The CASE in the WHERE clause IS the exclusion: a row survives only if its
+	// datacallid is the source assigned to that system's OpDiv.
+	//
+	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question -
+	// scores has no uniqueness constraint, so a cycle may hold duplicates.
+	//
+	// status is seeded 'not_started' as on the normal path (ztmf#435).
+	//
+	// The ::int casts are REQUIRED, not decoration. Both CASE branches are bind
+	// parameters, so Postgres resolves the CASE to text and the comparison becomes
+	// integer = text, failing the copy at runtime with SQLSTATE 42883. Testing with
+	// literal ids, or PREPARE with declared types, will NOT catch this - both supply
+	// the type information pgx omits. Do not remove.
+	const copySQL = `
+		INSERT INTO scores (fismasystemid, datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status)
+		SELECT DISTINCT ON (s.fismasystemid, fo.functionid)
+		       s.fismasystemid, s.datecalculated, s.notes, s.notes_is_ai_summary,
+		       s.functionoptionid, $1, 'not_started'
+		  FROM scores s
+		  JOIN fismasystems fs     ON fs.fismasystemid    = s.fismasystemid
+		  JOIN functionoptions fo  ON fo.functionoptionid = s.functionoptionid
+		  JOIN opdivs o            ON o.opdiv_id          = fs.opdiv_id
+		 WHERE s.datacallid = CASE WHEN UPPER(o.code) = $4 THEN $2::int ELSE $3::int END
+		 ORDER BY s.fismasystemid, fo.functionid, s.scoreid DESC`
+
+	tag, err := conn.Exec(ctx, copySQL, dataCallID, cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv)
+	if err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, true, err
+	}
+	copied = tag.RowsAffected()
+
+	// Diagnostics. Three of these are not self-explanatory:
+	//
+	//   selected_rows  rows AFTER the OpDiv exclusion, so selected_rows - copied is
+	//                  duplicate collapse and src_rows - selected_rows is what the
+	//                  exclusion discarded. Conflating the two would report excluded
+	//                  rows as deduplication.
+	//   misfiled_carried  restricted to systems that HAVE a scoring environment; one
+	//                  with an unmapped datacenterenvironment or a NULL scoring_key
+	//                  (DECOMMISSIONED, migration 0045) matches no function at all
+	//                  and would otherwise read as 100% mis-filed. Counted separately
+	//                  as unscored_env.
+	//   dropped_unresolvable  assigned rows the copy discards because
+	//                  functionoptionid resolves to nothing. The FK does NOT make
+	//                  this impossible: it reports convalidated = t but was created
+	//                  against an empty table, and bulk loads run under
+	//                  session_replication_role = replica, bypassing FK triggers.
+	//                  Real data contains such rows.
+	var fromCMS, fromOther, cmsSystems, otherSystems, cmsStranded, otherStranded, misfiled, unscoredEnv, srcRows, selectedRows, droppedUnresolvable int64
+	diagErr := conn.QueryRow(ctx, `
+		WITH assigned AS (
+			SELECT s.scoreid, s.fismasystemid, s.datacallid, fo.functionid, UPPER(o.code) AS opdiv_code
+			  FROM scores s
+			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
+			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+			  JOIN opdivs o           ON o.opdiv_id          = fs.opdiv_id
+			 WHERE s.datacallid = CASE WHEN UPPER(o.code) = $3 THEN $1::int ELSE $2::int END
+		),
+		winners AS (
+			SELECT DISTINCT ON (fismasystemid, functionid) datacallid AS won_from
+			  FROM assigned
+			 ORDER BY fismasystemid, functionid, scoreid DESC
+		),
+		-- Answered in some cycle, landed nothing in the new call.
+		missing AS (
+			SELECT fs.fismasystemid, UPPER(o.code) AS opdiv_code
+			  FROM fismasystems fs
+			  JOIN opdivs o ON o.opdiv_id = fs.opdiv_id
+			 WHERE fs.fismasystemid IN (SELECT fismasystemid FROM scores WHERE datacallid IN ($1, $2))
+			   AND fs.fismasystemid NOT IN (SELECT fismasystemid FROM scores WHERE datacallid = $4)
+		)
+		SELECT
+			(SELECT COUNT(*) FROM winners WHERE won_from = $1),
+			(SELECT COUNT(*) FROM winners WHERE won_from = $2),
+			(SELECT COUNT(*) FROM fismasystems fsc
+			   JOIN opdivs oc ON oc.opdiv_id = fsc.opdiv_id
+			  WHERE UPPER(oc.code) = $3),
+			(SELECT COUNT(*) FROM fismasystems fso
+			   JOIN opdivs oo ON oo.opdiv_id = fso.opdiv_id
+			  WHERE UPPER(oo.code) IS DISTINCT FROM $3),
+			(SELECT COUNT(*) FROM missing WHERE opdiv_code = $3),
+			(SELECT COUNT(*) FROM missing WHERE opdiv_code IS DISTINCT FROM $3),
+			(SELECT COUNT(*)
+			   FROM scores s
+			   JOIN fismasystems fs2    ON fs2.fismasystemid    = s.fismasystemid
+			   JOIN functionoptions fo2 ON fo2.functionoptionid = s.functionoptionid
+			   LEFT JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs2.datacenterenvironment
+			   LEFT JOIN functions f    ON f.functionid = fo2.functionid
+			                           AND f.datacenterenvironment = dce.scoring_key
+			  WHERE s.datacallid = $4
+			    AND dce.scoring_key IS NOT NULL
+			    AND f.functionid IS NULL),
+			(SELECT COUNT(*)
+			   FROM scores s
+			   JOIN fismasystems fs3 ON fs3.fismasystemid = s.fismasystemid
+			   LEFT JOIN datacenterenvironments dce2 ON dce2.datacenterenvironment = fs3.datacenterenvironment
+			  WHERE s.datacallid = $4
+			    AND dce2.scoring_key IS NULL),
+			(SELECT COUNT(*) FROM scores WHERE datacallid IN ($1, $2)),
+			(SELECT COUNT(*) FROM assigned),
+			(SELECT COUNT(*)
+			   FROM scores s
+			   JOIN fismasystems fs4 ON fs4.fismasystemid = s.fismasystemid
+			   JOIN opdivs o4        ON o4.opdiv_id       = fs4.opdiv_id
+			   LEFT JOIN functionoptions fo4 ON fo4.functionoptionid = s.functionoptionid
+			  WHERE s.datacallid = CASE WHEN UPPER(o4.code) = $3 THEN $1::int ELSE $2::int END
+			    AND fo4.functionoptionid IS NULL)`,
+		cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv, dataCallID,
+	).Scan(&fromCMS, &fromOther, &cmsSystems, &otherSystems, &cmsStranded, &otherStranded, &misfiled, &unscoredEnv, &srcRows, &selectedRows, &droppedUnresolvable)
+	if diagErr != nil {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=active copied=%d diagnostics_err=%v", dataCallID, copied, diagErr)
+		return copied, true, nil
+	}
+
+	log.Printf("ROLLOVER_HARDCODE datacall=%d status=active mode=exclusion cms_source=%d(%q) other_source=%d(%q) cms_systems=%d other_systems=%d src_rows=%d selected_rows=%d excluded_rows=%d copied=%d deduped=%d dropped_unresolvable=%d from_cms_source=%d from_other_source=%d cms_stranded=%d other_stranded=%d misfiled_carried=%d unscored_env=%d",
+		dataCallID, cmsSourceID, rolloverHardcodeCMSSource, otherSourceID, rolloverHardcodeOtherSource,
+		cmsSystems, otherSystems, srcRows, selectedRows, srcRows-selectedRows, copied, selectedRows-copied, droppedUnresolvable,
+		fromCMS, fromOther, cmsStranded, otherStranded, misfiled, unscoredEnv)
+
+	if droppedUnresolvable > 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d err=<none> reason=hardcode_unresolvable_rows dropped=%d",
+			dataCallID, selectedRows+droppedUnresolvable, copied, droppedUnresolvable)
+	}
+
+	// Zero-copy detection (ztmf#411). Against selected_rows, not src_rows: under
+	// exclusion a zero copy with nonzero src_rows is legitimate. Reuses the normal
+	// path's alarm token so it hits the existing CloudWatch metric.
+	if copied == 0 && selectedRows > 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=<none> reason=hardcode_empty_copy", dataCallID, selectedRows)
+	}
+
+	// These systems rolled forward EMPTY and the copy has no re-run path
+	// (ztmf#411). Investigate before anyone starts answering.
+	// cms_systems == 0 means the CMS OpDiv code did not match ANY system, so every
+	// system silently took the ELSE branch and sourced from the HHS cycle - this
+	// PR's own bug. None of the other alarms catch it: copied is nonzero because
+	// the other bucket copied fine. Promote it so it pages instead of sitting in
+	// an info line that a human has to read.
+	if cmsSystems == 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=>0 copied=%d err=<none> reason=hardcode_no_cms_systems opdiv_code=%q",
+			dataCallID, copied, rolloverHardcodeCMSOpDiv)
+	}
+
+	if cmsStranded > 0 || otherStranded > 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=>0 copied=%d err=<none> reason=hardcode_stranded_systems cms_stranded=%d other_stranded=%d",
+			dataCallID, copied, cmsStranded, otherStranded)
+	}
+
+	return copied, true, nil
+}
+
+// END TEMPORARY HARD-CODE - ztmf#500
+// ---------------------------------------------------------------------------
+
 // copyPreviousScores rolls the previous cycle's answers forward into the
 // newly created data call identified by dataCallID (the *latest* datacall; the
 // previous one is discovered via findPreviousDataCall). It returns the number
@@ -748,6 +1065,15 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 // ROLLOVER_ANOMALY log token (wired to a CloudWatch metric alarm) so an empty
 // cycle is detected rather than shipped silently. See ztmf#411.
 func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
+	// TEMPORARY (ztmf#500): OpDiv-keyed rollover override for the FY26 cycle.
+	// Takes precedence over the global findPreviousDataCall path below, but only
+	// for the FY2026 call itself - every other data call, including a backfill or
+	// a future cycle, falls through to findPreviousDataCall unchanged. REMOVE
+	// after the FY2026 call is created.
+	if copied, handled, err := copyPreviousScoresOpDivHardcoded(ctx, dataCallID); handled {
+		return copied, err
+	}
+
 	prevDataCall, err := findPreviousDataCall(ctx, dataCallID)
 	if err != nil {
 		// No previous cycle (the first-ever data call) is the expected, benign
