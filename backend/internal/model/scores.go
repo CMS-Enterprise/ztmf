@@ -13,6 +13,7 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // rawQuery wraps a hand-built SQL string and its arguments so it can flow
@@ -757,16 +758,63 @@ ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
 const (
 	rolloverHardcodeCMSSource   = "FY2025 Q3" // CMS's own hand-entered cycle
 	rolloverHardcodeOtherSource = "FY25 ZTM"  // HHS import
-	rolloverHardcodeCMSOpDiv    = "CMS"       // opdivs.code seeded by migration 0026
+	// Compared case-insensitively via UPPER() at every site. opdivs.code is
+	// editable through PUT /opdivs/{id} (OpDiv.Save updates it unconditionally,
+	// validate only trims) and migration 0026's uniqueness index is on
+	// LOWER(code), so renaming CMS to "cms" saves cleanly. An exact-case compare
+	// would then match no rows, drop every system to the ELSE branch, and source
+	// the whole estate from the HHS cycle - this PR's own bug, reproduced. Keep
+	// this constant uppercase.
+	rolloverHardcodeCMSOpDiv = "CMS" // opdivs.code seeded by migration 0026
 )
 
-// Gated to FY2026 on two independent conditions so it cannot leak onto another
-// data call before this block is deleted: the target's name matches one of these
-// prefixes, AND its deadline is later than both sources' (the ztmf#448 invariant,
-// which this path must carry itself since it bypasses findPreviousDataCall).
-// Both prefixes are accepted because the source cycles disagree on the convention
-// ("FY2025 Q3" vs "FY25 ZTM") and the operator types the FY26 name.
+// Gated to the FY2026 cycle on three independent conditions so it cannot leak
+// onto another data call before this block is deleted:
+//
+//  1. the target's name starts with one of these prefixes
+//  2. its deadline is later than both sources' - the ztmf#448 invariant, which
+//     this path must carry itself since it bypasses findPreviousDataCall
+//  3. it is the FIRST cycle matching these prefixes (see
+//     earlierRolloverHardcodeTargets) - without it a second same-year call
+//     re-sources from the 2025 cycles and discards everything FY2026 accrued
+//
+// BOTH year forms are accepted on purpose. FY2026 is the single unified cycle
+// covering all of HHS including CMS - merging the two 2025 lineages into one is
+// the entire point of this change, so there is no separate HHS import cycle to
+// keep out. The final name is not fixed yet and the two prior conventions
+// disagree ("FY2025 Q3" four-digit, "FY25 ZTM" two-digit), so excluding either
+// form risks the override silently declining on the real cycle - which ships the
+// P0 this exists to prevent. Gate 3 is what keeps the broad prefix safe: only the
+// first matching cycle is ever treated as the target.
 var rolloverHardcodeTargetPrefixes = []string{"FY2026", "FY26"}
+
+// earlierRolloverHardcodeTargets returns the names of FY26-prefixed data calls
+// that precede the target, ordered ahead of it by (deadline, datacallid) - the
+// same ordering findPreviousDataCall uses. A non-empty result means the target is
+// not the first FY26 cycle and the override must not apply.
+func earlierRolloverHardcodeTargets(ctx context.Context, conn *pgxpool.Conn, dataCallID int32, targetDeadline time.Time) ([]string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT datacall FROM datacalls
+		 WHERE datacallid <> $1
+		   AND (deadline < $2 OR (deadline = $2 AND datacallid < $1))`,
+		dataCallID, targetDeadline)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var earlier []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		if matchesRolloverHardcodeTarget(name) {
+			earlier = append(earlier, name)
+		}
+	}
+	return earlier, rows.Err()
+}
 
 func matchesRolloverHardcodeTarget(name string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(name))
@@ -831,6 +879,27 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 		return 0, false, nil
 	}
 
+	// Gate 3: the target must be the FIRST FY26-prefixed cycle. Without this, a
+	// second same-year call (FY2026 Q4, a redo, a mid-year backfill) passes gates
+	// 1 and 2 and re-sources from the 2025 cycles, discarding everything the real
+	// FY26 cycle accumulated. This path REPLACES findPreviousDataCall, so it would
+	// not be missing the right answer - it would be overriding it. FY2025 Q3
+	// establishes quarter suffixes as the convention, so a second FY26 call is the
+	// likelier hazard, not FY2027.
+	//
+	// The candidate list is filtered in Go with the same matcher the name gate
+	// uses, so the two can never disagree. datacalls holds single-digit row counts.
+	earlier, err := earlierRolloverHardcodeTargets(ctx, conn, dataCallID, targetDeadline)
+	if err != nil {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=predecessor_scan err=%v", dataCallID, err)
+		return 0, false, nil
+	}
+	if len(earlier) > 0 {
+		log.Printf("ROLLOVER_HARDCODE datacall=%d status=inactive reason=not_first_fy2026_cycle name=%q earlier=%v",
+			dataCallID, targetName, earlier)
+		return 0, false, nil
+	}
+
 	// The CASE in the WHERE clause IS the exclusion: a row survives only if its
 	// datacallid is the source assigned to that system's OpDiv.
 	//
@@ -853,7 +922,7 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 		  JOIN fismasystems fs     ON fs.fismasystemid    = s.fismasystemid
 		  JOIN functionoptions fo  ON fo.functionoptionid = s.functionoptionid
 		  JOIN opdivs o            ON o.opdiv_id          = fs.opdiv_id
-		 WHERE s.datacallid = CASE WHEN o.code = $4 THEN $2::int ELSE $3::int END
+		 WHERE s.datacallid = CASE WHEN UPPER(o.code) = $4 THEN $2::int ELSE $3::int END
 		 ORDER BY s.fismasystemid, fo.functionid, s.scoreid DESC`
 
 	tag, err := conn.Exec(ctx, copySQL, dataCallID, cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv)
@@ -883,12 +952,12 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 	var fromCMS, fromOther, cmsSystems, otherSystems, cmsStranded, otherStranded, misfiled, unscoredEnv, srcRows, selectedRows, droppedUnresolvable int64
 	diagErr := conn.QueryRow(ctx, `
 		WITH assigned AS (
-			SELECT s.scoreid, s.fismasystemid, s.datacallid, fo.functionid, o.code AS opdiv_code
+			SELECT s.scoreid, s.fismasystemid, s.datacallid, fo.functionid, UPPER(o.code) AS opdiv_code
 			  FROM scores s
 			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
 			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 			  JOIN opdivs o           ON o.opdiv_id          = fs.opdiv_id
-			 WHERE s.datacallid = CASE WHEN o.code = $3 THEN $1::int ELSE $2::int END
+			 WHERE s.datacallid = CASE WHEN UPPER(o.code) = $3 THEN $1::int ELSE $2::int END
 		),
 		winners AS (
 			SELECT DISTINCT ON (fismasystemid, functionid) datacallid AS won_from
@@ -897,7 +966,7 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 		),
 		-- Answered in some cycle, landed nothing in the new call.
 		missing AS (
-			SELECT fs.fismasystemid, o.code AS opdiv_code
+			SELECT fs.fismasystemid, UPPER(o.code) AS opdiv_code
 			  FROM fismasystems fs
 			  JOIN opdivs o ON o.opdiv_id = fs.opdiv_id
 			 WHERE fs.fismasystemid IN (SELECT fismasystemid FROM scores WHERE datacallid IN ($1, $2))
@@ -908,10 +977,10 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 			(SELECT COUNT(*) FROM winners WHERE won_from = $2),
 			(SELECT COUNT(*) FROM fismasystems fsc
 			   JOIN opdivs oc ON oc.opdiv_id = fsc.opdiv_id
-			  WHERE oc.code = $3),
+			  WHERE UPPER(oc.code) = $3),
 			(SELECT COUNT(*) FROM fismasystems fso
 			   JOIN opdivs oo ON oo.opdiv_id = fso.opdiv_id
-			  WHERE oo.code IS DISTINCT FROM $3),
+			  WHERE UPPER(oo.code) IS DISTINCT FROM $3),
 			(SELECT COUNT(*) FROM missing WHERE opdiv_code = $3),
 			(SELECT COUNT(*) FROM missing WHERE opdiv_code IS DISTINCT FROM $3),
 			(SELECT COUNT(*)
@@ -937,7 +1006,7 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 			   JOIN fismasystems fs4 ON fs4.fismasystemid = s.fismasystemid
 			   JOIN opdivs o4        ON o4.opdiv_id       = fs4.opdiv_id
 			   LEFT JOIN functionoptions fo4 ON fo4.functionoptionid = s.functionoptionid
-			  WHERE s.datacallid = CASE WHEN o4.code = $3 THEN $1::int ELSE $2::int END
+			  WHERE s.datacallid = CASE WHEN UPPER(o4.code) = $3 THEN $1::int ELSE $2::int END
 			    AND fo4.functionoptionid IS NULL)`,
 		cmsSourceID, otherSourceID, rolloverHardcodeCMSOpDiv, dataCallID,
 	).Scan(&fromCMS, &fromOther, &cmsSystems, &otherSystems, &cmsStranded, &otherStranded, &misfiled, &unscoredEnv, &srcRows, &selectedRows, &droppedUnresolvable)
@@ -965,6 +1034,16 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 
 	// These systems rolled forward EMPTY and the copy has no re-run path
 	// (ztmf#411). Investigate before anyone starts answering.
+	// cms_systems == 0 means the CMS OpDiv code did not match ANY system, so every
+	// system silently took the ELSE branch and sourced from the HHS cycle - this
+	// PR's own bug. None of the other alarms catch it: copied is nonzero because
+	// the other bucket copied fine. Promote it so it pages instead of sitting in
+	// an info line that a human has to read.
+	if cmsSystems == 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=>0 copied=%d err=<none> reason=hardcode_no_cms_systems opdiv_code=%q",
+			dataCallID, copied, rolloverHardcodeCMSOpDiv)
+	}
+
 	if cmsStranded > 0 || otherStranded > 0 {
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=>0 copied=%d err=<none> reason=hardcode_stranded_systems cms_stranded=%d other_stranded=%d",
 			dataCallID, copied, cmsStranded, otherStranded)

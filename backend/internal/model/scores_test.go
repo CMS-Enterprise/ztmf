@@ -501,8 +501,11 @@ func TestDerefString(t *testing.T) {
 // rather than a deadline: until it is deleted, every non-FY26 data call must
 // fall through to the normal findPreviousDataCall path.
 //
-// Both naming conventions are accepted because the two source cycles disagree
-// ("FY2025 Q3" vs "FY25 ZTM") and the FY26 name is typed by the operator.
+// Both year forms match: FY2026 is a single unified cycle for all of HHS
+// including CMS, its final name is not fixed, and the two prior conventions
+// disagree ("FY2025 Q3" vs "FY25 ZTM"). Declining the real cycle over a naming
+// guess is the costlier failure, so the first-cycle gate keeps the broad prefix
+// safe.
 //
 // DELETE THIS TEST with the override it covers.
 func TestMatchesRolloverHardcodeTarget(t *testing.T) {
@@ -512,7 +515,7 @@ func TestMatchesRolloverHardcodeTarget(t *testing.T) {
 		about string
 	}{
 		{"FY2026 Q1", true, "long-form convention, as FY2025 Q3 uses"},
-		{"FY26 ZTM", true, "short-form convention, as FY25 ZTM uses"},
+		{"FY26 ZTM", true, "two-digit form - the unified cycle may be named either way"},
 		{"FY2026", true, "bare year"},
 		{"fy2026 q1", true, "gate is case-insensitive - the operator types this"},
 		{"  FY2026 Q1  ", true, "surrounding whitespace is tolerated"},
