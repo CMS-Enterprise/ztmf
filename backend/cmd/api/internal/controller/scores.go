@@ -170,9 +170,9 @@ func ConfirmScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// respondOK, not respond: this is a PUT-as-action endpoint. The FE swaps
-	// the question's badge from the returned row rather than refetching blind,
-	// and respond() would drop the body with a 204.
+	// respondOK, not respond: PUT-as-action endpoints return the updated
+	// entity (the restore/reactivate convention); respond() would drop the
+	// body with a 204.
 	respondOK(w, confirmed)
 }
 
