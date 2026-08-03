@@ -76,7 +76,10 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	vars := mux.Vars(r)
-	input := model.FindFismaSystemsInput{}
+	// A display read: resolve the ISSO display name the same way the list
+	// does, so the two endpoints cannot disagree on the same system
+	// (ztmf#510). Internal fetches that feed write paths keep the raw column.
+	input := model.FindFismaSystemsInput{ResolveISSOName: true}
 
 	if v, ok := vars["fismasystemid"]; ok {
 		var fismasystemID int32
@@ -104,7 +107,7 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystem, nil)
 }
 
-// clearUnscopedOnlyFields nils the 11 system-attribute fields only an
+// clearUnscopedOnlyFields nils the 9 system-attribute fields only an
 // unscoped-write admin may set. Called on INSERT when the acting user lacks
 // unscoped read access.
 func clearUnscopedOnlyFields(fs *model.FismaSystem) {
@@ -116,19 +119,21 @@ func clearUnscopedOnlyFields(fs *model.FismaSystem) {
 	fs.CloudVendor = nil
 	fs.SystemOperator = nil
 	fs.GocoCocGoGo = nil
-	fs.SystemOwner = nil
-	fs.SystemOwnerEmail = nil
 	fs.Legacy = nil
 }
 
-// preserveUnscopedOnlyFields overwrites the 11 system-attribute fields on
+// preserveUnscopedOnlyFields overwrites the 9 system-attribute fields on
 // incoming with the values already stored on existing. Called on UPDATE when
 // the acting user lacks unscoped read access, so a full-form PUT from a tier
 // that may not write these fields cannot wipe them.
 //
-// The set covers system attributes only. isso_name is a contact name that an
-// OpDiv-scoped admin may write on systems in their granted OpDivs, so it is
-// not part of this set and passes through from the request.
+// The set covers system attributes only. The contact fields - isso_name,
+// system_owner, system_owner_email - are writable by an OpDiv-scoped admin on
+// systems in their granted OpDivs (ztmf#511, ztmf#512), so they are not part
+// of this set and pass through from the request. The owner fields matter more
+// than a display preference: unlike isso_name they have no COALESCE fallback
+// to a user record, so the stored column is the only source there is, and
+// no onboarding load refreshes them for non-CMS OpDivs.
 func preserveUnscopedOnlyFields(existing, incoming *model.FismaSystem) {
 	incoming.HVA = existing.HVA
 	incoming.FIPS = existing.FIPS
@@ -138,8 +143,6 @@ func preserveUnscopedOnlyFields(existing, incoming *model.FismaSystem) {
 	incoming.CloudVendor = existing.CloudVendor
 	incoming.SystemOperator = existing.SystemOperator
 	incoming.GocoCocGoGo = existing.GocoCocGoGo
-	incoming.SystemOwner = existing.SystemOwner
-	incoming.SystemOwnerEmail = existing.SystemOwnerEmail
 	incoming.Legacy = existing.Legacy
 }
 
@@ -251,7 +254,7 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Only OWNER and HHS_ADMIN may write the 11 system-attribute fields
+	// Only OWNER and HHS_ADMIN may write the 9 system-attribute fields
 	// (HasUnscopedRead gates this; HHS_READONLY_ADMIN is already blocked by
 	// IsAdmin() above). Every scoped admin can READ all of them - the list and
 	// GET reads return every column and only filter rows by OpDiv - so this is

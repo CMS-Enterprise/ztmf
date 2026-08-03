@@ -475,6 +475,11 @@ components:
         system_operator:
           type: string
         system_owner:
+          description: |-
+            SystemOwner / SystemOwnerEmail are contact fields, writable by an
+            OpDiv-scoped admin on systems in their granted OpDivs (ztmf#512). Unlike
+            ISSOName there is no derivation fallback: the stored column is the only
+            source of the owner's name, so clearing it just clears it.
           type: string
         system_owner_email:
           type: string

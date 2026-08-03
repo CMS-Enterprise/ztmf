@@ -50,10 +50,10 @@ func requestedSystem() *model.FismaSystem {
 	}
 }
 
-// The 11 system attributes are restored from the stored row so a scoped
-// admin's full-form PUT cannot wipe them, while the ISSO name they sent
-// survives to reach Save.
-func TestPreserveUnscopedOnlyFields_ISSONameStaysRequested(t *testing.T) {
+// The 9 system attributes are restored from the stored row so a scoped
+// admin's full-form PUT cannot wipe them, while the contact fields they sent
+// (isso_name, system_owner, system_owner_email) survive to reach Save.
+func TestPreserveUnscopedOnlyFields_ContactFieldsStayRequested(t *testing.T) {
 	existing, incoming := storedSystem(), requestedSystem()
 
 	preserveUnscopedOnlyFields(existing, incoming)
@@ -66,29 +66,36 @@ func TestPreserveUnscopedOnlyFields_ISSONameStaysRequested(t *testing.T) {
 	assert.Equal(t, existing.CloudVendor, incoming.CloudVendor, "cloud_vendor must be restored from the stored row")
 	assert.Equal(t, existing.SystemOperator, incoming.SystemOperator, "system_operator must be restored from the stored row")
 	assert.Equal(t, existing.GocoCocGoGo, incoming.GocoCocGoGo, "goco_coco_gogo must be restored from the stored row")
-	assert.Equal(t, existing.SystemOwner, incoming.SystemOwner, "system_owner must be restored from the stored row")
-	assert.Equal(t, existing.SystemOwnerEmail, incoming.SystemOwnerEmail, "system_owner_email must be restored from the stored row")
 	assert.Equal(t, existing.Legacy, incoming.Legacy, "legacy must be restored from the stored row")
 
 	assert.Equal(t, "Requested ISSO", *incoming.ISSOName,
 		"isso_name is OpDiv-writable and must keep the value the request sent")
+	assert.Equal(t, "requested-owner", *incoming.SystemOwner,
+		"system_owner is OpDiv-writable and must keep the value the request sent")
+	assert.Equal(t, "requested-owner@example.gov", *incoming.SystemOwnerEmail,
+		"system_owner_email is OpDiv-writable and must keep the value the request sent")
 }
 
-// A nil requested ISSO name means the key was omitted, which Save reads as
-// "leave the stored value alone". Restoring the stored name here would turn an
+// A nil requested contact field means the key was omitted, which Save reads as
+// "leave the stored value alone". Restoring the stored value here would turn an
 // omission into an explicit rewrite.
-func TestPreserveUnscopedOnlyFields_OmittedISSONameStaysNil(t *testing.T) {
+func TestPreserveUnscopedOnlyFields_OmittedContactFieldsStayNil(t *testing.T) {
 	existing, incoming := storedSystem(), requestedSystem()
 	incoming.ISSOName = nil
+	incoming.SystemOwner = nil
+	incoming.SystemOwnerEmail = nil
 
 	preserveUnscopedOnlyFields(existing, incoming)
 
 	assert.Nil(t, incoming.ISSOName, "an omitted isso_name must stay nil so Save leaves the stored value untouched")
+	assert.Nil(t, incoming.SystemOwner, "an omitted system_owner must stay nil so Save leaves the stored value untouched")
+	assert.Nil(t, incoming.SystemOwnerEmail, "an omitted system_owner_email must stay nil so Save leaves the stored value untouched")
 }
 
-// On create the same 11 attributes are cleared for a scoped admin, but the ISSO
-// name they supplied has to survive or the create silently drops it.
-func TestClearUnscopedOnlyFields_ISSONameSurvives(t *testing.T) {
+// On create the same 9 attributes are cleared for a scoped admin, but the
+// contact fields they supplied have to survive or the create silently drops
+// them.
+func TestClearUnscopedOnlyFields_ContactFieldsSurvive(t *testing.T) {
 	incoming := requestedSystem()
 
 	clearUnscopedOnlyFields(incoming)
@@ -101,16 +108,18 @@ func TestClearUnscopedOnlyFields_ISSONameSurvives(t *testing.T) {
 	assert.Nil(t, incoming.CloudVendor, "cloud_vendor must be cleared")
 	assert.Nil(t, incoming.SystemOperator, "system_operator must be cleared")
 	assert.Nil(t, incoming.GocoCocGoGo, "goco_coco_gogo must be cleared")
-	assert.Nil(t, incoming.SystemOwner, "system_owner must be cleared")
-	assert.Nil(t, incoming.SystemOwnerEmail, "system_owner_email must be cleared")
 	assert.Nil(t, incoming.Legacy, "legacy must be cleared")
 
 	assert.Equal(t, "Requested ISSO", *incoming.ISSOName,
 		"isso_name is OpDiv-writable and must survive the create-path clear")
+	assert.Equal(t, "requested-owner", *incoming.SystemOwner,
+		"system_owner is OpDiv-writable and must survive the create-path clear")
+	assert.Equal(t, "requested-owner@example.gov", *incoming.SystemOwnerEmail,
+		"system_owner_email is OpDiv-writable and must survive the create-path clear")
 }
 
-// The two helpers hand-maintain the same field list, which is how isso_name
-// came to be in both. Clearing is preserving from a zero-valued row, so the
+// The two helpers hand-maintain the same field list, which is how the contact
+// fields came to be in both. Clearing is preserving from a zero-valued row, so the
 // two must agree field for field.
 func TestUnscopedOnlyFields_ClearAndPreserveGovernSameSet(t *testing.T) {
 	cleared := requestedSystem()

@@ -164,10 +164,11 @@ updatedScoreData: &updatedScoreData
   notes: "Updated by Emberfall test"
 
 # HHS metadata anchor (12 fields). Used to exercise the RBAC write gate:
-# OWNER writes land in DB. For scoped admins the 11 system attributes are
-# stripped on create and restored on update, while isso_name is OpDiv-writable
-# and takes their value on both paths. Values are intentionally Star-Wars-themed
-# to match the fixture.
+# OWNER writes land in DB. For scoped admins the 9 system attributes are
+# stripped on create and restored on update, while the contact fields -
+# isso_name, system_owner, system_owner_email - are OpDiv-writable and take
+# their value on both paths (ztmf#511, ztmf#512). Values are intentionally
+# Star-Wars-themed to match the fixture.
 hhsExpected: &hhsExpected
   hva: true
   fips: "Moderate"
@@ -796,8 +797,9 @@ tests:
   # Test B — Scoped admin RBAC gate.
   #
   # Part 1: opDivAdmin POSTs a system with HHS fields → clearUnscopedOnlyFields
-  # strips the 11 system attributes; the created record has them null. isso_name
-  # is not in that set - an OpDiv-scoped admin may write it - so it persists.
+  # strips the 9 system attributes; the created record has them null. The
+  # contact fields (isso_name, system_owner, system_owner_email) are not in
+  # that set - an OpDiv-scoped admin may write them - so they persist.
   # opdiv_id 15 = EMPIRE OpDiv, position 15 in the seed INSERT sequence
   # (_test_data_empire.sql). If this fails with 403, the seed order changed.
   - id: createFismaSystemScopedAdmin
@@ -825,10 +827,10 @@ tests:
             cloud_vendor: null
             system_operator: null
             goco_coco_gogo: null
-            system_owner: null
-            system_owner_email: null
             legacy: null
             isso_name: "Darth Vader" # OpDiv-writable, so the POSTed value persists
+            system_owner: "Grand Moff Tarkin" # OpDiv-writable (ztmf#512)
+            system_owner_email: "tarkin@deathstar.empire" # OpDiv-writable (ztmf#512)
 
   # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
   # holds a write grant for this system).
@@ -843,11 +845,12 @@ tests:
     expect:
       status: 204
 
-  # Part 3: opDivAdmin PUTs system 1002 with different values. The 11 system
+  # Part 3: opDivAdmin PUTs system 1002 with different values. The 9 system
   # attributes are restored from the stored row by preserveUnscopedOnlyFields;
-  # isso_name is not in that set, so the OpDiv admin's value takes effect. The
-  # isso_name sent here must differ from the value OWNER stored in Part 2, or
-  # the GET below cannot tell a successful write from a restored one.
+  # the contact fields are not in that set, so the OpDiv admin's values take
+  # effect. Every contact value sent here must differ from what OWNER stored
+  # in Part 2, or the GET below cannot tell a successful write from a
+  # restored one.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -857,14 +860,15 @@ tests:
       json:
         <<: *system1002WithHHSData
         hva: false # scoped-admin overwrite attempt; the stored value is restored
-        system_owner: "Impostor"
         isso_name: "Wilhuff Tarkin" # OpDiv-writable, so this one does take effect
+        system_owner: "Firmus Piett" # OpDiv-writable (ztmf#512), takes effect
+        system_owner_email: "piett@executor.empire" # OpDiv-writable (ztmf#512), takes effect
     expect:
       status: 204
 
-  # GET confirms OWNER's values survived the scoped admin PUT, while the
-  # OpDiv admin's isso_name landed. The explicit isso_name overrides the value
-  # carried by the hhsExpected merge key.
+  # GET confirms OWNER's system-attribute values survived the scoped admin
+  # PUT, while the OpDiv admin's contact fields landed. The explicit keys
+  # override the values carried by the hhsExpected merge key.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: GET
     headers:
@@ -878,6 +882,8 @@ tests:
           data:
             <<: *hhsExpected
             isso_name: "Wilhuff Tarkin"
+            system_owner: "Firmus Piett"
+            system_owner_email: "piett@executor.empire"
 
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
