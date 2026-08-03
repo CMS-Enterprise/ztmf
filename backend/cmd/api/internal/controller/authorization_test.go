@@ -233,6 +233,47 @@ func TestSaveScore_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- ConfirmScore ---
+
+func TestConfirmScore_ReadonlyAdminForbidden(t *testing.T) {
+	// The role-only rejection must fire before the row load, preserving the
+	// "read-only tiers are blocked before any DB access" property SaveScore
+	// pins - this test runs without a database.
+	r := httptest.NewRequest("PUT", "/api/v1/scores/123/confirm", nil)
+	r = mux.SetURLVars(r, map[string]string{"scoreid": "123"})
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	ConfirmScore(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// guardScoreWrite is the shared authorization for SaveScore and ConfirmScore.
+// The non-admin branches are pure (no DB), so pin them here; the admin branch
+// delegates to guardManageFismaSystem (DB) and is covered by the Emberfall
+// matrix.
+func TestGuardScoreWrite_NonAdminPaths(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("ReadonlyAdminForbidden", func(t *testing.T) {
+		assert.ErrorIs(t, guardScoreWrite(ctx, readonlyAdmin, 1), ErrForbidden)
+	})
+
+	t.Run("ISSOUnassignedForbidden", func(t *testing.T) {
+		assert.ErrorIs(t, guardScoreWrite(ctx, issoUser, 999), ErrForbidden)
+	})
+
+	t.Run("ISSOAssignedAllowed", func(t *testing.T) {
+		assigned := &model.User{
+			UserID:               "44444444-4444-4444-4444-444444444444",
+			Email:                "isso2@test.com",
+			Role:                 "ISSO",
+			AssignedFismaSystems: []*int32{int32Ptr(7)},
+		}
+		assert.NoError(t, guardScoreWrite(ctx, assigned, 7))
+	})
+}
+
 // --- SaveFismaSystemTargetMaturity (#398) ---
 
 func TestSaveFismaSystemTargetMaturity_ReadonlyAdminForbidden(t *testing.T) {

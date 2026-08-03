@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -79,24 +80,9 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 
-	if user.IsReadOnlyAdmin() {
-		respond(w, r, nil, ErrForbidden)
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
 		return
-	}
-
-	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
-		respond(w, r, nil, ErrForbidden)
-		return
-	}
-
-	// OpDiv write-scope: an admin-tier writer may only score a system in an
-	// OpDiv they manage (OWNER/HHS_ADMIN any; OPDIV_ADMIN only their grants).
-	// ISSO/ISSM keep the per-system assignment path checked above.
-	if user.IsAdmin() {
-		if _, err := guardManageFismaSystem(r.Context(), user, score.FismaSystemID); err != nil {
-			respond(w, r, nil, err)
-			return
-		}
 	}
 
 	vars := mux.Vars(r)
@@ -109,6 +95,85 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
+}
+
+// guardScoreWrite is the shared authorization for every score-mutating
+// endpoint (SaveScore, ConfirmScore): read-only admins never write; ISSO/ISSM
+// must hold the per-system assignment; admin tiers must manage the system's
+// OpDiv (OWNER/HHS_ADMIN any, OPDIV_ADMIN only their grants). Extracted so the
+// confirm path cannot drift from the save path's rules.
+func guardScoreWrite(ctx context.Context, user *model.User, fismaSystemID int32) error {
+	if user.IsReadOnlyAdmin() {
+		return ErrForbidden
+	}
+
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(fismaSystemID) {
+		return ErrForbidden
+	}
+
+	if user.IsAdmin() {
+		if _, err := guardManageFismaSystem(ctx, user, fismaSystemID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ConfirmScore marks a carried-forward answer as affirmed for its data call:
+// it flips scores.status to 'done' and touches nothing else. Agreement
+// changes no answer field, so the ordinary PUT's no-op guard (correctly)
+// refuses to record it - this is the explicit act that does.
+//
+// The row is loaded FIRST and authorization runs against its own
+// fismasystemid - a client asserts nothing but the scoreid.
+//
+//	@Summary	Confirm a carried-forward score without changing it
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		scoreid	path		int	true	"Score ID"
+//	@Success	200		{object}	apiResponse[model.Score]
+//	@Failure	403		{object}	apiResponse[any]
+//	@Failure	404		{object}	apiResponse[any]
+//	@Failure	500		{object}	apiResponse[any]
+//	@Router		/scores/{scoreid}/confirm [put]
+func ConfirmScore(w http.ResponseWriter, r *http.Request) {
+	user := model.UserFromContext(r.Context())
+
+	// Role-only rejection before any DB access, preserving the pinned
+	// property from rbac_enforcement_test.go ("read-only tiers are blocked
+	// before any DB access"). guardScoreWrite re-checks this; harmless.
+	if user.IsReadOnlyAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	var scoreID int32
+	fmt.Sscan(mux.Vars(r)["scoreid"], &scoreID)
+
+	score, err := model.FindScoreByID(r.Context(), scoreID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	confirmed, err := score.Confirm(r.Context())
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	// respondOK, not respond: this is a PUT-as-action endpoint. The FE swaps
+	// the question's badge from the returned row rather than refetching blind,
+	// and respond() would drop the body with a 204.
+	respondOK(w, confirmed)
 }
 
 //	@Summary	Diff scores between two data calls

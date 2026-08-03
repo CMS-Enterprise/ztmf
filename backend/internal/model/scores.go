@@ -40,9 +40,16 @@ type Score struct {
 	NotesIsAISummary *bool           `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
 	FunctionOptionID int32           `json:"functionoptionid"`
 	DataCallID       int32           `json:"datacallid"`
-	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
-	LastEditedAt     *time.Time      `json:"last_edited_at,omitempty"`
-	LastEditedBy     *AuditRef       `json:"last_edited_by,omitempty"`
+	// Status is the answer's review state for its data call: 'not_started' for
+	// a row carried forward by copyPreviousScores and untouched this cycle,
+	// 'done' once saved or confirmed this cycle (ztmf#435, values pinned by
+	// migration 0048's CHECK). Exposed on the read path so the questionnaire
+	// marks carried-forward answers from the SAME fact the Data Call Progress
+	// count reads, instead of inferring it from the absence of an edit event.
+	Status         string          `json:"status"`
+	FunctionOption *FunctionOption `json:"functionoption,omitempty"`
+	LastEditedAt   *time.Time      `json:"last_edited_at,omitempty"`
+	LastEditedBy   *AuditRef       `json:"last_edited_by,omitempty"`
 }
 
 // AuditInfo satisfies Auditable. Returned pointers may be nil if the row has
@@ -109,7 +116,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Insert("public.scores").
 			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
 			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, "done").
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	} else {
 		setCols := squirrel.Eq{
 			"fismasystemid":    s.FismaSystemID,
@@ -125,7 +132,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Update("public.scores").
 			SetMap(setCols).
 			Where("scoreid=?", s.ScoreID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
@@ -156,6 +163,48 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		}
 	}
 	return saved, nil
+}
+
+// Confirm records that the user affirmed this carried-forward answer as still
+// accurate for the current data call: it flips status to 'done' and nothing
+// else. It exists because agreement changes no answer field, and Save's no-op
+// guard (correctly) refuses to write in that case (ztmf#412/#413) - so
+// "reviewed and agreed" needs its own explicit, attributable write.
+//
+// Deliberately narrow: sets ONLY status - notably not notes_is_ai_summary,
+// since agreeing with an AI-drafted justification is not authoring it. Runs
+// through queryRow so recordEvent stamps the confirming user as the editor.
+// Idempotent on an already-'done' row.
+//
+// The receiver must be a row loaded by FindScoreByID, not a client-supplied
+// body: DataCallID drives the deadline check, and the controller authorizes
+// against the loaded FismaSystemID rather than an asserted one.
+func (s *Score) Confirm(ctx context.Context) (*Score, error) {
+	if err := s.validateDeadline(ctx); err != nil {
+		return nil, err
+	}
+
+	sqlb := stmntBuilder.
+		Update("public.scores").
+		Set("status", "done").
+		Where("scoreid=?", s.ScoreID).
+		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+
+	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+	if err != nil {
+		return confirmed, err
+	}
+
+	// Same read-back as Save: project the canonical event row rather than
+	// synthesizing a timestamp, so the response cannot advertise an editor a
+	// subsequent GET would not confirm. Both-or-neither.
+	if confirmed != nil {
+		if at, by := lookupScoreAudit(ctx, confirmed.ScoreID); at != nil && by != nil {
+			confirmed.LastEditedAt = at
+			confirmed.LastEditedBy = by
+		}
+	}
+	return confirmed, nil
 }
 
 // scoreUpdateIsNoOp reports whether the incoming Score's answer fields
@@ -189,29 +238,48 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 // cleanly without paying a second round trip through the UPDATE that
 // would also fail.
 func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, error) {
+	current, err := FindScoreByID(ctx, incoming.ScoreID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	return scoresEqualForUpdate(current, incoming), current, nil
+}
+
+// FindScoreByID reads one score row by id, on the read-only path (a plain
+// conn.QueryRow, never queryRow, so no event is recorded for a lookup).
+//
+// Shared by scoreUpdateIsNoOp, which needs the current answer fields to compare
+// against, and by ConfirmScore, which needs the row's real fismasystemid so the
+// controller can authorize against it rather than against a client-asserted one.
+//
+// Returns ErrNoData when the row is missing so callers can fail cleanly without
+// paying a second round trip through a write that would also fail.
+func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return false, nil, trapError(err)
+		return nil, trapError(err)
 	}
 	defer conn.Release()
 
 	current := &Score{}
 	err = conn.QueryRow(ctx, `
 		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
-		       notes, notes_is_ai_summary, functionoptionid, datacallid
+		       notes, notes_is_ai_summary, functionoptionid, datacallid, status
 		FROM scores WHERE scoreid = $1
-	`, incoming.ScoreID).Scan(
+	`, scoreID).Scan(
 		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
 		&current.Notes, &current.NotesIsAISummary, &current.FunctionOptionID, &current.DataCallID,
+		&current.Status,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return false, nil, ErrNoData
+			return nil, ErrNoData
 		}
-		return false, nil, trapError(err)
+		return nil, trapError(err)
 	}
 
-	return scoresEqualForUpdate(current, incoming), current, nil
+	return current, nil
 }
 
 // scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
@@ -292,6 +360,14 @@ func (s *Score) validate(ctx context.Context) error {
 		return ErrNotesTooLong
 	}
 
+	return s.validateDeadline(ctx)
+}
+
+// validateDeadline rejects a write to a closed data call for anyone but an
+// admin. Extracted from validate so Confirm enforces the same rule: confirming
+// a carried-forward answer is a write to the cycle like any other, and must not
+// become a post-deadline loophole for the tiers that cannot save.
+func (s *Score) validateDeadline(ctx context.Context) error {
 	dataCall, err := FindDataCallByID(ctx, s.DataCallID)
 	if err != nil {
 		return err
@@ -371,7 +447,7 @@ type FindScoresInput struct {
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	sqlb := stmntBuilder.
-		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.notes_is_ai_summary, scores.functionoptionid, scores.datacallid").
+		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.notes_is_ai_summary, scores.functionoptionid, scores.datacallid, scores.status").
 		From("scores")
 
 	if input.contains("functionoption") {
@@ -428,7 +504,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
-		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.NotesIsAISummary, &score.FunctionOptionID, &score.DataCallID}
+		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.NotesIsAISummary, &score.FunctionOptionID, &score.DataCallID, &score.Status}
 		if input.contains("functionoption") {
 			score.FunctionOption = &FunctionOption{}
 			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)

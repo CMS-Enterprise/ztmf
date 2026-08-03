@@ -628,6 +628,15 @@ components:
           type: boolean
         scoreid:
           type: integer
+        status:
+          description: |-
+            Status is the answer's review state for its data call: 'not_started' for
+            a row carried forward by copyPreviousScores and untouched this cycle,
+            'done' once saved or confirmed this cycle (ztmf#435, values pinned by
+            migration 0048's CHECK). Exposed on the read path so the questionnaire
+            marks carried-forward answers from the SAME fact the Data Call Progress
+            count reads, instead of inferring it from the absence of an edit event.
+          type: string
       type: object
     model.ScoreAggregate:
       properties:
@@ -2688,6 +2697,45 @@ paths:
       security:
       - bearerAuth: []
       summary: Create or update a score
+      tags:
+      - scores
+  /scores/{scoreid}/confirm:
+    put:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Score'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Confirm a carried-forward score without changing it
       tags:
       - scores
   /scores/aggregate:
