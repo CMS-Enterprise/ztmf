@@ -164,8 +164,10 @@ updatedScoreData: &updatedScoreData
   notes: "Updated by Emberfall test"
 
 # HHS metadata anchor (12 fields). Used to exercise the RBAC write gate:
-# OWNER writes land in DB; scoped admins are stripped on create and preserved
-# on update. Values are intentionally Star-Wars-themed to match the fixture.
+# OWNER writes land in DB. For scoped admins the 11 system attributes are
+# stripped on create and restored on update, while isso_name is OpDiv-writable
+# and takes their value on both paths. Values are intentionally Star-Wars-themed
+# to match the fixture.
 hhsExpected: &hhsExpected
   hva: true
   fips: "Moderate"
@@ -793,8 +795,9 @@ tests:
 
   # Test B — Scoped admin RBAC gate.
   #
-  # Part 1: opDivAdmin POSTs a system with HHS fields → clearHHSMetadata
-  # strips them; created record has null HHS fields.
+  # Part 1: opDivAdmin POSTs a system with HHS fields → clearUnscopedOnlyFields
+  # strips the 11 system attributes; the created record has them null. isso_name
+  # is not in that set - an OpDiv-scoped admin may write it - so it persists.
   # opdiv_id 15 = EMPIRE OpDiv, position 15 in the seed INSERT sequence
   # (_test_data_empire.sql). If this fails with 403, the seed order changed.
   - id: createFismaSystemScopedAdmin
@@ -825,7 +828,7 @@ tests:
             system_owner: null
             system_owner_email: null
             legacy: null
-            isso_name: null
+            isso_name: "Darth Vader" # OpDiv-writable, so the POSTed value persists
 
   # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
   # holds a write grant for this system).
@@ -840,8 +843,11 @@ tests:
     expect:
       status: 204
 
-  # Part 3: opDivAdmin PUTs system 1002 with different HHS values →
-  # copyHHSMetadata overwrites them back to the stored values.
+  # Part 3: opDivAdmin PUTs system 1002 with different values. The 11 system
+  # attributes are restored from the stored row by preserveUnscopedOnlyFields;
+  # isso_name is not in that set, so the OpDiv admin's value takes effect. The
+  # isso_name sent here must differ from the value OWNER stored in Part 2, or
+  # the GET below cannot tell a successful write from a restored one.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -850,12 +856,15 @@ tests:
     body:
       json:
         <<: *system1002WithHHSData
-        hva: false # scoped-admin overwrite attempt; copyHHSMetadata restores the stored value
+        hva: false # scoped-admin overwrite attempt; the stored value is restored
         system_owner: "Impostor"
+        isso_name: "Wilhuff Tarkin" # OpDiv-writable, so this one does take effect
     expect:
       status: 204
 
-  # GET confirms OWNER's values survived the scoped admin PUT.
+  # GET confirms OWNER's values survived the scoped admin PUT, while the
+  # OpDiv admin's isso_name landed. The explicit isso_name overrides the value
+  # carried by the hhsExpected merge key.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: GET
     headers:
@@ -868,6 +877,7 @@ tests:
         json:
           data:
             <<: *hhsExpected
+            isso_name: "Wilhuff Tarkin"
 
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET

@@ -424,6 +424,35 @@ func TestSaveFismaSystem_ReadonlyAdminForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// isso_name is writable by OpDiv-scoped admins, so it is the one field in the
+// extended set whose gate could plausibly be loosened further. These two tiers
+// are the ones a "let the ISSO fix their own name" or "read-only should be able
+// to correct a typo" change would reach for, and both must stay behind
+// SaveFismaSystem's admin gate. The gate returns before any database call.
+func TestSaveFismaSystem_ISSONameDeniedTiersForbidden(t *testing.T) {
+	for name, u := range map[string]*model.User{
+		"ISSO":                 issoUser,
+		"OPDIV_READONLY_ADMIN": opdivReadonly,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := jsonBody(t, map[string]any{
+				"fismauid":     "12345678-1234-4abc-8def-123456789abc",
+				"fismaacronym": "TEST",
+				"fismaname":    "Test System",
+				"isso_name":    "Should Never Persist",
+			})
+			r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1", body)
+			r.Header.Set("Content-Type", "application/json")
+			r = mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+			r = withUser(r, u)
+			w := httptest.NewRecorder()
+
+			SaveFismaSystem(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code, "%s must not write isso_name", name)
+		})
+	}
+}
+
 // --- DeleteFismaSystem ---
 
 func TestDeleteFismaSystem_ReadonlyAdminForbidden(t *testing.T) {

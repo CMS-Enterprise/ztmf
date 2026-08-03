@@ -451,6 +451,12 @@ components:
             (the epic rule: never coerce a missing value to false/No).
           type: boolean
         isso_name:
+          description: |-
+            ISSOName is the ISSO's display name. Unlike the system attributes above
+            it, an OpDiv-scoped admin may write it on systems in their granted
+            OpDivs. NULL means no stored override: the systems list read falls back
+            to the fullname on the user record matching issoemail, so clearing this
+            restores that derived name.
           type: string
         issoemail:
           type: string

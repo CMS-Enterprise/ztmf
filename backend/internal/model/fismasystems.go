@@ -64,7 +64,12 @@ type FismaSystem struct {
 	SystemOwner      *string `json:"system_owner" db:"system_owner"`
 	SystemOwnerEmail *string `json:"system_owner_email" db:"system_owner_email"`
 	Legacy           *bool   `json:"legacy" db:"legacy"`
-	ISSOName         *string `json:"isso_name" db:"isso_name"`
+	// ISSOName is the ISSO's display name. Unlike the system attributes above
+	// it, an OpDiv-scoped admin may write it on systems in their granted
+	// OpDivs. NULL means no stored override: the systems list read falls back
+	// to the fullname on the user record matching issoemail, so clearing this
+	// restores that derived name.
+	ISSOName *string `json:"isso_name" db:"isso_name"`
 	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
 	// yet; the UI presents the Advanced default. Written only via
 	// SaveTargetMaturity, never through Save().
@@ -358,8 +363,8 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		// Metadata fields distinguish three request states (ztmf#442):
 		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
 		//     untouched, so a partial PUT never wipes importer data (and a
-		//     scoped-admin edit, whose HHS fields copyHHSMetadata has set to the
-		//     stored values, is a no-op here);
+		//     scoped-admin edit, whose unscoped-only fields the controller has
+		//     already set to the stored values, is a no-op here);
 		//   - "" (a cleared text input) / empty slice -> write NULL, so a blank
 		//     actually clears the value rather than persisting "" / an empty array;
 		//   - a value -> write it.
