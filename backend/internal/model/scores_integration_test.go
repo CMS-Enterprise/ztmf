@@ -1289,3 +1289,192 @@ func TestFindPreviousDataCallByDeadlineIntegration(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoData,
 		"a call before all cycles has no previous, not a future one")
 }
+
+// TestConfirmScoreIntegration pins the explicit-confirm write path behind the
+// questionnaire's "Confirm this answer is still accurate" button.
+//
+// copyPreviousScores seeds the new cycle with status = 'not_started' rows,
+// agreeing with one produces no change to the answer fields, and the ordinary
+// Save path (correctly) refuses to record agreement as a write. Confirm must:
+//   - flip status to 'done' and increment questionsupdated by exactly 1,
+//   - leave every answer field byte-identical - including notes_is_ai_summary,
+//     which the ordinary PUT forces to false on edit,
+//   - stamp the confirming user's identity and timestamp via the same
+//     recordEvent -> lookupScoreAudit path Save uses,
+//   - be idempotent on an already-'done' row,
+//   - enforce the same deadline rule as Save (non-admins cannot confirm into a
+//     closed cycle).
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestConfirmScoreIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Same two-cycle scaffold as TestFindScoreProgressIntegration: the new
+	// cycle must be the global-latest deadline so findPreviousDataCall
+	// resolves our marker cycle as its predecessor.
+	var prevDC, newDC int32
+	var maxDeadline time.Time
+	err = conn.QueryRow(ctx, `SELECT COALESCE(MAX(deadline), NOW()) FROM datacalls`).Scan(&maxDeadline)
+	require.NoError(t, err)
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sconfirm_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sconfirm_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
+	require.NoError(t, err)
+
+	// Borrow a valid, applicable (system, functionoption) pair from seeded
+	// data so the progress assertions below count our row (see the progress
+	// integration test for why applicability matters here).
+	var fismaSystemID, functionOptionID int32
+	err = conn.QueryRow(ctx, `
+		SELECT s.fismasystemid, s.functionoptionid
+		FROM scores s
+		INNER JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		INNER JOIN functions f ON f.functionid = fo.functionid
+		INNER JOIN datacenterenvironments dce
+			ON dce.datacenterenvironment = fs.datacenterenvironment
+			AND dce.scoring_key = f.datacenterenvironment
+		INNER JOIN questions q ON q.questionid = f.questionid
+		WHERE fs.decommissioned = FALSE
+		LIMIT 1
+	`).Scan(&fismaSystemID, &functionOptionID)
+	require.NoError(t, err, "need one seeded score on an active system whose function is applicable to its environment")
+
+	// Prior-cycle answer flagged as an AI summary, rolled forward the way
+	// datacall creation does. The flag is the tripwire for "Confirm touched an
+	// answer field it must not".
+	notes := "confirm integration marker"
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes, notes_is_ai_summary)
+		VALUES ($1, $2, $3, $4, TRUE)
+	`, fismaSystemID, functionOptionID, prevDC, notes)
+	require.NoError(t, err)
+
+	if _, err := copyPreviousScores(ctx, newDC); err != nil {
+		t.Fatalf("copyPreviousScores: %v", err)
+	}
+
+	var copiedScoreID int32
+	err = conn.QueryRow(ctx, `
+		SELECT scoreid FROM scores
+		WHERE datacallid = $1 AND fismasystemid = $2 AND functionoptionid = $3
+	`, newDC, fismaSystemID, functionOptionID).Scan(&copiedScoreID)
+	require.NoError(t, err, "the copied row must exist in the new datacall")
+
+	progressFor := func() *ScoreProgress {
+		t.Helper()
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{
+			DataCallID:    &newDC,
+			FismaSystemID: &fismaSystemID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		return rows[0]
+	}
+
+	// Phase 1: the carried row is not_started and counts as answered but not
+	// updated - the state the questionnaire's badge must render from alone,
+	// with no data migration.
+	carried, err := FindScoreByID(ctx, copiedScoreID)
+	require.NoError(t, err)
+	assert.Equal(t, "not_started", carried.Status,
+		"copyPreviousScores must seed the carried row as not_started")
+	assert.Equal(t, int32(0), progressFor().QuestionsUpdated,
+		"a carried-forward answer must not count as updated before it is confirmed")
+
+	// The confirmer must be a real seeded user: recordEvent writes
+	// events.userid with an FK to users and swallows the insert error on
+	// violation, so a fabricated UUID would leave no event and the identity
+	// assertion below would fail for the wrong reason.
+	var confirmerID, confirmerRole string
+	err = conn.QueryRow(ctx, `
+		SELECT userid, role FROM users ORDER BY (role = 'OWNER') DESC LIMIT 1
+	`).Scan(&confirmerID, &confirmerRole)
+	require.NoError(t, err, "need at least one seeded user to attribute the confirm to")
+	confirmerCtx := UserToContext(ctx, &User{UserID: confirmerID, Role: confirmerRole})
+
+	// Phase 2: confirm. Status flips, answer fields do not, the confirmer is
+	// stamped, progress moves by exactly one.
+	confirmed, err := carried.Confirm(confirmerCtx)
+	require.NoError(t, err, "confirming a carried-forward answer must succeed")
+	assert.Equal(t, "done", confirmed.Status)
+	assert.Equal(t, notes, derefString(confirmed.Notes),
+		"confirm must not modify the notes")
+	if assert.NotNil(t, confirmed.NotesIsAISummary, "notes_is_ai_summary must survive a confirm") {
+		assert.True(t, *confirmed.NotesIsAISummary,
+			"confirm is agreement, not authorship - the AI-summary flag must not be cleared")
+	}
+	assert.Equal(t, carried.FunctionOptionID, confirmed.FunctionOptionID)
+	if assert.NotNil(t, confirmed.LastEditedBy, "the confirming user must be stamped as the editor") {
+		assert.Equal(t, confirmerID, confirmed.LastEditedBy.UserID)
+	}
+	if assert.NotNil(t, confirmed.LastEditedAt) {
+		assert.WithinDuration(t, time.Now(), *confirmed.LastEditedAt, 5*time.Minute)
+	}
+
+	after := progressFor()
+	assert.Equal(t, int32(1), after.QuestionsUpdated,
+		"a confirmed answer must count as updated")
+	assert.Equal(t, int32(1), after.QuestionsAnswered)
+
+	// Phase 3: idempotency. Confirming a done row is a harmless re-affirmation.
+	reread, err := FindScoreByID(ctx, copiedScoreID)
+	require.NoError(t, err)
+	reconfirmed, err := reread.Confirm(confirmerCtx)
+	require.NoError(t, err, "confirming an already-done row must not error")
+	assert.Equal(t, "done", reconfirmed.Status)
+	assert.Equal(t, int32(1), progressFor().QuestionsUpdated,
+		"re-confirming must not double-count")
+
+	// Phase 4: the deadline rule. A non-admin cannot confirm into a closed
+	// cycle - same guard as Save, so confirm is not a post-deadline loophole.
+	var pastDC int32
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW() - INTERVAL '30 days', NOW() - INTERVAL '1 day')
+		RETURNING datacallid
+	`, fmt.Sprintf("%sconfirm_past_%d", integrationTestPrefix, suffix)).Scan(&pastDC)
+	require.NoError(t, err)
+
+	var pastScoreID int32
+	err = conn.QueryRow(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+		VALUES ($1, $2, $3, 'past-cycle row')
+		RETURNING scoreid
+	`, fismaSystemID, functionOptionID, pastDC).Scan(&pastScoreID)
+	require.NoError(t, err)
+
+	pastRow, err := FindScoreByID(ctx, pastScoreID)
+	require.NoError(t, err)
+	// No user in context = non-admin per validateDeadline.
+	_, err = pastRow.Confirm(ctx)
+	assert.ErrorIs(t, err, ErrPastDeadline,
+		"confirming into a closed cycle without admin must trip the deadline guard")
+
+	// FindScoreByID contract: a missing row is ErrNoData, which the controller
+	// maps to 404.
+	_, err = FindScoreByID(ctx, -1)
+	assert.ErrorIs(t, err, ErrNoData)
+}

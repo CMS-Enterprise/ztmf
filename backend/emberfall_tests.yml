@@ -1834,6 +1834,142 @@ tests:
       headers:
         content-type: "application/json"
 
+  # PUT /scores/{scoreid}/confirm: the explicit "this carried-forward answer
+  # is still accurate" act. Unlike the ordinary PUT it writes even when
+  # nothing changed (that is its purpose), so its authz matrix must be pinned
+  # as tightly as SaveScore's. The not_started -> done flip itself is pinned
+  # by TestConfirmScoreIntegration (emberfall cannot seed a carried-forward
+  # row); these cases pin the HTTP contract.
+  #
+  # 1. Fixture: a fresh AI-flagged score. The 201 also pins that the write
+  #    path now serves status on the response body.
+  - id: createScoreForConfirm
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 3
+        datacallid: 5
+        notes: "AI summary awaiting confirmation"
+        notes_is_ai_summary: true
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            status: "done"
+            notes_is_ai_summary: true
+
+  # 2. Owner confirm: 200 with the full row (respondOK, not the ordinary
+  #    PUT's 204 - the FE swaps the badge from this body). status is done,
+  #    and notes_is_ai_summary survives: confirming an AI-drafted
+  #    justification is agreement, not authorship, so the provenance flag
+  #    must NOT be cleared the way an ordinary edit clears it.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForConfirm.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            status: "done"
+            notes: "AI summary awaiting confirmation"
+            notes_is_ai_summary: true
+            last_edited_by:
+              email: "Test.User@nowhere.xyz"
+
+  # 3. ISSO confirm on their own assigned system (1003): allowed, and the
+  #    confirming ISSO becomes the stamped editor.
+  - url: "http://localhost:8080/api/v1/scores/{{.issoCreateScoreOwnSystem.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            status: "done"
+            last_edited_by:
+              email: "Isso.User@nowhere.xyz"
+              role: "ISSO"
+
+  # 4. ISSO confirm on a system they are NOT assigned to (1001): 403. The
+  #    authz runs against the row's own fismasystemid - there is no request
+  #    body to lie in.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForConfirm.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # 5. Read-only tiers: blocked, same as every score write.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForConfirm.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 403
+
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForConfirm.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 403
+
+  # 6. OpDiv-scoped admin outside their grant: EMPIRE admin cannot confirm a
+  #    REBELLION system's row. The row is created by the unscoped OWNER first
+  #    (1005 = X-wing, REBELLION).
+  - id: createRebellionScoreForConfirm
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1005
+        functionoptionid: 1
+        datacallid: 5
+        notes: "Rebellion row for the confirm scope gate"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1005
+
+  - url: "http://localhost:8080/api/v1/scores/{{.createRebellionScoreForConfirm.Response.data.scoreid}}/confirm"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  # 7. Missing row: 404 before any authorization signal.
+  - url: "http://localhost:8080/api/v1/scores/999999999/confirm"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
   # Questions Endpoints
   - id: createQuestion
     url: http://localhost:8080/api/v1/questions

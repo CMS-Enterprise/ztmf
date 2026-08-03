@@ -79,3 +79,12 @@ func TestSaveScore_OpDivReadonlyForbidden(t *testing.T) {
 	SaveScore(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
+
+// --- ConfirmScore: read-only tiers are blocked before any DB access ---
+
+func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
+	r := withUser(httptest.NewRequest("PUT", "/api/v1/scores/123/confirm", nil), opdivReadonly)
+	w := httptest.NewRecorder()
+	ConfirmScore(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
