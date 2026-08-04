@@ -173,6 +173,30 @@ func RecordQuestionView(ctx context.Context, input QuestionViewInput, readOnly b
 	return insertEvent(ctx, user.UserID, "viewed", "questionnaire", p)
 }
 
+// RecordLogin appends a "session / created" event for a user who has just
+// completed authentication and been issued a session.
+//
+// Every other event in the log is a side effect of a write, so activity was
+// only ever visible for users who CHANGED something. That left a specific blind
+// spot: a privileged account that signs in and only reads looked identical to
+// one that had never signed in at all, which is exactly the pair you need to
+// tell apart to find a stale account.
+//
+// The caller is the post-OIDC session handler, not a request behind
+// auth.Middleware, so the user is passed explicitly rather than read from
+// context - at this point in the flow the session that would carry it has only
+// just been minted.
+//
+// The payload is deliberately just the userid: the identity provider is already
+// on the user row, and the interesting facts here are who and when, both of
+// which the event row itself carries.
+func RecordLogin(ctx context.Context, userID string) error {
+	if userID == "" {
+		return nil
+	}
+	return insertEvent(ctx, userID, "created", "session", payload{UserID: &userID})
+}
+
 func FindEvents(ctx context.Context, input *FindEventsInput) ([]*Event, error) {
 
 	sqlb := stmntBuilder.

@@ -25,16 +25,20 @@ type User struct {
 	// the past is denied at authentication (see IsExpired and the auth middleware),
 	// while the row and its assignments are retained for renewal and audit.
 	AccessExpiresAt *time.Time `json:"access_expires_at" db:"access_expires_at"`
-	// LastSeen is the most recent action this user recorded in the events audit
-	// log. Derived on read, never stored, so it needs no backfill and cannot
-	// drift from the log it summarises.
+	// LastSeen is the most recent activity this user recorded in the events
+	// audit log, including logins (see RecordLogin). Derived on read, never
+	// stored, so it needs no backfill and cannot drift from the log it
+	// summarises.
 	//
-	// It is deliberately "last recorded action", NOT "last login": ZTMF records
-	// no authentication event, so a user who signs in and never opens a
-	// questionnaire or saves anything leaves no trace and reports null. Null
-	// therefore means "has taken no action we record" - most often an account
-	// provisioned by a bulk load whose owner has not engaged - rather than
-	// proof they have never signed in. Read it as a floor on engagement.
+	// Signing in counts, so a user who logs in and only reads is now
+	// distinguishable from one who has never signed in at all - the pair that
+	// matters for spotting a stale privileged account, and that used to look
+	// identical because every event was a side effect of a write.
+	//
+	// Null means no recorded activity of any kind. For an account created
+	// before login events existed, null means "nothing since then", not
+	// "never" - the log is not retrospective. That ambiguity ages out as
+	// people sign in.
 	//
 	// No omitempty: a never-used account is the case this field exists to
 	// identify, and omitting the key there would make the answer indistinguishable
