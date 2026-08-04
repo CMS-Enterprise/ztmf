@@ -808,6 +808,23 @@ components:
           type: string
         identity_provider:
           type: string
+        last_seen:
+          description: |-
+            LastSeen is the most recent action this user recorded in the events audit
+            log. Derived on read, never stored, so it needs no backfill and cannot
+            drift from the log it summarises.
+
+            It is deliberately "last recorded action", NOT "last login": ZTMF records
+            no authentication event, so a user who signs in and never opens a
+            questionnaire or saves anything leaves no trace and reports null. Null
+            therefore means "has taken no action we record" - most often an account
+            provisioned by a bulk load whose owner has not engaged - rather than
+            proof they have never signed in. Read it as a floor on engagement.
+
+            No omitempty: a never-used account is the case this field exists to
+            identify, and omitting the key there would make the answer indistinguishable
+            from the field not being served at all. Null is the answer, so it ships.
+          type: string
         role:
           type: string
         userid:
