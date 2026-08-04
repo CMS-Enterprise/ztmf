@@ -1301,7 +1301,8 @@ func TestFindPreviousDataCallByDeadlineIntegration(t *testing.T) {
 //     which the ordinary PUT forces to false on edit,
 //   - stamp the confirming user's identity and timestamp via the same
 //     recordEvent -> lookupScoreAudit path Save uses,
-//   - be idempotent on an already-'done' row,
+//   - be idempotent on an already-'done' row without recording another event
+//     or moving the displayed editor to the second confirmer,
 //   - enforce the same deadline rule as Save (non-admins cannot confirm into a
 //     closed cycle).
 //
@@ -1439,12 +1440,32 @@ func TestConfirmScoreIntegration(t *testing.T) {
 		"a confirmed answer must count as updated")
 	assert.Equal(t, int32(1), after.QuestionsAnswered)
 
-	// Phase 3: idempotency. Confirming a done row is a harmless re-affirmation.
+	// Phase 3: audit-preserving idempotency. A different user confirming the
+	// already-done row gets the same successful response, but must not create an
+	// event or replace the original confirmer as the displayed editor.
+	eventsAfterFirstConfirm := countScoreEvents(t, ctx, conn, copiedScoreID)
+	var secondConfirmerID, secondConfirmerRole string
+	err = conn.QueryRow(ctx, `
+		SELECT userid, role FROM users WHERE userid <> $1 ORDER BY userid LIMIT 1
+	`, confirmerID).Scan(&secondConfirmerID, &secondConfirmerRole)
+	require.NoError(t, err, "need a second seeded user to verify re-confirm does not move attribution")
+	secondConfirmerCtx := UserToContext(ctx, &User{UserID: secondConfirmerID, Role: secondConfirmerRole})
+
 	reread, err := FindScoreByID(ctx, copiedScoreID)
 	require.NoError(t, err)
-	reconfirmed, err := reread.Confirm(confirmerCtx)
+	reconfirmed, err := reread.Confirm(secondConfirmerCtx)
 	require.NoError(t, err, "confirming an already-done row must not error")
 	assert.Equal(t, "done", reconfirmed.Status)
+	assert.Equal(t, eventsAfterFirstConfirm, countScoreEvents(t, ctx, conn, copiedScoreID),
+		"re-confirming must not append an audit event")
+	if assert.NotNil(t, reconfirmed.LastEditedBy, "the original confirmer must remain the editor") {
+		assert.Equal(t, confirmerID, reconfirmed.LastEditedBy.UserID)
+		assert.NotEqual(t, secondConfirmerID, reconfirmed.LastEditedBy.UserID)
+	}
+	if assert.NotNil(t, reconfirmed.LastEditedAt, "the original confirmation timestamp must remain visible") &&
+		assert.NotNil(t, confirmed.LastEditedAt) {
+		assert.Equal(t, *confirmed.LastEditedAt, *reconfirmed.LastEditedAt)
+	}
 	assert.Equal(t, int32(1), progressFor().QuestionsUpdated,
 		"re-confirming must not double-count")
 
