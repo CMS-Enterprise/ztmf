@@ -64,6 +64,7 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, "FILTER (WHERE s.status = 'done')", "updated is the answered set filtered to genuinely-saved rows via the persisted status column")
 	assert.Contains(t, sql, "LEFT JOIN LATERAL", "the events lateral is now LEFT (audit timeline only), not the filter for the count")
 	assert.Contains(t, sql, "resource = 'public.scores'", "the lateral must read score events for lastupdatedat")
+	assert.Contains(t, sql, "action IN ('created', 'updated')", "lastupdatedat reads only in-app edits, the same actions the status backfill (0048) counts - imported provenance must not surface as an update")
 	assert.Contains(t, sql, "LEFT JOIN expected", "unmapped-environment systems must still return a row")
 	assert.Contains(t, sql, "LEFT JOIN updated", "zero-activity systems must still return a row")
 	assert.Contains(t, sql, "COALESCE(u.questionsanswered, 0)", "zero-activity systems report 0 answered, not NULL")

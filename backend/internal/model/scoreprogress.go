@@ -21,11 +21,11 @@ import (
 //     chip. A carried-forward answer does not count until re-saved (ztmf#299).
 //   - QuestionsAnswered ("has an answer at all") is the completion signal a
 //     PAST call needs. A closed cycle stops accumulating updates, and history
-//     imported from outside the app never had any (no events to backfill), so
-//     QuestionsUpdated says nothing about whether a historical call was in
-//     fact complete - QuestionsAnswered does (ztmf-ui#537). Cycles genuinely
-//     worked in-app keep their backfilled updated counts; accurate history,
-//     just not a completion signal.
+//     loaded from outside the app never counts as updated even where it
+//     carries provenance events, so QuestionsUpdated says nothing about
+//     whether a historical call was in fact complete - QuestionsAnswered does
+//     (ztmf-ui#537). Cycles genuinely worked in-app keep their backfilled
+//     updated counts; accurate history, just not a completion signal.
 //
 // Both are now read from persisted state (scores.status and score-row
 // presence) rather than reconstructed from the events audit log; see
@@ -52,9 +52,14 @@ type ScoreProgress struct {
 	// events audit log.
 	QuestionsUpdated int32 `json:"questionsupdated"`
 	// LastUpdatedAt is the most recent edit event across the system's answers
-	// in this data call; nil when nothing has been touched this cycle. This is
-	// a legitimately observational use of the events table (audit timeline),
-	// kept even though the counts no longer read events.
+	// in this data call; nil when nothing has been touched this cycle. Only
+	// in-app edit actions count, the same ones the status backfill treats as a
+	// genuine answer (0048): provenance attached by an out-of-band load records
+	// who and when the data arrived, but an import is not someone answering
+	// this cycle, so it must not surface as an update here when it does not
+	// count as one in QuestionsUpdated. This is a legitimately observational
+	// use of the events table (audit timeline), kept even though the counts no
+	// longer read events.
 	LastUpdatedAt *time.Time `json:"lastupdatedat,omitempty"`
 	// UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
 	// it answers the ticket's literal question - "has this system updated
@@ -107,7 +112,8 @@ func (i FindScoreProgressInput) validate() error {
 // scores.status for updated - so a dropped/failed event write no longer moves
 // the numbers. A LEFT lateral onto events remains only for LastUpdatedAt (an
 // audit timeline, not a count) and is served by the events_score_audit_idx
-// partial index.
+// partial index; that index keys on scoreid and createdat only, so the
+// lateral's action filter is applied on top of the descent rather than by it.
 func FindScoreProgress(ctx context.Context, input FindScoreProgressInput) ([]*ScoreProgress, error) {
 	if err := input.validate(); err != nil {
 		return nil, err
@@ -205,16 +211,20 @@ updated AS (
                                          AND dce.scoring_key = f.datacenterenvironment
     INNER JOIN questions q ON q.questionid = f.questionid
     INNER JOIN pillars p ON p.pillarid = q.pillarid
-    -- One newest event per score row (LIMIT 1 keeps the lateral on the
+    -- One newest in-app edit per score row (LIMIT 1 keeps the lateral on the
     -- index fast path); the outer MAX then picks the newest across the
     -- system's rows. LEFT now (not the old filtering INNER): it feeds only
     -- LastUpdatedAt, an audit timeline - a row with no event still counts
     -- toward the numerators via status/presence and simply contributes no
-    -- timestamp.
+    -- timestamp. The action allowlist mirrors the status backfill (0048) so
+    -- last-updated and questionsupdated read the same events: provenance
+    -- attached by an out-of-band load is not an edit, and a row carrying only
+    -- such events reports no last-updated rather than the load's timestamp.
     LEFT JOIN LATERAL (
         SELECT createdat
         FROM events
         WHERE resource = 'public.scores'
+          AND action IN ('created', 'updated')
           AND (payload->>'scoreid')::int = s.scoreid
         ORDER BY createdat DESC
         LIMIT 1

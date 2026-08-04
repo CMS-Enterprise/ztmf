@@ -1001,11 +1001,11 @@ SELECT DISTINCT ON (s.scoreid)
 -- Import provenance for the FY2020 archives cycle (datacallid 6): a service
 -- account plus one 'imported' event per archived score, mirroring how
 -- externally-loaded history is attributed in real environments (ztmf#435). These
--- give the archived rows a who/when (last-updated shows the import instead of
--- blank) but use action 'imported', which the status-sync below deliberately
--- excludes - so the archived answers keep status 'not_started' despite carrying
--- events. This is the shape that proves imported != updated: answers present,
--- provenance present, never 'done'.
+-- give the archived rows a who/when in the audit log but use action 'imported',
+-- which both the status-sync below and the score-progress last-updated lateral
+-- deliberately exclude - so the archived answers keep status 'not_started' and
+-- report no last-updated, despite carrying events. This is the shape that proves
+-- imported != updated: answers present, provenance present, never 'done'.
 INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provider)
 VALUES ('00000000-0000-4000-8000-000000000001', 'svc-importer@empire.test',
         'Imperial Archives Import Service', 'HHS_READONLY_ADMIN', false, 'okta')

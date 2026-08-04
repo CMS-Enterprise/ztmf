@@ -706,9 +706,14 @@ components:
         lastupdatedat:
           description: |-
             LastUpdatedAt is the most recent edit event across the system's answers
-            in this data call; nil when nothing has been touched this cycle. This is
-            a legitimately observational use of the events table (audit timeline),
-            kept even though the counts no longer read events.
+            in this data call; nil when nothing has been touched this cycle. Only
+            in-app edit actions count, the same ones the status backfill treats as a
+            genuine answer (0048): provenance attached by an out-of-band load records
+            who and when the data arrived, but an import is not someone answering
+            this cycle, so it must not surface as an update here when it does not
+            count as one in QuestionsUpdated. This is a legitimately observational
+            use of the events table (audit timeline), kept even though the counts no
+            longer read events.
           type: string
         questionsanswered:
           description: |-
