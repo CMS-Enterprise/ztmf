@@ -1404,6 +1404,11 @@ func TestConfirmScoreIntegration(t *testing.T) {
 		"copyPreviousScores must seed the carried row as not_started")
 	assert.Equal(t, int32(0), progressFor().QuestionsUpdated,
 		"a carried-forward answer must not count as updated before it is confirmed")
+	// Model a concurrent request that loaded the same not_started row before
+	// the first confirmer's write. Using this stale snapshot later makes the
+	// race deterministic without scheduler-dependent goroutines.
+	staleConcurrentRead, err := FindScoreByID(ctx, copiedScoreID)
+	require.NoError(t, err)
 
 	// The confirmer must be a real seeded user: recordEvent writes
 	// events.userid with an FK to users and swallows the insert error on
@@ -1440,9 +1445,10 @@ func TestConfirmScoreIntegration(t *testing.T) {
 		"a confirmed answer must count as updated")
 	assert.Equal(t, int32(1), after.QuestionsAnswered)
 
-	// Phase 3: audit-preserving idempotency. A different user confirming the
-	// already-done row gets the same successful response, but must not create an
-	// event or replace the original confirmer as the displayed editor.
+	// Phase 3: atomic, audit-preserving idempotency. A different user whose
+	// request loaded not_started before the first write still gets the same
+	// successful response, but must not create an event or replace the original
+	// confirmer as the displayed editor.
 	eventsAfterFirstConfirm := countScoreEvents(t, ctx, conn, copiedScoreID)
 	var secondConfirmerID, secondConfirmerRole string
 	err = conn.QueryRow(ctx, `
@@ -1451,9 +1457,7 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	require.NoError(t, err, "need a second seeded user to verify re-confirm does not move attribution")
 	secondConfirmerCtx := UserToContext(ctx, &User{UserID: secondConfirmerID, Role: secondConfirmerRole})
 
-	reread, err := FindScoreByID(ctx, copiedScoreID)
-	require.NoError(t, err)
-	reconfirmed, err := reread.Confirm(secondConfirmerCtx)
+	reconfirmed, err := staleConcurrentRead.Confirm(secondConfirmerCtx)
 	require.NoError(t, err, "confirming an already-done row must not error")
 	assert.Equal(t, "done", reconfirmed.Status)
 	assert.Equal(t, eventsAfterFirstConfirm, countScoreEvents(t, ctx, conn, copiedScoreID),
@@ -1468,6 +1472,15 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	}
 	assert.Equal(t, int32(1), progressFor().QuestionsUpdated,
 		"re-confirming must not double-count")
+
+	// A normal retry that reads after the first write exercises the fast
+	// in-memory status guard and must preserve the same invariant.
+	freshDone, err := FindScoreByID(ctx, copiedScoreID)
+	require.NoError(t, err)
+	_, err = freshDone.Confirm(secondConfirmerCtx)
+	require.NoError(t, err)
+	assert.Equal(t, eventsAfterFirstConfirm, countScoreEvents(t, ctx, conn, copiedScoreID),
+		"a fresh retry must also remain write-free")
 
 	// Phase 4: the deadline rule. A non-admin cannot confirm into a closed
 	// cycle - same guard as Save, so confirm is not a post-deadline loophole.
