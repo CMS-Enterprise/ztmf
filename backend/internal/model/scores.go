@@ -202,11 +202,30 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	sqlb := stmntBuilder.
 		Update("public.scores").
 		Set("status", "done").
-		Where("scoreid=?", s.ScoreID).
+		// Keep the no-op guard in the write predicate as well as above. Two
+		// requests can both load not_started before either reaches Confirm; only
+		// the first must be allowed to update and create an audit event.
+		Where("scoreid=? AND status <> ?", s.ScoreID, "done").
 		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 
 	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
 	if err != nil {
+		// A conditional UPDATE that lost the race to another confirmer returns
+		// no row. Reload to distinguish that successful idempotent outcome from
+		// a score that was actually deleted, which remains ErrNoData/404.
+		if errors.Is(err, ErrNoData) {
+			current, findErr := FindScoreByID(ctx, s.ScoreID)
+			if findErr != nil {
+				return nil, findErr
+			}
+			if current.Status == "done" {
+				if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
+					current.LastEditedAt = at
+					current.LastEditedBy = by
+				}
+				return current, nil
+			}
+		}
 		return confirmed, err
 	}
 
