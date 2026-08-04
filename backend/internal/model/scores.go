@@ -184,6 +184,21 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		return nil, err
 	}
 
+	// Audit-preserving no-op: once a score is done, confirming it again must
+	// not move last_edited_by / last_edited_at to the most recent caller. The
+	// controller loads this receiver through FindScoreByID immediately before
+	// calling Confirm, so its persisted Status is the source of truth. Return
+	// the current row with the same audit projection used after a real write,
+	// preserving the endpoint's idempotent 200 response without recording a
+	// second event.
+	if s.Status == "done" {
+		if at, by := lookupScoreAudit(ctx, s.ScoreID); at != nil && by != nil {
+			s.LastEditedAt = at
+			s.LastEditedBy = by
+		}
+		return s, nil
+	}
+
 	sqlb := stmntBuilder.
 		Update("public.scores").
 		Set("status", "done").
