@@ -59,8 +59,35 @@ func (s *Score) AuditInfo() (*time.Time, *AuditRef) {
 	return s.LastEditedAt, s.LastEditedBy
 }
 
-func (s *Score) Save(ctx context.Context) (*Score, error) {
+// scoreSaveConfig carries request-shape context that is not part of the
+// persisted entity.
+type scoreSaveConfig struct {
+	current *Score
+}
+
+// ScoreSaveOption configures a Score.Save call.
+type ScoreSaveOption func(*scoreSaveConfig)
+
+// WithCurrentScore hands Save the stored row the caller has already loaded, so
+// the no-op comparison does not read it a second time. The update path
+// authorizes against the stored row, which means the controller loads it on
+// every PUT; the questionnaire PUTs on each Next click, so the duplicate read
+// would land on the hottest write path in the app.
+//
+// The row passed here MUST be the one Save is about to update, read through
+// FindScoreByID. Passing a stale or unrelated row would make the no-op
+// comparison lie about whether the answer changed.
+func WithCurrentScore(current *Score) ScoreSaveOption {
+	return func(c *scoreSaveConfig) { c.current = current }
+}
+
+func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
 	var sqlb SqlBuilder
+
+	cfg := &scoreSaveConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	if err := s.validate(ctx); err != nil {
 		return nil, err
@@ -88,7 +115,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	// controller writes 204 today but still encodes the body, so the
 	// response is observable to clients that parse 204 bodies.
 	if s.ScoreID != 0 {
-		if same, current, err := scoreUpdateIsNoOp(ctx, s); err != nil {
+		if same, current, err := scoreUpdateIsNoOp(ctx, s, cfg.current); err != nil {
 			return nil, err
 		} else if same {
 			if s.FunctionOption != nil {
@@ -118,20 +145,31 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, "done").
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	} else {
+		// fismasystemid and datacallid are deliberately NOT in the SET list.
+		// Saving an answer must never move the row to another system or
+		// another cycle: those are the two columns that decide who may write
+		// the row and which deadline applies to it, so letting a request body
+		// rewrite them turns an answer edit into a reparenting primitive.
+		// The controller authorizes an update against the stored row and pins
+		// both values onto the receiver before calling Save.
 		setCols := squirrel.Eq{
-			"fismasystemid":    s.FismaSystemID,
 			"notes":            s.Notes,
 			"functionoptionid": s.FunctionOptionID,
-			"datacallid":       s.DataCallID,
 			"status":           "done",
 		}
 		if s.NotesIsAISummary != nil {
 			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
 		}
+		// Bind the write to the row the caller was authorized against, not to
+		// the id alone. The controller loads the row and pins these two fields
+		// onto the receiver before calling Save; matching on them here means a
+		// future caller that forgets to pin cannot write a row it did not
+		// authorize - it updates zero rows and fails as ErrNoData rather than
+		// succeeding against someone else's answer.
 		sqlb = stmntBuilder.
 			Update("public.scores").
 			SetMap(setCols).
-			Where("scoreid=?", s.ScoreID).
+			Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	}
 
@@ -271,10 +309,16 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 // Returns ErrNotData when the row is missing so the caller can fail
 // cleanly without paying a second round trip through the UPDATE that
 // would also fail.
-func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, error) {
-	current, err := FindScoreByID(ctx, incoming.ScoreID)
-	if err != nil {
-		return false, nil, err
+// A non-nil preloaded row is used as-is instead of re-reading: the update path
+// authorizes against the stored row, so the controller has already fetched it.
+func scoreUpdateIsNoOp(ctx context.Context, incoming, preloaded *Score) (bool, *Score, error) {
+	current := preloaded
+	if current == nil {
+		var err error
+		current, err = FindScoreByID(ctx, incoming.ScoreID)
+		if err != nil {
+			return false, nil, err
+		}
 	}
 
 	return scoresEqualForUpdate(current, incoming), current, nil
@@ -324,6 +368,18 @@ func scoresEqualForUpdate(current, incoming *Score) bool {
 	if current == nil || incoming == nil {
 		return false
 	}
+	// fismasystemid and datacallid are compared defensively, not because a PUT
+	// can change them: Save omits both from the UPDATE's SET list and the
+	// controller pins them from the stored row before calling Save. They stay
+	// here so a receiver that somehow disagrees with the stored row is never
+	// treated as a no-op, which would silently skip a write the caller asked
+	// for.
+	//
+	// Note what this does NOT do: a mismatch only fails the equality check, so
+	// the write proceeds as a normal partial update of the answer fields. It
+	// does not report the disagreement to the caller. Turning that into an
+	// explicit error is a deliberate follow-up rather than something this
+	// comparison is doing today.
 	if current.FismaSystemID != incoming.FismaSystemID ||
 		current.DataCallID != incoming.DataCallID ||
 		current.FunctionOptionID != incoming.FunctionOptionID {

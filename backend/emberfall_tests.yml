@@ -1806,6 +1806,30 @@ tests:
     expect:
       status: 403
 
+  # Same rejection on the UPDATE path, which is where ztmf-misc#263 lived.
+  # The POST case above never reached the defect: create has no stored row, so
+  # it correctly authorizes against the body. The exploit was a PUT - the
+  # handler authorized against the body's fismasystemid while the UPDATE was
+  # keyed on the path scoreid alone, so naming a system the caller does hold
+  # bought write access to a row belonging to one they do not.
+  #
+  # This ISSO is assigned to 1003; the score below belongs to 1001. Sending
+  # fismasystemid 1003 is precisely the assertion that used to be believed.
+  # Returned 204 before the fix, 403 after.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForAudit.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *issoHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1003
+        functionoptionid: 1
+        datacallid: 5
+        notes: "cross-system PUT via body-asserted fismasystemid - must be blocked"
+    expect:
+      status: 403
+
   # ISSO GET /scores reaches the scoped list path. Audit fields on each
   # returned row are validated by the integration test referenced above;
   # this case pins the HTTP-layer status + content-type contract.
