@@ -233,6 +233,47 @@ func TestSaveScore_ISSONotAssignedForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- ConfirmScore ---
+
+func TestConfirmScore_ReadonlyAdminForbidden(t *testing.T) {
+	// The role-only rejection must fire before the row load, preserving the
+	// "read-only tiers are blocked before any DB access" property SaveScore
+	// pins - this test runs without a database.
+	r := httptest.NewRequest("PUT", "/api/v1/scores/123/confirm", nil)
+	r = mux.SetURLVars(r, map[string]string{"scoreid": "123"})
+	r = withUser(r, readonlyAdmin)
+	w := httptest.NewRecorder()
+
+	ConfirmScore(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// guardScoreWrite is the shared authorization for SaveScore and ConfirmScore.
+// The non-admin branches are pure (no DB), so pin them here; the admin branch
+// delegates to guardManageFismaSystem (DB) and is covered by the Emberfall
+// matrix.
+func TestGuardScoreWrite_NonAdminPaths(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("ReadonlyAdminForbidden", func(t *testing.T) {
+		assert.ErrorIs(t, guardScoreWrite(ctx, readonlyAdmin, 1), ErrForbidden)
+	})
+
+	t.Run("ISSOUnassignedForbidden", func(t *testing.T) {
+		assert.ErrorIs(t, guardScoreWrite(ctx, issoUser, 999), ErrForbidden)
+	})
+
+	t.Run("ISSOAssignedAllowed", func(t *testing.T) {
+		assigned := &model.User{
+			UserID:               "44444444-4444-4444-4444-444444444444",
+			Email:                "isso2@test.com",
+			Role:                 "ISSO",
+			AssignedFismaSystems: []*int32{int32Ptr(7)},
+		}
+		assert.NoError(t, guardScoreWrite(ctx, assigned, 7))
+	})
+}
+
 // --- SaveFismaSystemTargetMaturity (#398) ---
 
 func TestSaveFismaSystemTargetMaturity_ReadonlyAdminForbidden(t *testing.T) {
@@ -422,6 +463,35 @@ func TestSaveFismaSystem_ReadonlyAdminForbidden(t *testing.T) {
 
 	SaveFismaSystem(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// isso_name is writable by OpDiv-scoped admins, so it is the one field in the
+// extended set whose gate could plausibly be loosened further. These two tiers
+// are the ones a "let the ISSO fix their own name" or "read-only should be able
+// to correct a typo" change would reach for, and both must stay behind
+// SaveFismaSystem's admin gate. The gate returns before any database call.
+func TestSaveFismaSystem_ISSONameDeniedTiersForbidden(t *testing.T) {
+	for name, u := range map[string]*model.User{
+		"ISSO":                 issoUser,
+		"OPDIV_READONLY_ADMIN": opdivReadonly,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := jsonBody(t, map[string]any{
+				"fismauid":     "12345678-1234-4abc-8def-123456789abc",
+				"fismaacronym": "TEST",
+				"fismaname":    "Test System",
+				"isso_name":    "Should Never Persist",
+			})
+			r := httptest.NewRequest("PUT", "/api/v1/fismasystems/1", body)
+			r.Header.Set("Content-Type", "application/json")
+			r = mux.SetURLVars(r, map[string]string{"fismasystemid": "1"})
+			r = withUser(r, u)
+			w := httptest.NewRecorder()
+
+			SaveFismaSystem(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code, "%s must not write isso_name", name)
+		})
+	}
 }
 
 // --- DeleteFismaSystem ---

@@ -72,9 +72,12 @@ type config struct {
 		SessionCookieName string `env:"AUTH_SESSION_COOKIE_NAME" envDefault:"ztmf_session"`
 		// SessionTTL is the app session lifetime in seconds.
 		SessionTTL int `env:"AUTH_SESSION_TTL" envDefault:"10800"`
-		// CookieDomain scopes the session cookie (e.g. dev.ztmf.cms.gov). Empty
-		// scopes the cookie to the exact request host, which is correct locally.
-		CookieDomain string `env:"AUTH_COOKIE_DOMAIN"`
+		// OriginHost is the host the same-origin check expects in the Origin
+		// (then Referer) header of a state-changing request, e.g.
+		// dev.ztmf.cms.gov. Empty compares against the request Host instead,
+		// which is what local dev and the test suite rely on. This does not
+		// affect cookie scope: the session cookie is always host-only.
+		OriginHost string `env:"AUTH_ORIGIN_HOST"`
 	}
 	Db struct {
 		Host        string  `env:"DB_ENDPOINT"`

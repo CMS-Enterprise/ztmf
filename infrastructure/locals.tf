@@ -38,7 +38,11 @@ locals {
     # Pin the accepted audience to the ZTMF Entra app's client id so a validly
     # signed token minted for a different app in the same tenant is rejected.
     { name = "AUTH_ENTRA_AUDIENCE", value = local.entra_oidc_options["client_id"] },
-    { name = "AUTH_COOKIE_DOMAIN", value = local.domain_name },
+    # Expected Origin/Referer host for the same-origin check on state-changing
+    # requests. The public hostname is what browsers send, and it is not always
+    # the request Host the task sees, so name it explicitly rather than relying
+    # on the fallback.
+    { name = "AUTH_ORIGIN_HOST", value = local.domain_name },
   ] : []
 
   entra_api_secrets = var.entra_enabled ? [
