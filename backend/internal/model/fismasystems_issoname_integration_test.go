@@ -60,8 +60,11 @@ func TestFismaSystemISSONameResolutionIntegration(t *testing.T) {
 		require.NoError(t, err)
 		_, err = conn.Exec(ctx, "UPDATE fismasystems SET isso_name='Stored Override' WHERE fismasystemid=$1", sysID)
 		require.NoError(t, err)
+		// Restore and release in ONE cleanup: a bare defer would release the
+		// pooled connection before t.Cleanup runs the restore Exec.
 		t.Cleanup(func() {
 			_, err := conn.Exec(ctx, "UPDATE fismasystems SET isso_name=NULL WHERE fismasystemid=$1", sysID)
+			conn.Release()
 			require.NoError(t, err)
 		})
 
