@@ -40,9 +40,16 @@ type Score struct {
 	NotesIsAISummary *bool           `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
 	FunctionOptionID int32           `json:"functionoptionid"`
 	DataCallID       int32           `json:"datacallid"`
-	FunctionOption   *FunctionOption `json:"functionoption,omitempty"`
-	LastEditedAt     *time.Time      `json:"last_edited_at,omitempty"`
-	LastEditedBy     *AuditRef       `json:"last_edited_by,omitempty"`
+	// Status is the answer's review state for its data call: 'not_started' for
+	// a row carried forward by copyPreviousScores and untouched this cycle,
+	// 'done' once saved or confirmed this cycle (ztmf#435, values pinned by
+	// migration 0048's CHECK). Exposed on the read path so the questionnaire
+	// marks carried-forward answers from the SAME fact the Data Call Progress
+	// count reads, instead of inferring it from the absence of an edit event.
+	Status         string          `json:"status"`
+	FunctionOption *FunctionOption `json:"functionoption,omitempty"`
+	LastEditedAt   *time.Time      `json:"last_edited_at,omitempty"`
+	LastEditedBy   *AuditRef       `json:"last_edited_by,omitempty"`
 }
 
 // AuditInfo satisfies Auditable. Returned pointers may be nil if the row has
@@ -52,8 +59,35 @@ func (s *Score) AuditInfo() (*time.Time, *AuditRef) {
 	return s.LastEditedAt, s.LastEditedBy
 }
 
-func (s *Score) Save(ctx context.Context) (*Score, error) {
+// scoreSaveConfig carries request-shape context that is not part of the
+// persisted entity.
+type scoreSaveConfig struct {
+	current *Score
+}
+
+// ScoreSaveOption configures a Score.Save call.
+type ScoreSaveOption func(*scoreSaveConfig)
+
+// WithCurrentScore hands Save the stored row the caller has already loaded, so
+// the no-op comparison does not read it a second time. The update path
+// authorizes against the stored row, which means the controller loads it on
+// every PUT; the questionnaire PUTs on each Next click, so the duplicate read
+// would land on the hottest write path in the app.
+//
+// The row passed here MUST be the one Save is about to update, read through
+// FindScoreByID. Passing a stale or unrelated row would make the no-op
+// comparison lie about whether the answer changed.
+func WithCurrentScore(current *Score) ScoreSaveOption {
+	return func(c *scoreSaveConfig) { c.current = current }
+}
+
+func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
 	var sqlb SqlBuilder
+
+	cfg := &scoreSaveConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	if err := s.validate(ctx); err != nil {
 		return nil, err
@@ -81,7 +115,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	// controller writes 204 today but still encodes the body, so the
 	// response is observable to clients that parse 204 bodies.
 	if s.ScoreID != 0 {
-		if same, current, err := scoreUpdateIsNoOp(ctx, s); err != nil {
+		if same, current, err := scoreUpdateIsNoOp(ctx, s, cfg.current); err != nil {
 			return nil, err
 		} else if same {
 			if s.FunctionOption != nil {
@@ -109,23 +143,34 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			Insert("public.scores").
 			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
 			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, "done").
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	} else {
+		// fismasystemid and datacallid are deliberately NOT in the SET list.
+		// Saving an answer must never move the row to another system or
+		// another cycle: those are the two columns that decide who may write
+		// the row and which deadline applies to it, so letting a request body
+		// rewrite them turns an answer edit into a reparenting primitive.
+		// The controller authorizes an update against the stored row and pins
+		// both values onto the receiver before calling Save.
 		setCols := squirrel.Eq{
-			"fismasystemid":    s.FismaSystemID,
 			"notes":            s.Notes,
 			"functionoptionid": s.FunctionOptionID,
-			"datacallid":       s.DataCallID,
 			"status":           "done",
 		}
 		if s.NotesIsAISummary != nil {
 			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
 		}
+		// Bind the write to the row the caller was authorized against, not to
+		// the id alone. The controller loads the row and pins these two fields
+		// onto the receiver before calling Save; matching on them here means a
+		// future caller that forgets to pin cannot write a row it did not
+		// authorize - it updates zero rows and fails as ErrNoData rather than
+		// succeeding against someone else's answer.
 		sqlb = stmntBuilder.
 			Update("public.scores").
 			SetMap(setCols).
-			Where("scoreid=?", s.ScoreID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid")
+			Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
@@ -158,6 +203,82 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	return saved, nil
 }
 
+// Confirm records that the user affirmed this carried-forward answer as still
+// accurate for the current data call: it flips status to 'done' and nothing
+// else. It exists because agreement changes no answer field, and Save's no-op
+// guard (correctly) refuses to write in that case (ztmf#412/#413) - so
+// "reviewed and agreed" needs its own explicit, attributable write.
+//
+// Deliberately narrow: sets ONLY status - notably not notes_is_ai_summary,
+// since agreeing with an AI-drafted justification is not authoring it. Runs
+// through queryRow so recordEvent stamps the confirming user as the editor.
+// Idempotent on an already-'done' row.
+//
+// The receiver must be a row loaded by FindScoreByID, not a client-supplied
+// body: DataCallID drives the deadline check, and the controller authorizes
+// against the loaded FismaSystemID rather than an asserted one.
+func (s *Score) Confirm(ctx context.Context) (*Score, error) {
+	if err := s.validateDeadline(ctx); err != nil {
+		return nil, err
+	}
+
+	// Audit-preserving no-op: once a score is done, confirming it again must
+	// not move last_edited_by / last_edited_at to the most recent caller. The
+	// controller loads this receiver through FindScoreByID immediately before
+	// calling Confirm, so its persisted Status is the source of truth. Return
+	// the current row with the same audit projection used after a real write,
+	// preserving the endpoint's idempotent 200 response without recording a
+	// second event.
+	if s.Status == "done" {
+		if at, by := lookupScoreAudit(ctx, s.ScoreID); at != nil && by != nil {
+			s.LastEditedAt = at
+			s.LastEditedBy = by
+		}
+		return s, nil
+	}
+
+	sqlb := stmntBuilder.
+		Update("public.scores").
+		Set("status", "done").
+		// Keep the no-op guard in the write predicate as well as above. Two
+		// requests can both load not_started before either reaches Confirm; only
+		// the first must be allowed to update and create an audit event.
+		Where("scoreid=? AND status <> ?", s.ScoreID, "done").
+		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+
+	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+	if err != nil {
+		// A conditional UPDATE that lost the race to another confirmer returns
+		// no row. Reload to distinguish that successful idempotent outcome from
+		// a score that was actually deleted, which remains ErrNoData/404.
+		if errors.Is(err, ErrNoData) {
+			current, findErr := FindScoreByID(ctx, s.ScoreID)
+			if findErr != nil {
+				return nil, findErr
+			}
+			if current.Status == "done" {
+				if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
+					current.LastEditedAt = at
+					current.LastEditedBy = by
+				}
+				return current, nil
+			}
+		}
+		return confirmed, err
+	}
+
+	// Same read-back as Save: project the canonical event row rather than
+	// synthesizing a timestamp, so the response cannot advertise an editor a
+	// subsequent GET would not confirm. Both-or-neither.
+	if confirmed != nil {
+		if at, by := lookupScoreAudit(ctx, confirmed.ScoreID); at != nil && by != nil {
+			confirmed.LastEditedAt = at
+			confirmed.LastEditedBy = by
+		}
+	}
+	return confirmed, nil
+}
+
 // scoreUpdateIsNoOp reports whether the incoming Score's answer fields
 // match the existing row exactly. Used by Save to short-circuit the
 // "Next click without editing" path so the prior editor is not
@@ -188,30 +309,55 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 // Returns ErrNotData when the row is missing so the caller can fail
 // cleanly without paying a second round trip through the UPDATE that
 // would also fail.
-func scoreUpdateIsNoOp(ctx context.Context, incoming *Score) (bool, *Score, error) {
+// A non-nil preloaded row is used as-is instead of re-reading: the update path
+// authorizes against the stored row, so the controller has already fetched it.
+func scoreUpdateIsNoOp(ctx context.Context, incoming, preloaded *Score) (bool, *Score, error) {
+	current := preloaded
+	if current == nil {
+		var err error
+		current, err = FindScoreByID(ctx, incoming.ScoreID)
+		if err != nil {
+			return false, nil, err
+		}
+	}
+
+	return scoresEqualForUpdate(current, incoming), current, nil
+}
+
+// FindScoreByID reads one score row by id, on the read-only path (a plain
+// conn.QueryRow, never queryRow, so no event is recorded for a lookup).
+//
+// Shared by scoreUpdateIsNoOp, which needs the current answer fields to compare
+// against, and by ConfirmScore, which needs the row's real fismasystemid so the
+// controller can authorize against it rather than against a client-asserted one.
+//
+// Returns ErrNoData when the row is missing so callers can fail cleanly without
+// paying a second round trip through a write that would also fail.
+func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return false, nil, trapError(err)
+		return nil, trapError(err)
 	}
 	defer conn.Release()
 
 	current := &Score{}
 	err = conn.QueryRow(ctx, `
 		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
-		       notes, notes_is_ai_summary, functionoptionid, datacallid
+		       notes, notes_is_ai_summary, functionoptionid, datacallid, status
 		FROM scores WHERE scoreid = $1
-	`, incoming.ScoreID).Scan(
+	`, scoreID).Scan(
 		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
 		&current.Notes, &current.NotesIsAISummary, &current.FunctionOptionID, &current.DataCallID,
+		&current.Status,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return false, nil, ErrNoData
+			return nil, ErrNoData
 		}
-		return false, nil, trapError(err)
+		return nil, trapError(err)
 	}
 
-	return scoresEqualForUpdate(current, incoming), current, nil
+	return current, nil
 }
 
 // scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
@@ -222,6 +368,18 @@ func scoresEqualForUpdate(current, incoming *Score) bool {
 	if current == nil || incoming == nil {
 		return false
 	}
+	// fismasystemid and datacallid are compared defensively, not because a PUT
+	// can change them: Save omits both from the UPDATE's SET list and the
+	// controller pins them from the stored row before calling Save. They stay
+	// here so a receiver that somehow disagrees with the stored row is never
+	// treated as a no-op, which would silently skip a write the caller asked
+	// for.
+	//
+	// Note what this does NOT do: a mismatch only fails the equality check, so
+	// the write proceeds as a normal partial update of the answer fields. It
+	// does not report the disagreement to the caller. Turning that into an
+	// explicit error is a deliberate follow-up rather than something this
+	// comparison is doing today.
 	if current.FismaSystemID != incoming.FismaSystemID ||
 		current.DataCallID != incoming.DataCallID ||
 		current.FunctionOptionID != incoming.FunctionOptionID {
@@ -292,6 +450,14 @@ func (s *Score) validate(ctx context.Context) error {
 		return ErrNotesTooLong
 	}
 
+	return s.validateDeadline(ctx)
+}
+
+// validateDeadline rejects a write to a closed data call for anyone but an
+// admin. Extracted from validate so Confirm enforces the same rule: confirming
+// a carried-forward answer is a write to the cycle like any other, and must not
+// become a post-deadline loophole for the tiers that cannot save.
+func (s *Score) validateDeadline(ctx context.Context) error {
 	dataCall, err := FindDataCallByID(ctx, s.DataCallID)
 	if err != nil {
 		return err
@@ -371,7 +537,7 @@ type FindScoresInput struct {
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	sqlb := stmntBuilder.
-		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.notes_is_ai_summary, scores.functionoptionid, scores.datacallid").
+		Select("scoreid, scores.fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, scores.notes_is_ai_summary, scores.functionoptionid, scores.datacallid, scores.status").
 		From("scores")
 
 	if input.contains("functionoption") {
@@ -428,7 +594,7 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Score, error) {
 		score := Score{}
-		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.NotesIsAISummary, &score.FunctionOptionID, &score.DataCallID}
+		fields := []any{&score.ScoreID, &score.FismaSystemID, &score.DateCalculated, &score.Notes, &score.NotesIsAISummary, &score.FunctionOptionID, &score.DataCallID, &score.Status}
 		if input.contains("functionoption") {
 			score.FunctionOption = &FunctionOption{}
 			fields = append(fields, &score.FunctionOption.FunctionOptionID, &score.FunctionOption.FunctionID, &score.FunctionOption.Score, &score.FunctionOption.OptionName, &score.FunctionOption.Description)

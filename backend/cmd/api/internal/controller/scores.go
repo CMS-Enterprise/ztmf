@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -79,24 +80,15 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 
+	// Role-only rejection before any DB access, matching ConfirmScore and
+	// preserving the property pinned in rbac_enforcement_test.go ("read-only
+	// tiers are blocked before any DB access"). Without this the update path
+	// below would look the row up first, which both breaks that invariant and
+	// lets a read-only caller tell an existing scoreid from a missing one by
+	// the 404-vs-403 difference. guardScoreWrite re-checks this; harmless.
 	if user.IsReadOnlyAdmin() {
 		respond(w, r, nil, ErrForbidden)
 		return
-	}
-
-	if !user.IsAdmin() && !user.IsAssignedFismaSystem(score.FismaSystemID) {
-		respond(w, r, nil, ErrForbidden)
-		return
-	}
-
-	// OpDiv write-scope: an admin-tier writer may only score a system in an
-	// OpDiv they manage (OWNER/HHS_ADMIN any; OPDIV_ADMIN only their grants).
-	// ISSO/ISSM keep the per-system assignment path checked above.
-	if user.IsAdmin() {
-		if _, err := guardManageFismaSystem(r.Context(), user, score.FismaSystemID); err != nil {
-			respond(w, r, nil, err)
-			return
-		}
 	}
 
 	vars := mux.Vars(r)
@@ -106,9 +98,129 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		score.ScoreID = scoreID
 	}
 
+	// Authorization is deliberately asymmetric between create and update.
+	//
+	// UPDATE: authorize against the STORED row, never the request body. The
+	// body's fismasystemid is a client assertion; trusting it let any caller
+	// with write access to one system reach every score row by id, since the
+	// UPDATE is keyed on scoreid alone. Load the row first and guard on what
+	// is actually there. The stored datacallid is also carried onto the
+	// receiver so the deadline is evaluated against the cycle the row belongs
+	// to rather than one the caller names.
+	//
+	// CREATE: no row exists yet, so the body's fismasystemid is the only
+	// thing to authorize against, which is correct there.
+	if score.ScoreID != 0 {
+		stored, err := model.FindScoreByID(r.Context(), score.ScoreID)
+		if err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		if err := guardScoreWrite(r.Context(), user, stored.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		// Both columns are immutable on update (Save omits them from the SET
+		// list); pinning them here keeps the receiver honest for the deadline
+		// check and the no-op comparison.
+		score.FismaSystemID = stored.FismaSystemID
+		score.DataCallID = stored.DataCallID
+
+		// Hand Save the row we just read so its no-op comparison does not
+		// fetch it again. The questionnaire PUTs on every Next click, so this
+		// is the hottest write path in the app.
+		score, err = score.Save(r.Context(), model.WithCurrentScore(stored))
+		respond(w, r, score, err)
+		return
+	}
+
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
 	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
+}
+
+// guardScoreWrite is the shared authorization for every score-mutating
+// endpoint (SaveScore, ConfirmScore): read-only admins never write; ISSO/ISSM
+// must hold the per-system assignment; admin tiers must manage the system's
+// OpDiv (OWNER/HHS_ADMIN any, OPDIV_ADMIN only their grants). Extracted so the
+// confirm path cannot drift from the save path's rules.
+func guardScoreWrite(ctx context.Context, user *model.User, fismaSystemID int32) error {
+	if user.IsReadOnlyAdmin() {
+		return ErrForbidden
+	}
+
+	if !user.IsAdmin() && !user.IsAssignedFismaSystem(fismaSystemID) {
+		return ErrForbidden
+	}
+
+	if user.IsAdmin() {
+		if _, err := guardManageFismaSystem(ctx, user, fismaSystemID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ConfirmScore marks a carried-forward answer as affirmed for its data call:
+// it flips scores.status to 'done' and touches nothing else. Agreement
+// changes no answer field, so the ordinary PUT's no-op guard (correctly)
+// refuses to record it - this is the explicit act that does.
+//
+// The row is loaded FIRST and authorization runs against its own
+// fismasystemid - a client asserts nothing but the scoreid.
+//
+//	@Summary	Confirm a carried-forward score without changing it
+//	@Tags		scores
+//	@Produce	json
+//	@Security	bearerAuth
+//	@Param		scoreid	path		int	true	"Score ID"
+//	@Success	200		{object}	apiResponse[model.Score]
+//	@Failure	403		{object}	apiResponse[any]
+//	@Failure	404		{object}	apiResponse[any]
+//	@Failure	500		{object}	apiResponse[any]
+//	@Router		/scores/{scoreid}/confirm [put]
+func ConfirmScore(w http.ResponseWriter, r *http.Request) {
+	user := model.UserFromContext(r.Context())
+
+	// Role-only rejection before any DB access, preserving the pinned
+	// property from rbac_enforcement_test.go ("read-only tiers are blocked
+	// before any DB access"). guardScoreWrite re-checks this; harmless.
+	if user.IsReadOnlyAdmin() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+
+	var scoreID int32
+	fmt.Sscan(mux.Vars(r)["scoreid"], &scoreID)
+
+	score, err := model.FindScoreByID(r.Context(), scoreID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+
+	confirmed, err := score.Confirm(r.Context())
+	if err != nil {
+		log.Println(err)
+		respond(w, r, nil, err)
+		return
+	}
+
+	// respondOK, not respond: PUT-as-action endpoints return the updated
+	// entity (the restore/reactivate convention); respond() would drop the
+	// body with a 204.
+	respondOK(w, confirmed)
 }
 
 //	@Summary	Diff scores between two data calls

@@ -451,6 +451,12 @@ components:
             (the epic rule: never coerce a missing value to false/No).
           type: boolean
         isso_name:
+          description: |-
+            ISSOName is the ISSO's display name. Unlike the system attributes above
+            it, an OpDiv-scoped admin may write it on systems in their granted
+            OpDivs. NULL means no stored override: the systems list read falls back
+            to the fullname on the user record matching issoemail, so clearing this
+            restores that derived name.
           type: string
         issoemail:
           type: string
@@ -469,6 +475,11 @@ components:
         system_operator:
           type: string
         system_owner:
+          description: |-
+            SystemOwner / SystemOwnerEmail are contact fields, writable by an
+            OpDiv-scoped admin on systems in their granted OpDivs (ztmf#512). Unlike
+            ISSOName there is no derivation fallback: the stored column is the only
+            source of the owner's name, so clearing it just clears it.
           type: string
         system_owner_email:
           type: string
@@ -628,6 +639,15 @@ components:
           type: boolean
         scoreid:
           type: integer
+        status:
+          description: |-
+            Status is the answer's review state for its data call: 'not_started' for
+            a row carried forward by copyPreviousScores and untouched this cycle,
+            'done' once saved or confirmed this cycle (ztmf#435, values pinned by
+            migration 0048's CHECK). Exposed on the read path so the questionnaire
+            marks carried-forward answers from the SAME fact the Data Call Progress
+            count reads, instead of inferring it from the absence of an edit event.
+          type: string
       type: object
     model.ScoreAggregate:
       properties:
@@ -2688,6 +2708,45 @@ paths:
       security:
       - bearerAuth: []
       summary: Create or update a score
+      tags:
+      - scores
+  /scores/{scoreid}/confirm:
+    put:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_Score'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Confirm a carried-forward score without changing it
       tags:
       - scores
   /scores/aggregate:
