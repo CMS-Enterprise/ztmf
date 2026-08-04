@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,5 +78,39 @@ func TestSaveScore_OpDivReadonlyForbidden(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	SaveScore(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// The UPDATE path has to be pinned separately from the create path above,
+// because a PUT that authorizes against the stored row must look that row up
+// and the lookup is easy to place before the role check.
+//
+// The assertion uses a scoreid that cannot exist, which is what makes this
+// test discriminate. Rejecting on role first is a 403. Looking the row up
+// first is a 404 - and that difference is exactly the leak: a tier that must
+// never touch the database could otherwise probe which score ids exist by
+// reading the status code. Asserting 403 on an existing id would prove
+// nothing, since guardScoreWrite rejects read-only tiers a few lines later
+// either way.
+func TestSaveScore_OpDivReadonlyForbiddenOnUpdate(t *testing.T) {
+	const missingScoreID = "2147483600" // no fixture allocates anything near this
+	body := jsonBody(t, map[string]any{"fismasystemid": 1002, "functionoptionid": 1, "datacallid": 3})
+	r := httptest.NewRequest("PUT", "/api/v1/scores/"+missingScoreID, body)
+	r = mux.SetURLVars(r, map[string]string{"scoreid": missingScoreID})
+	r = withUser(r, opdivReadonly)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	SaveScore(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a read-only tier must be rejected on role before the stored-row lookup, "+
+			"otherwise the 403/404 split reveals which score ids exist")
+}
+
+// --- ConfirmScore: read-only tiers are blocked before any DB access ---
+
+func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
+	r := withUser(httptest.NewRequest("PUT", "/api/v1/scores/123/confirm", nil), opdivReadonly)
+	w := httptest.NewRecorder()
+	ConfirmScore(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }

@@ -69,6 +69,8 @@ func TestParseSession_RejectsForeignTokens(t *testing.T) {
 }
 
 func TestSetSessionCookie_Attributes(t *testing.T) {
+	// No configuration feeds the cookie's Domain any more, so the host-only
+	// assertion below is the guard against reintroducing one.
 	w := httptest.NewRecorder()
 	SetSessionCookie(w, "tok123")
 
@@ -81,6 +83,28 @@ func TestSetSessionCookie_Attributes(t *testing.T) {
 	assert.True(t, c.Secure, "must be Secure")
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite, "must be SameSite=Strict")
 	assert.Equal(t, "/", c.Path)
+	// Host-only: an explicit Domain covers that domain and every subdomain, so
+	// naming the apex would deliver a prod session to the dev and impl hosts.
+	assert.Empty(t, c.Domain, "must stay host-only")
+}
+
+func TestClearSessionCookie_Attributes(t *testing.T) {
+	// The expiring cookie has to match the host-only cookie SetSessionCookie
+	// issued; a Domain here would create a separate domain-scoped cookie and
+	// leave the session in place.
+	cfg := config.GetInstance()
+
+	w := httptest.NewRecorder()
+	ClearSessionCookie(w)
+
+	cookies := w.Result().Cookies()
+	require.Len(t, cookies, 1)
+	c := cookies[0]
+	assert.Equal(t, cfg.Auth.SessionCookieName, c.Name)
+	assert.Empty(t, c.Value, "must be emptied")
+	assert.True(t, c.MaxAge < 0, "must be expired")
+	assert.Equal(t, "/", c.Path)
+	assert.Empty(t, c.Domain, "must stay host-only")
 }
 
 func TestSessionHandler_Unauthorized(t *testing.T) {

@@ -303,7 +303,7 @@ func TestMiddleware(t *testing.T) {
 }
 
 func TestSameOrigin(t *testing.T) {
-	// CookieDomain is unset in the test env, so sameOrigin falls back to the
+	// OriginHost is unset in the test env, so sameOrigin falls back to the
 	// request Host.
 	tests := []struct {
 		name    string

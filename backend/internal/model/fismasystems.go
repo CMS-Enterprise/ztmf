@@ -61,10 +61,19 @@ type FismaSystem struct {
 	CloudVendor       *string  `json:"cloud_vendor" db:"cloud_vendor"`
 	SystemOperator    *string  `json:"system_operator" db:"system_operator"`
 	GocoCocGoGo       *string  `json:"goco_coco_gogo" db:"goco_coco_gogo"`
+	// SystemOwner / SystemOwnerEmail are contact fields, writable by an
+	// OpDiv-scoped admin on systems in their granted OpDivs (ztmf#512). Unlike
+	// ISSOName there is no derivation fallback: the stored column is the only
+	// source of the owner's name, so clearing it just clears it.
 	SystemOwner      *string `json:"system_owner" db:"system_owner"`
 	SystemOwnerEmail *string `json:"system_owner_email" db:"system_owner_email"`
 	Legacy           *bool   `json:"legacy" db:"legacy"`
-	ISSOName         *string `json:"isso_name" db:"isso_name"`
+	// ISSOName is the ISSO's display name. Unlike the system attributes above
+	// it, an OpDiv-scoped admin may write it on systems in their granted
+	// OpDivs. NULL means no stored override: the systems list read falls back
+	// to the fullname on the user record matching issoemail, so clearing this
+	// restores that derived name.
+	ISSOName *string `json:"isso_name" db:"isso_name"`
 	// Risk-based target maturity (#398). NULL = no ISSO has asserted a target
 	// yet; the UI presents the Advanced default. Written only via
 	// SaveTargetMaturity, never through Save().
@@ -85,6 +94,29 @@ type FindFismaSystemsInput struct {
 	// their lifecycle (mid-provisioning, all-revoked, etc.).
 	RestrictToOpDivIDs bool
 	Decommissioned     bool `schema:"decommissioned"`
+	// ResolveISSOName swaps the raw isso_name column for the COALESCE that
+	// falls back to the ISSO's user record (see resolveISSONameColumn). Set by
+	// DISPLAY reads only - the list always resolves, the single-system GET
+	// resolves when the controller asks. Internal fetches that feed write
+	// paths (guardManageFismaSystem and friends) must leave it false, or a
+	// derived name enters an entity that flows toward Save and gets persisted
+	// as a stored override (ztmf#510's acceptance constraint).
+	ResolveISSOName bool
+}
+
+// resolveISSONameColumn rewrites the isso_name entry of a column list into the
+// COALESCE that resolves a single ISSO display name: HHS systems carry
+// isso_name directly; CMS systems carry only issoemail, which maps to the
+// ISSO's user record. email is unique, so the correlated subquery returns at
+// most one row. This is THE derivation - both the list and the single-system
+// GET share it (ztmf#510), so the two reads cannot disagree.
+func resolveISSONameColumn(c []string) {
+	for i := range c {
+		if c[i] == "isso_name" {
+			c[i] = "COALESCE(fismasystems.isso_name, " +
+				"(SELECT fullname FROM users WHERE LOWER(email) = LOWER(fismasystems.issoemail) LIMIT 1)) AS isso_name"
+		}
+	}
 }
 
 func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*FismaSystem, error) {
@@ -92,19 +124,10 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	c := []string{"fismasystems.fismasystemid as fismasystemid"}
 	c = append(c, fismaSystemColumns[1:]...)
 
-	// Resolve a single ISSO display name for the systems table. HHS systems carry
-	// isso_name directly; CMS systems carry only issoemail, which maps to the
-	// ISSO's user record - so COALESCE yields one populated name column for both
-	// populations without a per-row lookup. email is unique, so the correlated
-	// subquery returns at most one row. Read-only: the write path never sets
-	// isso_name from this, so a resolved name is never persisted back. Applied to
-	// the list only; the single-system GET returns the stored value unchanged.
-	for i := range c {
-		if c[i] == "isso_name" {
-			c[i] = "COALESCE(fismasystems.isso_name, " +
-				"(SELECT fullname FROM users WHERE LOWER(email) = LOWER(fismasystems.issoemail) LIMIT 1)) AS isso_name"
-		}
-	}
+	// The list is always a display read, so it always resolves the ISSO
+	// display name. Read-only: the write path never sets isso_name from this,
+	// so a resolved name is never persisted back.
+	resolveISSONameColumn(c)
 	sqlb := stmntBuilder.Select(c...).From("fismasystems")
 
 	// Filter decommissioned systems
@@ -153,8 +176,14 @@ func FindFismaSystem(ctx context.Context, input FindFismaSystemsInput) (*FismaSy
 		}
 	}
 
+	c := make([]string, len(fismaSystemColumns))
+	copy(c, fismaSystemColumns)
+	if input.ResolveISSOName {
+		resolveISSONameColumn(c)
+	}
+
 	sqlb := stmntBuilder.
-		Select(fismaSystemColumns...).
+		Select(c...).
 		From("fismasystems").
 		Where("fismasystems.fismasystemid=?", input.FismaSystemID)
 
@@ -358,8 +387,8 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		// Metadata fields distinguish three request states (ztmf#442):
 		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
 		//     untouched, so a partial PUT never wipes importer data (and a
-		//     scoped-admin edit, whose HHS fields copyHHSMetadata has set to the
-		//     stored values, is a no-op here);
+		//     scoped-admin edit, whose unscoped-only fields the controller has
+		//     already set to the stored values, is a no-op here);
 		//   - "" (a cleared text input) / empty slice -> write NULL, so a blank
 		//     actually clears the value rather than persisting "" / an empty array;
 		//   - a value -> write it.
