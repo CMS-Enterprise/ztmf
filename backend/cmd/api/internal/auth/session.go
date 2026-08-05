@@ -177,10 +177,14 @@ func SessionHandler(w http.ResponseWriter, r *http.Request) {
 
 	SetSessionCookie(w, token)
 
-	// Record the login. Fire-and-forget by design: the session is already
-	// minted and the cookie already set, so failing the redirect over an audit
-	// write would deny a user access for a bookkeeping problem. Logged, not
-	// returned - the same trade recordEvent makes for write-derived events.
+	// Record the login. Fire-and-forget by design: the session is minted and
+	// the Set-Cookie header staged, so failing the redirect over an audit write
+	// would deny a user access for a bookkeeping problem. Logged, not returned -
+	// the same trade recordEvent makes for write-derived events.
+	//
+	// The failure direction is the safe one: a dropped write makes an active
+	// account look stale, which costs a needless review, and can never make a
+	// stale account look active.
 	if err := model.RecordLogin(r.Context(), user.UserID); err != nil {
 		log.Printf("login: failed to record session event for %s: %s\n", user.UserID, err)
 	}
