@@ -1029,6 +1029,12 @@ SELECT '00000000-0000-4000-8000-000000000001', 'imported', 'public.scores',
 -- FY2020 archives block) are excluded via the same action filter the migration
 -- uses, so imported history stays not_started. Keeps this consistent
 -- automatically as the events seed above changes.
+--
+-- The action values here (and in the 'imported' events seeded above) are SQL
+-- literals because SQL cannot reference a Go constant; they are the same values
+-- defined as eventAction* in internal/model/events.go, which is the source of
+-- truth for the set. Changing an action value there means updating these
+-- literals and backfilling stored rows, not a rename.
 UPDATE public.scores s
 SET status = 'done'
 WHERE EXISTS (
