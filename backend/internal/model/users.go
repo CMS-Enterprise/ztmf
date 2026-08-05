@@ -566,7 +566,7 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 	if actor := UserFromContext(ctx); actor != nil {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
-			actor.UserID, "updated", "users", restored,
+			actor.UserID, eventActionUpdated, "users", restored,
 		); err != nil {
 			return nil, trapError(err)
 		}
@@ -835,7 +835,7 @@ func AddSystemDelegate(ctx context.Context, sys *FismaSystem, opdiv *OpDiv, acto
 	} {
 		if _, err = tx.Exec(ctx,
 			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
-			actorID, "created", ev.resource, ev.payload,
+			actorID, eventActionCreated, ev.resource, ev.payload,
 		); err != nil {
 			return nil, trapError(err)
 		}
