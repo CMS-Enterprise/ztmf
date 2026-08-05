@@ -457,3 +457,81 @@ func TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration(t *testing.T) 
 	assert.Equal(t, total, withImported, "every archived row must carry an 'imported' provenance event")
 	assert.Equal(t, 0, withEdit, "archived rows must have no created/updated events (import is not an edit)")
 }
+
+// TestScoreProgressLastUpdatedIgnoresImportedEventsIntegration pins ztmf#513
+// through the real FindScoreProgress path: a score row whose only events are
+// out-of-band provenance ('imported') reports NO last-updated, matching the
+// status backfill that already refuses to call such a row done. Before the
+// action filter the lateral took the newest event of any action, so these rows
+// reported the load's timestamp while questionsupdated stayed 0 - last-updated
+// and questionsupdated disagreed about the same events.
+//
+// The systems under test are resolved from the events table rather than
+// hardcoded, so the test cannot pass vacuously against a data call that simply
+// has no events at all.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestScoreProgressLastUpdatedIgnoresImportedEventsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	const archivesDataCallID int32 = 6
+
+	// Systems in the archives call holding at least one answer whose only
+	// provenance is an 'imported' event and no in-app edit. These are exactly
+	// the rows the lateral used to date from the import. Decommissioned systems
+	// are filtered out here to mirror FindScoreProgress' own scope - they never
+	// appear in its result, so counting them as expected would fail the sweep
+	// below for a reason that has nothing to do with last-updated.
+	rows, err := conn.Query(ctx, `
+		SELECT DISTINCT s.fismasystemid
+		FROM public.scores s
+		INNER JOIN public.fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		WHERE s.datacallid = $1
+		  AND fs.decommissioned = FALSE
+		  AND EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action='imported'
+		        AND (e.payload->>'scoreid')::int = s.scoreid)
+		  AND NOT EXISTS (SELECT 1 FROM public.events e
+		      WHERE e.resource='public.scores' AND e.action IN ('created','updated')
+		        AND (e.payload->>'scoreid')::int = s.scoreid)
+	`, archivesDataCallID)
+	require.NoError(t, err)
+	importedOnly := map[int32]bool{}
+	for rows.Next() {
+		var id int32
+		require.NoError(t, rows.Scan(&id))
+		importedOnly[id] = true
+	}
+	rows.Close()
+	require.NoError(t, rows.Err())
+	require.NotEmpty(t, importedOnly, "fixture must seed at least one imported-only system in the archives call")
+
+	dcID := archivesDataCallID
+	progress, err := FindScoreProgress(ctx, FindScoreProgressInput{DataCallID: &dcID})
+	require.NoError(t, err)
+
+	checked := 0
+	for _, p := range progress {
+		if !importedOnly[p.FismaSystemID] {
+			continue
+		}
+		checked++
+		assert.Nil(t, p.LastUpdatedAt,
+			"system %d carries only imported provenance, so last-updated must be nil rather than the load's timestamp", p.FismaSystemID)
+		assert.Equal(t, int32(0), p.QuestionsUpdated,
+			"system %d has no in-app edits in this call", p.FismaSystemID)
+		assert.False(t, p.UpdatedSinceStart,
+			"system %d must not read as updated since the call started", p.FismaSystemID)
+		assert.Greater(t, p.QuestionsAnswered, int32(0),
+			"system %d must still report its imported answers - the filter changes last-updated, not the counts", p.FismaSystemID)
+	}
+	assert.Equal(t, len(importedOnly), checked, "every imported-only system must appear in the progress result")
+}
