@@ -36,7 +36,8 @@ func (r rawQuery) ToSql() (string, []any, error) {
 // events.go these are stored data rather than an internal enum: migration
 // 0048 pins the exact set with a CHECK constraint
 // (`status IN ('not_started', 'done')`), the seed data's status-sync writes
-// them, and the progress query in scoreprogress.go filters on them as inline
+// 'done' while the column DEFAULT set in 0048 supplies 'not_started', and the
+// progress query in scoreprogress.go filters on them as inline
 // SQL literals. Changing a VALUE here is a data migration - a new CHECK, a
 // backfill of every stored row, and an update of every SQL predicate that
 // repeats the literal. Changing the Go identifier is free.
@@ -1332,9 +1333,16 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
 	//
 	// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
-	// value has one definition. It stays a selected literal, not a bind
-	// parameter: squirrel would append the placeholder's argument after the
-	// INSERT's own, and the constant is package-owned, never request input.
+	// value has one definition. Safe to interpolate: the constant is
+	// package-owned, never request input.
+	//
+	// It stays a selected literal rather than becoming a bind parameter for two
+	// reasons. It keeps the emitted SQL byte-identical to what this statement
+	// has always produced; and an untyped $n in a SELECT list feeding an
+	// INSERT...SELECT walks into the same type-inference trap the sibling
+	// copySQL comment above documents at length for its ::int casts - Postgres
+	// resolves an unadorned placeholder to text and the column comparison
+	// fails at runtime.
 	prevScoresSqlb := squirrel.
 		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
 		From("scores s").

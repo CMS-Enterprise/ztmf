@@ -52,16 +52,25 @@ const (
 	// eventActionImported marks provenance for score data loaded outside the
 	// application - bulk imports and seed SQL, not a human answering a
 	// questionnaire. Nothing in this package writes it today; the value lives
-	// here so there is one authoritative home for it, because the readers that
-	// exclude it (0048's backfill, the seed status-sync, the last-updated
-	// lateral in scoreprogress.go) all depend on the exact spelling. A future
-	// bulk importer must write this action rather than reusing the in-app
-	// create/update path - see Score.Save.
+	// here so there is one authoritative home for it.
+	//
+	// Note which consumers actually depend on the exact spelling: the readers
+	// that exclude imported rows (0048's backfill, the seed status-sync, the
+	// last-updated lateral in scoreprogress.go) do NOT name this value at all -
+	// they allowlist 'created'/'updated', so they would exclude an import under
+	// any spelling. The sites that would silently drift on a respelling are the
+	// WRITERS and the assertions over them: the seed INSERT in
+	// _test_data_empire.sql and scoreprogress_integration_test.go, which read
+	// back `action='imported'` to prove imported history stays not_started.
+	//
+	// A future bulk importer must write this action rather than reusing the
+	// in-app create/update path - see Score.Save.
 	//
 	// Having no Go writer is the point, so silence the unused check rather than
-	// leaving the value defined only in SQL and prose. If a Go importer ever
-	// does write it, staticcheck flags this directive as matching nothing and
-	// it should be deleted.
+	// leaving the value defined only in SQL and prose. Staticcheck will NOT
+	// tell you when this directive goes stale - U1000 ignores are exempt from
+	// its unmatched-directive check - so delete it by hand if a Go writer ever
+	// appears.
 	//lint:ignore U1000 defined as the authoritative spelling for SQL readers; no Go writer by design
 	eventActionImported = "imported"
 )
