@@ -34,10 +34,12 @@ func Excel(answers []*model.Answer) (*excelize.File, error) {
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), a.Function)
 		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), a.Description)
 		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), a.Question)
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), a.OptionDescription)
-		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), a.OptionName)
-		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), a.Score)
-		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), a.Notes)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), derefString(a.OptionDescription))
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), derefString(a.OptionName))
+		if a.Score != nil {
+			f.SetCellValue(sheet, fmt.Sprintf("I%d", row), *a.Score)
+		}
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), derefString(a.Notes))
 		// NULL target = no explicit assertion yet; the app-wide default is
 		// Advanced, and the export says so rather than leaving readers to guess.
 		targetTier := "Advanced (default)"
@@ -53,4 +55,13 @@ func Excel(answers []*model.Answer) (*excelize.File, error) {
 	}
 
 	return f, nil
+}
+
+// derefString returns the pointed-to string, or "" when the pointer is nil, so a
+// not-started answer renders as a blank cell rather than a zero value.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
