@@ -2,9 +2,11 @@ package model
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,9 +44,13 @@ func TestRecordLoginIntegration(t *testing.T) {
 		  AND NOT EXISTS (SELECT 1 FROM public.events e WHERE e.userid = u.userid)
 		LIMIT 1
 	`).Scan(&userID)
-	if err != nil {
+	// Only "no such user" is a skip. Letting any error skip would turn a dead
+	// connection or a renamed column into a green run in which RecordLogin was
+	// never called at all.
+	if errors.Is(err, pgx.ErrNoRows) {
 		t.Skip("fixture has no user without events")
 	}
+	require.NoError(t, err)
 
 	before, err := FindUsers(ctx, &FindUsersInput{})
 	require.NoError(t, err)
@@ -87,13 +93,15 @@ func TestRecordLoginIntegration(t *testing.T) {
 	t.Run("EmptyUserIsANoOp", func(t *testing.T) {
 		// Defensive: never fabricate an event with no initiator, mirroring how
 		// recordEvent skips when there is no user in context.
+		// Scoped to this user rather than counting the table: an unscoped count
+		// only holds because the test DB is ephemeral, and would go flaky the
+		// moment anyone pointed this at a shared one.
+		const countSessions = `SELECT count(*) FROM public.events WHERE resource='session' AND userid=$1`
 		var before int
-		require.NoError(t, conn.QueryRow(ctx,
-			`SELECT count(*) FROM public.events WHERE resource='session'`).Scan(&before))
+		require.NoError(t, conn.QueryRow(ctx, countSessions, userID).Scan(&before))
 		require.NoError(t, RecordLogin(ctx, ""))
 		var after int
-		require.NoError(t, conn.QueryRow(ctx,
-			`SELECT count(*) FROM public.events WHERE resource='session'`).Scan(&after))
+		require.NoError(t, conn.QueryRow(ctx, countSessions, userID).Scan(&after))
 		assert.Equal(t, before, after, "an empty user id must write nothing")
 	})
 }

@@ -2,9 +2,11 @@ package model
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,9 +65,12 @@ func TestFindUsersLastSeenIntegration(t *testing.T) {
 			  AND NOT EXISTS (SELECT 1 FROM public.events e WHERE e.userid = u.userid)
 			LIMIT 1
 		`).Scan(&userID)
-		if err != nil {
+		// Only the empty result is a skip; any other error is a real failure
+		// and must not be laundered into a green run.
+		if errors.Is(err, pgx.ErrNoRows) {
 			t.Skip("fixture has no user without events; nothing to assert here")
 		}
+		require.NoError(t, err)
 
 		u, ok := byID[userID]
 		require.True(t, ok)
