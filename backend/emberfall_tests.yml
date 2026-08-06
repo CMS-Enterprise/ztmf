@@ -107,11 +107,14 @@ reactivatedFismaSystemData: &reactivatedFismaSystemData
   decommissioned_notes: "System migrated to cloud infrastructure"
   reactivation_notes: "Brought back online for follow-on work"
 
+# questionid is required, and pillarid is derived from that question rather than
+# taken from the request. Seed question 8001 is in pillar 1.
 functionData: &functionData
   function: "Identity Management"
   description: "Manage user identities and access"
   datacenterenvironment: "AWS"
   order: 1
+  questionid: 8001
   pillarid: 1
 
 updatedFunctionData: &updatedFunctionData
@@ -119,6 +122,7 @@ updatedFunctionData: &updatedFunctionData
   description: "Updated identity and access management"
   datacenterenvironment: "AWS"
   order: 2
+  questionid: 8001
   pillarid: 1
 
 userData: &userData
@@ -1222,7 +1226,79 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
-  
+
+  # A caller-supplied pillarid that disagrees with the question is corrected, not
+  # persisted. Question 8001 is in pillar 1; the request claims pillar 6.
+  - id: createFunctionPillarDrift
+    url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        function: "Pillar Derivation Check"
+        description: "pillarid must follow the question, not the request body"
+        datacenterenvironment: "AWS"
+        order: 99
+        questionid: 8001
+        pillarid: 6
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            questionid: 8001
+            pillarid: 1
+
+  # A function with no question has no pillar to derive from and reaches no
+  # questionnaire, so it is rejected.
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        function: "Questionless Function"
+        description: "no questionid, must be rejected"
+        datacenterenvironment: "AWS"
+        order: 99
+        pillarid: 1
+    expect:
+      status: 400
+
+  # Same on update. The UPDATE sets every column, so before questionid was
+  # required this partial-update shape wrote NULL and orphaned the function from
+  # every questionnaire instead of failing.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        function: "Updated Identity Management"
+        description: "no questionid on update, must be rejected"
+        datacenterenvironment: "AWS"
+        order: 2
+        pillarid: 1
+    expect:
+      status: 400
+
+  # Nothing from the rejected update applied: the question is intact and the
+  # fields it did carry (a changed description) were not written either.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedFunctionData
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET

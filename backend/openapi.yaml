@@ -507,6 +507,9 @@ components:
         order:
           type: integer
         pillarid:
+          description: Derived from the function's question on write; a value sent
+            by a client is ignored.
+          readOnly: true
           type: integer
         questionid:
           type: integer
