@@ -10,8 +10,9 @@ import (
 )
 
 // TestFunctionPillarDeriveIntegration proves a function's pillar is derived from
-// its question on every write, so functions.pillarid can no longer disagree with
-// questions.pillarid no matter what the caller sends.
+// its question on every write, so a caller-supplied pillarid cannot put the two
+// out of agreement. Editing the question's own pillar still leaves dependent
+// functions stale until they are next saved; that path is not covered here.
 //
 // Fixtures come from the empire seed: question 8004 is in pillar 2 (Applications).
 // The fixtures use the "AWS" environment, which no seeded system maps to, so a
@@ -101,20 +102,6 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 		assert.Nil(t, saved)
 	})
 
-	t.Run("SeededDataAgrees", func(t *testing.T) {
-		c, err := db.Conn(ctx)
-		require.NoError(t, err)
-		defer c.Release()
-
-		var drifted int
-		err = c.QueryRow(ctx, `
-			SELECT count(*)
-			  FROM functions f
-			  JOIN questions q ON q.questionid = f.questionid
-			 WHERE f.pillarid <> q.pillarid`).Scan(&drifted)
-		require.NoError(t, err)
-		assert.Zero(t, drifted, "no function may disagree with its question's pillar")
-	})
 }
 
 func hardDeleteFunctionByID(id int32) {
