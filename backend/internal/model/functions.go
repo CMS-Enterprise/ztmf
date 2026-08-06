@@ -17,7 +17,8 @@ type Function struct {
 	DataCenterEnvironment string `json:"datacenterenvironment"`
 	Ordr                  int    `json:"order"`
 	QuestionID            *int32 `json:"questionid,omitempty"`
-	PillarID              int32  `json:"pillarid"`
+	// Derived from the function's question on write; a value sent by a client is ignored.
+	PillarID int32 `json:"pillarid" readonly:"true"`
 }
 
 type FindFunctionsInput struct {
