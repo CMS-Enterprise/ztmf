@@ -808,6 +808,27 @@ components:
           type: string
         identity_provider:
           type: string
+        last_seen:
+          description: |-
+            LastSeen is the most recent activity this user recorded in the events
+            audit log, including logins (see RecordLogin). Derived on read, never
+            stored, so it needs no backfill and cannot drift from the log it
+            summarises.
+
+            Signing in counts, so a user who logs in and only reads is now
+            distinguishable from one who has never signed in at all - the pair that
+            matters for spotting a stale privileged account, and that used to look
+            identical because every event was a side effect of a write.
+
+            Null means no recorded activity of any kind. For an account created
+            before login events existed, null means "nothing since then", not
+            "never" - the log is not retrospective. That ambiguity ages out as
+            people sign in.
+
+            No omitempty: a never-used account is the case this field exists to
+            identify, and omitting the key there would make the answer indistinguishable
+            from the field not being served at all. Null is the answer, so it ships.
+          type: string
         role:
           type: string
         userid:

@@ -25,6 +25,25 @@ type User struct {
 	// the past is denied at authentication (see IsExpired and the auth middleware),
 	// while the row and its assignments are retained for renewal and audit.
 	AccessExpiresAt *time.Time `json:"access_expires_at" db:"access_expires_at"`
+	// LastSeen is the most recent activity this user recorded in the events
+	// audit log, including logins (see RecordLogin). Derived on read, never
+	// stored, so it needs no backfill and cannot drift from the log it
+	// summarises.
+	//
+	// Signing in counts, so a user who logs in and only reads is now
+	// distinguishable from one who has never signed in at all - the pair that
+	// matters for spotting a stale privileged account, and that used to look
+	// identical because every event was a side effect of a write.
+	//
+	// Null means no recorded activity of any kind. For an account created
+	// before login events existed, null means "nothing since then", not
+	// "never" - the log is not retrospective. That ambiguity ages out as
+	// people sign in.
+	//
+	// No omitempty: a never-used account is the case this field exists to
+	// identify, and omitting the key there would make the answer indistinguishable
+	// from the field not being served at all. Null is the answer, so it ships.
+	LastSeen *time.Time `json:"last_seen" db:"last_seen"`
 }
 
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
@@ -425,6 +444,11 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 			"users.identity_provider",
 			"users.access_expires_at",
 			"(SELECT ARRAY_AGG(opdiv_id) FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids",
+			// Same correlated-subquery shape as assignedopdivids above. Served
+			// by events_user_activity_idx (0054) as an index-only descent to
+			// the newest entry, so this stays a few milliseconds across the
+			// whole list rather than a sequential scan of events per row.
+			"(SELECT MAX(createdat) FROM public.events WHERE events.userid = users.userid) AS last_seen",
 		).
 		From("public.users").
 		Where("deleted=?", fui.Deleted)
@@ -468,6 +492,13 @@ func FindUserByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 func findUser(ctx context.Context, where string, args []any) (*User, error) {
+	// last_seen is selected as a literal NULL rather than derived. This runs in
+	// the auth middleware on every authenticated request, so the correlated
+	// subquery FindUsers uses would be paid on every call to serve a field only
+	// the users list renders. The column still has to appear: this path scans
+	// strictly by name, so omitting it fails the scan outright rather than
+	// leaving the field nil.
+	//
 	// Load assignments via correlated subqueries instead of LEFT JOIN +
 	// ARRAY_AGG so the row count stays at one per user. A LEFT JOIN to both
 	// junctions would produce an N*M cross-product (N system grants times
@@ -483,6 +514,7 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 			"users.deleted",
 			"users.identity_provider",
 			"users.access_expires_at",
+			"NULL::timestamptz AS last_seen",
 			"(SELECT ARRAY_AGG(fismasystemid) FROM users_fismasystems WHERE userid = users.userid) AS assignedfismasystems",
 			"(SELECT ARRAY_AGG(opdiv_id)      FROM users_opdivs       WHERE userid = users.userid) AS assignedopdivids",
 		).
@@ -566,7 +598,7 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 	if actor := UserFromContext(ctx); actor != nil {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
-			actor.UserID, "updated", "users", restored,
+			actor.UserID, eventActionUpdated, "users", restored,
 		); err != nil {
 			return nil, trapError(err)
 		}
@@ -835,7 +867,7 @@ func AddSystemDelegate(ctx context.Context, sys *FismaSystem, opdiv *OpDiv, acto
 	} {
 		if _, err = tx.Exec(ctx,
 			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
-			actorID, "created", ev.resource, ev.payload,
+			actorID, eventActionCreated, ev.resource, ev.payload,
 		); err != nil {
 			return nil, trapError(err)
 		}

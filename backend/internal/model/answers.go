@@ -16,10 +16,15 @@ type Answer struct {
 	Question              string
 	Function              string
 	Description           string
-	OptionDescription     string
-	OptionName            string
-	Score                 int
-	Notes                 string
+	// The selected option and its notes are nil for an applicable function the
+	// system has not answered in this data call: FindAnswers left joins scores
+	// off the questionnaire, so an unanswered function still yields a row but
+	// carries no score. The export renders these as blank, which distinguishes a
+	// never-answered function from one genuinely answered at score 0.
+	OptionDescription     *string
+	OptionName            *string
+	Score                 *int
+	Notes                 *string
 	NotesIsAISummary      *bool `db:"notes_is_ai_summary"`
 	// Per-system target maturity (#398); nil when no target has been asserted
 	// (the export renders the Advanced default in that case).
@@ -39,13 +44,14 @@ type FindAnswersInput struct {
 // this is primarily meant for use in exporting to spreadsheets
 func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error) {
 	sqlb := stmntBuilder.Select("datacalls.datacall, fismasystems.fismasystemid, fismasystems.fismaacronym, fismasystems.datacenterenvironment, fismasystems.target_maturity_tier, fismasystems.target_maturity_justification, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.description AS optiondescription, functionoptions.optionname, functionoptions.score, scores.notes, scores.notes_is_ai_summary").
-		From("scores").
-		InnerJoin("datacalls ON datacalls.datacallid=scores.datacallid AND datacalls.datacallid=?", input.DataCallID).
-		InnerJoin("fismasystems ON fismasystems.fismasystemid=scores.fismasystemid").
-		InnerJoin("functionoptions ON functionoptions.functionoptionid=scores.functionoptionid").
-		InnerJoin("functions ON functions.functionid=functionoptions.functionid").
+		From("fismasystems").
+		InnerJoin("functions ON (EXISTS (SELECT 1 FROM datacenterenvironments dce WHERE dce.datacenterenvironment=fismasystems.datacenterenvironment AND dce.scoring_key=functions.datacenterenvironment) OR EXISTS (SELECT 1 FROM scores answered JOIN functionoptions answeredopt ON answeredopt.functionoptionid=answered.functionoptionid WHERE answered.fismasystemid=fismasystems.fismasystemid AND answered.datacallid=? AND answeredopt.functionid=functions.functionid))", input.DataCallID).
 		InnerJoin("questions ON questions.questionid=functions.questionid").
-		InnerJoin("pillars ON pillars.pillarid=functions.pillarid").
+		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
+		InnerJoin("datacalls ON datacalls.datacallid=?", input.DataCallID).
+		LeftJoin("scores ON scores.fismasystemid=fismasystems.fismasystemid AND scores.datacallid=? AND scores.functionoptionid IN (SELECT selected.functionoptionid FROM functionoptions selected WHERE selected.functionid=functions.functionid)", input.DataCallID).
+		LeftJoin("functionoptions ON functionoptions.functionoptionid=scores.functionoptionid").
+		Where("(fismasystems.decommissioned=FALSE OR scores.scoreid IS NOT NULL)").
 		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr ASC")
 
 	if input.UserID != nil {
