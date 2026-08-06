@@ -82,7 +82,13 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 	}
 
 	// A function's pillar is a fact about its question, so derive it and ignore the
-	// caller's value; functions.pillarid can then never drift from questions.pillarid.
+	// caller's value; the caller cannot put functions.pillarid out of agreement with
+	// questions.pillarid. validate() has already rejected a nil questionid; the guard
+	// repeats it so the deref below does not depend on a check in another method.
+	if f.QuestionID == nil {
+		return nil, &InvalidInputError{data: map[string]any{"questionid": nil}}
+	}
+
 	q, err := FindQuestionByID(ctx, *f.QuestionID)
 	if errors.Is(err, ErrNoData) {
 		return nil, ErrNoReference
