@@ -68,9 +68,18 @@ FROM (VALUES
 ) AS v(pillar, ordr)
 WHERE p.pillar = v.pillar;
 
+-- Deterministic by construction rather than by hope: a question is ranked by
+-- the MINIMUM matching rank among its functions' names. On prod data every
+-- question matches exactly one name (verified: 40/40 single-name), so min() is
+-- the identity; if a future edition ever forked a question's function name,
+-- min() still yields one stable, re-runnable answer instead of letting the
+-- planner pick a VALUES row arbitrarily.
 UPDATE questions q
-SET ordr = r.ordr
-FROM (VALUES
+SET ordr = ranked.ordr
+FROM (
+  SELECT f.questionid, min(r.ordr) AS ordr
+  FROM functions f
+  JOIN (VALUES
     ('Authentication-Users',                101),
     ('IdentityStores-Users',                102),
     ('RiskAssessment',                      103),
@@ -111,13 +120,12 @@ FROM (VALUES
     ('Cross-VisibilityAnalytics',           601),
     ('Cross-AutomationOrchestration',       602),
     ('Cross-Governance',                    603)
-) AS r(function_name, ordr)
-WHERE q.ordr = 0
-  AND EXISTS (
-      SELECT 1 FROM functions f
-      WHERE f.questionid = q.questionid
-        AND f.function = r.function_name
-  );
+  ) AS r(function_name, ordr) ON r.function_name = f.function
+  WHERE f.questionid IS NOT NULL
+  GROUP BY f.questionid
+) AS ranked
+WHERE q.questionid = ranked.questionid
+  AND q.ordr = 0;
 `,
 		`
 -- Reverses the population only. The legacy 901-907 band predates this migration

@@ -56,8 +56,13 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// questions.ordr are 0 for any row migration 0056 could not rank (the
 		// empire seed's fictional function names), and rows tied on the sort key
 		// would otherwise come back in heap order, which shifts whenever a row is
-		// rewritten. The tiebreaker keeps the export byte-stable either way.
-		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid ASC")
+		// rewritten. questions.questionid alone does not reach the export's row grain: the
+	// applicable-or-answered join deliberately admits functions from OTHER
+	// editions when a system answered them before an environment change
+	// (#528), so one questionid can yield two rows that tie on every
+	// question-level column. functions.functionid settles those, keeping the
+	// export byte-stable.
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)

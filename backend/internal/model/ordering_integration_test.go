@@ -66,8 +66,8 @@ func TestFindQuestionsByFismaSystemOrderingIntegration(t *testing.T) {
 	// The declared sort key must be non-decreasing across the result: whatever
 	// order the rows are in, it is the order the ORDER BY asked for.
 	for i := 1; i < len(first); i++ {
-		prev := [3]int{first[i-1].Pillar.Order, first[i-1].Ordr, int(first[i-1].QuestionID)}
-		cur := [3]int{first[i].Pillar.Order, first[i].Ordr, int(first[i].QuestionID)}
+		prev := [3]int{first[i-1].Pillar.Order, derefInt(first[i-1].Ordr), int(first[i-1].QuestionID)}
+		cur := [3]int{first[i].Pillar.Order, derefInt(first[i].Ordr), int(first[i].QuestionID)}
 		assert.LessOrEqualf(t, sortKeyCompare(prev, cur), 0,
 			"row %d breaks the (pillars.ordr, questions.ordr, questionid) sort: %v then %v",
 			i, prev, cur)

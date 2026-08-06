@@ -29,6 +29,11 @@ func TestFindFunctionOptionsOrderIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Pick a real function with a full option set from the seed.
+	// Registered before anything can fail so the connection is returned on
+	// every exit path; the restore cleanup below stacks on top (LIFO) and
+	// runs first.
+	t.Cleanup(conn.Release)
+
 	var functionID int32
 	var origDesc string
 	var relocatedID int32
@@ -37,21 +42,24 @@ func TestFindFunctionOptionsOrderIntegration(t *testing.T) {
 		FROM functionoptions fo
 		GROUP BY fo.functionid, fo.functionoptionid, fo.description, fo.score
 		HAVING (SELECT count(*) FROM functionoptions x WHERE x.functionid = fo.functionid) = 4
-		ORDER BY fo.functionid, fo.score DESC LIMIT 1
+		ORDER BY fo.functionid, fo.score ASC LIMIT 1
 	`).Scan(&functionID, &relocatedID, &origDesc))
 
 	// Registered before the mutation; restores the description (a second
 	// relocation, but content-identical). Not deferred: deferred calls run
 	// BEFORE t.Cleanup and would release the connection out from under this.
 	t.Cleanup(func() {
-		_, _ = conn.Exec(ctx,
+		_, err := conn.Exec(ctx,
 			`UPDATE functionoptions SET description=$1 WHERE functionoptionid=$2`,
 			origDesc, relocatedID)
-		conn.Release()
+		assert.NoError(t, err, "fixture restore must not fail silently")
 	})
 
-	// The trigger: an UPDATE relocates the tuple to a new heap page, exactly
-	// what the production description scrub did.
+	// The trigger: an UPDATE relocates the tuple, exactly what the production
+	// description scrub did. Deliberately the LOWEST-score option: relocating
+	// the row that must come FIRST inverts heap order, so this test fails
+	// without the ORDER BY instead of passing by luck (relocating the last
+	// option would leave 1-2-3-4 intact).
 	_, err = conn.Exec(ctx,
 		`UPDATE functionoptions SET description=description||' ' WHERE functionoptionid=$1`,
 		relocatedID)

@@ -687,6 +687,15 @@ func derefBool(b *bool) bool {
 	return *b
 }
 
+// derefInt mirrors derefBool for optional integer fields: nil means "not
+// supplied", which INSERTs as the zero default.
+func derefInt(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
+}
+
 // pillarScoreRow is the wire shape returned by findPillarScoresAll. One row
 // per (datacall, system, pillar). Both pillar Score and the carry-along
 // SystemScore are computed in Postgres and emerge on the HHS 1.0-5.0 scale,
