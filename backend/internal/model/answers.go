@@ -52,7 +52,12 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		LeftJoin("scores ON scores.fismasystemid=fismasystems.fismasystemid AND scores.datacallid=? AND scores.functionoptionid IN (SELECT selected.functionoptionid FROM functionoptions selected WHERE selected.functionid=functions.functionid)", input.DataCallID).
 		LeftJoin("functionoptions ON functionoptions.functionoptionid=scores.functionoptionid").
 		Where("(fismasystems.decommissioned=FALSE OR scores.scoreid IS NOT NULL)").
-		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr ASC")
+		// questionid is the tiebreaker, not decoration: pillars.ordr and
+		// questions.ordr are 0 for any row migration 0056 could not rank (the
+		// empire seed's fictional function names), and rows tied on the sort key
+		// would otherwise come back in heap order, which shifts whenever a row is
+		// rewritten. The tiebreaker keeps the export byte-stable either way.
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)

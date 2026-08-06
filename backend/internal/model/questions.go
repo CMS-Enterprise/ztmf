@@ -80,7 +80,10 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Qu
 		InnerJoin("functions ON functions.questionid=questions.questionid").
 		InnerJoin("datacenterenvironments dce ON dce.scoring_key=functions.datacenterenvironment").
 		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=dce.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
-		OrderBy("pillars.ordr, questions.ordr ASC")
+		// questionid breaks ties so questions sharing an ordr (0 wherever
+		// migration 0056 found no canonical rank) still list deterministically
+		// rather than in heap order. See FindAnswers for the same tiebreaker.
+		OrderBy("pillars.ordr, questions.ordr, questions.questionid ASC")
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Question, error) {
 		q := Question{
