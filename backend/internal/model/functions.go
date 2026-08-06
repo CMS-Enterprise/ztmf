@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -80,6 +81,16 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 		return nil, &InvalidInputError{data: map[string]any{"datacenterenvironment": f.DataCenterEnvironment}}
 	}
 
+	// A function's pillar is a fact about its question, so derive it and ignore the
+	// caller's value; functions.pillarid can then never drift from questions.pillarid.
+	q, err := FindQuestionByID(ctx, *f.QuestionID)
+	if errors.Is(err, ErrNoData) {
+		return nil, ErrNoReference
+	} else if err != nil {
+		return nil, err
+	}
+	f.PillarID = int32(q.PillarID)
+
 	if f.FunctionID == 0 {
 		sqlb = stmntBuilder.
 			Insert("functions").
@@ -115,12 +126,11 @@ func (f *Function) validate() error {
 	// datacenterenvironment is validated against the datacenterenvironments
 	// reference table in Save(), which has the context needed for the lookup.
 
-	if f.QuestionID != nil && !isValidIntID(f.QuestionID) {
+	// Required: a function with no question reaches no questionnaire and has no
+	// pillar to derive from. pillarid is not validated because Save() overwrites
+	// it with the question's pillar.
+	if !isValidIntID(f.QuestionID) {
 		err.data["questionid"] = f.QuestionID
-	}
-
-	if !isValidIntID(f.PillarID) {
-		err.data["pillarid"] = f.PillarID
 	}
 
 	if len(err.data) > 0 {
