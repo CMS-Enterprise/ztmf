@@ -507,6 +507,9 @@ components:
         order:
           type: integer
         pillarid:
+          description: Derived from the function's question on write; a value sent
+            by a client is ignored.
+          readOnly: true
           type: integer
         questionid:
           type: integer
@@ -598,6 +601,13 @@ components:
         notesprompt:
           type: string
         order:
+          description: |-
+            Ordr is a pointer so a PUT that omits "order" leaves the stored rank
+            alone instead of clobbering it to 0. Before migration 0056 populated
+            these values the clobber was a harmless no-op; now it would silently
+            destroy a question's canonical position in the questionnaire, the
+            export, and the score diff (the CLAUDE.md optional-field rule - it
+            applies to every optional column, not just bools).
           type: integer
         pillar:
           $ref: '#/components/schemas/model.Pillar'
@@ -807,6 +817,27 @@ components:
         fullname:
           type: string
         identity_provider:
+          type: string
+        last_seen:
+          description: |-
+            LastSeen is the most recent activity this user recorded in the events
+            audit log, including logins (see RecordLogin). Derived on read, never
+            stored, so it needs no backfill and cannot drift from the log it
+            summarises.
+
+            Signing in counts, so a user who logs in and only reads is now
+            distinguishable from one who has never signed in at all - the pair that
+            matters for spotting a stale privileged account, and that used to look
+            identical because every event was a side effect of a write.
+
+            Null means no recorded activity of any kind. For an account created
+            before login events existed, null means "nothing since then", not
+            "never" - the log is not retrospective. That ambiguity ages out as
+            people sign in.
+
+            No omitempty: a never-used account is the case this field exists to
+            identify, and omitting the key there would make the answer indistinguishable
+            from the field not being served at all. Null is the answer, so it ships.
           type: string
         role:
           type: string
