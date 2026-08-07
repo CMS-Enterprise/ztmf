@@ -14,7 +14,13 @@ type Question struct {
 	QuestionID  int32     `json:"questionid"`
 	Question    string    `json:"question"`
 	NotesPrompt string    `json:"notesprompt"`
-	Ordr        int       `json:"order"`
+	// Ordr is a pointer so a PUT that omits "order" leaves the stored rank
+	// alone instead of clobbering it to 0. Before migration 0056 populated
+	// these values the clobber was a harmless no-op; now it would silently
+	// destroy a question's canonical position in the questionnaire, the
+	// export, and the score diff (the CLAUDE.md optional-field rule - it
+	// applies to every optional column, not just bools).
+	Ordr        *int      `json:"order"`
 	PillarID    int       `json:"pillarid"`
 	Pillar      *Pillar   `json:"pillar,omitempty"`
 	Function    *Function `json:"function,omitempty"`
@@ -28,14 +34,18 @@ func (q *Question) Save(ctx context.Context) (*Question, error) {
 		sqlb = stmntBuilder.
 			Insert("questions").
 			Columns(questionsColumns[1:]...).
-			Values(q.Question, q.NotesPrompt, q.Ordr, q.PillarID).
+			Values(q.Question, q.NotesPrompt, derefInt(q.Ordr), q.PillarID).
 			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
 	} else {
-		sqlb = stmntBuilder.Update("questions").
+		ub := stmntBuilder.Update("questions").
 			Set("question", q.Question).
 			Set("notesprompt", q.NotesPrompt).
-			Set("ordr", q.Ordr).
-			Set("pillarid", q.PillarID).
+			Set("pillarid", q.PillarID)
+		// Only write ordr when the caller supplied it (see the field comment).
+		if q.Ordr != nil {
+			ub = ub.Set("ordr", *q.Ordr)
+		}
+		sqlb = ub.
 			Where("questionid=?", q.QuestionID).
 			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
 	}
@@ -80,7 +90,10 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Qu
 		InnerJoin("functions ON functions.questionid=questions.questionid").
 		InnerJoin("datacenterenvironments dce ON dce.scoring_key=functions.datacenterenvironment").
 		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=dce.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
-		OrderBy("pillars.ordr, questions.ordr ASC")
+		// questionid breaks ties so questions sharing an ordr (0 wherever
+		// migration 0056 found no canonical rank) still list deterministically
+		// rather than in heap order. See FindAnswers for the same tiebreaker.
+		OrderBy("pillars.ordr, questions.ordr, questions.questionid ASC")
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Question, error) {
 		q := Question{

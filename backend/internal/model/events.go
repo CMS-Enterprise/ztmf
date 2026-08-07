@@ -251,7 +251,7 @@ func RecordLogin(ctx context.Context, userID string) error {
 	if userID == "" {
 		return nil
 	}
-	return insertEvent(ctx, userID, "created", "session", payload{UserID: &userID})
+	return insertEvent(ctx, userID, eventActionCreated, "session", payload{UserID: &userID})
 }
 
 func FindEvents(ctx context.Context, input *FindEventsInput) ([]*Event, error) {

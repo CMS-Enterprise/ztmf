@@ -122,6 +122,15 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	// only in spacing -- e.g. the FY23 two-spaces-after-a-period vintage vs
 	// FY24 single spaces -- is not reported as a change. Only the comparison is
 	// normalized; the stored notes are returned verbatim (see #409).
+	//
+	// Rows come back in questionnaire order. functions.ordr, the previous sort
+	// key, is 0 on every row in production, so the diff was effectively ordered
+	// by functionid - deterministic, but not the order a reviewer reads the
+	// questionnaire in. pillars is the only join this needed (questions was
+	// already here for the label), so ordering by pillars.ordr then
+	// questions.ordr - the ranks migration 0056 populates - costs one LEFT JOIN
+	// and matches FindAnswers and FindQuestionsByFismaSystem. functionid stays
+	// last as the tiebreaker for rows the migration could not rank.
 	sql := fmt.Sprintf(`
 WITH from_scores AS (%s),
      to_scores AS (%s)
@@ -139,6 +148,7 @@ FULL OUTER JOIN to_scores t
   ON f.fismasystemid = t.fismasystemid AND f.functionid = t.functionid
 LEFT JOIN functions fn ON fn.functionid = COALESCE(f.functionid, t.functionid)
 LEFT JOIN questions q  ON q.questionid  = fn.questionid
+LEFT JOIN pillars p    ON p.pillarid    = q.pillarid
 LEFT JOIN LATERAL (
     SELECT createdat, userid
     FROM events
@@ -153,7 +163,7 @@ WHERE f.functionoptionid IS DISTINCT FROM t.functionoptionid
       IS DISTINCT FROM
       btrim(regexp_replace(COALESCE(t.notes, ''), '\s+', ' ', 'g'))
    OR f.notes_is_ai_summary IS DISTINCT FROM t.notes_is_ai_summary
-ORDER BY fismasystemid, fn.ordr, functionid
+ORDER BY fismasystemid, p.ordr, q.ordr, fn.ordr, functionid
 `, fromCTE, toCTE)
 
 	return sql, args
