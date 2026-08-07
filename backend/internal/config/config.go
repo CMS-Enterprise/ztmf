@@ -26,6 +26,13 @@ type smtp struct {
 	CertIntermediateSecretID *string `env:"SMTP_CA_INT_SECRET_ID"`
 }
 
+// DbCreds holds resolved database credentials, either read directly from env
+// vars or unmarshalled from the Secrets Manager secret named by DB_SECRET_ID.
+type DbCreds struct {
+	Username string
+	Password string
+}
+
 // config is shared by all binaries with values derived from environment variables
 type config struct {
 	Env      string `env:"ENVIRONMENT" envDefault:"production"`
@@ -91,6 +98,12 @@ type config struct {
 	// SMTP config will be loaded from env vars if provided.
 	// If config secret is provided, struct field values will be overwritten by unmarshalling JSON from config secret value hence the pointer to struct
 	SMTP *smtp
+
+	// dbSecret caches the Secrets Manager secret behind Db.SecretId. Unexported
+	// (env.Parse skips it) and per-instance so tests can exercise resolution on a
+	// constructed config without touching the singleton.
+	dbSecret     *secrets.Secret
+	dbSecretOnce sync.Once
 }
 
 // GetInstance returns a singleton of *config
@@ -173,6 +186,54 @@ func GetInstance() *config {
 	}
 
 	return cfg
+}
+
+// DbCreds resolves the current database credentials. If no secret id is
+// specified, user/pass are assumed to be provided in env vars; otherwise they
+// are pulled from the secret. Call dbSecretOnce.Do unconditionally (no bare
+// dbSecret nil-check first): once.Do is what establishes the happens-before for
+// the dbSecret write, so reading the pointer outside it - from concurrent
+// request goroutines at startup - would be an unsynchronized read. err is set
+// only on the goroutine that ran the init, so re-check dbSecret afterward to
+// surface a failed init to every caller.
+func (c *config) DbCreds() (*DbCreds, error) {
+	if c.Db.SecretId == "" {
+		return &DbCreds{c.Db.User, c.Db.Pass}, nil
+	}
+
+	var err error
+	c.dbSecretOnce.Do(func() {
+		c.dbSecret, err = secrets.NewSecret(c.Db.SecretId)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if c.dbSecret == nil {
+		return nil, errors.New("db secret initialization failed")
+	}
+
+	creds := &DbCreds{}
+	if err := c.dbSecret.Unmarshal(creds); err != nil {
+		log.Println("could not unmarshal credentials", err)
+		return nil, err
+	}
+
+	return creds, nil
+}
+
+// RefreshDbCreds forces a re-read of the cached secret from Secrets Manager so
+// the next connection picks up the post-rotation password. Caches the secret on
+// first use if startup somehow skipped it.
+func (c *config) RefreshDbCreds(ctx context.Context) error {
+	if c.dbSecret == nil {
+		if _, err := c.DbCreds(); err != nil {
+			return err
+		}
+		if c.dbSecret == nil {
+			return errors.New("no db secret configured to refresh")
+		}
+	}
+	return c.dbSecret.Refresh(ctx)
 }
 
 // SessionSecret returns the secret used to sign and verify the application

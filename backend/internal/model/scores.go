@@ -32,6 +32,25 @@ func (r rawQuery) ToSql() (string, []any, error) {
 	return r.sql, r.args, nil
 }
 
+// Score review states, as stored in scores.status. Like the event actions in
+// events.go these are stored data rather than an internal enum: migration
+// 0048 pins the exact set with a CHECK constraint
+// (`status IN ('not_started', 'done')`), the seed data's status-sync writes
+// 'done' while the column DEFAULT set in 0048 supplies 'not_started', and the
+// progress query in scoreprogress.go filters on them as inline
+// SQL literals. Changing a VALUE here is a data migration - a new CHECK, a
+// backfill of every stored row, and an update of every SQL predicate that
+// repeats the literal. Changing the Go identifier is free.
+const (
+	// scoreStatusDone means a human saved or confirmed this answer during the
+	// current data call.
+	scoreStatusDone = "done"
+	// scoreStatusNotStarted is the column default and the value
+	// copyPreviousScores seeds onto a carried-forward answer: the answer value
+	// survives the rollover, its review state for the new cycle does not.
+	scoreStatusNotStarted = "not_started"
+)
+
 type Score struct {
 	ScoreID          int32           `json:"scoreid"`
 	FismaSystemID    int32           `json:"fismasystemid"`
@@ -81,6 +100,29 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 	return func(c *scoreSaveConfig) { c.current = current }
 }
 
+// Save writes one answer for the current data call, as an interactive human
+// edit. It is the questionnaire's write path and it hardcodes that meaning:
+// every successful write sets status to scoreStatusDone, and the event it
+// records through queryRow carries action 'created' or 'updated' - the two
+// actions that migration 0048's backfill and the seed status-sync treat as
+// "a human answered this cycle".
+//
+// Importer contract (ztmf#445): a future bulk importer must NOT reuse Save as
+// it stands. Loading history through it would flip every imported row to done
+// and attribute it as an in-app edit, which is precisely the distinction the
+// status column exists to preserve - imported rows are supposed to stay
+// not_started and report no last-updated. An importer should either
+//
+//   - take an explicit status/provenance parameter added to Save (a
+//     ScoreSaveOption alongside WithCurrentScore is the natural shape), so the
+//     caller states the status to write and the action to record; or
+//   - write through its own path that inserts the rows and records action
+//     'imported' (eventActionImported in events.go), mirroring the provenance
+//     the 0048 backfill and the seed data deliberately exclude.
+//
+// Adding the parameter is the larger change of the two and was deliberately
+// left undone here rather than designed speculatively without an importer to
+// shape it.
 func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
 	var sqlb SqlBuilder
 
@@ -142,7 +184,7 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 		sqlb = stmntBuilder.
 			Insert("public.scores").
 			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, "done").
+			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	} else {
 		// fismasystemid and datacallid are deliberately NOT in the SET list.
@@ -155,7 +197,7 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 		setCols := squirrel.Eq{
 			"notes":            s.Notes,
 			"functionoptionid": s.FunctionOptionID,
-			"status":           "done",
+			"status":           scoreStatusDone,
 		}
 		if s.NotesIsAISummary != nil {
 			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
@@ -229,7 +271,7 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	// the current row with the same audit projection used after a real write,
 	// preserving the endpoint's idempotent 200 response without recording a
 	// second event.
-	if s.Status == "done" {
+	if s.Status == scoreStatusDone {
 		if at, by := lookupScoreAudit(ctx, s.ScoreID); at != nil && by != nil {
 			s.LastEditedAt = at
 			s.LastEditedBy = by
@@ -239,11 +281,11 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 
 	sqlb := stmntBuilder.
 		Update("public.scores").
-		Set("status", "done").
+		Set("status", scoreStatusDone).
 		// Keep the no-op guard in the write predicate as well as above. Two
 		// requests can both load not_started before either reaches Confirm; only
 		// the first must be allowed to update and create an audit event.
-		Where("scoreid=? AND status <> ?", s.ScoreID, "done").
+		Where("scoreid=? AND status <> ?", s.ScoreID, scoreStatusDone).
 		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 
 	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
@@ -256,7 +298,7 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 			if findErr != nil {
 				return nil, findErr
 			}
-			if current.Status == "done" {
+			if current.Status == scoreStatusDone {
 				if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
 					current.LastEditedAt = at
 					current.LastEditedBy = by
@@ -643,6 +685,15 @@ func derefBool(b *bool) bool {
 		return false
 	}
 	return *b
+}
+
+// derefInt mirrors derefBool for optional integer fields: nil means "not
+// supplied", which INSERTs as the zero default.
+func derefInt(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
 }
 
 // pillarScoreRow is the wire shape returned by findPillarScoresAll. One row
@@ -1072,7 +1123,10 @@ func copyPreviousScoresOpDivHardcoded(ctx context.Context, dataCallID int32) (co
 	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question -
 	// scores has no uniqueness constraint, so a cycle may hold duplicates.
 	//
-	// status is seeded 'not_started' as on the normal path (ztmf#435).
+	// status is seeded 'not_started' as on the normal path (ztmf#435). Written
+	// as a SQL literal inside this const rather than as scoreStatusNotStarted:
+	// the statement is a compile-time constant string so it can be read whole,
+	// and interpolating would trade that for no behavioral gain.
 	//
 	// The ::int casts are REQUIRED, not decoration. Both CASE branches are bind
 	// parameters, so Postgres resolves the CASE to text and the comparison becomes
@@ -1286,8 +1340,20 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// semantic the events lateral used to derive from "no event exists"
 	// (ztmf#299). The literal is a selected column so it lands in the same
 	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
+	//
+	// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
+	// value has one definition. Safe to interpolate: the constant is
+	// package-owned, never request input.
+	//
+	// It stays a selected literal rather than becoming a bind parameter for two
+	// reasons. It keeps the emitted SQL byte-identical to what this statement
+	// has always produced; and an untyped $n in a SELECT list feeding an
+	// INSERT...SELECT walks into the same type-inference trap the sibling
+	// copySQL comment above documents at length for its ::int casts - Postgres
+	// resolves an unadorned placeholder to text and the column comparison
+	// fails at runtime.
 	prevScoresSqlb := squirrel.
-		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), "'not_started' as status").
+		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
 		From("scores s").
 		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
 		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").

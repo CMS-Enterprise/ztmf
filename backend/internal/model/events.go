@@ -18,6 +18,63 @@ type Event struct {
 	Payload   interface{} `json:"payload"`   // incoming data
 }
 
+// Event actions. These are the complete set of values that may appear in
+// events.action, collected here so the Go writers agree by construction
+// instead of by five hand-repeated string literals staying in sync.
+//
+// Treat these as stored data, not as an internal enum: the values are
+// load-bearing well beyond this package, and several of the readers cannot
+// import Go at all.
+//
+//   - migration 0048's status backfill selects on
+//     `e.action IN ('created', 'updated')` as SQL literals, and it has already
+//     run in every environment - the rows it wrote are permanent.
+//   - the seed data (_test_data_empire.sql) repeats that same predicate to
+//     keep scores.status agreeing with the events it seeds.
+//   - the analyst queries in docs/timespent_queries.sql and the progress
+//     query in scoreprogress.go filter on these literals inline.
+//
+// Renaming one of these constants' VALUES is therefore a data migration
+// (backfill the events table, update every SQL predicate above), not a
+// refactor. Renaming the Go identifier is free.
+const (
+	// eventActionCreated / eventActionUpdated / eventActionDeleted are derived
+	// from the SqlBuilder shape by recordEvent, so every write that flows
+	// through queryRow is attributed automatically.
+	eventActionCreated = "created"
+	eventActionUpdated = "updated"
+	eventActionDeleted = "deleted"
+
+	// eventActionViewed is recorded explicitly by RecordQuestionView. A view is
+	// not a table mutation, so no write path produces it.
+	eventActionViewed = "viewed"
+
+	// eventActionImported marks provenance for score data loaded outside the
+	// application - bulk imports and seed SQL, not a human answering a
+	// questionnaire. Nothing in this package writes it today; the value lives
+	// here so there is one authoritative home for it.
+	//
+	// Note which consumers actually depend on the exact spelling: the readers
+	// that exclude imported rows (0048's backfill, the seed status-sync, the
+	// last-updated lateral in scoreprogress.go) do NOT name this value at all -
+	// they allowlist 'created'/'updated', so they would exclude an import under
+	// any spelling. The sites that would silently drift on a respelling are the
+	// WRITERS and the assertions over them: the seed INSERT in
+	// _test_data_empire.sql and scoreprogress_integration_test.go, which read
+	// back `action='imported'` to prove imported history stays not_started.
+	//
+	// A future bulk importer must write this action rather than reusing the
+	// in-app create/update path - see Score.Save.
+	//
+	// Having no Go writer is the point, so silence the unused check rather than
+	// leaving the value defined only in SQL and prose. Staticcheck will NOT
+	// tell you when this directive goes stale - U1000 ignores are exempt from
+	// its unmatched-directive check - so delete it by hand if a Go writer ever
+	// appears.
+	//lint:ignore U1000 defined as the authoritative spelling for SQL readers; no Go writer by design
+	eventActionImported = "imported"
+)
+
 // json tags here are used when payload is marshaled into select Where argument (see FindEvents() )
 type payload struct {
 	UserID        *string `schema:"userid" json:"userid,omitempty"`
@@ -60,13 +117,13 @@ func recordEvent(ctx context.Context, sqlb SqlBuilder, res interface{}) {
 
 	switch sqlb.(type) {
 	case squirrel.InsertBuilder:
-		e.Action = "created"
+		e.Action = eventActionCreated
 		e.Resource = eventData["Into"].(string)
 	case squirrel.UpdateBuilder:
-		e.Action = "updated"
+		e.Action = eventActionUpdated
 		e.Resource = eventData["Table"].(string)
 	case squirrel.DeleteBuilder:
-		e.Action = "deleted"
+		e.Action = eventActionDeleted
 		e.Resource = eventData["From"].(string)
 	default:
 		return
@@ -170,7 +227,31 @@ func RecordQuestionView(ctx context.Context, input QuestionViewInput, readOnly b
 		ReadOnly:      &readOnly,
 	}
 
-	return insertEvent(ctx, user.UserID, "viewed", "questionnaire", p)
+	return insertEvent(ctx, user.UserID, eventActionViewed, "questionnaire", p)
+}
+
+// RecordLogin appends a "session / created" event for a user who has just
+// completed authentication and been issued a session.
+//
+// Every other event in the log is a side effect of a write, so activity was
+// only ever visible for users who CHANGED something. That left a specific blind
+// spot: a privileged account that signs in and only reads looked identical to
+// one that had never signed in at all, which is exactly the pair you need to
+// tell apart to find a stale account.
+//
+// The caller is the post-OIDC session handler, not a request behind
+// auth.Middleware, so the user is passed explicitly rather than read from
+// context - at this point in the flow the session that would carry it has only
+// just been minted.
+//
+// The payload is deliberately just the userid: the identity provider is already
+// on the user row, and the interesting facts here are who and when, both of
+// which the event row itself carries.
+func RecordLogin(ctx context.Context, userID string) error {
+	if userID == "" {
+		return nil
+	}
+	return insertEvent(ctx, userID, eventActionCreated, "session", payload{UserID: &userID})
 }
 
 func FindEvents(ctx context.Context, input *FindEventsInput) ([]*Event, error) {
