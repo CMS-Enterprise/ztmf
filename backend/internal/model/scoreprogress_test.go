@@ -79,7 +79,7 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(sql, "SELECT MAX(fdc.deadline) FROM datacalls fdc"),
 		"the scope applies from FY26 onward only; closed cycles keep reporting against 40")
 	assert.Equal(t, 2, strings.Count(sql, "UPPER(TRIM(fdc.datacall)) LIKE 'FY2026%'"),
-		"the FY26 anchor must come from rolloverHardcodeTargetPrefixes")
+		"the FY26 anchor must come from reducedPillarScopeCyclePrefixes, not the ztmf#502 rollover block")
 	assert.NotContains(t, sql, "tdc.datacallid >=",
 		"the cycle comparison must be on deadline, not datacallid - ids are not chronological")
 
