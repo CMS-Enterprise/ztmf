@@ -535,3 +535,145 @@ func TestScoreProgressLastUpdatedIgnoresImportedEventsIntegration(t *testing.T) 
 	}
 	assert.Equal(t, len(importedOnly), checked, "every imported-only system must appear in the progress result")
 }
+
+// saasScopeFixture finds a live SaaS system in (or outside) the CMS OpDiv with
+// its in-scope and out-of-scope function counts. ok=false when the database has
+// no SaaS function set, so callers skip - the empire seed has none.
+func saasScopeFixture(ctx context.Context, t *testing.T, cms bool) (systemID, inScope, outOfScope int32, ok bool) {
+	t.Helper()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	cmsCmp := "<>"
+	if cms {
+		cmsCmp = "="
+	}
+
+	err = conn.QueryRow(ctx, fmt.Sprintf(`
+		SELECT fs.fismasystemid,
+		       COUNT(DISTINCT f.functionid) FILTER (
+		           WHERE p.pillar NOT IN ('Devices', 'Applications')),
+		       COUNT(DISTINCT f.functionid) FILTER (
+		           WHERE p.pillar IN ('Devices', 'Applications'))
+		FROM fismasystems fs
+		INNER JOIN opdivs o ON o.opdiv_id = fs.opdiv_id AND UPPER(o.code) %s 'CMS'
+		INNER JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		INNER JOIN functions f ON f.datacenterenvironment = dce.scoring_key
+		INNER JOIN questions q ON q.questionid = f.questionid
+		INNER JOIN pillars p ON p.pillarid = q.pillarid
+		WHERE fs.decommissioned = FALSE AND dce.scoring_key = 'SaaS'
+		GROUP BY fs.fismasystemid
+		HAVING COUNT(DISTINCT f.functionid) FILTER (
+		           WHERE p.pillar IN ('Devices', 'Applications')) > 0
+		LIMIT 1
+	`, cmsCmp)).Scan(&systemID, &inScope, &outOfScope)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return systemID, inScope, outOfScope, true
+}
+
+// fy26AndPriorDataCalls returns the earliest FY26-prefixed call (where the
+// reduced scope starts) and one with a strictly earlier deadline.
+func fy26AndPriorDataCalls(ctx context.Context, t *testing.T) (fy26, prior int32, ok bool) {
+	t.Helper()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var fy26Deadline time.Time
+	err = conn.QueryRow(ctx, `
+		SELECT datacallid, deadline FROM datacalls
+		 WHERE UPPER(datacall) LIKE 'FY2026%' OR UPPER(datacall) LIKE 'FY26%'
+		 ORDER BY deadline ASC, datacallid ASC LIMIT 1
+	`).Scan(&fy26, &fy26Deadline)
+	if err != nil {
+		return 0, 0, false
+	}
+
+	err = conn.QueryRow(ctx, `
+		SELECT datacallid FROM datacalls WHERE deadline < $1 ORDER BY deadline DESC LIMIT 1
+	`, fy26Deadline).Scan(&prior)
+	if err != nil {
+		return fy26, 0, false
+	}
+	return fy26, prior, true
+}
+
+// TestFindScoreProgressSaaSScopeIntegration pins the SaaS scope (ztmf-misc#289)
+// against real data: reduced on the FY26 cycle, full on earlier ones. Expected
+// counts come from a control query, so the test pins the rule rather than today's
+// catalogue size.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestFindScoreProgressSaaSScopeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+
+	fy26, prior, haveCalls := fy26AndPriorDataCalls(ctx, t)
+	if !haveCalls {
+		t.Skip("database has no FY26 call with an earlier cycle to compare against")
+	}
+
+	t.Run("NonCMSReducedOnCurrentCycle", func(t *testing.T) {
+		systemID, inScope, outOfScope, ok := saasScopeFixture(ctx, t, false)
+		if !ok {
+			t.Skip("no non-CMS SaaS system with Devices/Applications functions")
+		}
+
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{
+			DataCallID:    &fy26,
+			FismaSystemID: &systemID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+
+		assert.Equal(t, inScope, rows[0].QuestionsExpected,
+			"the FY26 denominator must drop the %d Devices/Applications functions", outOfScope)
+		assert.LessOrEqual(t, rows[0].QuestionsAnswered, rows[0].QuestionsExpected,
+			"answered draws from the same scoped set")
+		assert.LessOrEqual(t, rows[0].QuestionsUpdated, rows[0].QuestionsExpected,
+			"fails if only the expected CTE were filtered")
+	})
+
+	t.Run("NonCMSUnchangedOnPriorCycle", func(t *testing.T) {
+		systemID, inScope, outOfScope, ok := saasScopeFixture(ctx, t, false)
+		if !ok {
+			t.Skip("no non-CMS SaaS system with Devices/Applications functions")
+		}
+
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{
+			DataCallID:    &prior,
+			FismaSystemID: &systemID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+
+		assert.Equal(t, inScope+outOfScope, rows[0].QuestionsExpected,
+			"a cycle earlier than FY26 must keep reporting against the full question set")
+	})
+
+	// CMS is not exempt yet (see saasPillarScopeSQL). Pinned so re-adding the
+	// OpDiv gate has to change a test rather than silently flip 11 systems.
+	t.Run("CMSAlsoReducedWhileExemptionIsUndecided", func(t *testing.T) {
+		systemID, inScope, _, ok := saasScopeFixture(ctx, t, true)
+		if !ok {
+			t.Skip("no CMS SaaS system with Devices/Applications functions")
+		}
+
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{
+			DataCallID:    &fy26,
+			FismaSystemID: &systemID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+
+		assert.Equal(t, inScope, rows[0].QuestionsExpected,
+			"until CMS confirms, its denominator matches what the OpDiv-blind frontend asks")
+	})
+}

@@ -182,3 +182,114 @@ func TestFindAnswersIntegration(t *testing.T) {
 		t.Log("no decommissioned system with scores in seed; skipping the decommissioned-guard assertion")
 	}
 }
+
+// TestFindAnswersSaaSPillarScopeIntegration pins the export half of
+// ztmf-misc#289: 25 questions for SaaS from FY26 on, 40 on earlier cycles.
+//
+// Asserting that NO exported row carries an excluded pillar covers both branches
+// of the applicable-OR-answered join (#528) at once - filtering only one leaves
+// carried-forward systems exporting 40 while fresh ones export 25.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestFindAnswersSaaSPillarScopeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+
+	fy26, prior, ok := fy26AndPriorDataCalls(ctx, t)
+	if !ok {
+		t.Skip("database has no FY26 call with an earlier cycle to compare against")
+	}
+
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// Every SaaS system, plus one carrying answers on an excluded pillar in FY26 -
+	// the case the OR branch would readmit.
+	saas := map[int32]bool{}
+	rows, err := conn.Query(ctx, `
+		SELECT fs.fismasystemid
+		FROM fismasystems fs
+		JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		WHERE dce.scoring_key = 'SaaS'`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id int32
+		require.NoError(t, rows.Scan(&id))
+		saas[id] = true
+	}
+	rows.Close()
+	if len(saas) == 0 {
+		t.Skip("database carries no SaaS systems")
+	}
+
+	var carriedForward int32
+	err = conn.QueryRow(ctx, `
+		SELECT s.fismasystemid
+		FROM scores s
+		JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		JOIN functions f ON f.functionid = fo.functionid
+		JOIN questions q ON q.questionid = f.questionid
+		JOIN pillars p ON p.pillarid = q.pillarid
+		JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		WHERE s.datacallid = $1 AND dce.scoring_key = 'SaaS'
+		  AND p.pillar IN ('Devices', 'Applications')
+		LIMIT 1
+	`, fy26).Scan(&carriedForward)
+	haveCarried := err == nil
+
+	t.Run("FY26ExcludesTheReducedPillars", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{DataCallID: fy26})
+		require.NoError(t, err)
+		require.NotEmpty(t, answers)
+
+		seenSaaS := map[int32]bool{}
+		for _, a := range answers {
+			if !saas[a.FismaSystemID] {
+				continue
+			}
+			seenSaaS[a.FismaSystemID] = true
+			assert.NotContains(t, []string{"Devices", "Applications"}, a.Pillar,
+				"system %d exported an excluded pillar (%s) on the FY26 call", a.FismaSystemID, a.Pillar)
+		}
+		assert.NotEmpty(t, seenSaaS, "SaaS systems must still appear in the export, just with fewer questions")
+
+		if haveCarried {
+			assert.True(t, seenSaaS[carriedForward],
+				"the system with carried-forward excluded answers must still export its in-scope questions")
+		}
+	})
+
+	t.Run("PriorCycleStillExportsEveryPillar", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{DataCallID: prior})
+		require.NoError(t, err)
+
+		excluded := 0
+		for _, a := range answers {
+			if saas[a.FismaSystemID] && (a.Pillar == "Devices" || a.Pillar == "Applications") {
+				excluded++
+			}
+		}
+		assert.Greater(t, excluded, 0,
+			"cycles earlier than FY26 collected the full set and must keep exporting it")
+	})
+
+	t.Run("NonSaaSSystemsAreUntouchedOnFY26", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{DataCallID: fy26})
+		require.NoError(t, err)
+
+		excluded := 0
+		for _, a := range answers {
+			if !saas[a.FismaSystemID] && (a.Pillar == "Devices" || a.Pillar == "Applications") {
+				excluded++
+			}
+		}
+		assert.Greater(t, excluded, 0,
+			"the scope is SaaS-only; other environments still export both pillars")
+	})
+}
