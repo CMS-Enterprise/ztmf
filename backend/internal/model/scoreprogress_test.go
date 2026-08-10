@@ -123,9 +123,8 @@ func TestBuildScoreProgressSQL_UserScope(t *testing.T) {
 func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
 		in := FindScoreProgressInput{
-			DataCallID:         int32Ptr(4),
-			RestrictToOpDivIDs: true,
-			OpDivIDs:           []int32{7, 9},
+			DataCallID: int32Ptr(4),
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
 		}
 		sql, args := buildScoreProgressSQL(in)
 
@@ -136,8 +135,8 @@ func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 
 	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
 		in := FindScoreProgressInput{
-			DataCallID:         int32Ptr(4),
-			RestrictToOpDivIDs: true,
+			DataCallID: int32Ptr(4),
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true},
 		}
 		sql, args := buildScoreProgressSQL(in)
 

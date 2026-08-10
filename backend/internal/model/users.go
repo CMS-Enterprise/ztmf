@@ -54,6 +54,16 @@ type User struct {
 
 func (u *User) IsOwner() bool { return u.Role == "OWNER" }
 
+// UserIDPtr returns a pointer to a COPY of the user's id, for setting the
+// self-scope UserID on a query input. Never take &u.UserID directly: that aims
+// at the session User's own field, so a later decode onto the same input struct
+// would mutate the authenticated identity (the ztmf-misc#268 pointer-mutation
+// finding). The copy severs that.
+func (u *User) UserIDPtr() *string {
+	id := u.UserID
+	return &id
+}
+
 // IsHHSTier reports membership in the HHS tier, covering both the write tier
 // (HHS_ADMIN) and the read-only tier (HHS_READONLY_ADMIN). It is a tier-
 // membership check, not a write-access gate. Use IsAdmin / HasAdminRead when
@@ -395,13 +405,9 @@ type FindUsersInput struct {
 	FullName *string `schema:"fullname"`
 	Role     *string `schema:"role"`
 	Deleted  bool    `schema:"deleted"`
-	// OpDivIDs / RestrictToOpDivIDs scope the list to users holding a grant in
-	// one of the acting admin's OpDivs. Mirror of FindFismaSystemsInput: when
-	// RestrictToOpDivIDs is set with an empty slice the query fails closed
-	// (WHERE FALSE) rather than returning every user. Not schema-tagged so a
-	// client cannot inject scope via query params - the controller sets them.
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	// OpDivScope limits the list to users holding a grant in one of the acting
+	// admin's OpDivs; empty grants under RestrictToOpDivIDs fail closed.
+	OpDivScope
 }
 
 func (fui *FindUsersInput) validate() error {
@@ -465,14 +471,11 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 		sqlb = sqlb.Where("role=?", fui.Role)
 	}
 
-	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold
-	// a grant in one of their OpDivs. Empty grants under RestrictToOpDivIDs ->
-	// no rows. Unscoped admins set neither field and see everyone.
-	switch {
-	case fui.RestrictToOpDivIDs && len(fui.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(fui.OpDivIDs) > 0:
-		sqlb = sqlb.Where("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)
+	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold a
+	// grant in one of their OpDivs, via the users_opdivs junction. Unscoped admins
+	// set neither field and see everyone.
+	if f := fui.OpDivWhere(squirrel.Expr("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])

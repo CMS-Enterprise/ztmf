@@ -46,12 +46,10 @@ type FindScoreDiffInput struct {
 	FromDataCallID *int32 `schema:"from"`
 	ToDataCallID   *int32 `schema:"to"`
 	// UserID restricts the diff to the requesting user's assigned systems
-	// (ISSO/ISSM tiers); set by the controller, not bindable from the query.
-	UserID *string
-	// OpDiv scope for OpDiv-scoped admin tiers, mirroring FindScores. Not
-	// schema-tagged - the controller sets them from the auth'd user.
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	// (ISSO/ISSM tiers); set by the controller, schema:"-" so it is not bindable
+	// from the query.
+	UserID *string `schema:"-"`
+	OpDivScope
 }
 
 // FindScoreDiff compares the score (functionoption) answers of two data calls
@@ -192,16 +190,11 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 		*argN++
 	}
 
-	// OpDiv scope (fail-closed): empty grants under RestrictToOpDivIDs -> no
-	// rows. Expressed as a subquery predicate to match FindScores.
-	switch {
-	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
-		conds = append(conds, "FALSE")
-	case len(input.OpDivIDs) > 0:
-		conds = append(conds, fmt.Sprintf("s.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY($%d))", *argN))
-		*args = append(*args, input.OpDivIDs)
-		*argN++
-	}
+	// OpDiv scope (fail-closed): empty grants under RestrictToOpDivIDs -> no rows.
+	// Subquery predicate (scorediff reads scores, which has no opdiv_id).
+	input.AppendRawFilter(&conds, args, argN, func(n int) string {
+		return fmt.Sprintf("s.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY($%d))", n)
+	})
 
 	return fmt.Sprintf(`
     SELECT s.scoreid, s.fismasystemid, fo.functionid, s.functionoptionid,

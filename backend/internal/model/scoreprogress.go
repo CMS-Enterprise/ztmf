@@ -72,12 +72,10 @@ type FindScoreProgressInput struct {
 	DataCallID    *int32 `schema:"datacallid"`
 	FismaSystemID *int32 `schema:"fismasystemid"`
 	// UserID restricts progress to the requesting user's assigned systems
-	// (ISSO/ISSM tiers); set by the controller, not bindable from the query.
-	UserID *string
-	// OpDiv scope for OpDiv-scoped admin tiers, mirroring FindScores. Not
-	// schema-tagged - the controller sets them from the auth'd user.
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	// (ISSO/ISSM tiers); set by the controller, schema:"-" so it is not bindable
+	// from the query.
+	UserID *string `schema:"-"`
+	OpDivScope
 }
 
 func (i FindScoreProgressInput) validate() error {
@@ -150,16 +148,10 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 		argN++
 	}
 
-	// OpDiv scope (fail-closed): empty grants under RestrictToOpDivIDs -> no
-	// rows, matching FindScores.
-	switch {
-	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
-		conds = append(conds, "FALSE")
-	case len(input.OpDivIDs) > 0:
-		conds = append(conds, fmt.Sprintf("fs.opdiv_id = ANY($%d)", argN))
-		args = append(args, input.OpDivIDs)
-		argN++
-	}
+	// OpDiv scope (fail-closed): empty grants under RestrictToOpDivIDs -> no rows.
+	input.AppendRawFilter(&conds, &args, &argN, func(n int) string {
+		return fmt.Sprintf("fs.opdiv_id = ANY($%d)", n)
+	})
 
 	dataCallArg := argN
 	args = append(args, *input.DataCallID)
