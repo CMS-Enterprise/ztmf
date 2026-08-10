@@ -635,10 +635,13 @@ func TestFindScoreProgressSaaSScopeIntegration(t *testing.T) {
 
 		assert.Equal(t, inScope, rows[0].QuestionsExpected,
 			"the FY26 denominator must drop the %d Devices/Applications functions", outOfScope)
+		// answered is the assertion that catches an unfiltered updated CTE: it
+		// counts carried-forward rows, which are status = 'not_started' and so
+		// invisible to questionsupdated.
 		assert.LessOrEqual(t, rows[0].QuestionsAnswered, rows[0].QuestionsExpected,
-			"answered draws from the same scoped set")
-		assert.LessOrEqual(t, rows[0].QuestionsUpdated, rows[0].QuestionsExpected,
 			"fails if only the expected CTE were filtered")
+		assert.LessOrEqual(t, rows[0].QuestionsUpdated, rows[0].QuestionsExpected,
+			"updated draws from the same scoped set")
 	})
 
 	t.Run("NonCMSUnchangedOnPriorCycle", func(t *testing.T) {

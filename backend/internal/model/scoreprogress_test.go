@@ -76,9 +76,9 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	// would face a numerator of 40, reporting a false "Complete" on a closed call.
 	assert.Equal(t, 2, strings.Count(sql, "p.pillar IN ('Devices', 'Applications')"),
 		"the SaaS pillar scope (ztmf-misc#289) must appear in both the expected and updated CTEs")
-	assert.Equal(t, 2, strings.Count(sql, "SELECT MIN(fdc.deadline) FROM datacalls fdc"),
+	assert.Equal(t, 2, strings.Count(sql, "SELECT MAX(fdc.deadline) FROM datacalls fdc"),
 		"the scope applies from FY26 onward only; closed cycles keep reporting against 40")
-	assert.Equal(t, 2, strings.Count(sql, "UPPER(fdc.datacall) LIKE 'FY2026%' OR UPPER(fdc.datacall) LIKE 'FY26%'"),
+	assert.Equal(t, 2, strings.Count(sql, "UPPER(TRIM(fdc.datacall)) LIKE 'FY2026%'"),
 		"the FY26 anchor must come from rolloverHardcodeTargetPrefixes")
 	assert.NotContains(t, sql, "tdc.datacallid >=",
 		"the cycle comparison must be on deadline, not datacallid - ids are not chronological")

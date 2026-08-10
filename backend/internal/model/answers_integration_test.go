@@ -259,6 +259,32 @@ func TestFindAnswersSaaSPillarScopeIntegration(t *testing.T) {
 		}
 		assert.NotEmpty(t, seenSaaS, "SaaS systems must still appear in the export, just with fewer questions")
 
+		// Row counts per system are not a useful assertion: the #528
+		// applicable-or-answered join legitimately doubles them for a system
+		// carrying answers from another edition. The surviving pillar SET is, and
+		// it also catches over-pruning inside the in-scope pillars.
+		var inScope, expectedInScope int
+		err = conn.QueryRow(ctx, `
+			SELECT COUNT(DISTINCT p.pillar)
+			FROM pillars p
+			WHERE p.pillar NOT IN ('Devices', 'Applications')
+			  AND EXISTS (
+			      SELECT 1 FROM questions q
+			      JOIN functions f ON f.questionid = q.questionid
+			      WHERE q.pillarid = p.pillarid AND f.datacenterenvironment = 'SaaS')
+		`).Scan(&expectedInScope)
+		require.NoError(t, err)
+
+		pillars := map[string]bool{}
+		for _, a := range answers {
+			if saas[a.FismaSystemID] {
+				pillars[a.Pillar] = true
+			}
+		}
+		inScope = len(pillars)
+		assert.Equal(t, expectedInScope, inScope,
+			"every in-scope pillar must still be exported, not just the excluded ones dropped")
+
 		if haveCarried {
 			assert.True(t, seenSaaS[carriedForward],
 				"the system with carried-forward excluded answers must still export its in-scope questions")

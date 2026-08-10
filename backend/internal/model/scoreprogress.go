@@ -185,7 +185,7 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 
 	sql := fmt.Sprintf(`
 WITH scoped_systems AS (
-    SELECT fs.fismasystemid, fs.datacenterenvironment, fs.opdiv_id
+    SELECT fs.fismasystemid, fs.datacenterenvironment
     FROM fismasystems fs
     WHERE %s
 ),
