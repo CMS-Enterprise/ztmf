@@ -177,6 +177,12 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	// applicable after an environment change (that answer simply fails the
 	// applicability join). COUNT(DISTINCT) on all guards against fan-out from
 	// the environment mapping.
+	//
+	// The SaaS pillar scope belongs to that shared set, so it is rendered once and
+	// interpolated into BOTH CTEs. In expected's alone it would leave a numerator
+	// of 40 against a denominator of 25, reporting a false "Complete".
+	pillarScope := saasPillarScopeSQL("dce.scoring_key", "p.pillar", fmt.Sprintf("$%d", dataCallArg))
+
 	sql := fmt.Sprintf(`
 WITH scoped_systems AS (
     SELECT fs.fismasystemid, fs.datacenterenvironment
@@ -190,6 +196,7 @@ expected AS (
     INNER JOIN functions f ON f.datacenterenvironment = dce.scoring_key
     INNER JOIN questions q ON q.questionid = f.questionid
     INNER JOIN pillars p ON p.pillarid = q.pillarid
+      AND %s
     GROUP BY ss.fismasystemid
 ),
 updated AS (
@@ -211,6 +218,8 @@ updated AS (
                                          AND dce.scoring_key = f.datacenterenvironment
     INNER JOIN questions q ON q.questionid = f.questionid
     INNER JOIN pillars p ON p.pillarid = q.pillarid
+      -- Identical to expected's; see the note above the query.
+      AND %s
     -- One newest in-app edit per score row (LIMIT 1 keeps the lateral on the
     -- index fast path); the outer MAX then picks the newest across the
     -- system's rows. LEFT now (not the old filtering INNER): it feeds only
@@ -240,7 +249,7 @@ FROM scoped_systems ss
 LEFT JOIN expected ex ON ex.fismasystemid = ss.fismasystemid
 LEFT JOIN updated u ON u.fismasystemid = ss.fismasystemid
 ORDER BY ss.fismasystemid
-`, strings.Join(conds, " AND "), dataCallArg)
+`, strings.Join(conds, " AND "), pillarScope, dataCallArg, pillarScope)
 
 	return sql, args
 }

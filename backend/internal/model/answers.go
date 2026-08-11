@@ -52,6 +52,19 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		LeftJoin("scores ON scores.fismasystemid=fismasystems.fismasystemid AND scores.datacallid=? AND scores.functionoptionid IN (SELECT selected.functionoptionid FROM functionoptions selected WHERE selected.functionid=functions.functionid)", input.DataCallID).
 		LeftJoin("functionoptions ON functionoptions.functionoptionid=scores.functionoptionid").
 		Where("(fismasystems.decommissioned=FALSE OR scores.scoreid IS NOT NULL)").
+		// Top-level WHERE, not a condition on the functions join: that join is
+		// applicable-OR-answered (#528), so filtering one branch would export 40
+		// rows for a system with carried-forward excluded answers and 25 for a
+		// fresh one. The scoring key needs a subquery because no dce alias is in
+		// scope here.
+		Where(
+			saasPillarScopeSQL(
+				"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment=fismasystems.datacenterenvironment)",
+				"pillars.pillar",
+				"?",
+			),
+			input.DataCallID,
+		).
 		// questionid is the tiebreaker, not decoration: pillars.ordr and
 		// questions.ordr are 0 for any row migration 0056 could not rank (the
 		// empire seed's fictional function names), and rows tied on the sort key

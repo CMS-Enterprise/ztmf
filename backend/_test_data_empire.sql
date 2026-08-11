@@ -1086,7 +1086,7 @@ END $$;
 BEGIN;
 
 -- Clean re-run: remove only what this file owns (scores cascade via datacall)
-DELETE FROM public.datacalls WHERE datacallid IN (101, 102, 103);
+DELETE FROM public.datacalls WHERE datacallid IN (101, 102, 103, 104);
 DELETE FROM public.fismasystems WHERE fismaacronym LIKE 'MOCK-%';
 
 -- The 3 historical HHS data calls
@@ -1120,11 +1120,90 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
  (2014,'00AD27C9-28C2-449D-E190-83A5AD62DB06','MOCK-PRESSREL','Imperial Press Release Portal',NULL,NULL,NULL,NULL,'REBELLION','Imperial-Fleet',NULL,'mock.isso2014@example.empire',TRUE,(SELECT opdiv_id FROM public.opdivs WHERE LOWER(code)=LOWER('REBELLION')),'No','Moderate','Minor Standalone','YES',NULL,NULL,'Contractor','GOCO','Mock Officer 2014','mock.owner2014@example.empire',NULL,'Mock ISSO 2014'),
  (2015,'60246879-EA24-820C-6910-E501E6271733','MOCK-WASTE','Trash Compactor Maintenance Scheduler',NULL,NULL,NULL,NULL,'IMPNAVY','Imperial-Fleet',NULL,'mock.isso2015@example.empire',TRUE,(SELECT opdiv_id FROM public.opdivs WHERE LOWER(code)=LOWER('IMPNAVY')),'No','Moderate','Minor Standalone','No',NULL,NULL,'Agency','GOCO','Mock Officer 2015','mock.owner2015@example.empire',NULL,'Mock ISSO 2015');
 
+
+-- ---------------------------------------------------------------------------
+-- SaaS reduced-scope fixture (ztmf-misc#289)
+--
+-- The reduced scope keys on scoring_key = 'SaaS' AND an FY26-named cycle. The
+-- Imperial fixtures provide neither, so every behavioural test for it skipped in
+-- CI and only the SQL-shape assertions ran. This gives them something to execute
+-- against. The 'SaaS' mapping row itself comes from migration 0045, not here.
+--
+-- Deadline sits below the 2099 Audit cycle, so "latest by deadline" is unchanged
+-- for every other test. Only MOCK-SAAS maps to scoring_key 'SaaS', so no existing
+-- fixture changes behaviour.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
+ (104,'FY26 ZTM','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00')
+ON CONFLICT DO NOTHING;
+
+-- One SaaS function per pillar, derived rather than hardcoded: ids 7101-7106 sit
+-- above every explicit id in this file, and each function borrows an existing
+-- question in its pillar so the applicability join (which reads
+-- questions.pillarid, not functions.pillarid) resolves. Hardcoding catalogue ids
+-- here collided silently with the Ground-Assault set under ON CONFLICT DO NOTHING.
+INSERT INTO public.functions (functionid, function, description, datacenterenvironment, questionid, pillarid, ordr)
+SELECT 7100 + p.pillarid, 'SaaS ' || p.pillar, 'SaaS reduced-scope fixture', 'SaaS', q.questionid, p.pillarid, 0
+  FROM public.pillars p
+  CROSS JOIN LATERAL (
+      SELECT questionid FROM public.questions WHERE pillarid = p.pillarid ORDER BY questionid LIMIT 1
+  ) q
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.functionoptions (functionoptionid, functionid, score, optionname, description)
+SELECT 900 + (f.functionid - 7100) * 4 + s.score, f.functionid, s.score,
+       CASE s.score WHEN 1 THEN 'Traditional' ELSE 'Advanced' END,
+       'SaaS reduced-scope fixture option'
+  FROM public.functions f, (VALUES (1), (3)) AS s(score)
+ WHERE f.functionid BETWEEN 7101 AND 7106
+ON CONFLICT DO NOTHING;
+
+-- Active SaaS system. MOCK- prefix puts it under this file's existing cleanup.
+INSERT INTO public.fismasystems
+ (fismasystemid, fismauid, fismaacronym, fismaname, datacenterenvironment, issoemail,
+  sdl_sync_enabled, opdiv_id, isso_name)
+VALUES
+ (2016,'5A1A5000-0000-4000-8000-000000002016','MOCK-SAAS','Mock SaaS Reduced Scope System','SaaS',
+  'mock.isso2016@example.empire', TRUE,
+  (SELECT opdiv_id FROM public.opdivs WHERE UPPER(code) <> 'CMS' ORDER BY opdiv_id LIMIT 1),'Mock ISSO 2016'),
+ -- CMS counterpart: the reduced scope is understood to be an HHS-OpDiv rule with
+ -- CMS keeping all 40, but that is undecided, so both currently read 25. Without a
+ -- CMS SaaS system the subtest pinning that interim behaviour skips.
+ (2017,'5A1A5000-0000-4000-8000-000000002017','MOCK-SAAS-CMS','Mock CMS SaaS Reduced Scope System','SaaS',
+  'mock.isso2017@example.empire', TRUE,
+  (SELECT opdiv_id FROM public.opdivs WHERE UPPER(code) = 'CMS' LIMIT 1),'Mock ISSO 2017')
+ON CONFLICT DO NOTHING;
+
+-- Answers on EVERY pillar in both cycles, including the two the scope excludes.
+-- That is the load-bearing part: the FY26 rows make the carried-forward case real,
+-- so a scope applied to only one progress CTE, or to only one branch of the
+-- export's applicable-OR-answered join, produces wrong counts rather than
+-- identical ones. FY26 leaves the excluded pillars 'not_started', as a rollover
+-- would.
+INSERT INTO public.scores (fismasystemid, datacallid, functionoptionid, notes, status)
+SELECT sys.fismasystemid, 103, fo.functionoptionid, 'FY25 SaaS fixture answer', 'done'
+  FROM public.functionoptions fo, (VALUES (2016), (2017)) AS sys(fismasystemid)
+ WHERE fo.functionid BETWEEN 7101 AND 7106 AND fo.score = 1;
+
+INSERT INTO public.scores (fismasystemid, datacallid, functionoptionid, notes, status)
+SELECT sys.fismasystemid, 104, fo.functionoptionid, 'FY26 SaaS fixture answer',
+       CASE WHEN p.pillar IN ('Devices', 'Applications') THEN 'not_started' ELSE 'done' END
+  FROM public.functionoptions fo
+  CROSS JOIN (VALUES (2016), (2017)) AS sys(fismasystemid)
+  JOIN public.functions f ON f.functionid = fo.functionid
+  JOIN public.questions q ON q.questionid = f.questionid
+  JOIN public.pillars   p ON p.pillarid   = q.pillarid
+ WHERE f.functionid BETWEEN 7101 AND 7106 AND fo.score = 3;
+
 -- Keep the sequence ahead of our explicit ids
 SELECT setval(pg_get_serial_sequence('public.fismasystems','fismasystemid'),
               (SELECT MAX(fismasystemid) FROM public.fismasystems));
 SELECT setval(pg_get_serial_sequence('public.datacalls','datacallid'),
               (SELECT MAX(datacallid) FROM public.datacalls));
+SELECT setval(pg_get_serial_sequence('public.functions','functionid'),
+              (SELECT MAX(functionid) FROM public.functions));
+SELECT setval(pg_get_serial_sequence('public.functionoptions','functionoptionid'),
+              (SELECT MAX(functionoptionid) FROM public.functionoptions));
 
 -- FY23/24/25 ZTM scores: for the NEW systems AND the existing Empire systems.
 -- An existing system (e.g. the Death Star) now carries two series: its
