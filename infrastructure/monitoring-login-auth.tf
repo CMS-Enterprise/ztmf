@@ -63,12 +63,22 @@ resource "aws_cloudwatch_metric_alarm" "ztmf_login_elb_auth_error" {
 
 # ELBAuthFailure: the IdP response was REJECTED by the ALB (invalid id_token,
 # issuer/audience mismatch, or missing/invalid authorization code - i.e. a
-# redirect-URI or consent problem at the IdP). >0 in a 5-min window is
-# actionable and tells Batch 2 exactly what to look for in the IdP console.
+# redirect-URI or consent problem at the IdP).
+#
+# 3-of-6 rather than a single >0 window: five weeks of history (Jul-Aug 2026)
+# showed ~3 fires/week, every one a lone failure surrounded by successful
+# logins - back-button onto the callback, canceled login - and each costing an
+# ALARM + OK email pair to the shared inbox. A real problem is never a
+# singleton: a misconfigured IdP app or a user who cannot get in produces
+# repeated failures, which lands 3 breaching 5-min windows inside 30 minutes
+# and still pages well within one working session. The companion
+# ELBAuthError alarm above deliberately stays on a single window: ALB-side
+# auth breakage is rare and severe, and it fired zero times in the same span.
 resource "aws_cloudwatch_metric_alarm" "ztmf_login_elb_auth_failure" {
   alarm_name          = "ztmf-login-elb-auth-failure-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
+  evaluation_periods  = "6"
+  datapoints_to_alarm = "3"
   metric_name         = "ELBAuthFailure"
   namespace           = "AWS/ApplicationELB"
   period              = "300"

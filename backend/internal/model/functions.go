@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -16,7 +17,8 @@ type Function struct {
 	DataCenterEnvironment string `json:"datacenterenvironment"`
 	Ordr                  int    `json:"order"`
 	QuestionID            *int32 `json:"questionid,omitempty"`
-	PillarID              int32  `json:"pillarid"`
+	// Derived from the function's question on write; a value sent by a client is ignored.
+	PillarID int32 `json:"pillarid" readonly:"true"`
 }
 
 type FindFunctionsInput struct {
@@ -80,6 +82,22 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 		return nil, &InvalidInputError{data: map[string]any{"datacenterenvironment": f.DataCenterEnvironment}}
 	}
 
+	// A function's pillar is a fact about its question, so derive it and ignore the
+	// caller's value; the caller cannot put functions.pillarid out of agreement with
+	// questions.pillarid. validate() has already rejected a nil questionid; the guard
+	// repeats it so the deref below does not depend on a check in another method.
+	if f.QuestionID == nil {
+		return nil, &InvalidInputError{data: map[string]any{"questionid": nil}}
+	}
+
+	q, err := FindQuestionByID(ctx, *f.QuestionID)
+	if errors.Is(err, ErrNoData) {
+		return nil, ErrNoReference
+	} else if err != nil {
+		return nil, err
+	}
+	f.PillarID = int32(q.PillarID)
+
 	if f.FunctionID == 0 {
 		sqlb = stmntBuilder.
 			Insert("functions").
@@ -115,12 +133,11 @@ func (f *Function) validate() error {
 	// datacenterenvironment is validated against the datacenterenvironments
 	// reference table in Save(), which has the context needed for the lookup.
 
-	if f.QuestionID != nil && !isValidIntID(f.QuestionID) {
+	// Required: a function with no question reaches no questionnaire and has no
+	// pillar to derive from. pillarid is not validated because Save() overwrites
+	// it with the question's pillar.
+	if !isValidIntID(f.QuestionID) {
 		err.data["questionid"] = f.QuestionID
-	}
-
-	if !isValidIntID(f.PillarID) {
-		err.data["pillarid"] = f.PillarID
 	}
 
 	if len(err.data) > 0 {

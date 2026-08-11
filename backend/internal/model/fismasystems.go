@@ -625,7 +625,7 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	if actor := UserFromContext(ctx); actor != nil {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO events (userid, action, resource, payload) VALUES ($1, $2, $3, $4)",
-			actor.UserID, "updated", "fismasystems", system,
+			actor.UserID, eventActionUpdated, "fismasystems", system,
 		); err != nil {
 			return nil, trapError(err)
 		}

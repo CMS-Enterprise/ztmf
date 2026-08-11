@@ -41,6 +41,13 @@ ALTER TABLE public.scores
 -- loaded outside the app is attributed with 'imported' provenance events so it
 -- carries a who/when, but an import is not a human answering this cycle - those
 -- events must NOT flip the row to done, so they are excluded here.
+--
+-- The action values below are SQL literals because SQL cannot reference a Go
+-- constant; they are the same values defined as eventAction* in
+-- internal/model/events.go, which is the source of truth for the set. This
+-- migration has already run in every environment, so its SQL is frozen -
+-- changing an action value means backfilling the events table and updating
+-- every SQL predicate that repeats these literals, not editing this file.
 UPDATE public.scores s
 SET status = 'done'
 WHERE EXISTS (

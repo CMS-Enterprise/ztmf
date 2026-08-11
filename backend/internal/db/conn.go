@@ -9,16 +9,12 @@ import (
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
-	"github.com/CMS-Enterprise/ztmf/backend/internal/secrets"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
-	once     sync.Once
-	dbSecret *secrets.Secret
-
 	pool     *pgxpool.Pool
 	poolOnce sync.Once
 	poolErr  error
@@ -35,11 +31,6 @@ const (
 	maxConnIdleTime = 5 * time.Minute
 	healthCheck     = time.Minute
 )
-
-type dbCreds struct {
-	Username string
-	Password string
-}
 
 // sslMode selects the libpq sslmode for the connection. Deployed environments
 // require TLS to RDS/Aurora with no plaintext fallback. Local and test run
@@ -85,7 +76,7 @@ func Conn(ctx context.Context) (*pgxpool.Conn, error) {
 	}
 
 	log.Println("db authentication failed; refreshing credentials and retrying once")
-	if rerr := refreshDbCreds(ctx); rerr != nil {
+	if rerr := config.GetInstance().RefreshDbCreds(ctx); rerr != nil {
 		log.Println("could not refresh db credentials", rerr)
 		return nil, err
 	}
@@ -131,7 +122,7 @@ func initPool() error {
 	// secret value. Combined with MaxConnLifetime recycling connections, a
 	// rotated credential is picked up without a process restart.
 	poolCfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
-		creds, err := getDbCreds()
+		creds, err := config.GetInstance().DbCreds()
 		if err != nil {
 			return err
 		}
@@ -171,7 +162,7 @@ func MigrationConn(ctx context.Context) (*pgx.Conn, error) {
 		return nil, err
 	}
 	log.Println("db authentication failed; refreshing credentials and retrying once")
-	if rerr := refreshDbCreds(ctx); rerr != nil {
+	if rerr := config.GetInstance().RefreshDbCreds(ctx); rerr != nil {
 		log.Println("could not refresh db credentials", rerr)
 		return nil, err
 	}
@@ -181,13 +172,13 @@ func MigrationConn(ctx context.Context) (*pgx.Conn, error) {
 // connectOne builds the connection config from the current credentials and
 // opens a single (non-pooled) connection. Used by the migrator.
 func connectOne(ctx context.Context) (*pgx.Conn, error) {
-	creds, err := getDbCreds()
+	cfg := config.GetInstance()
+
+	creds, err := cfg.DbCreds()
 	if err != nil {
 		log.Println("could not get db credentials")
 		return nil, err
 	}
-
-	cfg := config.GetInstance()
 	connConfig, err := pgx.ParseConfig(fmt.Sprintf("host=%s port=%s dbname=%s sslmode=%s", cfg.Db.Host, cfg.Db.Port, cfg.Db.Name, sslMode()))
 	if err != nil {
 		log.Println("could not parse db config", err)
@@ -216,55 +207,4 @@ func connectOne(ctx context.Context) (*pgx.Conn, error) {
 func isAuthError(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "28P01"
-}
-
-// refreshDbCreds forces a re-read of the cached secret from Secrets Manager so
-// the next connection picks up the post-rotation password. Caches the secret on
-// first use if startup somehow skipped it.
-func refreshDbCreds(ctx context.Context) error {
-	if dbSecret == nil {
-		if _, err := getDbCreds(); err != nil {
-			return err
-		}
-		if dbSecret == nil {
-			return errors.New("no db secret configured to refresh")
-		}
-	}
-	return dbSecret.Refresh(ctx)
-}
-
-func getDbCreds() (*dbCreds, error) {
-	cfg := config.GetInstance()
-
-	// TODO: move this secret handling to config.GetInstance()
-	// if no secret id specified, assume user/pass are provided in env vars
-	if cfg.Db.SecretId == "" {
-		return &dbCreds{cfg.Db.User, cfg.Db.Pass}, nil
-	}
-
-	// otherwise pull user/pass from the secret. Call once.Do unconditionally (no
-	// bare dbSecret nil-check first): once.Do is what establishes the happens-
-	// before for the dbSecret write, so reading the pointer outside it - from
-	// concurrent request goroutines at startup - would be an unsynchronized read.
-	// err is set only on the goroutine that ran the init, so re-check dbSecret
-	// afterward to surface a failed init to every caller.
-	var err error
-	once.Do(func() {
-		dbSecret, err = secrets.NewSecret(cfg.Db.SecretId)
-	})
-	if err != nil {
-		return nil, err
-	}
-	if dbSecret == nil {
-		return nil, errors.New("db secret initialization failed")
-	}
-
-	creds := &dbCreds{}
-	err = dbSecret.Unmarshal(creds)
-	if err != nil {
-		log.Println("could not unmarshal credentials", err)
-		return nil, err
-	}
-
-	return creds, nil
 }
