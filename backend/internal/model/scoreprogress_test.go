@@ -45,6 +45,7 @@ func TestFindScoreProgressInputValidate(t *testing.T) {
 //     (status = 'done'), excluding pre-populated rows, rather than requiring
 //     an edit event; the events lateral is now LEFT and feeds only
 //     lastupdatedat;
+//   - the SaaS pillar scope appears in both halves, never one;
 //   - both halves LEFT JOIN back onto scoped_systems so a zero-activity or
 //     unmapped-environment system still returns a row (0 of N).
 func TestBuildScoreProgressSQL_Shape(t *testing.T) {
@@ -71,7 +72,18 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, "COALESCE(u.questionsupdated, 0)", "zero-activity systems report 0 updated, not NULL")
 	assert.Contains(t, sql, "COALESCE(ex.questionsexpected, 0)", "unmapped-environment systems report 0 expected, not NULL")
 
-	// No scope filters: the single arg is the data call id.
+	// Both count halves, never one: in expected's alone a SaaS denominator of 25
+	// would face a numerator of 40, reporting a false "Complete" on a closed call.
+	assert.Equal(t, 2, strings.Count(sql, "p.pillar IN ('Devices', 'Applications')"),
+		"the SaaS pillar scope (ztmf-misc#289) must appear in both the expected and updated CTEs")
+	assert.Equal(t, 2, strings.Count(sql, "SELECT MAX(fdc.deadline) FROM datacalls fdc"),
+		"the scope applies from FY26 onward only; closed cycles keep reporting against 40")
+	assert.Equal(t, 2, strings.Count(sql, "UPPER(TRIM(fdc.datacall)) LIKE 'FY2026%'"),
+		"the FY26 anchor must come from reducedPillarScopeCyclePrefixes, not the ztmf#502 rollover block")
+	assert.NotContains(t, sql, "tdc.datacallid >=",
+		"the cycle comparison must be on deadline, not datacallid - ids are not chronological")
+
+	// The pillar scope adds no bind parameters.
 	assert.Equal(t, []any{int32(4)}, args)
 }
 
