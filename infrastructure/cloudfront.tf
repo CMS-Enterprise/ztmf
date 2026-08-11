@@ -243,6 +243,12 @@ resource "aws_cloudfront_distribution" "ztmf" {
     error_caching_min_ttl = 10
   }
 
+  // Declared rather than inherited: the provider does default this to
+  // PriceClass_All, but that default is undocumented in the registry and lives
+  // only in the SDK schema, so leaving it implicit makes the effective value
+  // invisible here and dependent on an upstream choice we do not control.
+  price_class = "PriceClass_All"
+
   restrictions {
     geo_restriction {
       restriction_type = "whitelist"
@@ -255,5 +261,15 @@ resource "aws_cloudfront_distribution" "ztmf" {
     acm_certificate_arn      = local.ztmf_acm_certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  // Assert the value above rather than trusting the literal to survive future
+  // edits. The postcondition evaluates against refreshed state, so it also
+  // catches an out-of-band change, not just a bad diff.
+  lifecycle {
+    postcondition {
+      condition     = self.price_class == "PriceClass_All"
+      error_message = "CloudFront price_class must be PriceClass_All."
+    }
   }
 }
