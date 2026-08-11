@@ -859,6 +859,15 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 		argN++
 	}
 
+	// Reduced pillar scope (ztmf#545): pillars a seeded rule excludes never
+	// enter the expected set, so a reduced system's pillar_scores rows simply
+	// don't exist for them and the system score's window AVG divides by the
+	// pillars that remain. Carried-forward answers on an excluded pillar stop
+	// counting too, because the answers CTE is only read through the LEFT JOIN
+	// from expected. Cycles deadlined before the rule's anchor keep every
+	// pillar, so closed calls are untouched.
+	conds = append(conds, reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "sp.datacallid"))
+
 	var userJoin string
 	if input.UserID != nil {
 		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = fs.fismasystemid AND ufs.userid = $%d", argN)

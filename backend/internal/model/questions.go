@@ -76,9 +76,20 @@ func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) 
 	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Question])
 }
 
+// FindQuestionsByFismaSystemInput carries the optional query filters for the
+// nested questions listing.
+type FindQuestionsByFismaSystemInput struct {
+	// DataCallID applies the reduced-pillar rule for the cycle being answered
+	// (ztmf#545): questions on a pillar a seeded rule excludes for this
+	// system's environment are omitted. Absent, the full catalog for the
+	// environment is returned, which is the pre-#545 contract the frontend's
+	// own pillar filter still expects.
+	DataCallID *int32 `schema:"datacallid"`
+}
+
 // FindQuestionsByFismaSystem joins questions with functions to return questions relevant to the fismasystem as determined by the datacenterenvironment.
 // It is used by all users to list questions relevant to the specified fisma system
-func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Question, error) {
+func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32, input FindQuestionsByFismaSystemInput) ([]*Question, error) {
 	// The system's raw datacenterenvironment is resolved to a scoring vocabulary
 	// through the datacenterenvironments mapping (ztmf#392); functions are matched
 	// on that key. This is the same indirection the scoring aggregate uses, so the
@@ -94,6 +105,10 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32) ([]*Qu
 		// migration 0056 found no canonical rank) still list deterministically
 		// rather than in heap order. See FindAnswers for the same tiebreaker.
 		OrderBy("pillars.ordr, questions.ordr, questions.questionid ASC")
+
+	if input.DataCallID != nil {
+		sqlb = sqlb.Where(reducedPillarScopeSQL("dce.scoring_key", "pillars.pillar", "?"), *input.DataCallID)
+	}
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Question, error) {
 		q := Question{

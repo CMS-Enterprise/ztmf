@@ -58,7 +58,7 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// fresh one. The scoring key needs a subquery because no dce alias is in
 		// scope here.
 		Where(
-			saasPillarScopeSQL(
+			reducedPillarScopeSQL(
 				"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment=fismasystems.datacenterenvironment)",
 				"pillars.pillar",
 				"?",
