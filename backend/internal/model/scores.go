@@ -52,13 +52,13 @@ const (
 )
 
 type Score struct {
-	ScoreID          int32           `json:"scoreid"`
-	FismaSystemID    int32           `json:"fismasystemid"`
-	DateCalculated   float64         `json:"datecalculated"`
-	Notes            *string         `json:"notes"`
-	NotesIsAISummary *bool           `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
-	FunctionOptionID int32           `json:"functionoptionid"`
-	DataCallID       int32           `json:"datacallid"`
+	ScoreID          int32   `json:"scoreid"`
+	FismaSystemID    int32   `json:"fismasystemid"`
+	DateCalculated   float64 `json:"datecalculated"`
+	Notes            *string `json:"notes"`
+	NotesIsAISummary *bool   `json:"notes_is_ai_summary" db:"notes_is_ai_summary"`
+	FunctionOptionID int32   `json:"functionoptionid"`
+	DataCallID       int32   `json:"datacallid"`
 	// Status is the answer's review state for its data call: 'not_started' for
 	// a row carried forward by copyPreviousScores and untouched this cycle,
 	// 'done' once saved or confirmed this cycle (ztmf#435, values pinned by
@@ -564,11 +564,11 @@ func Tier(score float64) string {
 
 type FindScoresInput struct {
 	input
-	FismaSystemID  *int32 `schema:"fismasystemid"`
-	FismaSystemIDs []*int32
-	DataCallID     *int32 `schema:"datacallid"`
-	UserID         *string
-	IncludePillars *bool `schema:"include_pillars"`
+	FismaSystemID  *int32   `schema:"fismasystemid"`
+	FismaSystemIDs []*int32 `schema:"-"`
+	DataCallID     *int32   `schema:"datacallid"`
+	UserID         *string  `schema:"-"`
+	IncludePillars *bool    `schema:"include_pillars"`
 	OpDivScope
 }
 
