@@ -80,7 +80,7 @@ func TestFindSystemInsightsIntegration(t *testing.T) {
 	assert.Empty(t, rows, "ISSO must get no rows for an unassigned system")
 
 	// Fail-closed OpDiv tier: restrict with no granted OpDivs -> empty.
-	failClosed, err := FindSystemInsights(ctx, FindSystemInsightsInput{QuestionID: &q1, RestrictToOpDivIDs: true})
+	failClosed, err := FindSystemInsights(ctx, FindSystemInsightsInput{QuestionID: &q1, OpDivScope: OpDivScope{RestrictToOpDivIDs: true}})
 	require.NoError(t, err)
 	assert.Empty(t, failClosed, "RestrictToOpDivIDs with empty OpDivIDs must fail closed to no rows")
 }

@@ -28,13 +28,7 @@ func ListDataCenterMismatches(w http.ResponseWriter, r *http.Request) {
 
 	// Scope by tier: unscoped admins see all; OpDiv tiers fail-closed to their
 	// granted OpDivs' systems; ISSO/ISSM are not the report's audience -> 403.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		in.RestrictToOpDivIDs = true
-		_, in.OpDivIDs = user.EffectiveOpDivScope()
-	default:
+	if in.ApplyTier(user) {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

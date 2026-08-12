@@ -9,6 +9,115 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFindAnswersOpDivScopeIntegration pins the OpDiv scoping added for
+// ztmf-misc#267 and #268 against the real SQL: an OpDiv-restricted export sees
+// only systems in the granted OpDivs, an empty grant fails closed to no rows,
+// and an fsids list naming a system outside the grant does not leak it.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestFindAnswersOpDivScopeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// A data call with scored systems in at least two distinct OpDivs, plus the
+	// two OpDiv ids to compare. Discovered rather than hardcoded so the test
+	// tracks whatever the seed provides.
+	var call, opdivA, opdivB int32
+	err = conn.QueryRow(ctx, `
+		WITH by_call AS (
+			SELECT s.datacallid, fs.opdiv_id, COUNT(DISTINCT fs.fismasystemid) n
+			FROM scores s
+			JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+			WHERE fs.opdiv_id IS NOT NULL
+			GROUP BY s.datacallid, fs.opdiv_id
+		)
+		SELECT a.datacallid, a.opdiv_id, b.opdiv_id
+		FROM by_call a
+		JOIN by_call b ON b.datacallid = a.datacallid AND b.opdiv_id > a.opdiv_id
+		ORDER BY a.datacallid, a.opdiv_id, b.opdiv_id
+		LIMIT 1
+	`).Scan(&call, &opdivA, &opdivB)
+	if err != nil {
+		t.Skip("seed has no data call with scored systems in two distinct OpDivs")
+	}
+
+	opdivOf := func(t *testing.T, answers []*Answer) map[int32]int32 {
+		t.Helper()
+		ids := map[int32]bool{}
+		for _, a := range answers {
+			ids[a.FismaSystemID] = true
+		}
+		result := map[int32]int32{}
+		for id := range ids {
+			var opdiv int32
+			require.NoError(t, conn.QueryRow(ctx,
+				`SELECT opdiv_id FROM fismasystems WHERE fismasystemid = $1`, id).Scan(&opdiv))
+			result[id] = opdiv
+		}
+		return result
+	}
+
+	t.Run("RestrictedToGrantSeesOnlyThatOpDiv", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{
+			DataCallID: call,
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{opdivA}},
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, answers, "the granted OpDiv has scored systems, so the export must not be empty")
+		for id, opdiv := range opdivOf(t, answers) {
+			assert.Equal(t, opdivA, opdiv, "system %d is outside the granted OpDiv but was exported", id)
+		}
+	})
+
+	t.Run("EmptyGrantFailsClosed", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{
+			DataCallID: call,
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: nil},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, answers, "an OpDiv-restricted caller with no grants must get no rows, not every row")
+	})
+
+	t.Run("CrossOpDivFsidsReturnsNothing", func(t *testing.T) {
+		// Ask for a system in OpDiv B while granted only OpDiv A: the two filters
+		// conjoin, so the out-of-scope system is dropped rather than leaked.
+		var victim int32
+		err := conn.QueryRow(ctx, `
+			SELECT DISTINCT fs.fismasystemid
+			FROM fismasystems fs
+			JOIN scores s ON s.fismasystemid = fs.fismasystemid
+			WHERE fs.opdiv_id = $1 AND s.datacallid = $2
+			LIMIT 1`, opdivB, call).Scan(&victim)
+		require.NoError(t, err)
+
+		answers, err := FindAnswers(ctx, FindAnswersInput{
+			DataCallID:     call,
+			FismaSystemIDs: []*int32{&victim},
+			OpDivScope:     OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{opdivA}},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, answers, "a system in another OpDiv must not be exported even when named in fsids")
+	})
+
+	t.Run("UnrestrictedSeesBothOpDivs", func(t *testing.T) {
+		answers, err := FindAnswers(ctx, FindAnswersInput{DataCallID: call})
+		require.NoError(t, err)
+		seen := map[int32]bool{}
+		for _, opdiv := range opdivOf(t, answers) {
+			seen[opdiv] = true
+		}
+		assert.True(t, seen[opdivA] && seen[opdivB],
+			"an unscoped caller must still see systems from both OpDivs")
+	})
+}
+
 // TestFindAnswersIntegration pins the #526 behavior against the real SQL: the
 // export is anchored on the applicable-function set, not on scores, so a system
 // that has not answered a function still appears with a blank (nil) answer, and
@@ -199,9 +308,9 @@ func TestFindAnswersSaaSPillarScopeIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	fy26, prior, ok := fy26AndPriorDataCalls(ctx, t)
+	fy26, prior, ok := reducedScopeAnchorAndPriorDataCalls(ctx, t)
 	if !ok {
-		t.Skip("database has no FY26 call with an earlier cycle to compare against")
+		t.Skip("database has no seeded reduced-scope rule with an earlier cycle to compare against")
 	}
 
 	conn, err := db.Conn(ctx)
