@@ -3112,3 +3112,134 @@ tests:
     method: GET
     expect:
       status: 401
+
+  # ==========================================================================
+  # Reduced pillar scope (ztmf#545 / ztmf-misc#289). MOCK-SAAS (2016) is the
+  # seeded SaaS fixture; 104 is the FY26 fixture cycle the seeded rule anchors
+  # on; 103 is the prior full-set cycle. The questionnaire endpoint serves the
+  # reduced set only when asked for an in-scope cycle, and the aggregate stops
+  # scoring the excluded pillars from the anchor cycle onward.
+  #
+  # Row order note: on seeded test databases pillars.ordr and questions.ordr
+  # are 0 (migration 0056 runs before the populate seed), so the questionnaire
+  # sorts by its questionid tiebreaker and the aggregate by pillarid - both of
+  # which happen to walk the fixture pillars as Devices, Applications,
+  # Networks, Data, CrossCutting, Identity.
+  # ==========================================================================
+
+  # Without a data call the environment's full catalog returns - the pre-#545
+  # contract the frontend's own filter expects. Exact array length: a 4-row
+  # response here means the reduction leaked into the unparameterized path.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Devices"
+            - pillar:
+                pillar: "Applications"
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # The anchor cycle serves the reduced set: Devices and Applications drop,
+  # order otherwise unchanged.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=104
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # A cycle deadlined before the anchor keeps the full catalog.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=103
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Devices"
+            - pillar:
+                pillar: "Applications"
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # Scoring: on the anchor cycle the aggregate carries exactly the four
+  # in-scope pillar scores, even though the seed leaves carried-forward
+  # answers on the excluded pillars. The prior cycle keeps all six.
+  - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=104&include_pillars=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 2016
+              datacallid: 104
+              pillarscores:
+                - pillar: "Networks"
+                - pillar: "Data"
+                - pillar: "CrossCutting"
+                - pillar: "Identity"
+
+  - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=103&include_pillars=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 2016
+              datacallid: 103
+              pillarscores:
+                - pillar: "Devices"
+                - pillar: "Applications"
+                - pillar: "Networks"
+                - pillar: "Data"
+                - pillar: "CrossCutting"
+                - pillar: "Identity"

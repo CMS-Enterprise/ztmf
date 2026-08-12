@@ -178,10 +178,10 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	// applicability join). COUNT(DISTINCT) on all guards against fan-out from
 	// the environment mapping.
 	//
-	// The SaaS pillar scope belongs to that shared set, so it is rendered once and
-	// interpolated into BOTH CTEs. In expected's alone it would leave a numerator
-	// of 40 against a denominator of 25, reporting a false "Complete".
-	pillarScope := saasPillarScopeSQL("dce.scoring_key", "p.pillar", fmt.Sprintf("$%d", dataCallArg))
+	// The reduced pillar scope belongs to that shared set, so it is rendered once
+	// and interpolated into BOTH CTEs. In expected's alone it would leave a
+	// numerator of 40 against a denominator of 25, reporting a false "Complete".
+	pillarScope := reducedPillarScopeSQL("dce.scoring_key", "p.pillar", fmt.Sprintf("$%d", dataCallArg))
 
 	sql := fmt.Sprintf(`
 WITH scoped_systems AS (

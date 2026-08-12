@@ -1876,6 +1876,12 @@ paths:
         required: true
         schema:
           type: integer
+      - description: Apply the reduced-pillar rule for this data call; omitted returns
+          the environment's full catalog
+        in: query
+        name: datacallid
+        schema:
+          type: integer
       responses:
         "200":
           content:
@@ -1883,6 +1889,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-array_model_Question'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "404":
           content:
             application/json:

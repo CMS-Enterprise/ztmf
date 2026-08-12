@@ -199,9 +199,9 @@ func TestFindAnswersSaaSPillarScopeIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	fy26, prior, ok := fy26AndPriorDataCalls(ctx, t)
+	fy26, prior, ok := reducedScopeAnchorAndPriorDataCalls(ctx, t)
 	if !ok {
-		t.Skip("database has no FY26 call with an earlier cycle to compare against")
+		t.Skip("database has no seeded reduced-scope rule with an earlier cycle to compare against")
 	}
 
 	conn, err := db.Conn(ctx)
