@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -28,11 +29,8 @@ type FindSystemInsightsInput struct {
 	input
 	FismaSystemID *int32 `schema:"fismasystemid"`
 	QuestionID    *int32 `schema:"questionid"`
-	UserID        *string
-	// OpDiv scope for the per-OpDiv admin tiers. RestrictToOpDivIDs with an
-	// empty slice fails closed (no rows).
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	UserID *string `schema:"-"`
+	OpDivScope
 }
 
 // FindSystemInsights returns per-system x question insight rows, scoped both by
@@ -64,12 +62,9 @@ func FindSystemInsights(ctx context.Context, in FindSystemInsightsInput) ([]*Sys
 	}
 
 	// OpDiv-scoped admin tiers (fail-closed): restrict to systems in the admin's
-	// granted OpDivs. Empty grants under RestrictToOpDivIDs -> no rows.
-	switch {
-	case in.RestrictToOpDivIDs && len(in.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(in.OpDivIDs) > 0:
-		sqlb = sqlb.Where("si.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY(?))", in.OpDivIDs)
+	// granted OpDivs. Subquery predicate (system_insights has no opdiv_id).
+	if f := in.OpDivWhere(squirrel.Expr("si.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY(?))", in.OpDivIDs)); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[SystemInsight])

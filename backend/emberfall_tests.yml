@@ -954,6 +954,30 @@ tests:
       headers:
         content-type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+  # Export as an OpDiv-scoped admin (ztmf-misc#267): the caller falls into the
+  # OpDiv-restricted branch, not the unscoped admin path, so the request still
+  # succeeds and returns a valid xlsx scoped to the caller's OpDiv. The prior
+  # case covers the unscoped admin path; this pins that the tier split reaches
+  # the export at all. Row-level OpDiv containment is asserted in the model
+  # integration tests, which can read opdiv_id back per system.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/export"
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+  # A server-owned scope field supplied in the query is a 400, not a redirect
+  # (ztmf-misc#268). UserID carries schema:"-", so it is an unknown key.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/export?UserID=00000000-0000-0000-0000-000000000000"
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 400
+
   # Decommission FISMA system with custom date and notes
   - id: decommissionFismaSystem
     url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"

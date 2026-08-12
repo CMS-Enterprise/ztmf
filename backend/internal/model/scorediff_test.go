@@ -119,10 +119,9 @@ func TestBuildScoreDiffSQL_UserScope(t *testing.T) {
 func TestBuildScoreDiffSQL_OpDivScope(t *testing.T) {
 	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
 		in := FindScoreDiffInput{
-			FromDataCallID:     int32Ptr(3),
-			ToDataCallID:       int32Ptr(4),
-			RestrictToOpDivIDs: true,
-			OpDivIDs:           []int32{7, 9},
+			FromDataCallID: int32Ptr(3),
+			ToDataCallID:   int32Ptr(4),
+			OpDivScope:     OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
 		}
 		sql, args := buildScoreDiffSQL(in)
 
@@ -140,9 +139,9 @@ func TestBuildScoreDiffSQL_OpDivScope(t *testing.T) {
 
 	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
 		in := FindScoreDiffInput{
-			FromDataCallID:     int32Ptr(3),
-			ToDataCallID:       int32Ptr(4),
-			RestrictToOpDivIDs: true,
+			FromDataCallID: int32Ptr(3),
+			ToDataCallID:   int32Ptr(4),
+			OpDivScope:     OpDivScope{RestrictToOpDivIDs: true},
 		}
 		sql, _ := buildScoreDiffSQL(in)
 

@@ -569,11 +569,7 @@ type FindScoresInput struct {
 	DataCallID     *int32 `schema:"datacallid"`
 	UserID         *string
 	IncludePillars *bool `schema:"include_pillars"`
-	// OpDiv scope for OpDiv-scoped admin tiers. Restricts scores to systems in
-	// the admin's granted OpDivs; RestrictToOpDivIDs with an empty slice fails
-	// closed. Not schema-tagged - the controller sets them from the auth'd user.
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	OpDivScope
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
@@ -601,14 +597,11 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 	}
 
 	// OpDiv scope (fail-closed): restrict to scores whose system belongs to one
-	// of the admin's granted OpDivs. Empty grants under RestrictToOpDivIDs ->
-	// no rows. Expressed as a subquery predicate so it composes with the audit
-	// joins below without disturbing their arg ordering.
-	switch {
-	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(input.OpDivIDs) > 0:
-		sqlb = sqlb.Where("scores.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY(?))", input.OpDivIDs)
+	// of the admin's granted OpDivs. Expressed as a subquery predicate (scores has
+	// no opdiv_id) so it composes with the audit joins below without disturbing
+	// their arg ordering.
+	if f := input.OpDivWhere(squirrel.Expr("scores.fismasystemid IN (SELECT fismasystemid FROM fismasystems WHERE opdiv_id = ANY(?))", input.OpDivIDs)); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	// Attach last-edit audit info. The lateral subquery picks the most recent
@@ -849,15 +842,10 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	}
 
 	// OpDiv scope (fail-closed) on the expected CTE, which already joins
-	// fismasystems as fs. Empty grants under RestrictToOpDivIDs -> FALSE.
-	switch {
-	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
-		conds = append(conds, "FALSE")
-	case len(input.OpDivIDs) > 0:
-		conds = append(conds, fmt.Sprintf("fs.opdiv_id = ANY($%d)", argN))
-		args = append(args, input.OpDivIDs)
-		argN++
-	}
+	// fismasystems as fs.
+	input.AppendRawFilter(&conds, &args, &argN, func(n int) string {
+		return fmt.Sprintf("fs.opdiv_id = ANY($%d)", n)
+	})
 
 	// Reduced pillar scope (ztmf#545): pillars a seeded rule excludes never
 	// enter the expected set, so a reduced system's pillar_scores rows simply

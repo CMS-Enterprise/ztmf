@@ -81,7 +81,7 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 	})
 
 	t.Run("OpDivScopeFailsClosed", func(t *testing.T) {
-		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{RestrictToOpDivIDs: true})
+		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{OpDivScope: OpDivScope{RestrictToOpDivIDs: true}})
 		require.NoError(t, err)
 		assert.Empty(t, rows, "RestrictToOpDivIDs with zero grants must return no rows")
 	})
@@ -95,7 +95,7 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 		require.NoError(t, conn.QueryRow(ctx, `SELECT opdiv_id FROM opdivs WHERE code = 'EMPIRE'`).Scan(&empireID))
 		require.NoError(t, conn.QueryRow(ctx, `SELECT opdiv_id FROM opdivs WHERE code = 'REBELLION'`).Scan(&rebellionID))
 
-		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{RestrictToOpDivIDs: true, OpDivIDs: []int32{empireID}})
+		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{empireID}}})
 		require.NoError(t, err)
 		require.NotEmpty(t, rows, "EMPIRE-scoped admin should see the Shield Gen mismatch")
 		for _, r := range rows {
@@ -106,7 +106,7 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 
 		// REBELLION grant alone yields nothing: its only mismatch row is behind
 		// the insights_enabled gate, which scope must not bypass.
-		rows, err = FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{RestrictToOpDivIDs: true, OpDivIDs: []int32{rebellionID}})
+		rows, err = FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{rebellionID}}})
 		require.NoError(t, err)
 		assert.Empty(t, rows)
 	})

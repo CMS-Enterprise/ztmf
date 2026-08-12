@@ -31,17 +31,11 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 
 	err = decoder.Decode(&findScoresInput, r.URL.Query())
 
-	// Scope by tier AFTER decode so a client cannot widen scope via query
-	// params: unscoped admins see all; OPDIV tiers fail-closed to their granted
-	// OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		findScoresInput.RestrictToOpDivIDs = true
-		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
-	default:
-		findScoresInput.UserID = &user.UserID
+	// Scope by tier AFTER decode so a client cannot widen scope via query params:
+	// unscoped admins see all; OPDIV tiers fail-closed to their granted OpDivs'
+	// systems; ISSO/ISSM keep the per-system (UserID) path.
+	if findScoresInput.ApplyTier(user) {
+		findScoresInput.UserID = user.UserIDPtr()
 	}
 
 	if err == nil {
@@ -247,17 +241,9 @@ func GetScoresDiff(w http.ResponseWriter, r *http.Request) {
 	err = decoder.Decode(&input, r.URL.Query())
 
 	// Same tier scoping as ListScores, applied AFTER decode so a client cannot
-	// widen scope via query params: unscoped admins see all; OPDIV tiers
-	// fail-closed to their granted OpDivs' systems; ISSO/ISSM keep the
-	// per-system (UserID) path.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		input.RestrictToOpDivIDs = true
-		_, input.OpDivIDs = user.EffectiveOpDivScope()
-	default:
-		input.UserID = &user.UserID
+	// widen scope via query params.
+	if input.ApplyTier(user) {
+		input.UserID = user.UserIDPtr()
 	}
 
 	if err == nil {
@@ -304,14 +290,8 @@ func GetScoresProgress(w http.ResponseWriter, r *http.Request) {
 // their granted OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
 // Extracted so the role matrix is unit-testable without a database.
 func scopeScoreProgressInput(user *model.User, input *model.FindScoreProgressInput) {
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		input.RestrictToOpDivIDs = true
-		_, input.OpDivIDs = user.EffectiveOpDivScope()
-	default:
-		input.UserID = &user.UserID
+	if input.ApplyTier(user) {
+		input.UserID = user.UserIDPtr()
 	}
 }
 
@@ -336,16 +316,9 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 
 	err = decoder.Decode(&findScoresInput, r.URL.Query())
 
-	// Same tier scoping as ListScores, applied AFTER decode: unscoped admins see
-	// all; OPDIV tiers fail-closed to their OpDivs; ISSO/ISSM keep the
-	// assigned-systems path.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		findScoresInput.RestrictToOpDivIDs = true
-		_, findScoresInput.OpDivIDs = user.EffectiveOpDivScope()
-	default:
+	// Same tier scoping as ListScores, applied AFTER decode. This endpoint's
+	// self-scope default is the assigned-systems list, not UserID.
+	if findScoresInput.ApplyTier(user) {
 		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
 	}
 
