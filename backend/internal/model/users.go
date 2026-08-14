@@ -46,21 +46,14 @@ type User struct {
 	LastSeen *time.Time `json:"last_seen" db:"last_seen"`
 }
 
-// assignedOpDivIDsSubquery loads a user's OpDiv grants. The COALESCE is the
-// contract, not an optimisation: ARRAY_AGG over zero rows is SQL NULL, which
-// scans into a nil slice and serializes as JSON null, spelling "holds no
-// grants" exactly like "field absent" (ztmf#346). Resolves against the outer
-// row in SELECT, UPDATE ... RETURNING, and INSERT ... RETURNING alike, so the
-// one expression covers the read and write paths both.
+// ARRAY_AGG over zero rows is SQL NULL, which scans to a nil slice and
+// serializes as JSON null - "holds no grants" spelled like "field absent"
+// (ztmf#346). Resolves against the outer row in SELECT and RETURNING alike.
 //
-// Selected by the /users paths only - list, detail, save, restore - so
-// assignedopdivids is an always-array there. The delegate-resource paths
-// deliberately do NOT select it: a system-scoped actor reading a roster has no
-// need for a delegate's OpDiv memberships, and since a delegate is granted the
-// OpDiv of every system they are attached to, serving it there would tell an
-// ISSO in one OpDiv which other OpDivs a shared delegate works in. Those
-// responses keep spelling the field null, which is why a client's `?? []`
-// stays load-bearing.
+// Selected by the /users paths only. The delegate paths deliberately skip it: a
+// delegate is granted the OpDiv of every system they are attached to, so
+// serving it on a roster any system viewer can read would tell an ISSO in one
+// OpDiv which other OpDivs a shared delegate works in.
 const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}') FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
 
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
@@ -535,10 +528,7 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 			"users.identity_provider",
 			"users.access_expires_at",
 			"NULL::timestamptz AS last_seen",
-			// assignedfismasystems keeps the bare ARRAY_AGG: it is json:"-"
-			// (server-side authz only) and never crosses the wire, so the
-			// nil-vs-empty distinction the COALESCE below removes does not
-			// arise for it.
+			// Bare ARRAY_AGG is fine here: json:"-", never crosses the wire.
 			"(SELECT ARRAY_AGG(fismasystemid) FROM users_fismasystems WHERE userid = users.userid) AS assignedfismasystems",
 			assignedOpDivIDsSubquery,
 		).

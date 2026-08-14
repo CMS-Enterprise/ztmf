@@ -12,24 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// assignedopdivids is an always-array on the wire (ztmf#346). ARRAY_AGG over
-// zero rows is SQL NULL, so without the COALESCE in assignedOpDivIDsSubquery a
-// user with no OpDiv grants serializes as null - the same shape a response that
-// omitted the field entirely would have. A client cannot tell "empty scope"
-// from "unknown" apart, which matters because ztmf-ui#642 makes this field the
-// save-time preserve boundary in the Assign OpDivs modal.
-//
-// The nil-vs-empty distinction is invisible to Go's own consumers (len() and
-// range treat them alike) and, as the emberfall note explains, is not reliably
-// assertable from the YAML smokes either. So it is pinned here, on both the
-// scanned slice and the marshalled JSON - the latter because the JSON is the
-// actual contract and survives a future change of the Go field type.
+// assignedopdivids is an always-array on the wire (ztmf#346). The nil-vs-empty
+// distinction is invisible to Go's own consumers - len() and range treat them
+// alike - so it is pinned on both the scanned slice and the marshalled JSON.
 
 const noGrantUserEmail = "No.Grants.User@empire.test"
 
-// grantlessUserID resolves a seeded user holding no OpDiv grants, rather than
-// hardcoding an id, so the test cannot pass vacuously against a fixture where
-// every user happens to be granted.
+// Resolved rather than hardcoded so the test cannot pass vacuously against a
+// fixture where every user happens to be granted.
 func grantlessUserID(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -49,8 +39,7 @@ func grantlessUserID(t *testing.T, ctx context.Context) string {
 	return userID
 }
 
-// assertEmptyArray pins both halves of the contract: a non-nil empty slice in
-// Go, and a literal [] in the JSON the frontend actually reads.
+// Both halves of the contract: a non-nil empty slice, and a literal [] on the wire.
 func assertEmptyArray(t *testing.T, u *User, where string) {
 	t.Helper()
 	assert.NotNil(t, u.AssignedOpDivIDs, "%s: a grantless user must scan an empty slice, not nil", where)
@@ -95,9 +84,8 @@ func TestAssignedOpDivIDsEmptyArrayIntegration(t *testing.T) {
 		assertEmptyArray(t, u, "findUser")
 	})
 
-	// Real grants must still come through. A COALESCE that flattened every user
-	// to empty would satisfy both assertions above, so check the list against
-	// the actual junction-table counts for every seeded user at once.
+	// A COALESCE that flattened everyone to empty would satisfy both assertions
+	// above, so check every user against the actual junction-table counts.
 	t.Run("GrantsAreNotFlattened", func(t *testing.T) {
 		conn, err := db.Conn(ctx)
 		require.NoError(t, err)
@@ -136,9 +124,8 @@ func TestAssignedOpDivIDsEmptyArrayIntegration(t *testing.T) {
 	})
 }
 
-// The write paths are the half the issue's acceptance criteria did not name:
-// Save, RestoreUser, and the delegate paths omitted assignedopdivids from their
-// RETURNING clauses entirely, so under lax scanning they returned null too.
+// The half the acceptance criteria did not name: Save and RestoreUser omitted
+// assignedopdivids from RETURNING entirely, so lax scanning returned null.
 func TestAssignedOpDivIDsWritePathsIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test")
@@ -166,10 +153,9 @@ func TestAssignedOpDivIDsWritePathsIntegration(t *testing.T) {
 	require.NotNil(t, restored)
 	assertEmptyArray(t, restored, "RestoreUser")
 
-	// Same user, now granted: the write paths must report the grant, not a
-	// blanket empty array. This is the detail-path counterpart of the list
-	// check in GrantsAreNotFlattened - done against a user this test created so
-	// it has a v4 userid (FindUserByID rejects the fixture's 3333-style ids).
+	// Same user, now granted: the write paths must report it, not a blanket
+	// empty array. Uses a user this test created so the id is a v4 UUID
+	// (FindUserByID rejects the fixture's 3333-style ids).
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
 	defer conn.Release()

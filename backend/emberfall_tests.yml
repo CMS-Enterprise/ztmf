@@ -135,15 +135,9 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
-# deletedUserData / restoredUserData are response-only anchors, so the ztmf#346
-# always-array assertion lives here. userData / updatedUserData are also used as
-# POST/PUT request bodies, so their assignedopdivids expectation is spelled at
-# each expect site instead - it must not be sent up as input.
-#
-# emberfall v0.4.1 enforces `assignedopdivids: []` as a real constraint (it
-# reports "expected ... to be an array, got <nil>" against a null), so these are
-# not vacuous. The nil-vs-empty distinction on the Go side is pinned separately
-# in internal/model/users_opdivarray_integration_test.go.
+# Response-only anchors, so the ztmf#346 always-array assertion can live here.
+# userData / updatedUserData double as request bodies, so theirs is spelled at
+# each expect site instead.
 deletedUserData: &deletedUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
@@ -283,6 +277,25 @@ tests:
             email: "Test.User@nowhere.xyz"
             role: "OWNER"
             identity_provider: "okta"
+
+  # ztmf#346 on the caller's own record - the frontend reads this into
+  # callerGrantIds (ztmf-ui#642). Served from the auth middleware's context
+  # user, so no /users test would catch a regression here. Delegate.User holds
+  # no grants, so the expectation is stable against the opdivs serial.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Delegate.User@nowhere.xyz"
+            role: "SYSTEM_DELEGATE"
+            assignedopdivids: []
 
   # Pre-auth IdP lookup - unauthenticated; routes the landing page to the
   # correct ALB login path. No Authorization header on these by design.
@@ -1362,8 +1375,7 @@ tests:
         json:
           data:
             <<: *userData
-            # ztmf#346: a brand-new user holds no OpDiv grants, and the create
-            # response must still spell that [] rather than null.
+            # ztmf#346: a brand-new user holds no grants; still [], not null.
             assignedopdivids: []
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
@@ -1384,9 +1396,8 @@ tests:
             # passing an explicit identity_provider (see the override gate).
             identity_provider: "okta"
 
-  # ztmf#346 on the list path. Placed before the PUT below so the email filter
-  # still matches this user, and pinned as an array item (which emberfall
-  # supports since aquia-inc/emberfall#36 closed in v0.4.1).
+  # ztmf#346 on the list path. Before the PUT below so the email filter still
+  # matches this user.
   - url: "http://localhost:8080/api/v1/users?email=New.User@example.com"
     method: GET
     headers:
