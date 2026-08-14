@@ -52,7 +52,7 @@ type User struct {
 // /users paths only. The delegate paths must not select it: an ISSO is 403'd on
 // GET /users but can read their own system's roster, so serving OpDiv
 // membership there leaks what that 403 withholds.
-const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}') FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
+const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}'::integer[]) FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
 
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
 // READONLY_ADMIN values were removed in Stage D, so the checks below only
