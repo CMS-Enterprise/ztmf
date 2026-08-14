@@ -50,10 +50,11 @@ type User struct {
 // serializes as JSON null - "holds no grants" spelled like "field absent"
 // (ztmf#346). Resolves against the outer row in SELECT and RETURNING alike.
 //
-// Selected by the /users paths only. The delegate paths deliberately skip it: a
-// delegate is granted the OpDiv of every system they are attached to, so
-// serving it on a roster any system viewer can read would tell an ISSO in one
-// OpDiv which other OpDivs a shared delegate works in.
+// Selected by every path that returns a User, including the delegate ones.
+// Those already carried assignedopdivids in their responses - as null, since
+// they never selected it - so this corrects a value rather than exposing a new
+// field, and it is what makes a client's `?? []` a provable no-op instead of a
+// guess about which endpoint produced the record.
 const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}') FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
 
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
@@ -686,7 +687,7 @@ func SetDelegateExpiry(ctx context.Context, userid string, expiresAt *time.Time)
 		// deleted=false: never renew a soft-deleted delegate. A non-delegate, a
 		// missing id, or a soft-deleted row all match nothing -> ErrNoData -> 404.
 		Where("userid=? AND role='SYSTEM_DELEGATE' AND deleted=false", userid).
-		Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at")
+		Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at, " + assignedOpDivIDsSubquery)
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
 }
@@ -705,6 +706,7 @@ func FindDelegatesByFismaSystem(ctx context.Context, fismasystemid int32) ([]*Us
 			"users.deleted",
 			"users.identity_provider",
 			"users.access_expires_at",
+			assignedOpDivIDsSubquery,
 		).
 		From("users").
 		Join("users_fismasystems ufs ON ufs.userid = users.userid").
@@ -733,6 +735,7 @@ func FindDelegateCandidatesForSystem(ctx context.Context, fismasystemid, opdivID
 			"users.deleted",
 			"users.identity_provider",
 			"users.access_expires_at",
+			assignedOpDivIDsSubquery,
 		).
 		From("users").
 		Where("users.role='SYSTEM_DELEGATE'").
@@ -837,9 +840,9 @@ func AddSystemDelegate(ctx context.Context, sys *FismaSystem, opdiv *OpDiv, acto
 	err = tx.QueryRow(ctx,
 		`INSERT INTO users (email, fullname, role, identity_provider, access_expires_at)
 		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at`,
+		 RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at, `+assignedOpDivIDsSubquery,
 		email, fullname, "SYSTEM_DELEGATE", idp, exp,
-	).Scan(&created.UserID, &created.Email, &created.FullName, &created.Role, &created.Deleted, &created.IdentityProvider, &created.AccessExpiresAt)
+	).Scan(&created.UserID, &created.Email, &created.FullName, &created.Role, &created.Deleted, &created.IdentityProvider, &created.AccessExpiresAt, &created.AssignedOpDivIDs)
 	if err != nil {
 		e := trapError(err)
 		// A concurrent request may have created this email between the FindUserByEmail

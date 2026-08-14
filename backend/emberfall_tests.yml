@@ -518,6 +518,24 @@ tests:
       headers:
         content-type: "application/json"
 
+  # ztmf#346 off the /users resource. These responses already carried
+  # assignedopdivids (as null, since the query never selected it), so the
+  # always-array contract has to hold here too or `?? []` stays load-bearing.
+  # Delegate.User is seeded onto 1001 without a grant.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "Delegate.User@nowhere.xyz"
+              assignedopdivids: []
+
   # Success-path sequence (must run in order): Isso.User is assigned to Shield Gen
   # (1003, EMPIRE, capability enabled). Reuse.Delegate is a seeded EMPIRE delegate
   # not yet on any system, so the ISSO can attach (201), renew (200), then remove
