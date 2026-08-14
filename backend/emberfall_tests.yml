@@ -135,17 +135,28 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
+# deletedUserData / restoredUserData are response-only anchors, so the ztmf#346
+# always-array assertion lives here. userData / updatedUserData are also used as
+# POST/PUT request bodies, so their assignedopdivids expectation is spelled at
+# each expect site instead - it must not be sent up as input.
+#
+# emberfall v0.4.1 enforces `assignedopdivids: []` as a real constraint (it
+# reports "expected ... to be an array, got <nil>" against a null), so these are
+# not vacuous. The nil-vs-empty distinction on the Go side is pinned separately
+# in internal/model/users_opdivarray_integration_test.go.
 deletedUserData: &deletedUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: true
+  assignedopdivids: []
 
 restoredUserData: &restoredUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: false
+  assignedopdivids: []
 
 questionData: &questionData
   question: "How do you manage user identities?"
@@ -1351,7 +1362,10 @@ tests:
         json:
           data:
             <<: *userData
-  
+            # ztmf#346: a brand-new user holds no OpDiv grants, and the create
+            # response must still spell that [] rather than null.
+            assignedopdivids: []
+
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: GET
     headers:
@@ -1364,10 +1378,28 @@ tests:
         json:
           data:
             <<: *userData
+            assignedopdivids: []
             # No explicit IdP supplied on create, so it defaults to the CMS
             # baseline (okta). HHS users are routed to entra by an HHS-wide actor
             # passing an explicit identity_provider (see the override gate).
             identity_provider: "okta"
+
+  # ztmf#346 on the list path. Placed before the PUT below so the email filter
+  # still matches this user, and pinned as an array item (which emberfall
+  # supports since aquia-inc/emberfall#36 closed in v0.4.1).
+  - url: "http://localhost:8080/api/v1/users?email=New.User@example.com"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "New.User@example.com"
+              assignedopdivids: []
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: PUT
@@ -1392,7 +1424,8 @@ tests:
         json:
           data:
             <<: *updatedUserData
-  
+            assignedopdivids: []
+
   - url: http://localhost:8080/api/v1/users
     method: GET
     headers:
