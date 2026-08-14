@@ -135,17 +135,22 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
+# Response-only anchors, so the always-array assertion can live here.
+# userData / updatedUserData double as request bodies, so theirs is spelled at
+# each expect site instead.
 deletedUserData: &deletedUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: true
+  assignedopdivids: []
 
 restoredUserData: &restoredUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: false
+  assignedopdivids: []
 
 questionData: &questionData
   question: "How do you manage user identities?"
@@ -272,6 +277,25 @@ tests:
             email: "Test.User@nowhere.xyz"
             role: "OWNER"
             identity_provider: "okta"
+
+  # The caller's own record - the frontend reads this into
+  # callerGrantIds (ztmf-ui#642). Served from the auth middleware's context
+  # user, so no /users test would catch a regression here. Delegate.User holds
+  # no grants, so the expectation is stable against the opdivs serial.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Delegate.User@nowhere.xyz"
+            role: "SYSTEM_DELEGATE"
+            assignedopdivids: []
 
   # Pre-auth IdP lookup - unauthenticated; routes the landing page to the
   # correct ALB login path. No Authorization header on these by design.
@@ -493,6 +517,24 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # The always-array contract stops at /users on purpose. An ISSO is 403'd on
+  # GET /users but can read their own system's roster, so populating OpDiv
+  # membership here would leak exactly what that 403 withholds. Pinned as null
+  # so re-adding the subquery to the delegate paths fails loudly.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "Delegate.User@nowhere.xyz"
+              assignedopdivids: null
 
   # Success-path sequence (must run in order): Isso.User is assigned to Shield Gen
   # (1003, EMPIRE, capability enabled). Reuse.Delegate is a seeded EMPIRE delegate
@@ -1351,7 +1393,9 @@ tests:
         json:
           data:
             <<: *userData
-  
+            # A brand-new user holds no grants; still [], not null.
+            assignedopdivids: []
+
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: GET
     headers:
@@ -1364,10 +1408,27 @@ tests:
         json:
           data:
             <<: *userData
+            assignedopdivids: []
             # No explicit IdP supplied on create, so it defaults to the CMS
             # baseline (okta). HHS users are routed to entra by an HHS-wide actor
             # passing an explicit identity_provider (see the override gate).
             identity_provider: "okta"
+
+  # The list path. Before the PUT below so the email filter still
+  # matches this user.
+  - url: "http://localhost:8080/api/v1/users?email=New.User@example.com"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "New.User@example.com"
+              assignedopdivids: []
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: PUT
@@ -1392,7 +1453,8 @@ tests:
         json:
           data:
             <<: *updatedUserData
-  
+            assignedopdivids: []
+
   - url: http://localhost:8080/api/v1/users
     method: GET
     headers:
