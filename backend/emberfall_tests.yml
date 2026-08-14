@@ -518,10 +518,10 @@ tests:
       headers:
         content-type: "application/json"
 
-  # ztmf#346 off the /users resource. These responses already carried
-  # assignedopdivids (as null, since the query never selected it), so the
-  # always-array contract has to hold here too or `?? []` stays load-bearing.
-  # Delegate.User is seeded onto 1001 without a grant.
+  # ztmf#346 stops at the /users resource on purpose. An ISSO is 403'd on GET
+  # /users but can read their own system's roster, so populating OpDiv
+  # membership here would leak exactly what that 403 withholds. Pinned as null
+  # so re-adding the subquery to the delegate paths fails loudly.
   - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
     method: GET
     headers:
@@ -534,7 +534,7 @@ tests:
         json:
           data:
             - email: "Delegate.User@nowhere.xyz"
-              assignedopdivids: []
+              assignedopdivids: null
 
   # Success-path sequence (must run in order): Isso.User is assigned to Shield Gen
   # (1003, EMPIRE, capability enabled). Reuse.Delegate is a seeded EMPIRE delegate
