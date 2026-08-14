@@ -135,7 +135,7 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
-# Response-only anchors, so the ztmf#346 always-array assertion can live here.
+# Response-only anchors, so the always-array assertion can live here.
 # userData / updatedUserData double as request bodies, so theirs is spelled at
 # each expect site instead.
 deletedUserData: &deletedUserData
@@ -278,7 +278,7 @@ tests:
             role: "OWNER"
             identity_provider: "okta"
 
-  # ztmf#346 on the caller's own record - the frontend reads this into
+  # The caller's own record - the frontend reads this into
   # callerGrantIds (ztmf-ui#642). Served from the auth middleware's context
   # user, so no /users test would catch a regression here. Delegate.User holds
   # no grants, so the expectation is stable against the opdivs serial.
@@ -518,8 +518,8 @@ tests:
       headers:
         content-type: "application/json"
 
-  # ztmf#346 stops at the /users resource on purpose. An ISSO is 403'd on GET
-  # /users but can read their own system's roster, so populating OpDiv
+  # The always-array contract stops at /users on purpose. An ISSO is 403'd on
+  # GET /users but can read their own system's roster, so populating OpDiv
   # membership here would leak exactly what that 403 withholds. Pinned as null
   # so re-adding the subquery to the delegate paths fails loudly.
   - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
@@ -1393,7 +1393,7 @@ tests:
         json:
           data:
             <<: *userData
-            # ztmf#346: a brand-new user holds no grants; still [], not null.
+            # A brand-new user holds no grants; still [], not null.
             assignedopdivids: []
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
@@ -1414,7 +1414,7 @@ tests:
             # passing an explicit identity_provider (see the override gate).
             identity_provider: "okta"
 
-  # ztmf#346 on the list path. Before the PUT below so the email filter still
+  # The list path. Before the PUT below so the email filter still
   # matches this user.
   - url: "http://localhost:8080/api/v1/users?email=New.User@example.com"
     method: GET

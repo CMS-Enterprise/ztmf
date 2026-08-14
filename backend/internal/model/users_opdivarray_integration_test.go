@@ -12,14 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// assignedopdivids is an always-array on the wire (ztmf#346). The nil-vs-empty
-// distinction is invisible to Go's own consumers - len() and range treat them
-// alike - so it is pinned on both the scanned slice and the marshalled JSON.
+// assignedopdivids is an always-array on the wire. The nil-vs-empty distinction
+// is invisible to Go's own consumers - len() and range treat them alike - so it
+// is pinned on both the scanned slice and the marshalled JSON.
 
 const noGrantUserEmail = "No.Grants.User@empire.test"
 
 // Resolved rather than hardcoded so the test cannot pass vacuously against a
-// fixture where every user happens to be granted.
+// fixture where every user happens to be granted. Constrained to a live user
+// because the FindUsers subtest below reads the default deleted=false list, and
+// ordered so a failure names the same user twice running.
 func grantlessUserID(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -29,7 +31,9 @@ func grantlessUserID(t *testing.T, ctx context.Context) string {
 	var userID string
 	err = conn.QueryRow(ctx, `
 		SELECT u.userid FROM public.users u
-		WHERE NOT EXISTS (SELECT 1 FROM public.users_opdivs uo WHERE uo.userid = u.userid)
+		WHERE u.deleted = false
+		  AND NOT EXISTS (SELECT 1 FROM public.users_opdivs uo WHERE uo.userid = u.userid)
+		ORDER BY u.userid
 		LIMIT 1
 	`).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {

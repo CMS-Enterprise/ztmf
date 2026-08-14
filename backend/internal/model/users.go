@@ -47,14 +47,11 @@ type User struct {
 }
 
 // ARRAY_AGG over zero rows is SQL NULL, which scans to a nil slice and
-// serializes as JSON null - "holds no grants" spelled like "field absent"
-// (ztmf#346). Resolves against the outer row in SELECT and RETURNING alike.
+// serializes as JSON null - "no grants" spelled like "field absent" (ztmf#346).
 //
-// Selected by the /users paths only. The delegate paths must NOT select it: an
-// ISSO is 403'd on GET /users but can read their own system's delegate roster,
-// so populating it there would hand them the OpDiv membership that 403 exists
-// to withhold. Those responses keep spelling the field null - the key is in the
-// schema either way, and null discloses nothing.
+// /users paths only. The delegate paths must not select it: an ISSO is 403'd on
+// GET /users but can read their own system's roster, so serving OpDiv
+// membership there leaks what that 403 withholds.
 const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}') FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
 
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
