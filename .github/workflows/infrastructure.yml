@@ -23,10 +23,10 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       
       - name: Get AWS Creds
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.ROLEARN }}
           # 1 hour: dev/prod applies normally complete in a few minutes, but
@@ -37,7 +37,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3.1.2
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: "1.10.3"
       
