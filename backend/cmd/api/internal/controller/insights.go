@@ -29,14 +29,8 @@ func ListSystemInsights(w http.ResponseWriter, r *http.Request) {
 	// Scope by tier AFTER decode so a client cannot widen scope via query
 	// params: unscoped admins see all; OpDiv tiers fail-closed to their granted
 	// OpDivs' systems; ISSO/ISSM keep the per-system (UserID) path.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		in.RestrictToOpDivIDs = true
-		_, in.OpDivIDs = user.EffectiveOpDivScope()
-	default:
-		in.UserID = &user.UserID
+	if in.ApplyTier(user) {
+		in.UserID = user.UserIDPtr()
 	}
 
 	if err == nil {

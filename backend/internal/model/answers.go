@@ -35,7 +35,12 @@ type Answer struct {
 type FindAnswersInput struct {
 	FismaSystemIDs []*int32 `schema:"fsids"`
 	DataCallID     int32
-	UserID         *string
+	// UserID is the caller's per-user scope, set from the session by the
+	// controller, never from the request. schema:"-" so ?UserID= is a 400 unknown
+	// key rather than a silent scope redirect (ztmf-misc#268); OpDivScope carries
+	// the same guard for the OpDiv fields.
+	UserID *string `schema:"-"`
+	OpDivScope
 }
 
 // FindAnswers queries the DB and returns a fully comprehensive set of fields and values
@@ -58,7 +63,7 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// fresh one. The scoring key needs a subquery because no dce alias is in
 		// scope here.
 		Where(
-			saasPillarScopeSQL(
+			reducedPillarScopeSQL(
 				"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment=fismasystems.datacenterenvironment)",
 				"pillars.pillar",
 				"?",
@@ -79,6 +84,12 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)
+	}
+
+	// OpDiv scope (fail-closed): an OpDiv-restricted caller with no grants gets
+	// no rows rather than every row. Shared with every other list query.
+	if f := input.OpDivWhere(squirrel.Eq{"fismasystems.opdiv_id": input.OpDivIDs}); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	if len(input.FismaSystemIDs) > 0 {

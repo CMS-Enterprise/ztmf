@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -42,10 +43,7 @@ type DataCenterMismatch struct {
 // RestrictToOpDivIDs carry the auth'd user's access scope and are set by the
 // controller, never by the client, mirroring FindSystemInsightsInput.
 type FindDataCenterMismatchesInput struct {
-	// OpDiv scope for the per-OpDiv admin tiers. RestrictToOpDivIDs with an
-	// empty slice fails closed (no rows).
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	OpDivScope
 }
 
 // FindDataCenterMismatches returns active systems whose CFACTS-reported data
@@ -95,11 +93,8 @@ func FindDataCenterMismatches(ctx context.Context, in FindDataCenterMismatchesIn
 
 	// OpDiv-scoped admin tiers (fail-closed): restrict to systems in the admin's
 	// granted OpDivs. Empty grants under RestrictToOpDivIDs -> no rows.
-	switch {
-	case in.RestrictToOpDivIDs && len(in.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(in.OpDivIDs) > 0:
-		sqlb = sqlb.Where("fs.opdiv_id = ANY(?)", in.OpDivIDs)
+	if f := in.OpDivWhere(squirrel.Expr("fs.opdiv_id = ANY(?)", in.OpDivIDs)); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[DataCenterMismatch])

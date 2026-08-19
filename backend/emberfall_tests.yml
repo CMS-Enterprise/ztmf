@@ -135,17 +135,22 @@ updatedUserData: &updatedUserData
   fullname: "Updated Test User"
   role: "ISSO"
 
+# Response-only anchors, so the always-array assertion can live here.
+# userData / updatedUserData double as request bodies, so theirs is spelled at
+# each expect site instead.
 deletedUserData: &deletedUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: true
+  assignedopdivids: []
 
 restoredUserData: &restoredUserData
   email: "updated.user@example.com"
   fullname: "Updated Test User"
   role: "ISSO"
   deleted: false
+  assignedopdivids: []
 
 questionData: &questionData
   question: "How do you manage user identities?"
@@ -272,6 +277,25 @@ tests:
             email: "Test.User@nowhere.xyz"
             role: "OWNER"
             identity_provider: "okta"
+
+  # The caller's own record - the frontend reads this into
+  # callerGrantIds (ztmf-ui#642). Served from the auth middleware's context
+  # user, so no /users test would catch a regression here. Delegate.User holds
+  # no grants, so the expectation is stable against the opdivs serial.
+  - url: http://localhost:8080/api/v1/users/current
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            email: "Delegate.User@nowhere.xyz"
+            role: "SYSTEM_DELEGATE"
+            assignedopdivids: []
 
   # Pre-auth IdP lookup - unauthenticated; routes the landing page to the
   # correct ALB login path. No Authorization header on these by design.
@@ -493,6 +517,24 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # The always-array contract stops at /users on purpose. An ISSO is 403'd on
+  # GET /users but can read their own system's roster, so populating OpDiv
+  # membership here would leak exactly what that 403 withholds. Pinned as null
+  # so re-adding the subquery to the delegate paths fails loudly.
+  - url: http://localhost:8080/api/v1/fismasystems/1001/delegates
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "Delegate.User@nowhere.xyz"
+              assignedopdivids: null
 
   # Success-path sequence (must run in order): Isso.User is assigned to Shield Gen
   # (1003, EMPIRE, capability enabled). Reuse.Delegate is a seeded EMPIRE delegate
@@ -954,6 +996,30 @@ tests:
       headers:
         content-type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+  # Export as an OpDiv-scoped admin (ztmf-misc#267): the caller falls into the
+  # OpDiv-restricted branch, not the unscoped admin path, so the request still
+  # succeeds and returns a valid xlsx scoped to the caller's OpDiv. The prior
+  # case covers the unscoped admin path; this pins that the tier split reaches
+  # the export at all. Row-level OpDiv containment is asserted in the model
+  # integration tests, which can read opdiv_id back per system.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/export"
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+  # A server-owned scope field supplied in the query is a 400, not a redirect
+  # (ztmf-misc#268). UserID carries schema:"-", so it is an unknown key.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/export?UserID=00000000-0000-0000-0000-000000000000"
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 400
+
   # Decommission FISMA system with custom date and notes
   - id: decommissionFismaSystem
     url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
@@ -1327,7 +1393,9 @@ tests:
         json:
           data:
             <<: *userData
-  
+            # A brand-new user holds no grants; still [], not null.
+            assignedopdivids: []
+
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: GET
     headers:
@@ -1340,10 +1408,27 @@ tests:
         json:
           data:
             <<: *userData
+            assignedopdivids: []
             # No explicit IdP supplied on create, so it defaults to the CMS
             # baseline (okta). HHS users are routed to entra by an HHS-wide actor
             # passing an explicit identity_provider (see the override gate).
             identity_provider: "okta"
+
+  # The list path. Before the PUT below so the email filter still
+  # matches this user.
+  - url: "http://localhost:8080/api/v1/users?email=New.User@example.com"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - email: "New.User@example.com"
+              assignedopdivids: []
 
   - url: "http://localhost:8080/api/v1/users/{{.createUser.Response.data.userid}}"
     method: PUT
@@ -1368,7 +1453,8 @@ tests:
         json:
           data:
             <<: *updatedUserData
-  
+            assignedopdivids: []
+
   - url: http://localhost:8080/api/v1/users
     method: GET
     headers:
@@ -3112,3 +3198,134 @@ tests:
     method: GET
     expect:
       status: 401
+
+  # ==========================================================================
+  # Reduced pillar scope (ztmf#545 / ztmf-misc#289). MOCK-SAAS (2016) is the
+  # seeded SaaS fixture; 104 is the FY26 fixture cycle the seeded rule anchors
+  # on; 103 is the prior full-set cycle. The questionnaire endpoint serves the
+  # reduced set only when asked for an in-scope cycle, and the aggregate stops
+  # scoring the excluded pillars from the anchor cycle onward.
+  #
+  # Row order note: on seeded test databases pillars.ordr and questions.ordr
+  # are 0 (migration 0056 runs before the populate seed), so the questionnaire
+  # sorts by its questionid tiebreaker and the aggregate by pillarid - both of
+  # which happen to walk the fixture pillars as Devices, Applications,
+  # Networks, Data, CrossCutting, Identity.
+  # ==========================================================================
+
+  # Without a data call the environment's full catalog returns - the pre-#545
+  # contract the frontend's own filter expects. Exact array length: a 4-row
+  # response here means the reduction leaked into the unparameterized path.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Devices"
+            - pillar:
+                pillar: "Applications"
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # The anchor cycle serves the reduced set: Devices and Applications drop,
+  # order otherwise unchanged.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=104
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # A cycle deadlined before the anchor keeps the full catalog.
+  - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=103
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - pillar:
+                pillar: "Devices"
+            - pillar:
+                pillar: "Applications"
+            - pillar:
+                pillar: "Networks"
+            - pillar:
+                pillar: "Data"
+            - pillar:
+                pillar: "CrossCutting"
+            - pillar:
+                pillar: "Identity"
+
+  # Scoring: on the anchor cycle the aggregate carries exactly the four
+  # in-scope pillar scores, even though the seed leaves carried-forward
+  # answers on the excluded pillars. The prior cycle keeps all six.
+  - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=104&include_pillars=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 2016
+              datacallid: 104
+              pillarscores:
+                - pillar: "Networks"
+                - pillar: "Data"
+                - pillar: "CrossCutting"
+                - pillar: "Identity"
+
+  - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=103&include_pillars=true"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 2016
+              datacallid: 103
+              pillarscores:
+                - pillar: "Devices"
+                - pillar: "Applications"
+                - pillar: "Networks"
+                - pillar: "Data"
+                - pillar: "CrossCutting"
+                - pillar: "Identity"
