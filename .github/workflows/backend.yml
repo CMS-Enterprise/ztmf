@@ -64,7 +64,7 @@ jobs:
         run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
 
       - name: Snyk - Test Image
-        uses: snyk/actions/docker@12140f4059e244892ae643824a95459a102120dd # snyk/actions has no tagged releases; pinned master @ 2026-06-16
+        uses: snyk/actions/docker@12140f4059e244892ae643824a95459a102120dd # snyk/actions has no tagged releases; pinned master @ 2026-08-03
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -101,7 +101,7 @@ jobs:
           WORKSPACE: ${{ github.workspace }}
 
       - name: Emberfall Smoke Tests
-        uses: aquia-inc/emberfall@a0d970e3235fc42dd7b24c1b7dd18f924fcb5aed # main @ 2026-06-16 (composite; binary version set via `version` below)
+        uses: aquia-inc/emberfall@a0d970e3235fc42dd7b24c1b7dd18f924fcb5aed # main @ 2026-08-12 (composite; binary version set via `version` below)
         with:
           version: 0.4.1
           file: ./backend/emberfall_tests.yml
