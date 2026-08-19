@@ -47,3 +47,47 @@ jobs:
 
       - name: Terraform apply
         run: terraform -chdir=infrastructure apply -no-color -var-file="tfvars/${ENV,,}.tfvars" -auto-approve
+
+      # On a failed apply (typically the 20m ECS steady-state timeout) pull what
+      # Terraform cannot show: why tasks stopped and whether the app named a
+      # known fatal. A migration-version crash loop prints its
+      # MIGRATION_VERSION_MISMATCH line here; genuine deploy contention shows no
+      # crash-looping stopped tasks. This repo is public, so raw application
+      # logs are never dumped into job output: only the controlled mismatch
+      # token is printed, everything else points at CloudWatch by name.
+      # Context: ztmf-misc#298.
+      - name: Deploy failure diagnostics
+        if: failure()
+        run: |
+          set +e
+          SFX=""; USFX=""
+          if [ "${ENV,,}" = "impl" ]; then SFX="-impl"; USFX="_impl"; fi
+          CLUSTER="ztmf${SFX}"
+          SERVICE="ztmf-api${SFX}"
+          LOG_GROUP="ztmf_api${USFX}"
+
+          echo "::group::ECS service events ($CLUSTER/$SERVICE)"
+          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].events[:15].[createdAt,message]' --output text
+          echo "::endgroup::"
+
+          echo "::group::Stopped task reasons"
+          TASKS=$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" \
+            --desired-status STOPPED --query 'taskArns[:10]' --output text)
+          if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
+            aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS \
+              --query 'tasks[].{stoppedAt:stoppedAt,stoppedReason:stoppedReason,exitCode:containers[0].exitCode,reason:containers[0].reason}' \
+              --output table
+            echo "Repeated stops with an exit code mean a startup fatal; full logs: CloudWatch log group $LOG_GROUP"
+          else
+            echo "No recently stopped tasks: not a crash loop (deploy contention or capacity, not a startup fatal)."
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Known startup fatals (last 30m of $LOG_GROUP)"
+          aws logs filter-log-events --log-group-name "$LOG_GROUP" \
+            --start-time "$((($(date +%s) - 1800) * 1000))" \
+            --filter-pattern '"MIGRATION_VERSION_MISMATCH"' \
+            --query 'events[:5].message' --output text
+          echo "::endgroup::"
+          exit 0
