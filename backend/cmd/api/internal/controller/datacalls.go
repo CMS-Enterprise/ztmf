@@ -60,20 +60,26 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	findAnswersInput := model.FindAnswersInput{}
 
-	if !user.HasAdminRead() {
-		findAnswersInput.UserID = &user.UserID
-	}
-
-	vars := mux.Vars(r)
-	if v, ok := vars["datacallid"]; ok {
-		fmt.Sscan(v, &findAnswersInput.DataCallID)
-	}
-
+	// Decode the client query FIRST, then set the path id and the caller's scope,
+	// so nothing client-supplied can widen or redirect them. This is the ordering
+	// every other list handler uses (see scopeScoreProgressInput); the export was
+	// the one place scope was set before decode, which let a query param overwrite
+	// it (ztmf-misc#268). The scope fields carry schema:"-" so a decode attempt on
+	// them is a 400, but the ordering is the real guard.
 	err := decoder.Decode(&findAnswersInput, r.URL.Query())
 	if err != nil {
 		respond(w, r, nil, err)
 		return
 	}
+
+	// The path is authoritative for the data call; set it after decode so
+	// ?DataCallID= cannot redirect the export.
+	vars := mux.Vars(r)
+	if v, ok := vars["datacallid"]; ok {
+		fmt.Sscan(v, &findAnswersInput.DataCallID)
+	}
+
+	scopeFindAnswersInput(user, &findAnswersInput)
 
 	answers, err := model.FindAnswers(r.Context(), findAnswersInput)
 	if err != nil {
@@ -106,6 +112,20 @@ func GetDatacallExport(w http.ResponseWriter, r *http.Request) {
 	// it so server-side observability catches mid-stream disconnects.
 	if err := file.Write(w); err != nil {
 		log.Printf("GetDatacallExport: error writing xlsx to response (datacallid=%d): %v", findAnswersInput.DataCallID, err)
+	}
+}
+
+// scopeFindAnswersInput applies the caller's tier to the export query input,
+// the same three-way split ListScores and scopeScoreProgressInput use: unscoped
+// admins (OWNER, HHS_ADMIN, HHS_READONLY_ADMIN) see every OpDiv; OpDiv tiers
+// fail-closed to their granted OpDivs; everyone else is limited to their
+// assigned systems. Before this the export used a two-way HasAdminRead() branch
+// that dropped both OpDiv tiers into the unscoped path, so an OpDiv admin
+// exported every OpDiv's answers (ztmf-misc#267). Extracted so the role matrix
+// is unit-testable without a database.
+func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
+	if input.ApplyTier(user) {
+		input.UserID = user.UserIDPtr()
 	}
 }
 

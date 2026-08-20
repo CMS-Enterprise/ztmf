@@ -46,6 +46,14 @@ type User struct {
 	LastSeen *time.Time `json:"last_seen" db:"last_seen"`
 }
 
+// ARRAY_AGG over zero rows is SQL NULL, which scans to a nil slice and
+// serializes as JSON null - "no grants" spelled like "field absent" (ztmf#346).
+//
+// /users paths only. The delegate paths must not select it: an ISSO is 403'd on
+// GET /users but can read their own system's roster, so serving OpDiv
+// membership there leaks what that 403 withholds.
+const assignedOpDivIDsSubquery = `(SELECT COALESCE(ARRAY_AGG(opdiv_id), '{}'::integer[]) FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids`
+
 // Role helpers for the multi-OpDiv role taxonomy. The legacy ADMIN /
 // READONLY_ADMIN values were removed in Stage D, so the checks below only
 // match the new tier names. Callers gate access with IsAdmin / HasAdminRead at
@@ -53,6 +61,16 @@ type User struct {
 // the helpers further down.
 
 func (u *User) IsOwner() bool { return u.Role == "OWNER" }
+
+// UserIDPtr returns a pointer to a COPY of the user's id, for setting the
+// self-scope UserID on a query input. Never take &u.UserID directly: that aims
+// at the session User's own field, so a later decode onto the same input struct
+// would mutate the authenticated identity (the ztmf-misc#268 pointer-mutation
+// finding). The copy severs that.
+func (u *User) UserIDPtr() *string {
+	id := u.UserID
+	return &id
+}
 
 // IsHHSTier reports membership in the HHS tier, covering both the write tier
 // (HHS_ADMIN) and the read-only tier (HHS_READONLY_ADMIN). It is a tier-
@@ -320,7 +338,7 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 			Insert("users").
 			Columns("email", "fullname", "role", "identity_provider", "access_expires_at").
 			Values(u.Email, u.FullName, u.Role, idp, exp).
-			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at")
+			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at, " + assignedOpDivIDsSubquery)
 	} else {
 		// identity_provider is intentionally not updatable through Save() in
 		// Stage C. A user's IdP is set at provisioning time and only changes
@@ -346,7 +364,7 @@ func (u *User) Save(ctx context.Context) (*User, error) {
 		}
 		sqlb = ub.
 			Where("userid=?", u.UserID).
-			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at")
+			Suffix("RETURNING userid, email, fullname, role, deleted, identity_provider, access_expires_at, " + assignedOpDivIDsSubquery)
 	}
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[User])
@@ -395,13 +413,9 @@ type FindUsersInput struct {
 	FullName *string `schema:"fullname"`
 	Role     *string `schema:"role"`
 	Deleted  bool    `schema:"deleted"`
-	// OpDivIDs / RestrictToOpDivIDs scope the list to users holding a grant in
-	// one of the acting admin's OpDivs. Mirror of FindFismaSystemsInput: when
-	// RestrictToOpDivIDs is set with an empty slice the query fails closed
-	// (WHERE FALSE) rather than returning every user. Not schema-tagged so a
-	// client cannot inject scope via query params - the controller sets them.
-	OpDivIDs           []int32
-	RestrictToOpDivIDs bool
+	// OpDivScope limits the list to users holding a grant in one of the acting
+	// admin's OpDivs; empty grants under RestrictToOpDivIDs fail closed.
+	OpDivScope
 }
 
 func (fui *FindUsersInput) validate() error {
@@ -443,7 +457,7 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 			"users.deleted",
 			"users.identity_provider",
 			"users.access_expires_at",
-			"(SELECT ARRAY_AGG(opdiv_id) FROM users_opdivs WHERE userid = users.userid) AS assignedopdivids",
+			assignedOpDivIDsSubquery,
 			// Same correlated-subquery shape as assignedopdivids above. Served
 			// by events_user_activity_idx (0054) as an index-only descent to
 			// the newest entry, so this stays a few milliseconds across the
@@ -465,14 +479,11 @@ func FindUsers(ctx context.Context, fui *FindUsersInput) ([]*User, error) {
 		sqlb = sqlb.Where("role=?", fui.Role)
 	}
 
-	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold
-	// a grant in one of their OpDivs. Empty grants under RestrictToOpDivIDs ->
-	// no rows. Unscoped admins set neither field and see everyone.
-	switch {
-	case fui.RestrictToOpDivIDs && len(fui.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(fui.OpDivIDs) > 0:
-		sqlb = sqlb.Where("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)
+	// OpDiv scope (fail-closed): an OpDiv-scoped admin only sees users who hold a
+	// grant in one of their OpDivs, via the users_opdivs junction. Unscoped admins
+	// set neither field and see everyone.
+	if f := fui.OpDivWhere(squirrel.Expr("EXISTS (SELECT 1 FROM users_opdivs uod WHERE uod.userid = users.userid AND uod.opdiv_id = ANY(?))", fui.OpDivIDs)); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[User])
@@ -515,8 +526,9 @@ func findUser(ctx context.Context, where string, args []any) (*User, error) {
 			"users.identity_provider",
 			"users.access_expires_at",
 			"NULL::timestamptz AS last_seen",
+			// Bare ARRAY_AGG is fine here: json:"-", never crosses the wire.
 			"(SELECT ARRAY_AGG(fismasystemid) FROM users_fismasystems WHERE userid = users.userid) AS assignedfismasystems",
-			"(SELECT ARRAY_AGG(opdiv_id)      FROM users_opdivs       WHERE userid = users.userid) AS assignedopdivids",
+			assignedOpDivIDsSubquery,
 		).
 		From("users").
 		Where(where, args...)
@@ -588,9 +600,9 @@ func RestoreUser(ctx context.Context, userid string) (*User, error) {
 
 	var restored User
 	err = tx.QueryRow(ctx,
-		"UPDATE users SET deleted=false WHERE userid=$1 RETURNING userid, email, fullname, role, deleted",
+		"UPDATE users SET deleted=false WHERE userid=$1 RETURNING userid, email, fullname, role, deleted, "+assignedOpDivIDsSubquery,
 		userid,
-	).Scan(&restored.UserID, &restored.Email, &restored.FullName, &restored.Role, &restored.Deleted)
+	).Scan(&restored.UserID, &restored.Email, &restored.FullName, &restored.Role, &restored.Deleted, &restored.AssignedOpDivIDs)
 	if err != nil {
 		return nil, trapError(err)
 	}

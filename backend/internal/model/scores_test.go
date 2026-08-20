@@ -278,8 +278,7 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
 	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
 		input := normalizeInput(FindScoresInput{
-			RestrictToOpDivIDs: true,
-			OpDivIDs:           []int32{7, 9},
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
 		})
 
 		sql, args := buildPillarScoresSQL(input)
@@ -298,8 +297,7 @@ func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
 
 	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
 		input := normalizeInput(FindScoresInput{
-			RestrictToOpDivIDs: true,
-			OpDivIDs:           nil,
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: nil},
 		})
 
 		sql, _ := buildPillarScoresSQL(input)

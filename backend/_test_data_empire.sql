@@ -1137,6 +1137,17 @@ INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUE
  (104,'FY26 ZTM','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00')
 ON CONFLICT DO NOTHING;
 
+-- The seeded reduced-scope rule (ztmf#545), anchored at the fixture FY26 cycle.
+-- Migration 0057 seeds these rows only in environments that already hold an
+-- FY26-named call when it runs; this file's data calls are inserted after
+-- migrations, so the local/test rule rows are owned here. The clean re-run
+-- DELETE above cascades them (effective_datacallid is ON DELETE CASCADE).
+INSERT INTO public.reducedpillarscopes (scoring_key, pillarid, effective_datacallid)
+SELECT 'SaaS', p.pillarid, 104
+  FROM public.pillars p
+ WHERE p.pillar IN ('Devices', 'Applications')
+ON CONFLICT DO NOTHING;
+
 -- One SaaS function per pillar, derived rather than hardcoded: ids 7101-7106 sit
 -- above every explicit id in this file, and each function borrows an existing
 -- question in its pillar so the applicability join (which reads
@@ -1166,9 +1177,9 @@ VALUES
  (2016,'5A1A5000-0000-4000-8000-000000002016','MOCK-SAAS','Mock SaaS Reduced Scope System','SaaS',
   'mock.isso2016@example.empire', TRUE,
   (SELECT opdiv_id FROM public.opdivs WHERE UPPER(code) <> 'CMS' ORDER BY opdiv_id LIMIT 1),'Mock ISSO 2016'),
- -- CMS counterpart: the reduced scope is understood to be an HHS-OpDiv rule with
- -- CMS keeping all 40, but that is undecided, so both currently read 25. Without a
- -- CMS SaaS system the subtest pinning that interim behaviour skips.
+ -- CMS counterpart: CMS follows every other OpDiv - no exemption, per the
+ -- decision recorded on ztmf-misc#289 (2026-08-11) - so both systems read 25.
+ -- Without a CMS SaaS system the subtest pinning that skips.
  (2017,'5A1A5000-0000-4000-8000-000000002017','MOCK-SAAS-CMS','Mock CMS SaaS Reduced Scope System','SaaS',
   'mock.isso2017@example.empire', TRUE,
   (SELECT opdiv_id FROM public.opdivs WHERE UPPER(code) = 'CMS' LIMIT 1),'Mock ISSO 2017')

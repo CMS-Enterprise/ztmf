@@ -81,7 +81,7 @@ func ListAssignableFismaSystems(w http.ResponseWriter, r *http.Request) {
 	// unconditionally so a target with no OpDiv grants fails closed (no rows)
 	// rather than falling through to an unscoped read - mirroring the write guard,
 	// which rejects any system whose OpDiv the target does not hold (#449).
-	input := model.FindFismaSystemsInput{RestrictToOpDivIDs: true}
+	input := model.FindFismaSystemsInput{OpDivScope: model.OpDivScope{RestrictToOpDivIDs: true}}
 	for _, id := range target.AssignedOpDivIDs {
 		if id != nil {
 			input.OpDivIDs = append(input.OpDivIDs, *id)

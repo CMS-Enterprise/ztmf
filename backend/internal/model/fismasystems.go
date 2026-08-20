@@ -84,16 +84,13 @@ type FismaSystem struct {
 type FindFismaSystemsInput struct {
 	FismaSystemID *int32
 	FismaAcronym  *string
-	UserID        *string
-	OpDivIDs      []int32
-	// RestrictToOpDivIDs is the defense-in-depth flag the controller sets
-	// when the calling user is an OpDiv-scoped admin. With it set, an empty
-	// OpDivIDs slice produces a WHERE FALSE predicate (match no rows) rather
-	// than falling through to no-filter. Prevents a fail-open if an
-	// OPDIV_ADMIN ends up with zero grants in users_opdivs at any point in
-	// their lifecycle (mid-provisioning, all-revoked, etc.).
-	RestrictToOpDivIDs bool
-	Decommissioned     bool `schema:"decommissioned"`
+	UserID        *string `schema:"-"`
+	// OpDivScope is the OpDiv-tier filter (defense-in-depth): with
+	// RestrictToOpDivIDs set, an empty OpDivIDs slice fails closed to no rows
+	// rather than falling through to no-filter, so an OPDIV_ADMIN who ends up with
+	// zero grants (mid-provisioning, all-revoked) cannot read every system.
+	OpDivScope
+	Decommissioned bool `schema:"decommissioned"`
 	// ResolveISSOName swaps the raw isso_name column for the COALESCE that
 	// falls back to the ISSO's user record (see resolveISSONameColumn). Set by
 	// DISPLAY reads only - the list always resolves, the single-system GET
@@ -144,19 +141,20 @@ func FindFismaSystems(ctx context.Context, input FindFismaSystemsInput) ([]*Fism
 	//   - UserID set, OpDivIDs empty => legacy behavior, INNER JOIN to
 	//     users_fismasystems only (ISSO / ISSM in single-OpDiv state).
 	//   - Nothing set => no scope filter (unscoped admin tiers).
-	switch {
-	case input.RestrictToOpDivIDs && len(input.OpDivIDs) == 0:
-		sqlb = sqlb.Where("FALSE")
-	case len(input.OpDivIDs) > 0:
-		if input.UserID != nil {
-			sqlb = sqlb.Where(
-				"(fismasystems.opdiv_id = ANY(?) OR fismasystems.fismasystemid IN (SELECT fismasystemid FROM users_fismasystems WHERE userid = ?))",
-				input.OpDivIDs, *input.UserID,
-			)
-		} else {
-			sqlb = sqlb.Where("fismasystems.opdiv_id = ANY(?)", input.OpDivIDs)
-		}
-	case input.UserID != nil:
+	// The grants predicate widens to also admit the caller's explicitly-assigned
+	// systems when they carry a UserID (an ISSO/ISSM who also belongs to an
+	// OpDiv). OpDivWhere owns the fail-closed decision; when it adds nothing
+	// (no OpDiv scope at all) fall through to the legacy UserID-only join.
+	grants := squirrel.Expr("fismasystems.opdiv_id = ANY(?)", input.OpDivIDs)
+	if input.UserID != nil {
+		grants = squirrel.Expr(
+			"(fismasystems.opdiv_id = ANY(?) OR fismasystems.fismasystemid IN (SELECT fismasystemid FROM users_fismasystems WHERE userid = ?))",
+			input.OpDivIDs, *input.UserID,
+		)
+	}
+	if f := input.OpDivWhere(grants); f != nil {
+		sqlb = sqlb.Where(f)
+	} else if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.fismasystemid = fismasystems.fismasystemid AND users_fismasystems.userid=?", *input.UserID)
 	}
 

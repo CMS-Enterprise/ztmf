@@ -7,40 +7,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSaaSPillarScopeSQL_Shape(t *testing.T) {
-	sql := saasPillarScopeSQL("dce.scoring_key", "p.pillar", "$3")
+func TestReducedPillarScopeSQL_Shape(t *testing.T) {
+	sql := reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "$3")
 
-	// A nullable scoring key must not make the whole predicate NULL: a top-level
-	// WHERE reads NULL as false and would drop an excluded-pillar row for a
-	// non-SaaS system (DECOMMISSIONED maps to scoring_key NULL).
-	assert.Contains(t, sql, "COALESCE(dce.scoring_key, '') = 'SaaS'",
-		"the scoring key is nullable, so the comparison must be NULL-safe")
+	// NOT EXISTS can never evaluate to NULL, which is what protects the
+	// nullable scoring key (DECOMMISSIONED maps to NULL): a top-level WHERE
+	// reads NULL as false and would drop an excluded-pillar row for a non-SaaS
+	// system. The three-valued behavior itself is pinned in Postgres by
+	// TestReducedPillarScopeNullSafetyIntegration.
+	assert.True(t, strings.HasPrefix(strings.TrimSpace(sql), "NOT EXISTS ("),
+		"callers append this after AND, so it must be a single never-NULL parenthesized term")
 
-	// In scope when named FY26 or dated after every FY26 cycle - never "at or
-	// after the earliest FY26 deadline", which a mis-dated FY26 call would use to
-	// drag a closed cycle into scope.
-	assert.Contains(t, sql, "SELECT MAX(fdc.deadline) FROM datacalls fdc",
-		"the cycle gate anchors on the LAST FY26 deadline")
-	assert.NotContains(t, sql, "MIN(fdc.deadline)",
-		"an earliest-deadline anchor would restate closed cycles")
-	assert.Contains(t, sql, "tdc.deadline >", "later cycles are in scope by deadline")
+	// In scope at or after the seeded anchor's deadline. >= includes the anchor
+	// cycle itself.
+	assert.Contains(t, sql, "tdc.deadline >= eff.deadline",
+		"the anchor cycle and everything after it are in scope")
 
-	// Names are matched the way matchesRolloverHardcodeTarget does.
-	assert.Equal(t, 2, strings.Count(sql, "UPPER(TRIM(tdc.datacall)) LIKE 'FY2026%'")+
-		strings.Count(sql, "UPPER(TRIM(fdc.datacall)) LIKE 'FY2026%'"),
-		"both the target and the anchor must trim and upper the name")
-
-	// EXISTS, so a database with no FY26 cycle yields false rather than NULL.
-	assert.Contains(t, sql, "EXISTS (")
-	assert.True(t, strings.HasPrefix(strings.TrimSpace(sql), "NOT ("),
-		"callers append this after AND, so it must be a single parenthesized term")
+	// The rule is data (ztmf#545): no cycle names, environments, or pillars may
+	// be compiled in.
+	assert.Contains(t, sql, "FROM reducedpillarscopes")
+	assert.NotContains(t, sql, "LIKE", "name matching came out with the interim predicate")
+	assert.NotContains(t, sql, "FY26", "no cycle name may be hardcoded; the anchor is a seeded row")
+	assert.NotContains(t, sql, "'SaaS'", "no environment may be hardcoded; the rule rows carry it")
+	assert.NotContains(t, sql, "'Devices'", "no pillar may be hardcoded; the rule rows carry it")
 }
 
-func TestSaaSPillarScopeSQL_UsesCallerExpressions(t *testing.T) {
-	sql := saasPillarScopeSQL("(SELECT x FROM y)", "pillars.pillar", "?")
+func TestReducedPillarScopeSQL_UsesCallerExpressions(t *testing.T) {
+	sql := reducedPillarScopeSQL("(SELECT x FROM y)", "pillars.pillar", "?")
 
-	assert.Contains(t, sql, "COALESCE((SELECT x FROM y), '') = 'SaaS'")
-	assert.Contains(t, sql, "pillars.pillar IN ('Devices', 'Applications')")
+	assert.Contains(t, sql, "rps.scoring_key = (SELECT x FROM y)")
+	assert.Contains(t, sql, "rp.pillar = pillars.pillar")
 	assert.Contains(t, sql, "tdc.datacallid = ?")
 	assert.NotContains(t, sql, "dce.scoring_key",
 		"no alias may be hardcoded; the export has no dce in scope")
