@@ -70,7 +70,8 @@ func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-//	@Summary	List audit-trail events
+//	@Summary		List audit-trail events, newest first, one page at a time
+//	@Description	Returns one page of the audit trail ordered by createdat descending (ties broken by eventid, so paging is stable). The response echoes the limit and offset actually applied and carries the total count matching the filters, for page math.
 //	@Tags		events
 //	@Produce	json
 //	@Security	bearerAuth
@@ -81,7 +82,12 @@ func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
 //	@Param		payload.scoreid			query		integer	false	"Filter by score ID referenced in the event payload"
 //	@Param		payload.datacallid		query		integer	false	"Filter by data call ID referenced in the event payload"
 //	@Param		payload.questionid		query		integer	false	"Filter by question ID referenced in the event payload"
-//	@Success	200	{object}	apiResponse[[]model.Event]
+//	@Param		limit					query		integer	false	"Page size; absent or 0 applies the default of 50, values above 500 clamp to 500"
+//	@Param		offset					query		integer	false	"Rows to skip before the page; defaults to 0"
+//	@Param		from					query		string	false	"Only events at or after this RFC3339 timestamp"
+//	@Param		to						query		string	false	"Only events at or before this RFC3339 timestamp"
+//	@Success	200	{object}	apiResponse[model.EventsPage]
+//	@Failure	400	{object}	apiResponse[any]
 //	@Failure	403	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/events [get]
@@ -96,14 +102,39 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// from/to are RFC3339 timestamps parsed by hand: the shared decoder has
+	// no time.Time converter and rejects unknown keys as a 400, so the two
+	// keys are pulled out of the values before it decodes the rest.
+	qs := r.URL.Query()
+	fromStr, toStr := qs.Get("from"), qs.Get("to")
+	qs.Del("from")
+	qs.Del("to")
+
 	findEventsInput := &model.FindEventsInput{}
-	err := decoder.Decode(findEventsInput, r.URL.Query())
+	err := decoder.Decode(findEventsInput, qs)
 	if err != nil {
 		respond(w, r, nil, err)
 		return
 	}
 
-	events, err := model.FindEvents(r.Context(), findEventsInput)
+	if fromStr != "" {
+		t, err := parseRFC3339(fromStr)
+		if err != nil {
+			respond(w, r, nil, ErrInvalidQueryParam)
+			return
+		}
+		findEventsInput.From = &t
+	}
+	if toStr != "" {
+		t, err := parseRFC3339(toStr)
+		if err != nil {
+			respond(w, r, nil, ErrInvalidQueryParam)
+			return
+		}
+		findEventsInput.To = &t
+	}
 
-	respond(w, r, events, err)
+	page, err := model.FindEvents(r.Context(), findEventsInput)
+
+	respond(w, r, page, err)
 }
