@@ -42,6 +42,26 @@ jobs:
         id: backend
         run: echo "backend=$(git --no-pager diff --name-only origin/main -- backend/ .github/workflows/backend.yml | grep -E '\.go$|\.sum$|Dockerfile|workflows/backend.yml' | head -n 1)" >> $GITHUB_OUTPUT
 
+      # Fail fast when main carries migrations this branch lacks. Deploying such
+      # an image against the shared dev DB (already migrated ahead by main) hits
+      # tern's BadVersionError, crash-loops, and burns the full 20m steady-state
+      # timeout, so name the mismatch and the remedy here in seconds instead.
+      # This is a git approximation: it cannot see a migration another open PR
+      # deployed to dev without merging; that case is caught by the
+      # deploy-failure diagnostics in infrastructure.yml. Context: ztmf-misc#298.
+      - name: Fail fast on migrations missing from this branch
+        run: |
+          MISSING=$(git diff --name-only --diff-filter=A HEAD...origin/main -- \
+            'backend/cmd/api/internal/migrations/[0-9][0-9][0-9][0-9]*.go' | grep -v '_test' || true)
+          if [ -n "$MISSING" ]; then
+            echo "::error::main has migrations this branch does not include:"
+            echo "$MISSING"
+            echo "An image built from this branch cannot start against the dev database once main has deployed (BadVersionError crash loop, seen as the 20m tfSTABLE timeout)."
+            echo "Remedy: rebase onto latest main, then push."
+            exit 1
+          fi
+          echo "No migrations on main are missing from this branch."
+
   backend:
     name: Backend
     needs:
