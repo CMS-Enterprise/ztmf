@@ -11,6 +11,7 @@ import (
 )
 
 type Event struct {
+	EventID   int64       `json:"eventid"`   // identity column; the paging tiebreaker (migration 0058)
 	UserID    string      `json:"userid"`    // who initiated the event
 	Action    string      `json:"action"`    // the action they took
 	Resource  string      `json:"type"`      // on what resource
@@ -93,6 +94,57 @@ type FindEventsInput struct {
 	Action   *string  `schema:"action" json:"action,omitempty"`
 	Resource *string  `schema:"resource" json:"resource,omitempty"`
 	Payload  *payload `schema:"payload" json:"payload,omitempty"`
+	// Limit and Offset are unsigned so the shared query decoder rejects
+	// negatives as a conversion error (a 400) without any range checks here.
+	// Absent or zero Limit means the default; values above the cap clamp.
+	Limit  *uint32 `schema:"limit" json:"limit,omitempty"`
+	Offset *uint32 `schema:"offset" json:"offset,omitempty"`
+	// From/To bound createdat inclusively. The shared decoder has no
+	// time.Time converter, so the controller parses them from RFC3339 and
+	// strips the keys from what the decoder sees; schema:"-" keeps the
+	// decoder from ever trying.
+	From *time.Time `schema:"-" json:"from,omitempty"`
+	To   *time.Time `schema:"-" json:"to,omitempty"`
+}
+
+// Paging bounds for FindEvents. GET /events returned the entire table before
+// the admin events page (ztmf#564); the cap guarantees no single request can
+// do that again.
+const (
+	defaultEventsLimit uint32 = 50
+	maxEventsLimit     uint32 = 500
+)
+
+// limit returns the page size to apply: the default when absent or zero, the
+// cap when the caller asks for more, the caller's value otherwise.
+func (i *FindEventsInput) limit() uint32 {
+	switch {
+	case i.Limit == nil || *i.Limit == 0:
+		return defaultEventsLimit
+	case *i.Limit > maxEventsLimit:
+		return maxEventsLimit
+	default:
+		return *i.Limit
+	}
+}
+
+func (i *FindEventsInput) offset() uint32 {
+	if i.Offset == nil {
+		return 0
+	}
+	return *i.Offset
+}
+
+// EventsPage is one page of the audit trail plus what a client needs to render
+// paging controls. Total counts every event matching the filters, not just this
+// page; Limit and Offset echo the values actually applied after defaulting and
+// clamping, so a client can trust them for page math without re-deriving the
+// rules.
+type EventsPage struct {
+	Events []*Event `json:"events"`
+	Total  int64    `json:"total"`
+	Limit  uint32   `json:"limit"`
+	Offset uint32   `json:"offset"`
 }
 
 // recordEvent uses the provided SqlBuilder to determin what write operation was performed (create, update, delete), and
@@ -254,31 +306,72 @@ func RecordLogin(ctx context.Context, userID string) error {
 	return insertEvent(ctx, userID, eventActionCreated, "session", payload{UserID: &userID})
 }
 
-func FindEvents(ctx context.Context, input *FindEventsInput) ([]*Event, error) {
+func FindEvents(ctx context.Context, input *FindEventsInput) (*EventsPage, error) {
 
-	sqlb := stmntBuilder.
-		Select("*").
-		From("events")
-
-	if input.UserID != nil {
-		sqlb = sqlb.Where("userid=?", input.UserID)
+	if input.From != nil && input.To != nil && input.From.After(*input.To) {
+		return nil, &InvalidInputError{data: map[string]any{"from": "must not be after to"}}
 	}
 
-	if input.Resource != nil {
-		sqlb = sqlb.Where("resource=?", input.Resource)
-	}
-
-	if input.Action != nil {
-		sqlb = sqlb.Where("action=?", input.Action)
-	}
-
+	// Marshaled once, ahead of the closure, so a marshal failure surfaces
+	// before any query is built.
+	var payloadJSON *string
 	if input.Payload != nil {
 		p, err := json.Marshal(input.Payload)
 		if err != nil {
 			return nil, err
 		}
-		sqlb = sqlb.Where("payload @> ?", string(p))
+		s := string(p)
+		payloadJSON = &s
 	}
 
-	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Event])
+	// The page query and the count query must agree on the filters or Total
+	// lies to the client's pager; one closure keeps them from drifting.
+	where := func(sqlb squirrel.SelectBuilder) squirrel.SelectBuilder {
+		if input.UserID != nil {
+			sqlb = sqlb.Where("userid=?", input.UserID)
+		}
+		if input.Resource != nil {
+			sqlb = sqlb.Where("resource=?", input.Resource)
+		}
+		if input.Action != nil {
+			sqlb = sqlb.Where("action=?", input.Action)
+		}
+		if input.From != nil {
+			sqlb = sqlb.Where("createdat >= ?", input.From)
+		}
+		if input.To != nil {
+			sqlb = sqlb.Where("createdat <= ?", input.To)
+		}
+		if payloadJSON != nil {
+			sqlb = sqlb.Where("payload @> ?", *payloadJSON)
+		}
+		return sqlb
+	}
+
+	limit, offset := input.limit(), input.offset()
+
+	// eventid breaks createdat ties (bulk writers stamp identical
+	// timestamps), making the order total so rows cannot swap across page
+	// boundaries between requests. See migration 0058.
+	sqlb := where(stmntBuilder.Select("*").From("events")).
+		OrderBy("createdat DESC", "eventid DESC").
+		Limit(uint64(limit)).
+		Offset(uint64(offset))
+
+	events, err := query(ctx, sqlb, pgx.RowToAddrOfStructByName[Event])
+	if err != nil {
+		return nil, err
+	}
+	if events == nil {
+		// CollectRows yields nil for zero rows; an empty page must serialize
+		// as [] rather than null.
+		events = []*Event{}
+	}
+
+	total, err := queryRow(ctx, where(stmntBuilder.Select("COUNT(*)").From("events")), pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+
+	return &EventsPage{Events: events, Total: *total, Limit: limit, Offset: offset}, nil
 }

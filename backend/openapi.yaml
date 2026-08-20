@@ -74,16 +74,6 @@ components:
         error:
           type: string
       type: object
-    controller.apiResponse-array_model_Event:
-      properties:
-        data:
-          items:
-            $ref: '#/components/schemas/model.Event'
-          type: array
-          uniqueItems: false
-        error:
-          type: string
-      type: object
     controller.apiResponse-array_model_FismaSystem:
       properties:
         data:
@@ -225,6 +215,13 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/model.DataCall'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_EventsPage:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.EventsPage'
         error:
           type: string
       type: object
@@ -387,6 +384,9 @@ components:
         createdat:
           description: at what date and time
           type: string
+        eventid:
+          description: identity column; the paging tiebreaker (migration 0058)
+          type: integer
         payload:
           description: incoming data
         type:
@@ -395,6 +395,20 @@ components:
         userid:
           description: who initiated the event
           type: string
+      type: object
+    model.EventsPage:
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/model.Event'
+          type: array
+          uniqueItems: false
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
       type: object
     model.FismaSystem:
       properties:
@@ -1251,6 +1265,10 @@ paths:
       - datacentermismatches
   /events:
     get:
+      description: Returns one page of the audit trail ordered by createdat descending
+        (ties broken by eventid, so paging is stable). The response echoes the limit
+        and offset actually applied and carries the total count matching the filters,
+        for page math.
       parameters:
       - description: Filter by initiating user ID
         in: query
@@ -1287,13 +1305,40 @@ paths:
         name: payload.questionid
         schema:
           type: integer
+      - description: Page size; absent or 0 applies the default of 50, values above
+          500 clamp to 500
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Rows to skip before the page; defaults to 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      - description: Only events at or after this RFC3339 timestamp
+        in: query
+        name: from
+        schema:
+          type: string
+      - description: Only events at or before this RFC3339 timestamp
+        in: query
+        name: to
+        schema:
+          type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/controller.apiResponse-array_model_Event'
+                $ref: '#/components/schemas/controller.apiResponse-model_EventsPage'
           description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
         "403":
           content:
             application/json:
@@ -1308,7 +1353,7 @@ paths:
           description: Internal Server Error
       security:
       - bearerAuth: []
-      summary: List audit-trail events
+      summary: List audit-trail events, newest first, one page at a time
       tags:
       - events
   /events/view:
