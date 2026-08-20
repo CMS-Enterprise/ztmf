@@ -44,18 +44,8 @@ func ListFismaSystems(w http.ResponseWriter, r *http.Request) {
 	//     (users_fismasystems). They may also carry a CMS OpDiv grant from
 	//     the 0034 seed, but we deliberately do not honor it here so their
 	//     scope stays system-level as it was pre-multi-OpDiv.
-	switch {
-	case user.HasUnscopedRead():
-		// no scope filter
-	case user.IsOpDivTier():
-		input.RestrictToOpDivIDs = true
-		for _, id := range user.AssignedOpDivIDs {
-			if id != nil {
-				input.OpDivIDs = append(input.OpDivIDs, *id)
-			}
-		}
-	default:
-		input.UserID = &user.UserID
+	if input.ApplyTier(user) {
+		input.UserID = user.UserIDPtr()
 	}
 
 	fismasystems, err := model.FindFismaSystems(r.Context(), input)

@@ -51,11 +51,11 @@ func TestFindQuestionsByFismaSystemOrderingIntegration(t *testing.T) {
 		LIMIT 1
 	`).Scan(&fismaSystemID), "seed must contain a system with a multi-pillar questionnaire")
 
-	first, err := FindQuestionsByFismaSystem(ctx, fismaSystemID)
+	first, err := FindQuestionsByFismaSystem(ctx, fismaSystemID, FindQuestionsByFismaSystemInput{})
 	require.NoError(t, err)
 	require.NotEmpty(t, first)
 
-	second, err := FindQuestionsByFismaSystem(ctx, fismaSystemID)
+	second, err := FindQuestionsByFismaSystem(ctx, fismaSystemID, FindQuestionsByFismaSystemInput{})
 	require.NoError(t, err)
 
 	require.Equal(t, questionOrderKeys(first), questionOrderKeys(second),

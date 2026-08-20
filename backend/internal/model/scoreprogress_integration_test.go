@@ -574,31 +574,32 @@ func saasScopeFixture(ctx context.Context, t *testing.T, cms bool) (systemID, in
 	return systemID, inScope, outOfScope, true
 }
 
-// fy26AndPriorDataCalls returns the earliest FY26-prefixed call (where the
-// reduced scope starts) and one with a strictly earlier deadline.
-func fy26AndPriorDataCalls(ctx context.Context, t *testing.T) (fy26, prior int32, ok bool) {
+// reducedScopeAnchorAndPriorDataCalls returns the earliest seeded anchor call
+// (where the reduced scope starts, per the reducedpillarscopes table) and one
+// with a strictly earlier deadline.
+func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anchor, prior int32, ok bool) {
 	t.Helper()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
 	defer conn.Release()
 
-	var fy26Deadline time.Time
+	var anchorDeadline time.Time
 	err = conn.QueryRow(ctx, `
-		SELECT datacallid, deadline FROM datacalls
-		 WHERE UPPER(datacall) LIKE 'FY2026%' OR UPPER(datacall) LIKE 'FY26%'
-		 ORDER BY deadline ASC, datacallid ASC LIMIT 1
-	`).Scan(&fy26, &fy26Deadline)
+		SELECT dc.datacallid, dc.deadline FROM datacalls dc
+		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes)
+		 ORDER BY dc.deadline ASC, dc.datacallid ASC LIMIT 1
+	`).Scan(&anchor, &anchorDeadline)
 	if err != nil {
 		return 0, 0, false
 	}
 
 	err = conn.QueryRow(ctx, `
 		SELECT datacallid FROM datacalls WHERE deadline < $1 ORDER BY deadline DESC LIMIT 1
-	`, fy26Deadline).Scan(&prior)
+	`, anchorDeadline).Scan(&prior)
 	if err != nil {
-		return fy26, 0, false
+		return anchor, 0, false
 	}
-	return fy26, prior, true
+	return anchor, prior, true
 }
 
 // TestFindScoreProgressSaaSScopeIntegration pins the SaaS scope (ztmf-misc#289)
@@ -615,9 +616,9 @@ func TestFindScoreProgressSaaSScopeIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	fy26, prior, haveCalls := fy26AndPriorDataCalls(ctx, t)
+	fy26, prior, haveCalls := reducedScopeAnchorAndPriorDataCalls(ctx, t)
 	if !haveCalls {
-		t.Skip("database has no FY26 call with an earlier cycle to compare against")
+		t.Skip("database has no seeded reduced-scope rule with an earlier cycle to compare against")
 	}
 
 	t.Run("NonCMSReducedOnCurrentCycle", func(t *testing.T) {
@@ -661,9 +662,10 @@ func TestFindScoreProgressSaaSScopeIntegration(t *testing.T) {
 			"a cycle earlier than FY26 must keep reporting against the full question set")
 	})
 
-	// CMS is not exempt yet (see saasPillarScopeSQL). Pinned so re-adding the
-	// OpDiv gate has to change a test rather than silently flip 11 systems.
-	t.Run("CMSAlsoReducedWhileExemptionIsUndecided", func(t *testing.T) {
+	// CMS follows every other OpDiv: no exemption, decision recorded on
+	// ztmf-misc#289 (2026-08-11). Pinned so an OpDiv gate cannot sneak back in
+	// without changing a test.
+	t.Run("CMSReducedLikeEveryOtherOpDiv", func(t *testing.T) {
 		systemID, inScope, _, ok := saasScopeFixture(ctx, t, true)
 		if !ok {
 			t.Skip("no CMS SaaS system with Devices/Applications functions")
@@ -677,6 +679,6 @@ func TestFindScoreProgressSaaSScopeIntegration(t *testing.T) {
 		require.Len(t, rows, 1)
 
 		assert.Equal(t, inScope, rows[0].QuestionsExpected,
-			"until CMS confirms, its denominator matches what the OpDiv-blind frontend asks")
+			"CMS is not exempt; its denominator matches every other OpDiv's")
 	})
 }

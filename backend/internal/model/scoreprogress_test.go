@@ -74,12 +74,12 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 
 	// Both count halves, never one: in expected's alone a SaaS denominator of 25
 	// would face a numerator of 40, reporting a false "Complete" on a closed call.
-	assert.Equal(t, 2, strings.Count(sql, "p.pillar IN ('Devices', 'Applications')"),
-		"the SaaS pillar scope (ztmf-misc#289) must appear in both the expected and updated CTEs")
-	assert.Equal(t, 2, strings.Count(sql, "SELECT MAX(fdc.deadline) FROM datacalls fdc"),
-		"the scope applies from FY26 onward only; closed cycles keep reporting against 40")
-	assert.Equal(t, 2, strings.Count(sql, "UPPER(TRIM(fdc.datacall)) LIKE 'FY2026%'"),
-		"the FY26 anchor must come from reducedPillarScopeCyclePrefixes, not the ztmf#502 rollover block")
+	assert.Equal(t, 2, strings.Count(sql, "FROM reducedpillarscopes"),
+		"the reduced pillar scope (ztmf-misc#289) must appear in both the expected and updated CTEs")
+	assert.Equal(t, 2, strings.Count(sql, "tdc.deadline >= eff.deadline"),
+		"the scope applies from the seeded anchor onward only; closed cycles keep reporting against the full set")
+	assert.NotContains(t, sql, "LIKE",
+		"the anchor is a seeded rule (ztmf#545), never a cycle-name match")
 	assert.NotContains(t, sql, "tdc.datacallid >=",
 		"the cycle comparison must be on deadline, not datacallid - ids are not chronological")
 
@@ -123,9 +123,8 @@ func TestBuildScoreProgressSQL_UserScope(t *testing.T) {
 func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
 		in := FindScoreProgressInput{
-			DataCallID:         int32Ptr(4),
-			RestrictToOpDivIDs: true,
-			OpDivIDs:           []int32{7, 9},
+			DataCallID: int32Ptr(4),
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
 		}
 		sql, args := buildScoreProgressSQL(in)
 
@@ -136,8 +135,8 @@ func TestBuildScoreProgressSQL_OpDivScope(t *testing.T) {
 
 	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
 		in := FindScoreProgressInput{
-			DataCallID:         int32Ptr(4),
-			RestrictToOpDivIDs: true,
+			DataCallID: int32Ptr(4),
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true},
 		}
 		sql, args := buildScoreProgressSQL(in)
 

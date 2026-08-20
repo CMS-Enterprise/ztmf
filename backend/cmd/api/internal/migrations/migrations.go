@@ -12,6 +12,8 @@ package migrations
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
@@ -55,7 +57,7 @@ func Run() {
 
 	err = migrator.Migrate(ctx)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(migrateFailureMsg(err))
 		return
 	}
 
@@ -76,4 +78,19 @@ func Run() {
 			log.Fatal(err)
 		}
 	}
+}
+
+// migrateFailureMsg names the failure class for whoever reads the log. tern
+// returns BadVersionError when the dbversions version is outside
+// 0..len(registry), and since Migrate() always targets the registry length,
+// the only reachable case in a deployed environment is a database migrated
+// ahead of this image's registry: a stale image, not a broken database. The
+// MIGRATION_VERSION_MISMATCH token is what CI's deploy-failure diagnostics
+// filter for (ztmf-misc#298).
+func migrateFailureMsg(err error) string {
+	var badVersion migrate.BadVersionError
+	if errors.As(err, &badVersion) {
+		return fmt.Sprintf("MIGRATION_VERSION_MISMATCH: %s; the database is ahead of this image's migration registry (image knows %d migrations). The image is stale, not the database: rebase onto latest main so the image includes the newer migration, then redeploy.", err, len(registry))
+	}
+	return err.Error()
 }
