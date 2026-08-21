@@ -24,3 +24,12 @@ alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "prod"
 cert_rotation_domain        = "ztmf.cms.gov"
+
+# Aurora PITR at the Aurora maximum. Set explicitly rather than relying on the
+# default so the prod value is visible next to the environment it protects.
+db_backup_retention_days = 35
+
+# Monthly logical backup to S3. This is the environment the strategy exists for
+# - prod holds the submitted data call responses that the training-session edit
+# incident put at risk.
+db_dump_enabled = true

@@ -23,3 +23,10 @@ kion_rotate_schedule_enabled = false
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "impl"
 cert_rotation_domain        = "impl.ztmf.cms.gov"
+
+# Backups: impl is a throwaway experiment environment sharing the dev account.
+# Keep PITR at the 1-day minimum and leave the monthly dump schedule off (the
+# bucket and task definition are still created, so it can be switched on for a
+# single experiment without an infrastructure change).
+db_backup_retention_days = 1
+db_dump_enabled          = false
