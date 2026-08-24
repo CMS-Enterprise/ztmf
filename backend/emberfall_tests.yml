@@ -2264,6 +2264,24 @@ tests:
           data:
             limit: 500
 
+  # Each row resolves the initiating user server-side (ztmf#565). All
+  # 'imported' events are seeded by the archives service account and no suite
+  # write produces that action, so the first row's identity is deterministic
+  # regardless of what the suite has written before this point.
+  - url: http://localhost:8080/api/v1/events?action=imported&limit=1
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            events:
+              - userfullname: "Imperial Archives Import Service"
+                useremail: "svc-importer@empire.test"
+                userdeleted: false
+
   # A from bound in the far future matches nothing: an empty page with a zero
   # total, not an error. (Runtime events are stamped now, seed events in the
   # past, so nothing can exist past 2030 while this suite runs.)
