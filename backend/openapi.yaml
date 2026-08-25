@@ -376,7 +376,7 @@ components:
         synced_at:
           type: string
       type: object
-    model.Event:
+    model.EventWithUser:
       properties:
         action:
           description: the action they took
@@ -392,6 +392,12 @@ components:
         type:
           description: on what resource
           type: string
+        userdeleted:
+          type: boolean
+        useremail:
+          type: string
+        userfullname:
+          type: string
         userid:
           description: who initiated the event
           type: string
@@ -400,7 +406,7 @@ components:
       properties:
         events:
           items:
-            $ref: '#/components/schemas/model.Event'
+            $ref: '#/components/schemas/model.EventWithUser'
           type: array
           uniqueItems: false
         limit:
@@ -1266,9 +1272,11 @@ paths:
   /events:
     get:
       description: Returns one page of the audit trail ordered by createdat descending
-        (ties broken by eventid, so paging is stable). The response echoes the limit
-        and offset actually applied and carries the total count matching the filters,
-        for page math.
+        (ties broken by eventid, so paging is stable). Each row resolves the initiating
+        user to display name and email server-side; a soft-deleted user still resolves,
+        with userdeleted true so the client can mark the retired account. The response
+        echoes the limit and offset actually applied and carries the total count matching
+        the filters, for page math.
       parameters:
       - description: Filter by initiating user ID
         in: query
