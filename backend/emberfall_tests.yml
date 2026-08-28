@@ -172,12 +172,11 @@ updatedScoreData: &updatedScoreData
   functionoptionid: 1
   notes: "Updated by Emberfall test"
 
-# HHS metadata anchor (12 fields). Used to exercise the RBAC write gate:
-# OWNER writes land in DB. For scoped admins the 9 system attributes are
-# stripped on create and restored on update, while the contact fields -
-# isso_name, system_owner, system_owner_email - are OpDiv-writable and take
-# their value on both paths (ztmf#511, ztmf#512). Values are intentionally
-# Star-Wars-themed to match the fixture.
+# HHS metadata anchor (12 fields). Asserted after OWNER writes (Test A) and
+# after an OpDiv-scoped admin creates a system in a granted OpDiv (Test B):
+# every admin who may manage a system writes all of its fields
+# (ztmf-misc#356). Values are intentionally Star-Wars-themed to match the
+# fixture.
 hhsExpected: &hhsExpected
   hva: true
   fips: "Moderate"
@@ -840,14 +839,15 @@ tests:
             system_owner: "Grand Moff Tarkin" # omitted HHS field preserved
             cloud_system: true # omitted HHS field preserved
 
-  # Test B — Scoped admin RBAC gate.
+  # Test B — Scoped admin write path (ztmf-misc#356).
   #
-  # Part 1: opDivAdmin POSTs a system with HHS fields → clearUnscopedOnlyFields
-  # strips the 9 system attributes; the created record has them null. The
-  # contact fields (isso_name, system_owner, system_owner_email) are not in
-  # that set - an OpDiv-scoped admin may write them - so they persist.
-  # opdiv_id 15 = EMPIRE OpDiv, position 15 in the seed INSERT sequence
-  # (_test_data_empire.sql). If this fails with 403, the seed order changed.
+  # An OPDIV_ADMIN who holds a grant for a system's OpDiv writes every field
+  # on it, the 9 system attributes included. The OpDiv grant, checked by
+  # guardManageFismaSystem, is the only gate. opdiv_id 15 = EMPIRE OpDiv,
+  # position 15 in the seed INSERT sequence (_test_data_empire.sql). If Part 1
+  # fails with 403, the seed order changed.
+  #
+  # Part 1: opDivAdmin POSTs a system with HHS fields → every value persists.
   - id: createFismaSystemScopedAdmin
     url: http://localhost:8080/api/v1/fismasystems
     method: POST
@@ -865,21 +865,13 @@ tests:
       body:
         json:
           data:
-            hva: null
-            fips: null
-            system_type: null
-            cloud_system: null
-            cloud_service_model: null
-            cloud_vendor: null
-            system_operator: null
-            goco_coco_gogo: null
-            legacy: null
-            isso_name: "Darth Vader" # OpDiv-writable, so the POSTed value persists
-            system_owner: "Grand Moff Tarkin" # OpDiv-writable (ztmf#512)
-            system_owner_email: "tarkin@deathstar.empire" # OpDiv-writable (ztmf#512)
+            <<: *hhsExpected
+            opdiv_id: 15
 
-  # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
-  # holds a write grant for this system).
+  # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv, where
+  # opDivAdmin holds a write grant). This PUT also flips the system's data
+  # center to "Other", which the datacentermismatches step later in the suite
+  # relies on.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -891,12 +883,13 @@ tests:
     expect:
       status: 204
 
-  # Part 3: opDivAdmin PUTs system 1002 with different values. The 9 system
-  # attributes are restored from the stored row by preserveUnscopedOnlyFields;
-  # the contact fields are not in that set, so the OpDiv admin's values take
-  # effect. Every contact value sent here must differ from what OWNER stored
-  # in Part 2, or the GET below cannot tell a successful write from a
-  # restored one.
+  # Part 3: opDivAdmin PUTs system 1002 with a different value for every
+  # attribute and contact field it can vary. Each value must differ from what
+  # OWNER stored in Part 2, or the GET below cannot tell a successful write
+  # from an untouched one. Enum values come from the systemattributes
+  # vocabulary, which Save validates. cloud_system stays true: Save rejects a
+  # service model or vendor when cloud_system is No, and cloud_vendor is the
+  # cloud field asserted here (cloud_service_model array equality is not).
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -905,16 +898,20 @@ tests:
     body:
       json:
         <<: *system1002WithHHSData
-        hva: false # scoped-admin overwrite attempt; the stored value is restored
-        isso_name: "Wilhuff Tarkin" # OpDiv-writable, so this one does take effect
-        system_owner: "Firmus Piett" # OpDiv-writable (ztmf#512), takes effect
-        system_owner_email: "piett@executor.empire" # OpDiv-writable (ztmf#512), takes effect
+        hva: false
+        fips: "High"
+        system_type: "General Support System"
+        cloud_vendor: "Kuat Drive Yards"
+        system_operator: "Contractor"
+        goco_coco_gogo: "COCO"
+        legacy: true
+        isso_name: "Wilhuff Tarkin"
+        system_owner: "Firmus Piett"
+        system_owner_email: "piett@executor.empire"
     expect:
       status: 204
 
-  # GET confirms OWNER's system-attribute values survived the scoped admin
-  # PUT, while the OpDiv admin's contact fields landed. The explicit keys
-  # override the values carried by the hhsExpected merge key.
+  # GET confirms the OpDiv admin's values landed over OWNER's.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: GET
     headers:
@@ -926,10 +923,30 @@ tests:
       body:
         json:
           data:
-            <<: *hhsExpected
+            hva: false
+            fips: "High"
+            system_type: "General Support System"
+            cloud_system: true
+            cloud_vendor: "Kuat Drive Yards"
+            system_operator: "Contractor"
+            goco_coco_gogo: "COCO"
+            legacy: true
             isso_name: "Wilhuff Tarkin"
             system_owner: "Firmus Piett"
             system_owner_email: "piett@executor.empire"
+
+  # Part 4: opDivAdmin PUTs system 1005 (REBELLION, outside the EMPIRE grant)
+  # → 403. The grant check is what remains once the field gate is gone.
+  - url: "http://localhost:8080/api/v1/fismasystems/1005"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
 
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
@@ -2353,7 +2370,7 @@ tests:
   #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
   #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
   #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
-  #     the "preserve HHS data" PUT above (*system1002WithHHSData) flips the
+  #     the Test B OWNER PUT above (*system1002WithHHSData) flips the
   #     system to "Other" mid-suite, so by now it reports - proving the report
   #     tracks live system edits. The fresh-seed "matching row is excluded"
   #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
