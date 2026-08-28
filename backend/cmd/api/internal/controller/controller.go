@@ -144,6 +144,7 @@ func sanitizeErr(err error) (int, string, error) {
 		code = auth.CodeDelegateRequiresAdmin
 	case errors.Is(err, model.ErrNotUnique),
 		errors.Is(err, ErrMalformed),
+		errors.Is(err, ErrInvalidQueryParam),
 		errors.Is(err, model.ErrNotesTooLong),
 		errors.Is(err, model.ErrNoReference):
 		status = 400

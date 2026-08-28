@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -100,4 +101,48 @@ func TestPayloadReadOnlyMarshal(t *testing.T) {
 		assert.NoError(t, err)
 		assert.JSONEq(t, `{}`, string(b), "a nil readonly pointer is omitted entirely")
 	})
+}
+
+// TestFindEventsInputPaging pins the defaulting and clamping rules the
+// EventsPage echoes back to clients: a pager doing page math on the returned
+// limit must get the value that was actually applied.
+func TestFindEventsInputPaging(t *testing.T) {
+	u := func(v uint32) *uint32 { return &v }
+
+	t.Run("Limit", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			in   *uint32
+			want uint32
+		}{
+			"NilDefaults":     {nil, defaultEventsLimit},
+			"ZeroDefaults":    {u(0), defaultEventsLimit},
+			"InRangePasses":   {u(25), 25},
+			"CapExactPasses":  {u(maxEventsLimit), maxEventsLimit},
+			"OverCapClamps":   {u(maxEventsLimit + 1), maxEventsLimit},
+		} {
+			t.Run(name, func(t *testing.T) {
+				in := FindEventsInput{Limit: tc.in}
+				assert.Equal(t, tc.want, in.limit())
+			})
+		}
+	})
+
+	t.Run("Offset", func(t *testing.T) {
+		in := FindEventsInput{}
+		assert.Equal(t, uint32(0), in.offset(), "nil offset defaults to 0")
+		in.Offset = u(7)
+		assert.Equal(t, uint32(7), in.offset())
+	})
+}
+
+// An inverted time range is a client mistake, rejected as a 400 before any
+// query runs (the check precedes the connection, so no DB is needed here).
+func TestFindEventsRejectsInvertedRange(t *testing.T) {
+	to := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	from := to.Add(time.Hour)
+	_, err := FindEvents(context.Background(), &FindEventsInput{From: &from, To: &to})
+	iie, ok := err.(*InvalidInputError)
+	if assert.True(t, ok, "want *InvalidInputError, got %T", err) {
+		assert.Contains(t, iie.Data(), "from")
+	}
 }

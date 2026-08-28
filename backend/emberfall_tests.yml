@@ -2222,6 +2222,8 @@ tests:
         content-type: "application/json"
 
   # Events Endpoints (GET only)
+  # The audit trail is paginated (ztmf#564): the response is a page object
+  # echoing the applied limit/offset, defaulting to 50/0.
   - url: http://localhost:8080/api/v1/events
     method: GET
     headers:
@@ -2230,6 +2232,72 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        json:
+          data:
+            limit: 50
+            offset: 0
+
+  # Explicit paging params are honored and echoed.
+  - url: http://localhost:8080/api/v1/events?limit=1&offset=3
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            limit: 1
+            offset: 3
+
+  # A limit above the cap clamps to 500 rather than erroring, and the client
+  # sees the value that was actually applied.
+  - url: http://localhost:8080/api/v1/events?limit=9999
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            limit: 500
+
+  # A from bound in the far future matches nothing: an empty page with a zero
+  # total, not an error. (Runtime events are stamped now, seed events in the
+  # past, so nothing can exist past 2030 while this suite runs.)
+  - url: http://localhost:8080/api/v1/events?from=2030-01-01T00:00:00Z
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            total: 0
+
+  # Bad paging and time params are client errors, not 500s: a non-integer
+  # limit, an unparseable timestamp, and an inverted range.
+  - url: http://localhost:8080/api/v1/events?limit=abc
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+  - url: http://localhost:8080/api/v1/events?from=not-a-timestamp
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+  - url: http://localhost:8080/api/v1/events?from=2030-01-01T00:00:00Z&to=2020-01-01T00:00:00Z
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
 
   # System Enrichment endpoint (generic enrichment payload, admin access)
   - url: http://localhost:8080/api/v1/systemenrichment/E1D00198-36D4-4EAB-8C00-501E1D000999
