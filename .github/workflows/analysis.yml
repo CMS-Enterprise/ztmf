@@ -24,7 +24,7 @@ jobs:
       backend: ${{ steps.backend.outputs.backend }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -46,13 +46,33 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: LINT backend/
-        uses: dominikh/staticcheck-action@v1
+      # Staticcheck is installed and run directly rather than through
+      # dominikh/staticcheck-action: the composite pins actions/cache to a
+      # Node.js 20 build (upstream #22/#23, unreleased since March 2026), which
+      # is the one deprecation warning left after the Node.js 24 migration, and
+      # dropping it removes a third-party action from the supply chain. Go
+      # "stable" mirrors the composite's install-go default: staticcheck
+      # releases track the newest Go, which can run ahead of the go.mod
+      # floor, and setup-go v6+ sets GOTOOLCHAIN=local so the module's
+      # version would not auto-upgrade to satisfy it.
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          version: "latest"
-          working-directory: backend
+          go-version: stable
+          cache-dependency-path: backend/go.sum
+
+      - name: Install Staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+
+      # The problem matcher turns staticcheck's text output into PR annotations,
+      # the same way the composite did.
+      - name: LINT backend/
+        working-directory: backend
+        run: |
+          echo "::add-matcher::${GITHUB_WORKSPACE}/.github/matchers/staticcheck.json"
+          "$(go env GOPATH)/bin/staticcheck" ./...
 
   OpenAPI-Spec-Check:
     name: openapi spec up to date
@@ -61,12 +81,13 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
       # Regenerate the spec from the Go annotations (same command as
       # `make generate-openapi`) and fail if it differs from what's committed.
@@ -100,10 +121,10 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: TFLINT setup
-        uses: terraform-linters/setup-tflint@v6
+        uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
 
       - name: TFLINT version
         run: tflint --version
@@ -123,15 +144,16 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
       - name: Install Snyk CLI
-        uses: snyk/actions/setup@master
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
       - name: Snyk test
         env:
@@ -146,10 +168,10 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: code test
-        uses: snyk/actions/golang@master
+        uses: snyk/actions/golang@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -163,10 +185,10 @@ jobs:
       contents: read
     steps:
       - name: Check out repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
       - name: iac test
-        uses: snyk/actions/golang@master
+        uses: snyk/actions/golang@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
