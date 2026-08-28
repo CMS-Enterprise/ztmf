@@ -97,45 +97,6 @@ func GetFismaSystem(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, fismasystem, nil)
 }
 
-// clearUnscopedOnlyFields nils the 9 system-attribute fields only an
-// unscoped-write admin may set. Called on INSERT when the acting user lacks
-// unscoped read access.
-func clearUnscopedOnlyFields(fs *model.FismaSystem) {
-	fs.HVA = nil
-	fs.FIPS = nil
-	fs.SystemType = nil
-	fs.CloudSystem = nil
-	fs.CloudServiceModel = nil
-	fs.CloudVendor = nil
-	fs.SystemOperator = nil
-	fs.GocoCocGoGo = nil
-	fs.Legacy = nil
-}
-
-// preserveUnscopedOnlyFields overwrites the 9 system-attribute fields on
-// incoming with the values already stored on existing. Called on UPDATE when
-// the acting user lacks unscoped read access, so a full-form PUT from a tier
-// that may not write these fields cannot wipe them.
-//
-// The set covers system attributes only. The contact fields - isso_name,
-// system_owner, system_owner_email - are writable by an OpDiv-scoped admin on
-// systems in their granted OpDivs (ztmf#511, ztmf#512), so they are not part
-// of this set and pass through from the request. The owner fields matter more
-// than a display preference: unlike isso_name they have no COALESCE fallback
-// to a user record, so the stored column is the only source there is, and
-// no onboarding load refreshes them for non-CMS OpDivs.
-func preserveUnscopedOnlyFields(existing, incoming *model.FismaSystem) {
-	incoming.HVA = existing.HVA
-	incoming.FIPS = existing.FIPS
-	incoming.SystemType = existing.SystemType
-	incoming.CloudSystem = existing.CloudSystem
-	incoming.CloudServiceModel = existing.CloudServiceModel
-	incoming.CloudVendor = existing.CloudVendor
-	incoming.SystemOperator = existing.SystemOperator
-	incoming.GocoCocGoGo = existing.GocoCocGoGo
-	incoming.Legacy = existing.Legacy
-}
-
 // guardManageFismaSystem fetches the target system and verifies the acting user
 // may write it: OWNER/HHS_ADMIN manage any system, an OPDIV_ADMIN only systems
 // in an OpDiv they hold a grant for. A missing system stays a NotFound (it does
@@ -244,27 +205,21 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Only OWNER and HHS_ADMIN may write the 9 system-attribute fields
-	// (HasUnscopedRead gates this; HHS_READONLY_ADMIN is already blocked by
-	// IsAdmin() above). Every scoped admin can READ all of them - the list and
-	// GET reads return every column and only filter rows by OpDiv - so this is
-	// partial-PUT protection, not confidentiality: a tier that may not write
-	// them must not wipe them by round-tripping a form. On INSERT the fields are
-	// cleared; on UPDATE the stored values are restored over the request.
+	// Update path. Any admin who may manage this system may write every field
+	// on it, including the system attributes (hva, fips, system_type, the cloud
+	// fields, system_operator, goco_coco_gogo, legacy).
 	//
-	// guardManageFismaSystem also authorizes the write itself, so reaching Save
-	// on the UPDATE path means the caller may manage this specific system.
-	if f.FismaSystemID == 0 {
-		if !authdUser.HasUnscopedRead() {
-			clearUnscopedOnlyFields(f)
-		}
-	} else if !authdUser.HasUnscopedRead() {
-		existing, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID)
-		if err != nil {
+	// Unscoped tiers (OWNER, HHS_ADMIN) manage every system, so they skip the
+	// lookup. An OPDIV_ADMIN must hold a grant for the system's OpDiv: 403 if
+	// not, 404 if the system does not exist.
+	//
+	// Omitted or null fields are left untouched by Save, so a partial PUT never
+	// wipes stored values regardless of who sends it.
+	if f.FismaSystemID != 0 && !authdUser.HasUnscopedRead() {
+		if _, err := guardManageFismaSystem(r.Context(), authdUser, f.FismaSystemID); err != nil {
 			respond(w, r, nil, err)
 			return
 		}
-		preserveUnscopedOnlyFields(existing, f)
 	}
 
 	f, err = f.Save(r.Context(), model.WithPresentBoolFields(presentBools))

@@ -384,9 +384,7 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		}
 		// Metadata fields distinguish three request states (ztmf#442):
 		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
-		//     untouched, so a partial PUT never wipes importer data (and a
-		//     scoped-admin edit, whose unscoped-only fields the controller has
-		//     already set to the stored values, is a no-op here);
+		//     untouched, so a partial PUT never wipes importer data;
 		//   - "" (a cleared text input) / empty slice -> write NULL, so a blank
 		//     actually clears the value rather than persisting "" / an empty array;
 		//   - a value -> write it.
