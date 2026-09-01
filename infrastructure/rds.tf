@@ -60,7 +60,9 @@ resource "aws_rds_cluster" "ztmf" {
   deletion_protection = true
 
   # Pinned to the value already in use so a manual parameter-group swap shows
-  # up as drift instead of silently persisting.
+  # up as drift instead of silently persisting. The name embeds the Postgres
+  # major version: update it alongside engine_version on the next major
+  # upgrade, or every plan after the upgrade proposes reverting the group.
   db_cluster_parameter_group_name = "default.aurora-postgresql16"
 
   # AWS_Backup enrolls the cluster in the CMS OIT `Daily15_Weekly90` plan,

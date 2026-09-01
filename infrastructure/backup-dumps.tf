@@ -18,6 +18,22 @@
 # and produces an artifact you cannot restore from. Aurora cloning is not a
 # backup either - a clone holds today's data and costs ~$43/month if left
 # running. A pg_dump is strictly better for the same money.
+#
+# First-enable sequence for an environment (also in the PR that introduced
+# this file):
+#   1. Merge. The ops-image workflow rebuilds the ops image (it triggers on
+#      backend/ops/**) and updates the ztmf_ops_tag SSM parameter, but the
+#      terraform apply in the same pipeline can race it - if the image push
+#      finishes after the apply, the task definitions pin the previous tag
+#      until the next apply picks up the new SSM value.
+#   2. Expect the staleness alarm to go ALARM immediately: the probe reports
+#      an empty bucket as maximally stale (9999) by design, and the monthly
+#      schedule may be weeks away. This is the alarm working, not failing.
+#   3. Clear it by running the dump task once by hand:
+#        aws ecs run-task --cluster ztmf --launch-type FARGATE \
+#          --task-definition db-dump<suffix> --network-configuration <same
+#          subnets/SG as the schedule target>
+#      The next daily probe reads the fresh dump and the alarm returns to OK.
 
 resource "aws_s3_bucket" "ztmf_db_dumps" {
   bucket = "ztmf-db-dumps-${var.environment}"
