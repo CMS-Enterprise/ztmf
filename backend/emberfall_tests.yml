@@ -2475,6 +2475,37 @@ tests:
             body: null
             group: "ADNIM"
 
+  # Success path for the longer group keys. READONLY_ADMIN is the read-only
+  # admin audience (ztmf-misc#297); SYSTEM_DELEGATE previously 500'd because
+  # massemails.group was VARCHAR(5) until 0059. The test stack has no SMTP
+  # configured, so the send goroutine logs a dial error and no mail leaves.
+  # Recipient order is unspecified, so only the status is pinned.
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "readonly admins"
+        body: "readonly admins"
+        group: "READONLY_ADMIN"
+    expect:
+      status: 201
+
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "system delegates"
+        body: "system delegates"
+        group: "SYSTEM_DELEGATE"
+    expect:
+      status: 201
+
   # HHS_READONLY_ADMIN Tests
   # Verify HHS_READONLY_ADMIN can authenticate
   - url: http://localhost:8080/api/v1/users/current
