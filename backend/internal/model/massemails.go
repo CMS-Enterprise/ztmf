@@ -21,6 +21,7 @@ var (
 		"DCC":             sqlForDCC,
 		"ALL":             sqlForALL, // ISSO, ISSM, SYSTEM_DELEGATE, DCC; excludes every admin tier
 		"ADMIN":           sqlForADMIN,
+		"READONLY_ADMIN":  sqlForReadonlyAdmin,
 	}
 )
 
@@ -148,12 +149,11 @@ func sqlForISSOFismaSystems() squirrel.SelectBuilder {
 }
 
 func sqlForADMIN() squirrel.SelectBuilder {
-	// "ADMIN" recipient group spans every admin tier in the multi-OpDiv role
-	// taxonomy. Read-only admin tiers are intentionally excluded for parity
-	// with the pre-multi-OpDiv behavior (which emailed only ADMIN, not
-	// READONLY_ADMIN). The "ADMIN" key in massEmailGroups is an audience
-	// selector in the API contract, not a user role; the legacy ADMIN role
-	// value was removed from the role enum in Stage D.
+	// "ADMIN" recipient group spans every write admin tier in the multi-OpDiv
+	// role taxonomy; the read-only tiers are addressed by the sibling
+	// READONLY_ADMIN selector. Both keys in massEmailGroups are audience
+	// selectors in the API contract, not user roles; the legacy ADMIN and
+	// READONLY_ADMIN role values were removed from the role enum in Stage D.
 	return stmntBuilder.
 		Select("email").
 		From("users").
@@ -161,6 +161,19 @@ func sqlForADMIN() squirrel.SelectBuilder {
 			"OWNER",
 			"HHS_ADMIN",
 			"OPDIV_ADMIN",
+		}})
+}
+
+// sqlForReadonlyAdmin selects the read-only admin tiers (ztmf-misc#297). The
+// cohort is small but distinct from the write admins, so it gets its own
+// selector rather than folding into ADMIN.
+func sqlForReadonlyAdmin() squirrel.SelectBuilder {
+	return stmntBuilder.
+		Select("email").
+		From("users").
+		Where(squirrel.Eq{"role": []string{
+			"HHS_READONLY_ADMIN",
+			"OPDIV_READONLY_ADMIN",
 		}})
 }
 
