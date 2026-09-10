@@ -92,9 +92,11 @@ jobs:
     secrets: inherit
 
   infrastructure:
-    # One impl apply at a time, shared with the manual deploy; queue, do not cancel.
+    # One impl apply at a time, shared with the manual deploy. queue: max keeps
+    # every waiter; never cancel an apply mid-flight.
     concurrency:
       group: deploy-impl
+      queue: max
       cancel-in-progress: false
     name: Infrastructure
     needs:

@@ -35,6 +35,7 @@ jobs:
     # Shares the dev apply queue with orchestration-dev.
     concurrency:
       group: deploy-dev
+      queue: max
       cancel-in-progress: false
     name: Infrastructure
     needs:

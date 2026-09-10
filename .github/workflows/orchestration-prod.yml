@@ -7,9 +7,11 @@ on:
     types:
       - closed
 
-# One prod run at a time across merges; a later merge already includes earlier ones.
+# One prod run at a time across merges; a later merge already includes earlier
+# ones, so the single pending slot is enough. Keyed on merged so an unmerged
+# close lands in its own bucket and cannot evict a pending prod deploy.
 concurrency:
-  group: orchestration-prod
+  group: orchestration-prod-${{ github.event.pull_request.merged }}
   cancel-in-progress: false
 
 jobs:

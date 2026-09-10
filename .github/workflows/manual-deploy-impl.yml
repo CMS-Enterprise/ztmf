@@ -37,6 +37,7 @@ jobs:
     # Shares the impl apply queue with orchestration-impl.
     concurrency:
       group: deploy-impl
+      queue: max
       cancel-in-progress: false
     name: Infrastructure
     needs:
