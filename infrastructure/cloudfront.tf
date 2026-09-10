@@ -219,6 +219,35 @@ resource "aws_cloudfront_distribution" "ztmf" {
     }
   }
 
+  # Per-PR environments (ztmf-misc#341): /pr/<repo>/<n>/ rides the same
+  # internal-ALB origin, where a per-PR listener rule authenticates and forwards
+  # to that environment's task. Same forward-everything, TTL 0 shape as /api/*
+  # so a re-push is visible without an invalidation.
+  dynamic "ordered_cache_behavior" {
+    for_each = var.pr_env_enabled ? [1] : []
+    content {
+      path_pattern               = "/pr/*"
+      allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+      cached_methods             = ["HEAD", "GET", "OPTIONS"]
+      target_origin_id           = "ztmf_api"
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
+      }
+
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = true
+      viewer_protocol_policy = "redirect-to-https"
+    }
+  }
+
   # Serve static error page when the API origin returns 5xx errors.
   # The error page is deployed to S3 alongside the React app assets.
   # Short TTL (10s) so CloudFront picks up a recovered origin quickly.
