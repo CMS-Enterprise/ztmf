@@ -7,7 +7,12 @@ on:
     types:
       - closed
 
-jobs:   
+# One prod run at a time across merges; a later merge already includes earlier ones.
+concurrency:
+  group: orchestration-prod
+  cancel-in-progress: false
+
+jobs:
   analysis:
     name: Analysis
     if: ${{ github.event.pull_request.merged }}
@@ -25,6 +30,10 @@ jobs:
     secrets: inherit
       
   infrastructure:
+    # One prod apply at a time; queue, do not cancel.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
     name: Infrastructure
     if: ${{ github.event.pull_request.merged }}
     needs: 

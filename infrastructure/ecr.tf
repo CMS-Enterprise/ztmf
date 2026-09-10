@@ -10,11 +10,27 @@ resource "aws_ecr_lifecycle_policy" "ztmf_api" {
   count      = local.manage_account_singletons ? 1 : 0
   repository = aws_ecr_repository.ztmf_api[0].name
 
+  // Rules apply in priority order and an image matched by one rule is not
+  // evaluated by later ones, so pr-* images never count toward the keep-last-4.
   policy = <<EOF
 {
     "rules": [
         {
             "rulePriority": 1,
+            "description": "Expire pr-* images 14 days after push",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["pr-"],
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 14
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 10,
             "description": "Keep last 4 images",
             "selection": {
                 "tagStatus": "any",
