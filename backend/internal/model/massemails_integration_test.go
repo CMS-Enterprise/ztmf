@@ -64,3 +64,46 @@ func TestMassEmailRecipientsSkipsNullIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestMassEmailSaveAcceptsEveryGroupIntegration round-trips every accepted
+// group key through Save, which is the UPDATE that hits the massemails."group"
+// column width. Before 0059 the column was VARCHAR(5), so SYSTEM_DELEGATE (and
+// any other key over five characters) failed here with SQLSTATE 22001 while
+// the shorter keys passed, and no test exercised Save.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestMassEmailSaveAcceptsEveryGroupIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	for group := range massEmailGroups {
+		t.Run(group, func(t *testing.T) {
+			m := &MassEmail{Group: group, Subject: "width subject", Body: "width body"}
+			saved, err := m.Save(ctx)
+			require.NoError(t, err, "Save must accept the %q group key", group)
+			assert.Equal(t, group, saved.Group)
+		})
+	}
+}
+
+// TestMassEmailReadonlyAdminRecipientsIntegration checks the READONLY_ADMIN
+// audience (ztmf-misc#297) against the empire seed: both read-only tiers are
+// included, the write admin tiers are not.
+func TestMassEmailReadonlyAdminRecipientsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	m := &MassEmail{Group: "READONLY_ADMIN", Subject: "readonly subject", Body: "readonly body"}
+	recipients, err := m.Recipients(ctx)
+	require.NoError(t, err)
+
+	assert.Contains(t, recipients, "Readonly.Admin@nowhere.xyz", "HHS_READONLY_ADMIN seed user")
+	assert.Contains(t, recipients, "Opdiv.Readonly@empire.test", "OPDIV_READONLY_ADMIN seed user")
+	assert.NotContains(t, recipients, "Test.User@nowhere.xyz", "OWNER must not be in the read-only audience")
+	assert.NotContains(t, recipients, "Opdiv.Admin@empire.test", "OPDIV_ADMIN must not be in the read-only audience")
+}
