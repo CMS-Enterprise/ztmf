@@ -74,6 +74,10 @@ resource "aws_ecs_task_definition" "env" {
         { name = "DB_USER", value = "ztmf" },
         { name = "DB_POPULATE", value = "/app/_test_data_empire.sql" },
         { name = "AUTH_HEADER_FIELD", value = "Authorization" },
+        // Dev's ztmf_session cookie is host-scoped to dev.ztmf.cms.gov and is
+        // checked before the bearer header, so a browser signed in to dev would
+        // fail against the per-PR secret. A distinct name keeps the sessions apart.
+        { name = "AUTH_SESSION_COOKIE_NAME", value = "ztmf_${var.repo}_${var.pr_number}_session" },
         { name = "AWS_REGION", value = "us-east-1" },
       ]
       secrets = [
