@@ -402,7 +402,6 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		// UPDATE - exclude decommissioned fields. Core fields are always written.
 		setCols := squirrel.Eq{
 			"fismauid":              f.FismaUID,
-			"fismaacronym":          f.FismaAcronym,
 			"fismaname":             f.FismaName,
 			"fismasubsystem":        f.FismaSubsystem,
 			"component":             f.Component,
@@ -412,6 +411,13 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 			"datacenterenvironment": f.DataCenterEnvironment,
 			"datacallcontact":       f.DataCallContact,
 			"issoemail":             f.ISSOEmail,
+		}
+		// The acronym is the system's display key and, until ztmf-ui#732 lands,
+		// its questionnaire URL. It was written on every update, so a PUT that
+		// omitted it cleared the column to "". Write it only when the request
+		// carried a value (already trimmed above); a blank leaves it as stored.
+		if f.FismaAcronym != "" {
+			setCols["fismaacronym"] = f.FismaAcronym
 		}
 		// sdl_sync_enabled controls which systems sync to the operator's data
 		// lake. It was a plain bool written on every update, so a PUT that

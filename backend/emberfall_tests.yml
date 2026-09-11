@@ -798,6 +798,37 @@ tests:
         json:
           data:
             sdl_sync_enabled: true
+  # A PUT that omits fismaacronym leaves it as stored; it used to write "".
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+        fismaname: "Updated Zero Trust Maturity Framework"
+        fismasubsystem: "Updated Core System"
+        component: "Updated Security"
+        groupacronym: "USEC"
+        groupname: "Updated Security Group"
+        divisionname: "Updated IT Division"
+        datacenterenvironment: "AWS"
+        datacallcontact: "updated-contact@example.com"
+        issoemail: "updated-isso@example.com"
+    expect:
+      status: 204
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            fismaacronym: "ZTMF-UPD"
+            sdl_sync_enabled: true
   # Test A — OWNER writes HHS fields on create, reads them back, then does a
   # partial PUT (HHS fields omitted). The partial PUT must NOT wipe the stored
   # HHS values (the conditional SetMap fix in model/fismasystems.go).
