@@ -694,6 +694,25 @@ tests:
           data:
             <<: *fismaSystemData
   
+  # ztmf#587: a second live system in the same OpDiv may not reuse the acronym
+  # (compared case-insensitively, whitespace-trimmed). Same payload, different
+  # casing and padding on the acronym, still rejected.
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+        fismauid: "12345678-ABCD-4321-AFAB-123456789DUP"
+        fismaacronym: " ztmf "
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -781,6 +800,8 @@ tests:
 
   # Partial PUT — core fields only, HHS fields intentionally omitted.
   # Before the fix this would have written NULL to all 11 HHS columns.
+  # The acronym is overridden because "ZTMF-UPD" is held by the live system
+  # from createFismaSystem, and a same-OpDiv duplicate is rejected (ztmf#587).
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -789,6 +810,7 @@ tests:
     body:
       json:
         <<: *updatedFismaSystemData
+        fismaacronym: "ZTMF-HHS"
     expect:
       status: 204
 
@@ -818,6 +840,7 @@ tests:
     body:
       json:
         <<: *updatedFismaSystemData
+        fismaacronym: "ZTMF-HHS" # see the partial PUT above (ztmf#587)
         issoemail: "" # blanked email must not 400 (it clears to NULL)
         hva: null # explicit null clears the boolean to NULL (Unknown)
     expect:
@@ -848,6 +871,25 @@ tests:
   # fails with 403, the seed order changed.
   #
   # Part 1: opDivAdmin POSTs a system with HHS fields → every value persists.
+  # ztmf#587: an update may not take an acronym another live system in the
+  # OpDiv holds (createFismaSystemWithHHS now owns "ZTMF-HHS"). A system
+  # keeping its own acronym on update is not a collision with itself; the two
+  # PUTs on createFismaSystemWithHHS above already exercise that path.
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+        fismaacronym: "ztmf-hhs"
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
   - id: createFismaSystemScopedAdmin
     url: http://localhost:8080/api/v1/fismasystems
     method: POST

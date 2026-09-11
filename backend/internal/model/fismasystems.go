@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -325,6 +326,26 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 
 	if len(invalid.data) > 0 {
 		return nil, &invalid
+	}
+
+	// The acronym is the human key for a system everywhere it is displayed and
+	// linked, so two live systems in one OpDiv must not share it (ztmf#587). A
+	// placeholder such as "Pending" on several systems made every questionnaire
+	// link for those systems resolve to the same one. Compared case-insensitively
+	// and trimmed; decommissioned systems are ignored so a retired acronym can
+	// be reused. Enforced here rather than by a unique index because existing
+	// rows still carry a handful of duplicates that need a data cleanup first;
+	// the index follows once those are resolved.
+	if strings.TrimSpace(f.FismaAcronym) != "" {
+		taken, err := f.acronymInUse(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, &InvalidInputError{data: map[string]any{
+				"fismaacronym": fmt.Sprintf("%q is already used by another system in this OpDiv", strings.TrimSpace(f.FismaAcronym)),
+			}}
+		}
 	}
 
 	if f.FismaSystemID == 0 {
@@ -696,6 +717,37 @@ func emptyToNil(s []string) []string {
 		return nil
 	}
 	return s
+}
+
+// acronymInUse reports whether a different, non-decommissioned system in the
+// same OpDiv already carries f's acronym (case-insensitive, whitespace-trimmed).
+// The OpDiv is resolved the same way Save will write it: an explicit OpDivID on
+// insert, the row's current OpDiv on update (opdiv_id is not updatable), and
+// the CMS default when neither applies.
+func (f *FismaSystem) acronymInUse(ctx context.Context) (bool, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, trapError(err)
+	}
+	defer conn.Release()
+
+	var taken bool
+	err = conn.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM public.fismasystems o
+    WHERE lower(btrim(o.fismaacronym)) = lower(btrim($1))
+      AND o.decommissioned = FALSE
+      AND o.fismasystemid <> $2
+      AND o.opdiv_id = COALESCE(
+            $3::int,
+            (SELECT opdiv_id FROM public.fismasystems WHERE fismasystemid = $2),
+            (SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1))
+)`, f.FismaAcronym, f.FismaSystemID, f.OpDivID).Scan(&taken)
+	if err != nil {
+		return false, trapError(err)
+	}
+	return taken, nil
 }
 
 func (f *FismaSystem) validate() error {
