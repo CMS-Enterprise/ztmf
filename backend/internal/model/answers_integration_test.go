@@ -324,6 +324,55 @@ func TestFindAnswersIntegration(t *testing.T) {
 	} else {
 		t.Log("no decommissioned system with scores in seed; skipping the decommissioned-guard assertion")
 	}
+
+	// Decommissioned AND still mapped AND holding orphaned answers - the one
+	// combination the two blocks above can each miss. The fallback branch does not
+	// fire (an applicable catalog exists), so only answers on applicable functions
+	// survive, and a system whose answers are all orphaned exports nothing at all
+	// rather than its old catalog (ztmf-misc#384; the rows stay in scores).
+	var mappedDecomSystem, mappedDecomCall int32
+	var mappedDecomOrphans, mappedDecomKept int
+	err = conn.QueryRow(ctx, `
+		WITH applicable AS (
+			SELECT fs.fismasystemid, f.functionid
+			FROM fismasystems fs
+			JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+			JOIN functions f ON f.datacenterenvironment = dce.scoring_key
+		)
+		SELECT s.fismasystemid, s.datacallid,
+		       COUNT(*) FILTER (WHERE NOT EXISTS (
+		           SELECT 1 FROM applicable a
+		           WHERE a.fismasystemid = s.fismasystemid AND a.functionid = fo.functionid)) AS orphaned,
+		       COUNT(*) FILTER (WHERE EXISTS (
+		           SELECT 1 FROM applicable a
+		           WHERE a.fismasystemid = s.fismasystemid AND a.functionid = fo.functionid)) AS kept
+		FROM scores s
+		JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		WHERE fs.decommissioned = TRUE
+		  AND EXISTS (SELECT 1 FROM applicable a WHERE a.fismasystemid = fs.fismasystemid)
+		GROUP BY s.fismasystemid, s.datacallid
+		HAVING COUNT(*) FILTER (WHERE NOT EXISTS (
+		           SELECT 1 FROM applicable a
+		           WHERE a.fismasystemid = s.fismasystemid AND a.functionid = fo.functionid)) > 0
+		ORDER BY s.fismasystemid, s.datacallid
+		LIMIT 1
+	`).Scan(&mappedDecomSystem, &mappedDecomCall, &mappedDecomOrphans, &mappedDecomKept)
+	if err == nil {
+		rows, err := FindAnswers(ctx, FindAnswersInput{
+			DataCallID:     mappedDecomCall,
+			FismaSystemIDs: []*int32{&mappedDecomSystem},
+		})
+		require.NoError(t, err)
+		assert.Len(t, rows, mappedDecomKept,
+			"a mapped decommissioned system must export only its %d answers on applicable functions, not the %d orphaned ones",
+			mappedDecomKept, mappedDecomOrphans)
+		for _, r := range rows {
+			assert.NotNil(t, r.Score, "every exported row for a decommissioned system must be an answered row")
+		}
+	} else {
+		t.Log("no mapped decommissioned system with orphaned answers in seed; skipping that assertion")
+	}
 }
 
 // TestFindAnswersSaaSPillarScopeIntegration pins the export half of

@@ -90,9 +90,12 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// questions.ordr are 0 for any row migration 0056 could not rank (the
 		// empire seed's fictional function names), and rows tied on the sort key
 		// would otherwise come back in heap order, which shifts whenever a row is
-		// rewritten. functionid stays on the end so a duplicate score row on one
-		// function (ztmf#491) still sorts deterministically.
-		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid ASC")
+		// rewritten. functionid no longer breaks a tie now that both branches
+		// resolve one catalog, but scoreid does: a duplicate score row on a single
+		// function (ztmf#491, live on two systems) ties on every other key, and the
+		// two copies can carry different notes, so without it the export presents a
+		// different answer first from run to run.
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid, scores.scoreid ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)
