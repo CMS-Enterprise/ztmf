@@ -40,7 +40,7 @@ type FismaSystem struct {
 	DataCenterEnvironment *string    `json:"datacenterenvironment"`
 	DataCallContact       *string    `json:"datacallcontact"`
 	ISSOEmail             *string    `json:"issoemail"`
-	SDLSyncEnabled        bool       `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
+	SDLSyncEnabled        *bool      `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
 	Decommissioned        bool       `json:"decommissioned"`
 	DecommissionedDate    *time.Time `json:"decommissioned_date"`
 	DecommissionedBy      *string    `json:"decommissioned_by"`
@@ -360,6 +360,11 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		// they do not, default to CMS via subquery so existing CMS admin-panel
 		// provisioning keeps working unchanged. HHS OpDiv systems come in via
 		// the onboarding workbook importer with OpDivID set explicitly.
+		// sdl_sync_enabled is NOT NULL; an omitted flag on create means off.
+		sdlSync := false
+		if f.SDLSyncEnabled != nil {
+			sdlSync = *f.SDLSyncEnabled
+		}
 		var opdivVal any
 		if f.OpDivID != nil {
 			opdivVal = *f.OpDivID
@@ -380,7 +385,7 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 			Values(
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
-				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
+				f.DataCallContact, f.ISSOEmail, sdlSync, opdivVal,
 				// A blank optional text field on create is NULL, not "" (ztmf#442).
 				// The typed HHS fields (ztmf#433) pass through raw: a nil *bool
 				// encodes NULL (unknown, never false), and an empty slice is nulled
@@ -407,7 +412,18 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 			"datacenterenvironment": f.DataCenterEnvironment,
 			"datacallcontact":       f.DataCallContact,
 			"issoemail":             f.ISSOEmail,
-			"sdl_sync_enabled":      f.SDLSyncEnabled,
+		}
+		// sdl_sync_enabled controls which systems sync to the operator's data
+		// lake. It was a plain bool written on every update, so a PUT that
+		// omitted it silently switched sync off. Written only when the request
+		// carried the key (API path) or the caller set a value (internal path).
+		switch {
+		case cfg.presentBoolFields != nil:
+			if cfg.presentBoolFields["sdl_sync_enabled"] && f.SDLSyncEnabled != nil {
+				setCols["sdl_sync_enabled"] = *f.SDLSyncEnabled
+			}
+		case f.SDLSyncEnabled != nil:
+			setCols["sdl_sync_enabled"] = *f.SDLSyncEnabled
 		}
 		// Metadata fields distinguish three request states (ztmf#442):
 		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
