@@ -214,27 +214,42 @@ func TestFindAnswersIntegration(t *testing.T) {
 		assert.Greater(t, withAnswer, 0, "an answered system should still export its answered functions")
 	}
 
-	// Orphaned answers (the reason FindAnswers keys off applicable-OR-answered,
-	// not applicable alone): an active system whose answers reference functions no
-	// longer applicable to its current environment must still export those answers,
-	// not vanish. Find an active system with scores whose applicable set does not
-	// cover every answered function.
+	// Orphaned answers (ztmf-misc#384, reversing #528's widening): an active
+	// system whose environment changed mid-cycle holds answers on functions its
+	// current environment no longer includes. Scoring's expected CTE never
+	// enumerates those functions, so they contribute nothing to the dashboard and
+	// must not appear in the export either - otherwise the workbook shows two rows
+	// per question and only one of them is the one being scored.
+	//
+	// Systems under a reduced-pillar rule are excluded from the pick so the
+	// expected count below does not have to re-derive that filter.
 	var orphanSystem, orphanCall int32
-	var orphanAnswered int
+	var orphanAnswered, applicableAnswered int
 	err = conn.QueryRow(ctx, `
-		SELECT s.fismasystemid, s.datacallid, COUNT(DISTINCT fo.functionid) AS answered
-		FROM scores s
-		JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
-		JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
-		WHERE fs.decommissioned = FALSE
-		  AND NOT EXISTS (
-		      SELECT 1 FROM datacenterenvironments dce
-		      JOIN functions af ON af.datacenterenvironment = dce.scoring_key
-		      WHERE dce.datacenterenvironment = fs.datacenterenvironment AND af.functionid = fo.functionid)
-		GROUP BY s.fismasystemid, s.datacallid
-		ORDER BY s.fismasystemid, s.datacallid
+		WITH sysscores AS (
+			SELECT s.fismasystemid, s.datacallid,
+			       EXISTS (
+			           SELECT 1 FROM datacenterenvironments dce
+			           JOIN functions af ON af.datacenterenvironment = dce.scoring_key
+			           WHERE dce.datacenterenvironment = fs.datacenterenvironment
+			             AND af.functionid = fo.functionid
+			       ) AS applicable
+			FROM scores s
+			JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+			JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+			JOIN datacenterenvironments sdce ON sdce.datacenterenvironment = fs.datacenterenvironment
+			WHERE fs.decommissioned = FALSE
+			  AND NOT EXISTS (SELECT 1 FROM reducedpillarscopes rps WHERE rps.scoring_key = sdce.scoring_key)
+		)
+		SELECT fismasystemid, datacallid,
+		       COUNT(*) FILTER (WHERE NOT applicable) AS orphaned,
+		       COUNT(*) FILTER (WHERE applicable)     AS applicable_answered
+		FROM sysscores
+		GROUP BY fismasystemid, datacallid
+		HAVING COUNT(*) FILTER (WHERE NOT applicable) > 0
+		ORDER BY fismasystemid, datacallid
 		LIMIT 1
-	`).Scan(&orphanSystem, &orphanCall, &orphanAnswered)
+	`).Scan(&orphanSystem, &orphanCall, &orphanAnswered, &applicableAnswered)
 	if err == nil {
 		orphanRows, err := FindAnswers(ctx, FindAnswersInput{
 			DataCallID:     orphanCall,
@@ -247,8 +262,9 @@ func TestFindAnswersIntegration(t *testing.T) {
 				answered++
 			}
 		}
-		assert.GreaterOrEqual(t, answered, orphanAnswered,
-			"an active system's orphaned answers (functions no longer applicable) must still export, not drop")
+		assert.Equal(t, applicableAnswered, answered,
+			"the export must carry only answers on currently applicable functions; %d orphaned answer(s) must not appear",
+			orphanAnswered)
 	} else {
 		t.Log("no active system with orphaned answers in seed; skipping the orphaned-answer assertion")
 	}
@@ -268,12 +284,30 @@ func TestFindAnswersIntegration(t *testing.T) {
 		LIMIT 1
 	`).Scan(&decomSystem, &decomCall)
 	if err == nil {
+		// Counted the way the export now admits rows (ztmf-misc#384): answers on
+		// applicable functions, plus every answer when the system has no applicable
+		// catalog at all - the usual case once an environment is retired to the
+		// DECOMMISSIONED marker, and the reason the answered branch survives.
+		// COUNT(*), not COUNT(DISTINCT functionid), because a duplicate score row on
+		// one function (ztmf#491) is its own exported row.
 		var answeredFns int
 		err = conn.QueryRow(ctx, `
-			SELECT COUNT(DISTINCT fo.functionid)
+			SELECT COUNT(*)
 			FROM scores s
 			JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 			WHERE s.fismasystemid = $1 AND s.datacallid = $2
+			  AND (
+			    EXISTS (
+			        SELECT 1 FROM fismasystems fs
+			        JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+			        JOIN functions af ON af.datacenterenvironment = dce.scoring_key
+			        WHERE fs.fismasystemid = s.fismasystemid AND af.functionid = fo.functionid)
+			    OR NOT EXISTS (
+			        SELECT 1 FROM fismasystems fs
+			        JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+			        JOIN functions af ON af.datacenterenvironment = dce.scoring_key
+			        WHERE fs.fismasystemid = s.fismasystemid)
+			  )
 		`, decomSystem, decomCall).Scan(&answeredFns)
 		require.NoError(t, err)
 
@@ -427,4 +461,120 @@ func TestFindAnswersSaaSPillarScopeIntegration(t *testing.T) {
 		assert.Greater(t, excluded, 0,
 			"the scope is SaaS-only; other environments still export both pillars")
 	})
+}
+
+// TestFindAnswersScoringParityIntegration is the regression guard for
+// ztmf-misc#384: the export must emit exactly the rows the dashboard scores,
+// never a second row for a question the system answered under a previous
+// environment. BHP-TAP exported 50 rows for a 25-question SaaS catalog because
+// the functions join also admitted answered-but-no-longer-applicable functions.
+//
+// Expected row count per system is derived from the same applicable set scoring
+// uses, allowing for more than one row where a duplicate score row exists on a
+// single function (ztmf#491, which this ticket does not fix).
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestFindAnswersScoringParityIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "DB connection required for integration test; ensure DB_* env vars are set")
+	defer conn.Release()
+
+	// The busiest data call, so the comparison covers real answered systems.
+	var dataCallID int32
+	err = conn.QueryRow(ctx, `
+		SELECT datacallid FROM scores GROUP BY datacallid ORDER BY COUNT(*) DESC LIMIT 1
+	`).Scan(&dataCallID)
+	require.NoError(t, err, "seed should contain at least one data call with scores")
+
+	// Bounded sample, systems holding orphaned answers first: those are the ones
+	// that regress, and a whole-call export here costs minutes.
+	rows, err := conn.Query(ctx, `
+		WITH applicable AS (
+			SELECT fs.fismasystemid, f.functionid
+			FROM fismasystems fs
+			JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+			JOIN functions f ON f.datacenterenvironment = dce.scoring_key
+			JOIN questions q ON q.questionid = f.questionid
+			JOIN pillars p ON p.pillarid = q.pillarid
+			WHERE fs.decommissioned = FALSE
+			  AND `+reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "$1")+`
+		),
+		orphaned AS (
+			SELECT DISTINCT s.fismasystemid
+			FROM scores s
+			JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+			WHERE s.datacallid = $1
+			  AND NOT EXISTS (
+			      SELECT 1 FROM applicable a
+			      WHERE a.fismasystemid = s.fismasystemid AND a.functionid = fo.functionid)
+		),
+		sample AS (
+			SELECT DISTINCT a.fismasystemid,
+			       (a.fismasystemid IN (SELECT fismasystemid FROM orphaned)) AS has_orphans
+			FROM applicable a
+			ORDER BY has_orphans DESC, a.fismasystemid
+			LIMIT 25
+		)
+		SELECT sm.fismasystemid, sm.has_orphans,
+		       SUM(GREATEST(1, (
+		           SELECT COUNT(*) FROM scores s
+		           JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		           WHERE s.fismasystemid = sm.fismasystemid
+		             AND s.datacallid = $1
+		             AND fo.functionid = a.functionid
+		       )))::int AS expected_rows
+		FROM sample sm
+		JOIN applicable a ON a.fismasystemid = sm.fismasystemid
+		GROUP BY sm.fismasystemid, sm.has_orphans
+	`, dataCallID)
+	require.NoError(t, err)
+
+	expected := map[int32]int{}
+	var fsids []*int32
+	var withOrphans int
+	for rows.Next() {
+		var sysID int32
+		var hasOrphans bool
+		var n int
+		require.NoError(t, rows.Scan(&sysID, &hasOrphans, &n))
+		expected[sysID] = n
+		id := sysID
+		fsids = append(fsids, &id)
+		if hasOrphans {
+			withOrphans++
+		}
+	}
+	require.NoError(t, rows.Err())
+	rows.Close()
+	require.NotEmpty(t, expected, "seed should contain at least one active system with an applicable catalog")
+	if withOrphans == 0 {
+		t.Log("no sampled system holds orphaned answers; the assertion still pins the grain but not the #384 regression")
+	}
+
+	answers, err := FindAnswers(ctx, FindAnswersInput{DataCallID: dataCallID, FismaSystemIDs: fsids})
+	require.NoError(t, err)
+
+	actual := map[int32]int{}
+	for _, a := range answers {
+		actual[a.FismaSystemID]++
+	}
+
+	var compared int
+	for sysID, want := range expected {
+		got, ok := actual[sysID]
+		if !ok {
+			continue
+		}
+		compared++
+		assert.Equal(t, want, got,
+			"system %d exports %d rows but scoring enumerates %d - the export is showing answers the dashboard does not count",
+			sysID, got, want)
+	}
+	assert.Greater(t, compared, 0, "no system was comparable; the parity assertion did not run")
 }
