@@ -614,16 +614,17 @@ func TestFindAnswersScoringParityIntegration(t *testing.T) {
 		actual[a.FismaSystemID]++
 	}
 
-	var compared int
+	// Absence is a failure, not a skip: applicable already restricts to active
+	// systems with a mapped catalog and at least one in-scope function, so the
+	// applicable branch of the functions join must fire and every one of these
+	// systems must export at least one row. Dropping a system outright is the
+	// regression this test exists to catch, and it is the likeliest way the
+	// no-applicable-catalog fallback could go wrong.
 	for sysID, want := range expected {
 		got, ok := actual[sysID]
-		if !ok {
-			continue
-		}
-		compared++
+		require.Truef(t, ok, "system %d has %d applicable functions but exported no rows", sysID, want)
 		assert.Equal(t, want, got,
 			"system %d exports %d rows but scoring enumerates %d - the export is showing answers the dashboard does not count",
 			sysID, got, want)
 	}
-	assert.Greater(t, compared, 0, "no system was comparable; the parity assertion did not run")
 }
