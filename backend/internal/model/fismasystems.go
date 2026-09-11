@@ -344,7 +344,7 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		if err != nil {
 			return nil, trapError(err)
 		}
-		taken, err := acronymInUse(ctx, conn, f.FismaAcronym, f.FismaSystemID, f.OpDivID)
+		taken, err := acronymInUse(ctx, conn, f.FismaAcronym, f.FismaSystemID, f.OpDivID, true)
 		conn.Release()
 		if err != nil {
 			return nil, err
@@ -649,7 +649,7 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	// Bringing it back would recreate the collision, so refuse until one of
 	// them is renamed (ztmf#587).
 	if strings.TrimSpace(acronym) != "" {
-		taken, err := acronymInUse(ctx, tx, acronym, input.FismaSystemID, &opdivID)
+		taken, err := acronymInUse(ctx, tx, acronym, input.FismaSystemID, &opdivID, false)
 		if err != nil {
 			return nil, err
 		}
@@ -778,7 +778,13 @@ type rowQuerier interface {
 // systemID names an existing row (opdiv_id is not updatable, so a client-sent
 // value on PUT must not redirect the check), otherwise the explicit opdivID
 // on insert, otherwise the CMS default.
-func acronymInUse(ctx context.Context, q rowQuerier, acronym string, systemID int32, opdivID *int32) (bool, error) {
+//
+// keepExisting relaxes the check for an update that does not change the
+// acronym: a row that already holds the value is not taking it from anyone,
+// so an unrelated edit to one of the pre-existing duplicate systems still
+// saves. Save passes true; reactivation passes false, because there the row's
+// own acronym is exactly what is being brought back into conflict.
+func acronymInUse(ctx context.Context, q rowQuerier, acronym string, systemID int32, opdivID *int32, keepExisting bool) (bool, error) {
 	var taken bool
 	err := q.QueryRow(ctx, `
 SELECT EXISTS (
@@ -791,7 +797,15 @@ SELECT EXISTS (
             (SELECT opdiv_id FROM public.fismasystems WHERE fismasystemid = $2),
             $3::int,
             (SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1))
-)`, strings.TrimSpace(acronym), systemID, opdivID).Scan(&taken)
+)
+AND NOT (
+    $4::boolean
+    AND EXISTS (
+        SELECT 1 FROM public.fismasystems me
+        WHERE me.fismasystemid = $2
+          AND lower(btrim(me.fismaacronym, E' \t\r\n')) = lower($1)
+    )
+)`, strings.TrimSpace(acronym), systemID, opdivID, keepExisting).Scan(&taken)
 	if err != nil {
 		return false, trapError(err)
 	}
