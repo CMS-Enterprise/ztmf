@@ -196,7 +196,7 @@ hhsExpected: &hhsExpected
 # Combined base+HHS anchor for the OWNER create-with-HHS test.
 fismaSystemWithHHSData: &fismaSystemWithHHSData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
-  fismaacronym: "ZTMF"
+  fismaacronym: "ZTMF-HHS" # distinct from fismaSystemData: same-OpDiv duplicates are rejected (ztmf#587)
   fismaname: "Zero Trust Maturity Framework"
   fismasubsystem: "Core System"
   component: "Security"
@@ -800,7 +800,7 @@ tests:
 
   # Partial PUT — core fields only, HHS fields intentionally omitted.
   # Before the fix this would have written NULL to all 11 HHS columns.
-  # The acronym is overridden because "ZTMF-UPD" is held by the live system
+  # The acronym stays ZTMF-HHS because "ZTMF-UPD" is held by the live system
   # from createFismaSystem, and a same-OpDiv duplicate is rejected (ztmf#587).
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
     method: PUT
@@ -1112,6 +1112,55 @@ tests:
         json:
           data:
             <<: *decommissionedFismaSystemData
+
+  # ztmf#587: a decommissioned system's acronym is free for reuse, but the
+  # decommissioned system cannot then be reactivated while the live one holds
+  # it. Create the squatter, prove reactivation is refused, retire the
+  # squatter, and the normal reactivation below succeeds.
+  - id: createAcronymSquatter
+    url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+        fismauid: "12345678-ABCD-4321-AFAB-123456789SQT"
+        fismaacronym: "ZTMF-UPD"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismaacronym: "ZTMF-UPD"
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "Attempted while another live system holds the acronym"
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createAcronymSquatter.Response.data.fismasystemid}}"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "Squatter retired so the original can be reactivated"
+    expect:
+      status: 200
 
   # Reactivate the decommissioned system (508 compliance restore path).
   # reactivated_by/reactivated_date are not asserted here because Emberfall does

@@ -251,6 +251,9 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 	// distinguishable from nil (omitted → leave unchanged).
 	f.DataCallContact = blankToNil(f.DataCallContact)
 	f.ISSOEmail = blankToNil(f.ISSOEmail)
+	// The acronym is compared trimmed for uniqueness (below), so store it
+	// trimmed too: padding must not survive into the display key.
+	f.FismaAcronym = strings.TrimSpace(f.FismaAcronym)
 
 	if err := f.validate(); err != nil {
 		return nil, err
@@ -336,15 +339,18 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 	// be reused. Enforced here rather than by a unique index because existing
 	// rows still carry a handful of duplicates that need a data cleanup first;
 	// the index follows once those are resolved.
-	if strings.TrimSpace(f.FismaAcronym) != "" {
-		taken, err := f.acronymInUse(ctx)
+	if f.FismaAcronym != "" {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return nil, trapError(err)
+		}
+		taken, err := acronymInUse(ctx, conn, f.FismaAcronym, f.FismaSystemID, f.OpDivID)
+		conn.Release()
 		if err != nil {
 			return nil, err
 		}
 		if taken {
-			return nil, &InvalidInputError{data: map[string]any{
-				"fismaacronym": fmt.Sprintf("%q is already used by another system in this OpDiv", strings.TrimSpace(f.FismaAcronym)),
-			}}
+			return nil, errAcronymTaken(f.FismaAcronym)
 		}
 	}
 
@@ -594,11 +600,15 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 		conn.Release()
 	}()
 
-	var decommissioned bool
+	var (
+		decommissioned bool
+		acronym        string
+		opdivID        int32
+	)
 	err = tx.QueryRow(ctx,
-		"SELECT decommissioned FROM fismasystems WHERE fismasystemid=$1 FOR UPDATE",
+		"SELECT decommissioned, fismaacronym, opdiv_id FROM fismasystems WHERE fismasystemid=$1 FOR UPDATE",
 		input.FismaSystemID,
-	).Scan(&decommissioned)
+	).Scan(&decommissioned, &acronym, &opdivID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoData
 	}
@@ -609,6 +619,20 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	if !decommissioned {
 		return nil, &InvalidInputError{
 			data: map[string]any{"decommissioned": "system is already active"},
+		}
+	}
+
+	// A decommissioned system's acronym may have been reused by a live one
+	// (decommissioned rows are ignored by the uniqueness check in Save).
+	// Bringing it back would recreate the collision, so refuse until one of
+	// them is renamed (ztmf#587).
+	if strings.TrimSpace(acronym) != "" {
+		taken, err := acronymInUse(ctx, tx, acronym, input.FismaSystemID, &opdivID)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, errAcronymTaken(acronym)
 		}
 	}
 
@@ -719,35 +743,44 @@ func emptyToNil(s []string) []string {
 	return s
 }
 
-// acronymInUse reports whether a different, non-decommissioned system in the
-// same OpDiv already carries f's acronym (case-insensitive, whitespace-trimmed).
-// The OpDiv is resolved the same way Save will write it: an explicit OpDivID on
-// insert, the row's current OpDiv on update (opdiv_id is not updatable), and
-// the CMS default when neither applies.
-func (f *FismaSystem) acronymInUse(ctx context.Context) (bool, error) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return false, trapError(err)
-	}
-	defer conn.Release()
+// rowQuerier is the subset of pgx shared by a pooled connection and a
+// transaction, so acronymInUse can run inside an existing tx (reactivation)
+// or on its own connection (Save).
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
+// acronymInUse reports whether a different, non-decommissioned system in the
+// same OpDiv already carries acronym (case-insensitive, whitespace-trimmed).
+// The OpDiv is resolved the way Save writes it: the stored row's OpDiv when
+// systemID names an existing row (opdiv_id is not updatable, so a client-sent
+// value on PUT must not redirect the check), otherwise the explicit opdivID
+// on insert, otherwise the CMS default.
+func acronymInUse(ctx context.Context, q rowQuerier, acronym string, systemID int32, opdivID *int32) (bool, error) {
 	var taken bool
-	err = conn.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 SELECT EXISTS (
     SELECT 1
     FROM public.fismasystems o
-    WHERE lower(btrim(o.fismaacronym)) = lower(btrim($1))
+    WHERE lower(btrim(o.fismaacronym, E' \t\r\n')) = lower($1)
       AND o.decommissioned = FALSE
       AND o.fismasystemid <> $2
       AND o.opdiv_id = COALESCE(
-            $3::int,
             (SELECT opdiv_id FROM public.fismasystems WHERE fismasystemid = $2),
+            $3::int,
             (SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1))
-)`, f.FismaAcronym, f.FismaSystemID, f.OpDivID).Scan(&taken)
+)`, strings.TrimSpace(acronym), systemID, opdivID).Scan(&taken)
 	if err != nil {
 		return false, trapError(err)
 	}
 	return taken, nil
+}
+
+// errAcronymTaken is the 400 payload for a same-OpDiv acronym collision.
+func errAcronymTaken(acronym string) error {
+	return &InvalidInputError{data: map[string]any{
+		"fismaacronym": fmt.Sprintf("%q is already used by another system in this OpDiv", strings.TrimSpace(acronym)),
+	}}
 }
 
 func (f *FismaSystem) validate() error {
