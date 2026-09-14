@@ -36,8 +36,10 @@ data "aws_security_group" "alb" {
   vpc_id = data.aws_vpc.ztmf.id
 }
 
+// PR environments never pull from ztmf/api, the bare-SHA deploy repo; see
+// the lifecycle note in ../ecr.tf.
 data "aws_ecr_repository" "api" {
-  name = "ztmf/api"
+  name = "ztmf/api-pr"
 }
 
 data "aws_ecr_repository" "ui" {

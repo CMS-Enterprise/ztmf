@@ -17,11 +17,11 @@ variable "pr_number" {
 }
 
 variable "api_image_tag" {
-  description = "Tag in the ztmf/api ECR repo. Must be built from the API Dockerfile's test target so it carries /app/_test_data_empire.sql; the default (deploy) image has no seed and the API fatals on DB_POPULATE. ztmf PRs pass their own pr-ztmf-<n>-<sha>; ui PRs need a test-target tag published from ztmf main (ztmf-misc#343), not ztmf_api_tag, which names the seedless deploy image."
+  description = "Tag in the ztmf/api-pr ECR repo. Every image there is built from the API Dockerfile's test target so it carries /app/_test_data_empire.sql; the deploy image in ztmf/api has no seed and the API fatals on DB_POPULATE. ztmf PRs pass their own pr-ztmf-<n>-<sha>; ui PRs pass ztmf_api_test_tag from SSM, the main-<sha> build published on ztmf main merges (ztmf-misc#342)."
   type        = string
   validation {
-    condition     = !can(regex("^[0-9a-f]{7,40}$", var.api_image_tag))
-    error_message = "api_image_tag looks like a bare commit SHA, which names the seedless deploy image; pass a test-target build."
+    condition     = can(regex("^(pr-ztmf-[0-9]+-|main-)[0-9a-f]{7,40}$", var.api_image_tag))
+    error_message = "api_image_tag must be pr-ztmf-<n>-<sha> or main-<sha>; a bare SHA names the seedless deploy image in ztmf/api."
   }
 }
 
