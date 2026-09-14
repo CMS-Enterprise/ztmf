@@ -425,11 +425,17 @@ func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
 // Every lookup is fully ordered. A bare LIMIT 1 is plan-dependent and the empire
 // seed offers several candidates for each, so an unordered pick would make a CI
 // failure reproducible only by luck.
+// otherFunctionID is the control question. Tests that seed it alongside the
+// duplicated one pin the SECOND term of DISTINCT ON: keyed on fismasystemid
+// alone the copy would collapse a system's entire answer set to one row, and a
+// fixture holding only one question cannot tell that apart from correct dedup.
 type rolloverFixture struct {
 	prevDC, newDC    int32
 	fismaSystemID    int32
 	functionID       int32
 	optionA, optionB int32
+	otherFunctionID  int32
+	otherOption      int32
 }
 
 func newRolloverFixture(t *testing.T, ctx context.Context, conn *pgxpool.Conn, label string) rolloverFixture {
@@ -452,15 +458,27 @@ func newRolloverFixture(t *testing.T, ctx context.Context, conn *pgxpool.Conn, l
 	`, fmt.Sprintf("%snew_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.newDC)
 	require.NoError(t, err)
 
-	err = conn.QueryRow(ctx, `
+	rows, err := conn.Query(ctx, `
 		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
 		  FROM functionoptions fo
 		 GROUP BY fo.functionid
 		HAVING COUNT(*) >= 2
 		 ORDER BY fo.functionid
-		 LIMIT 1
-	`).Scan(&f.functionID, &f.optionA, &f.optionB)
-	require.NoError(t, err, "need a function with at least two functionoptions")
+		 LIMIT 2
+	`)
+	require.NoError(t, err)
+	var picked [][3]int32
+	for rows.Next() {
+		var r [3]int32
+		require.NoError(t, rows.Scan(&r[0], &r[1], &r[2]))
+		picked = append(picked, r)
+	}
+	rows.Close()
+	require.NoError(t, rows.Err())
+	require.Len(t, picked, 2, "need two distinct functions with at least two functionoptions each")
+
+	f.functionID, f.optionA, f.optionB = picked[0][0], picked[0][1], picked[0][2]
+	f.otherFunctionID, f.otherOption = picked[1][0], picked[1][1]
 
 	err = conn.QueryRow(ctx,
 		`SELECT fismasystemid FROM fismasystems ORDER BY fismasystemid LIMIT 1`,
@@ -524,9 +542,29 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// A second, singly-answered question on the same system. Dedup must not touch
+	// it - see the note on rolloverFixture.otherFunctionID.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+		VALUES ($1, $2, $3, 'control question')
+	`, f.fismaSystemID, f.otherOption, f.prevDC)
+	require.NoError(t, err)
+
 	copied, err := copyPreviousScores(ctx, f.newDC)
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, copied, "two answers to one question must collapse to a single copied row")
+	assert.EqualValues(t, 2, copied,
+		"the duplicated question collapses to one row and the control question survives alongside it")
+
+	var distinctFunctions int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT fo.functionid)
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2
+	`, f.newDC, f.fismaSystemID).Scan(&distinctFunctions)
+	require.NoError(t, err)
+	assert.Equal(t, 2, distinctFunctions,
+		"dedup is per question - keyed on fismasystemid alone it would collapse the whole answer set to one row")
 
 	var landed int32
 	var landedCount int
