@@ -1,8 +1,10 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -414,12 +416,85 @@ func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
 	assert.Equal(t, 0, afterCount, "newDC must remain empty when the previous cycle had no scores")
 }
 
+// rolloverFixture is the shared scaffolding for the duplicate-handling tests
+// below: a source cycle, a target cycle whose deadline is later (so
+// findPreviousDataCall resolves source as target's predecessor), and a system
+// plus a function carrying at least two functionoptions - the shape that lets a
+// single question hold two different answers.
+//
+// Every lookup is fully ordered. A bare LIMIT 1 is plan-dependent and the empire
+// seed offers several candidates for each, so an unordered pick would make a CI
+// failure reproducible only by luck.
+type rolloverFixture struct {
+	prevDC, newDC    int32
+	fismaSystemID    int32
+	functionID       int32
+	optionA, optionB int32
+}
+
+func newRolloverFixture(t *testing.T, ctx context.Context, conn *pgxpool.Conn, label string) rolloverFixture {
+	t.Helper()
+
+	var f rolloverFixture
+	suffix := time.Now().UnixNano()
+
+	err := conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sprev_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snew_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.newDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
+		  FROM functionoptions fo
+		 GROUP BY fo.functionid
+		HAVING COUNT(*) >= 2
+		 ORDER BY fo.functionid
+		 LIMIT 1
+	`).Scan(&f.functionID, &f.optionA, &f.optionB)
+	require.NoError(t, err, "need a function with at least two functionoptions")
+
+	err = conn.QueryRow(ctx,
+		`SELECT fismasystemid FROM fismasystems ORDER BY fismasystemid LIMIT 1`,
+	).Scan(&f.fismaSystemID)
+	require.NoError(t, err)
+
+	return f
+}
+
+// captureRolloverLog runs fn with the standard logger redirected, returning
+// everything it wrote. copyPreviousScores signals through log.Printf rather than
+// its return value, so assertions about ROLLOVER_ANOMALY cannot be made any
+// other way. Safe because no test in this package calls t.Parallel().
+func captureRolloverLog(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	prevOut := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}()
+	fn()
+	return buf.String()
+}
+
 // TestCopyPreviousScoresDeduplicatesIntegration covers the DISTINCT ON guard in
 // copyPreviousScores (ztmf#502). scores has no uniqueness constraint on
 // (fismasystemid, datacallid, functionid), so a source cycle can legitimately
-// hold two answers to the same question via two functionoptions of one function.
-// Without the guard both copy forward and the new cycle opens with a duplicate
-// answer; with it, the highest scoreid wins and exactly one row lands.
+// hold two answers to the same question via two functionoptions of one function
+// (ztmf#491). Without the guard both copy forward and the new cycle opens with a
+// duplicate answer; with it, exactly one row lands.
 //
 // The assertion is on functionid, not functionoptionid: two rows differing only
 // by functionoptionid are already distinct on the latter, so counting that column
@@ -437,50 +512,19 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Release()
 
-	var prevDC, newDC int32
-	suffix := time.Now().UnixNano()
-
-	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
-		RETURNING datacallid
-	`, fmt.Sprintf("%sprev_dedup_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
-	require.NoError(t, err)
-
-	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
-		RETURNING datacallid
-	`, fmt.Sprintf("%snew_dedup_%d", integrationTestPrefix, suffix)).Scan(&newDC)
-	require.NoError(t, err)
-
-	// Two functionoptions of one function - the shape that produces duplicate
-	// answers to a single question.
-	var functionID, optionA, optionB int32
-	err = conn.QueryRow(ctx, `
-		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
-		  FROM functionoptions fo
-		 GROUP BY fo.functionid
-		HAVING COUNT(*) >= 2
-		 LIMIT 1
-	`).Scan(&functionID, &optionA, &optionB)
-	require.NoError(t, err, "need a function with at least two functionoptions")
-
-	var fismaSystemID int32
-	err = conn.QueryRow(ctx, `SELECT fismasystemid FROM fismasystems LIMIT 1`).Scan(&fismaSystemID)
-	require.NoError(t, err)
+	f := newRolloverFixture(t, ctx, conn, "dedup")
 
 	// Inserted in order and left at the default status, so the pair ties on status
 	// and optionB wins on the higher scoreid.
-	for _, opt := range []int32{optionA, optionB} {
+	for _, opt := range []int32{f.optionA, f.optionB} {
 		_, err = conn.Exec(ctx, `
 			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
 			VALUES ($1, $2, $3, $4)
-		`, fismaSystemID, opt, prevDC, fmt.Sprintf("dedup marker %d", opt))
+		`, f.fismaSystemID, opt, f.prevDC, fmt.Sprintf("dedup marker %d", opt))
 		require.NoError(t, err)
 	}
 
-	copied, err := copyPreviousScores(ctx, newDC)
+	copied, err := copyPreviousScores(ctx, f.newDC)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, copied, "two answers to one question must collapse to a single copied row")
 
@@ -491,10 +535,10 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 		  FROM scores s
 		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
-	`, newDC, fismaSystemID, functionID).Scan(&landedCount, &landed)
+	`, f.newDC, f.fismaSystemID, f.functionID).Scan(&landedCount, &landed)
 	require.NoError(t, err)
 	assert.Equal(t, 1, landedCount, "the new cycle must hold exactly one answer for the function")
-	assert.EqualValues(t, optionB, landed, "scoreid DESC must pick the most recent of the duplicate set")
+	assert.EqualValues(t, f.optionB, landed, "scoreid DESC must pick the most recent of the duplicate set")
 }
 
 // TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration covers the status
@@ -521,52 +565,23 @@ func TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Release()
 
-	var prevDC, newDC int32
-	suffix := time.Now().UnixNano()
-
-	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
-		RETURNING datacallid
-	`, fmt.Sprintf("%sprev_status_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
-	require.NoError(t, err)
-
-	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
-		RETURNING datacallid
-	`, fmt.Sprintf("%snew_status_%d", integrationTestPrefix, suffix)).Scan(&newDC)
-	require.NoError(t, err)
-
-	var functionID, answeredOption, staleOption int32
-	err = conn.QueryRow(ctx, `
-		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
-		  FROM functionoptions fo
-		 GROUP BY fo.functionid
-		HAVING COUNT(*) >= 2
-		 LIMIT 1
-	`).Scan(&functionID, &answeredOption, &staleOption)
-	require.NoError(t, err, "need a function with at least two functionoptions")
-
-	var fismaSystemID int32
-	err = conn.QueryRow(ctx, `SELECT fismasystemid FROM fismasystems LIMIT 1`).Scan(&fismaSystemID)
-	require.NoError(t, err)
+	f := newRolloverFixture(t, ctx, conn, "status")
 
 	// Answered first (lower scoreid), untouched twin second (higher scoreid) -
 	// the ordering that makes scoreid and status disagree.
 	_, err = conn.Exec(ctx, `
 		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
 		VALUES ($1, $2, $3, $4, 'answered this cycle')
-	`, fismaSystemID, answeredOption, prevDC, scoreStatusDone)
+	`, f.fismaSystemID, f.optionA, f.prevDC, scoreStatusDone)
 	require.NoError(t, err)
 
 	_, err = conn.Exec(ctx, `
 		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
 		VALUES ($1, $2, $3, $4, 'stale carried twin')
-	`, fismaSystemID, staleOption, prevDC, scoreStatusNotStarted)
+	`, f.fismaSystemID, f.optionB, f.prevDC, scoreStatusNotStarted)
 	require.NoError(t, err)
 
-	copied, err := copyPreviousScores(ctx, newDC)
+	copied, err := copyPreviousScores(ctx, f.newDC)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, copied, "the duplicate pair must still collapse to one row")
 
@@ -577,12 +592,72 @@ func TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration(t *testing.T) {
 		  FROM scores s
 		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
-	`, newDC, fismaSystemID, functionID).Scan(&landedOption, &landedNotes)
+	`, f.newDC, f.fismaSystemID, f.functionID).Scan(&landedOption, &landedNotes)
 	require.NoError(t, err)
-	assert.EqualValues(t, answeredOption, landedOption,
+	assert.EqualValues(t, f.optionA, landedOption,
 		"the answered row must beat the untouched twin even though the twin has the higher scoreid")
 	assert.Equal(t, "answered this cycle", landedNotes,
 		"notes must travel with the winning row, not be mixed across the pair")
+}
+
+// TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration pins the reason
+// copyPreviousScores resolves three counts instead of one. ROLLOVER_ANOMALY is
+// wired to a CloudWatch alarm, and the accounting this replaced compared copied
+// against a plain COUNT(*) of the source cycle. Deduplicating underneath that
+// comparison makes every healthy rollover of a duplicated cycle look like an
+// under-copy: here the source holds 2 rows and the copy correctly emits 1, which
+// the old arithmetic reads as a partial copy. The alarm would fire precisely
+// when the guard is doing its job.
+//
+// Only the silence is asserted, because the firing side is not deterministically
+// reachable from a test. copied < expected needs the copy to emit fewer rows than
+// the count predicted, and both derive from the same source, joins and filter;
+// resolvable < candidates needs a score whose FK parent is missing, which the
+// schema refuses to create (NOT NULL columns, ON DELETE RESTRICT parents). The
+// existing empty-previous test covers the other benign-silence case.
+func TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	f := newRolloverFixture(t, ctx, conn, "alarm")
+
+	for _, opt := range []int32{f.optionA, f.optionB} {
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid)
+			VALUES ($1, $2, $3)
+		`, f.fismaSystemID, opt, f.prevDC)
+		require.NoError(t, err)
+	}
+
+	var sourceRows int64
+	err = conn.QueryRow(ctx,
+		`SELECT COUNT(*) FROM scores WHERE datacallid = $1`, f.prevDC,
+	).Scan(&sourceRows)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, sourceRows, "the source must hold the duplicate pair for this to assert anything")
+
+	var copied int64
+	logged := captureRolloverLog(t, func() {
+		// Proves the redirect is live. Without it a broken capture would return
+		// an empty string and the NotContains below would pass vacuously.
+		log.Print("capture-is-live")
+		copied, err = copyPreviousScores(ctx, f.newDC)
+	})
+	require.NoError(t, err)
+	require.Contains(t, logged, "capture-is-live", "log capture must be working for the assertion below to mean anything")
+	require.EqualValues(t, 1, copied, "the duplicate pair must collapse, or this asserts nothing")
+
+	assert.NotContains(t, logged, "ROLLOVER_ANOMALY",
+		"collapsing a duplicate is the guard working, not a partial copy - it must not trip the alarm")
 }
 
 // TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by
