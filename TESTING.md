@@ -80,6 +80,35 @@ go test -bench=. ./...
 go test -race ./...
 ```
 
+## Test-Mode Configuration
+
+The API has an ephemeral test mode used by the Emberfall stack, the integration
+tests, and per-PR environments ([ztmf-misc#321](https://github.com/CMS-Enterprise/ztmf-misc/issues/321)).
+It is selected with
+`ENVIRONMENT=test` and needs no IdP, no host mounts, and no session secret.
+
+```bash
+# Image with the empire seed baked in at /app/_test_data_empire.sql.
+# The default target is the seedless runtime image used in dev and prod.
+docker build --target test -t ztmf-api:test ./backend
+```
+
+Environment for a test task:
+
+| Variable | Value | Effect |
+|---|---|---|
+| `ENVIRONMENT` | `test` | Enables seeding and HS256; leaves JIT user creation off (`local` only) |
+| `DB_POPULATE` | `/app/_test_data_empire.sql` | Seed applied after migrations on an empty database |
+| `AUTH_HS256_SECRET` | any string | HMAC key for bearer tokens; `make generate-jwt` signs with `zeroTrust` |
+| `AUTH_HEADER_FIELD` | `Authorization` | Header carrying the bearer token |
+| `DB_ENDPOINT`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | per stack | Postgres connection |
+
+With `AUTH_SESSION_SIGNING_SECRET` unset, session cookies are signed with the
+HS256 secret in this mode; in any other environment that fallback is refused.
+`backend/compose-test.yml` is the reference configuration: it builds the `test`
+target and starts it against an empty Postgres, which is exactly what
+`make test-integration` and `make test-e2e` run.
+
 ## Test Organization
 
 ### File Naming Convention
@@ -228,19 +257,10 @@ type MockFismaSystemRepo struct {
 ## CI/CD Integration
 
 Tests run automatically in GitHub Actions (`.github/workflows/backend.yml`):
-
-```yaml
-- name: Run Unit Tests  # ADD THIS
-  run: |
-    cd backend
-    go test -short -cover ./...
-
-- name: Emberfall Smoke Tests  # ALREADY EXISTS
-  uses: aquia-inc/emberfall@main
-  with:
-    version: 0.3.1
-    file: ./backend/emberfall_tests.yml
-```
+the `integration-tests` job runs `make test-integration` against the
+`compose-test.yml` stack, and the `build` job runs the Emberfall suite against
+the freshly built image. Unit tests run locally through the pre-commit hook
+(`go build` plus `go test -short ./...`) and `make test-unit`.
 
 ## Testing Checklist for New Features
 
