@@ -470,7 +470,8 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 	err = conn.QueryRow(ctx, `SELECT fismasystemid FROM fismasystems LIMIT 1`).Scan(&fismaSystemID)
 	require.NoError(t, err)
 
-	// Inserted in order, so optionB carries the higher scoreid and must win.
+	// Inserted in order and left at the default status, so the pair ties on status
+	// and optionB wins on the higher scoreid.
 	for _, opt := range []int32{optionA, optionB} {
 		_, err = conn.Exec(ctx, `
 			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
@@ -494,6 +495,94 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, landedCount, "the new cycle must hold exactly one answer for the function")
 	assert.EqualValues(t, optionB, landed, "scoreid DESC must pick the most recent of the duplicate set")
+}
+
+// TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration covers the status
+// term in the dedup tiebreak. scoreid is creation order, not edit order - an
+// edit is an in-place UPDATE that keeps its scoreid - so the highest scoreid is
+// not the freshest answer.
+//
+// The scenario is what a duplicated system looks like one cycle after the
+// duplicate appeared: rollover copied the pair in as not_started, and the ISSO
+// then answered one of them ('done'). The bulk copy leaves their relative
+// scoreid order arbitrary, so this seeds the answered row FIRST - on scoreid
+// alone the untouched twin outranks it and the answer the ISSO actually gave
+// for the cycle is the one thrown away.
+func TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var prevDC, newDC int32
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sprev_status_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snew_status_%d", integrationTestPrefix, suffix)).Scan(&newDC)
+	require.NoError(t, err)
+
+	var functionID, answeredOption, staleOption int32
+	err = conn.QueryRow(ctx, `
+		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
+		  FROM functionoptions fo
+		 GROUP BY fo.functionid
+		HAVING COUNT(*) >= 2
+		 LIMIT 1
+	`).Scan(&functionID, &answeredOption, &staleOption)
+	require.NoError(t, err, "need a function with at least two functionoptions")
+
+	var fismaSystemID int32
+	err = conn.QueryRow(ctx, `SELECT fismasystemid FROM fismasystems LIMIT 1`).Scan(&fismaSystemID)
+	require.NoError(t, err)
+
+	// Answered first (lower scoreid), untouched twin second (higher scoreid) -
+	// the ordering that makes scoreid and status disagree.
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+		VALUES ($1, $2, $3, $4, 'answered this cycle')
+	`, fismaSystemID, answeredOption, prevDC, scoreStatusDone)
+	require.NoError(t, err)
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+		VALUES ($1, $2, $3, $4, 'stale carried twin')
+	`, fismaSystemID, staleOption, prevDC, scoreStatusNotStarted)
+	require.NoError(t, err)
+
+	copied, err := copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, copied, "the duplicate pair must still collapse to one row")
+
+	var landedOption int32
+	var landedNotes string
+	err = conn.QueryRow(ctx, `
+		SELECT s.functionoptionid, s.notes
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
+	`, newDC, fismaSystemID, functionID).Scan(&landedOption, &landedNotes)
+	require.NoError(t, err)
+	assert.EqualValues(t, answeredOption, landedOption,
+		"the answered row must beat the untouched twin even though the twin has the higher scoreid")
+	assert.Equal(t, "answered this cycle", landedNotes,
+		"notes must travel with the winning row, not be mixed across the pair")
 }
 
 // TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by

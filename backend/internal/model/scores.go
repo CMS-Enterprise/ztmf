@@ -1026,9 +1026,18 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	//
 	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question:
 	// scores has no uniqueness constraint on (fismasystemid, datacallid,
-	// functionid), so a source cycle may hold duplicates and would otherwise copy
-	// both. The ORDER BY must lead with the same two expressions for DISTINCT ON
-	// to be legal; scoreid DESC picks the most recent of a duplicate set.
+	// functionid), so a source cycle may hold duplicates (ztmf#491, live in prod)
+	// and would otherwise copy both. The ORDER BY must lead with the same two
+	// expressions for DISTINCT ON to be legal; the rest picks the winner.
+	//
+	// status outranks scoreid, and the order matters. scoreid is creation order,
+	// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so
+	// the highest scoreid is not the freshest answer. Duplicates arrive as a bulk
+	// copy with arbitrary relative ordering, and the ISSO then answers one of the
+	// pair; on scoreid alone the untouched twin can outrank it and the real answer
+	// for the cycle is silently discarded. 'done' means a human saved this answer
+	// during the source cycle and 'not_started' means it was carried and never
+	// touched, so preferring done keeps the answer that was actually given.
 	prevScoresSqlb := squirrel.
 		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
 		Options("DISTINCT ON (s.fismasystemid, fo.functionid)").
@@ -1036,7 +1045,7 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
 		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").
 		Where("s.datacallid=?", prevDataCall.DataCallID).
-		OrderBy("s.fismasystemid", "fo.functionid", "s.scoreid DESC")
+		OrderBy("s.fismasystemid", "fo.functionid", fmt.Sprintf("(s.status = '%s') DESC", scoreStatusDone), "s.scoreid DESC")
 
 	sqlb := squirrel.
 		Insert("scores").
