@@ -414,6 +414,88 @@ func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
 	assert.Equal(t, 0, afterCount, "newDC must remain empty when the previous cycle had no scores")
 }
 
+// TestCopyPreviousScoresDeduplicatesIntegration covers the DISTINCT ON guard in
+// copyPreviousScores (ztmf#502). scores has no uniqueness constraint on
+// (fismasystemid, datacallid, functionid), so a source cycle can legitimately
+// hold two answers to the same question via two functionoptions of one function.
+// Without the guard both copy forward and the new cycle opens with a duplicate
+// answer; with it, the highest scoreid wins and exactly one row lands.
+//
+// The assertion is on functionid, not functionoptionid: two rows differing only
+// by functionoptionid are already distinct on the latter, so counting that column
+// would pass whether or not the guard exists.
+func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var prevDC, newDC int32
+	suffix := time.Now().UnixNano()
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sprev_dedup_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snew_dedup_%d", integrationTestPrefix, suffix)).Scan(&newDC)
+	require.NoError(t, err)
+
+	// Two functionoptions of one function - the shape that produces duplicate
+	// answers to a single question.
+	var functionID, optionA, optionB int32
+	err = conn.QueryRow(ctx, `
+		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
+		  FROM functionoptions fo
+		 GROUP BY fo.functionid
+		HAVING COUNT(*) >= 2
+		 LIMIT 1
+	`).Scan(&functionID, &optionA, &optionB)
+	require.NoError(t, err, "need a function with at least two functionoptions")
+
+	var fismaSystemID int32
+	err = conn.QueryRow(ctx, `SELECT fismasystemid FROM fismasystems LIMIT 1`).Scan(&fismaSystemID)
+	require.NoError(t, err)
+
+	// Inserted in order, so optionB carries the higher scoreid and must win.
+	for _, opt := range []int32{optionA, optionB} {
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+			VALUES ($1, $2, $3, $4)
+		`, fismaSystemID, opt, prevDC, fmt.Sprintf("dedup marker %d", opt))
+		require.NoError(t, err)
+	}
+
+	copied, err := copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, copied, "two answers to one question must collapse to a single copied row")
+
+	var landed int32
+	var landedCount int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(*), COALESCE(MAX(s.functionoptionid), 0)
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
+	`, newDC, fismaSystemID, functionID).Scan(&landedCount, &landed)
+	require.NoError(t, err)
+	assert.Equal(t, 1, landedCount, "the new cycle must hold exactly one answer for the function")
+	assert.EqualValues(t, optionB, landed, "scoreid DESC must pick the most recent of the duplicate set")
+}
+
 // TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by
 // deadline, not datacallid: a call inserted later (higher serial id) but with
 // an earlier deadline must NOT win over an earlier-inserted call with a
