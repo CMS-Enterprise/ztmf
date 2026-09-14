@@ -50,18 +50,34 @@ type FindAnswersInput struct {
 func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error) {
 	sqlb := stmntBuilder.Select("datacalls.datacall, fismasystems.fismasystemid, fismasystems.fismaacronym, fismasystems.datacenterenvironment, fismasystems.target_maturity_tier, fismasystems.target_maturity_justification, pillars.pillar, questions.question, functions.function, functions.description, functionoptions.description AS optiondescription, functionoptions.optionname, functionoptions.score, scores.notes, scores.notes_is_ai_summary").
 		From("fismasystems").
-		InnerJoin("functions ON (EXISTS (SELECT 1 FROM datacenterenvironments dce WHERE dce.datacenterenvironment=fismasystems.datacenterenvironment AND dce.scoring_key=functions.datacenterenvironment) OR EXISTS (SELECT 1 FROM scores answered JOIN functionoptions answeredopt ON answeredopt.functionoptionid=answered.functionoptionid WHERE answered.fismasystemid=fismasystems.fismasystemid AND answered.datacallid=? AND answeredopt.functionid=functions.functionid))", input.DataCallID).
+		// Applicable functions only, resolved exactly as scoring resolves them, so
+		// the export cannot show an answer the dashboard does not count
+		// (ztmf-misc#384). The answered branch is the fallback for a system with no
+		// applicable catalog at all - a DECOMMISSIONED or unmapped environment -
+		// which would otherwise export nothing instead of its recorded history.
+		InnerJoin(`functions ON (
+			EXISTS (SELECT 1 FROM datacenterenvironments dce
+			        WHERE dce.datacenterenvironment=fismasystems.datacenterenvironment
+			          AND dce.scoring_key=functions.datacenterenvironment)
+			OR (
+			    NOT EXISTS (SELECT 1 FROM datacenterenvironments dceany
+			                INNER JOIN functions applicable ON applicable.datacenterenvironment=dceany.scoring_key
+			                WHERE dceany.datacenterenvironment=fismasystems.datacenterenvironment)
+			    AND EXISTS (SELECT 1 FROM scores answered
+			                INNER JOIN functionoptions answeredopt ON answeredopt.functionoptionid=answered.functionoptionid
+			                WHERE answered.fismasystemid=fismasystems.fismasystemid
+			                  AND answered.datacallid=?
+			                  AND answeredopt.functionid=functions.functionid)
+			)
+		)`, input.DataCallID).
 		InnerJoin("questions ON questions.questionid=functions.questionid").
 		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
 		InnerJoin("datacalls ON datacalls.datacallid=?", input.DataCallID).
 		LeftJoin("scores ON scores.fismasystemid=fismasystems.fismasystemid AND scores.datacallid=? AND scores.functionoptionid IN (SELECT selected.functionoptionid FROM functionoptions selected WHERE selected.functionid=functions.functionid)", input.DataCallID).
 		LeftJoin("functionoptions ON functionoptions.functionoptionid=scores.functionoptionid").
 		Where("(fismasystems.decommissioned=FALSE OR scores.scoreid IS NOT NULL)").
-		// Top-level WHERE, not a condition on the functions join: that join is
-		// applicable-OR-answered (#528), so filtering one branch would export 40
-		// rows for a system with carried-forward excluded answers and 25 for a
-		// fresh one. The scoring key needs a subquery because no dce alias is in
-		// scope here.
+		// Top-level WHERE so it covers both branches of the functions join above.
+		// The scoring key needs a subquery because no dce alias is in scope here.
 		Where(
 			reducedPillarScopeSQL(
 				"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment=fismasystems.datacenterenvironment)",
@@ -74,13 +90,12 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// questions.ordr are 0 for any row migration 0056 could not rank (the
 		// empire seed's fictional function names), and rows tied on the sort key
 		// would otherwise come back in heap order, which shifts whenever a row is
-		// rewritten. questions.questionid alone does not reach the export's row grain: the
-	// applicable-or-answered join deliberately admits functions from OTHER
-	// editions when a system answered them before an environment change
-	// (#528), so one questionid can yield two rows that tie on every
-	// question-level column. functions.functionid settles those, keeping the
-	// export byte-stable.
-		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid ASC")
+		// rewritten. functionid no longer breaks a tie now that both branches
+		// resolve one catalog, but scoreid does: a duplicate score row on a single
+		// function (ztmf#491, live on two systems) ties on every other key, and the
+		// two copies can carry different notes, so without it the export presents a
+		// different answer first from run to run.
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid, scores.scoreid ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)
