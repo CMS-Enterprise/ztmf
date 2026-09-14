@@ -146,10 +146,18 @@ func questionOrderKeys(qs []*Question) []int32 {
 	return keys
 }
 
-func answerOrderKeys(as []*Answer) [][3]string {
-	keys := make([][3]string, len(as))
+// Notes is part of the key on purpose: a duplicate score row on one function
+// (ztmf#491) ties on every other column, so a key of acronym/pillar/function
+// alone compares equal however the two copies happen to come back and cannot
+// detect the instability scoreid in the ORDER BY exists to prevent.
+func answerOrderKeys(as []*Answer) [][4]string {
+	keys := make([][4]string, len(as))
 	for i, a := range as {
-		keys[i] = [3]string{a.FismaAcronym, a.Pillar, a.Function}
+		var notes string
+		if a.Notes != nil {
+			notes = *a.Notes
+		}
+		keys[i] = [4]string{a.FismaAcronym, a.Pillar, a.Function, notes}
 	}
 	return keys
 }

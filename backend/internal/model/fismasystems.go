@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -39,7 +40,7 @@ type FismaSystem struct {
 	DataCenterEnvironment *string    `json:"datacenterenvironment"`
 	DataCallContact       *string    `json:"datacallcontact"`
 	ISSOEmail             *string    `json:"issoemail"`
-	SDLSyncEnabled        bool       `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
+	SDLSyncEnabled        *bool      `json:"sdl_sync_enabled" db:"sdl_sync_enabled"`
 	Decommissioned        bool       `json:"decommissioned"`
 	DecommissionedDate    *time.Time `json:"decommissioned_date"`
 	DecommissionedBy      *string    `json:"decommissioned_by"`
@@ -250,6 +251,9 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 	// distinguishable from nil (omitted → leave unchanged).
 	f.DataCallContact = blankToNil(f.DataCallContact)
 	f.ISSOEmail = blankToNil(f.ISSOEmail)
+	// The acronym is compared trimmed for uniqueness (below), so store it
+	// trimmed too: padding must not survive into the display key.
+	f.FismaAcronym = strings.TrimSpace(f.FismaAcronym)
 
 	if err := f.validate(); err != nil {
 		return nil, err
@@ -327,12 +331,40 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		return nil, &invalid
 	}
 
+	// The acronym is the human key for a system everywhere it is displayed and
+	// linked, so two live systems in one OpDiv must not share it (ztmf#587). A
+	// placeholder such as "Pending" on several systems made every questionnaire
+	// link for those systems resolve to the same one. Compared case-insensitively
+	// and trimmed; decommissioned systems are ignored so a retired acronym can
+	// be reused. Enforced here rather than by a unique index because existing
+	// rows still carry a handful of duplicates that need a data cleanup first;
+	// the index follows once those are resolved.
+	if f.FismaAcronym != "" {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return nil, trapError(err)
+		}
+		taken, err := acronymInUse(ctx, conn, f.FismaAcronym, f.FismaSystemID, f.OpDivID, true)
+		conn.Release()
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, errAcronymTaken(f.FismaAcronym)
+		}
+	}
+
 	if f.FismaSystemID == 0 {
 		// INSERT - exclude decommissioned/reactivation audit fields. opdiv_id
 		// is NOT NULL on the table. Callers may pass an explicit OpDivID; if
 		// they do not, default to CMS via subquery so existing CMS admin-panel
 		// provisioning keeps working unchanged. HHS OpDiv systems come in via
 		// the onboarding workbook importer with OpDivID set explicitly.
+		// sdl_sync_enabled is NOT NULL; an omitted flag on create means off.
+		sdlSync := false
+		if f.SDLSyncEnabled != nil {
+			sdlSync = *f.SDLSyncEnabled
+		}
 		var opdivVal any
 		if f.OpDivID != nil {
 			opdivVal = *f.OpDivID
@@ -353,7 +385,7 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 			Values(
 				f.FismaUID, f.FismaAcronym, f.FismaName, f.FismaSubsystem, f.Component,
 				f.Groupacronym, f.GroupName, f.DivisionName, f.DataCenterEnvironment,
-				f.DataCallContact, f.ISSOEmail, f.SDLSyncEnabled, opdivVal,
+				f.DataCallContact, f.ISSOEmail, sdlSync, opdivVal,
 				// A blank optional text field on create is NULL, not "" (ztmf#442).
 				// The typed HHS fields (ztmf#433) pass through raw: a nil *bool
 				// encodes NULL (unknown, never false), and an empty slice is nulled
@@ -370,7 +402,6 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 		// UPDATE - exclude decommissioned fields. Core fields are always written.
 		setCols := squirrel.Eq{
 			"fismauid":              f.FismaUID,
-			"fismaacronym":          f.FismaAcronym,
 			"fismaname":             f.FismaName,
 			"fismasubsystem":        f.FismaSubsystem,
 			"component":             f.Component,
@@ -380,7 +411,25 @@ func (f *FismaSystem) Save(ctx context.Context, opts ...SaveOption) (*FismaSyste
 			"datacenterenvironment": f.DataCenterEnvironment,
 			"datacallcontact":       f.DataCallContact,
 			"issoemail":             f.ISSOEmail,
-			"sdl_sync_enabled":      f.SDLSyncEnabled,
+		}
+		// The acronym is the system's display key and, until ztmf-ui#732 lands,
+		// its questionnaire URL. It was written on every update, so a PUT that
+		// omitted it cleared the column to "". Write it only when the request
+		// carried a value (already trimmed above); a blank leaves it as stored.
+		if f.FismaAcronym != "" {
+			setCols["fismaacronym"] = f.FismaAcronym
+		}
+		// sdl_sync_enabled controls which systems sync to the operator's data
+		// lake. It was a plain bool written on every update, so a PUT that
+		// omitted it silently switched sync off. Written only when the request
+		// carried the key (API path) or the caller set a value (internal path).
+		switch {
+		case cfg.presentBoolFields != nil:
+			if cfg.presentBoolFields["sdl_sync_enabled"] && f.SDLSyncEnabled != nil {
+				setCols["sdl_sync_enabled"] = *f.SDLSyncEnabled
+			}
+		case f.SDLSyncEnabled != nil:
+			setCols["sdl_sync_enabled"] = *f.SDLSyncEnabled
 		}
 		// Metadata fields distinguish three request states (ztmf#442):
 		//   - omitted / null (nil pointer / nil slice) -> leave the stored value
@@ -573,11 +622,15 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 		conn.Release()
 	}()
 
-	var decommissioned bool
+	var (
+		decommissioned bool
+		acronym        string
+		opdivID        int32
+	)
 	err = tx.QueryRow(ctx,
-		"SELECT decommissioned FROM fismasystems WHERE fismasystemid=$1 FOR UPDATE",
+		"SELECT decommissioned, fismaacronym, opdiv_id FROM fismasystems WHERE fismasystemid=$1 FOR UPDATE",
 		input.FismaSystemID,
-	).Scan(&decommissioned)
+	).Scan(&decommissioned, &acronym, &opdivID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoData
 	}
@@ -588,6 +641,20 @@ func ReactivateFismaSystem(ctx context.Context, input ReactivateInput) (*FismaSy
 	if !decommissioned {
 		return nil, &InvalidInputError{
 			data: map[string]any{"decommissioned": "system is already active"},
+		}
+	}
+
+	// A decommissioned system's acronym may have been reused by a live one
+	// (decommissioned rows are ignored by the uniqueness check in Save).
+	// Bringing it back would recreate the collision, so refuse until one of
+	// them is renamed (ztmf#587).
+	if strings.TrimSpace(acronym) != "" {
+		taken, err := acronymInUse(ctx, tx, acronym, input.FismaSystemID, &opdivID, false)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, errAcronymTaken(acronym)
 		}
 	}
 
@@ -696,6 +763,60 @@ func emptyToNil(s []string) []string {
 		return nil
 	}
 	return s
+}
+
+// rowQuerier is the subset of pgx shared by a pooled connection and a
+// transaction, so acronymInUse can run inside an existing tx (reactivation)
+// or on its own connection (Save).
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// acronymInUse reports whether a different, non-decommissioned system in the
+// same OpDiv already carries acronym (case-insensitive, whitespace-trimmed).
+// The OpDiv is resolved the way Save writes it: the stored row's OpDiv when
+// systemID names an existing row (opdiv_id is not updatable, so a client-sent
+// value on PUT must not redirect the check), otherwise the explicit opdivID
+// on insert, otherwise the CMS default.
+//
+// keepExisting relaxes the check for an update that does not change the
+// acronym: a row that already holds the value is not taking it from anyone,
+// so an unrelated edit to one of the pre-existing duplicate systems still
+// saves. Save passes true; reactivation passes false, because there the row's
+// own acronym is exactly what is being brought back into conflict.
+func acronymInUse(ctx context.Context, q rowQuerier, acronym string, systemID int32, opdivID *int32, keepExisting bool) (bool, error) {
+	var taken bool
+	err := q.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM public.fismasystems o
+    WHERE lower(btrim(o.fismaacronym, E' \t\r\n')) = lower($1)
+      AND o.decommissioned = FALSE
+      AND o.fismasystemid <> $2
+      AND o.opdiv_id = COALESCE(
+            (SELECT opdiv_id FROM public.fismasystems WHERE fismasystemid = $2),
+            $3::int,
+            (SELECT opdiv_id FROM public.opdivs WHERE code = 'CMS' AND active = TRUE LIMIT 1))
+)
+AND NOT (
+    $4::boolean
+    AND EXISTS (
+        SELECT 1 FROM public.fismasystems me
+        WHERE me.fismasystemid = $2
+          AND lower(btrim(me.fismaacronym, E' \t\r\n')) = lower($1)
+    )
+)`, strings.TrimSpace(acronym), systemID, opdivID, keepExisting).Scan(&taken)
+	if err != nil {
+		return false, trapError(err)
+	}
+	return taken, nil
+}
+
+// errAcronymTaken is the 400 payload for a same-OpDiv acronym collision.
+func errAcronymTaken(acronym string) error {
+	return &InvalidInputError{data: map[string]any{
+		"fismaacronym": fmt.Sprintf("%q is already used by another system in this OpDiv", strings.TrimSpace(acronym)),
+	}}
 }
 
 func (f *FismaSystem) validate() error {

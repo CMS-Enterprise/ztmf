@@ -181,7 +181,7 @@ func SaveFismaSystem(w http.ResponseWriter, r *http.Request) {
 	// tell an explicit null (clear to Unknown) from an omitted field (leave
 	// unchanged) - a decoded *bool collapses both to nil. Drives the Yes/No/
 	// Unknown control on ztmf-ui#460 (see model.WithPresentBoolFields).
-	presentBools := presentJSONKeys(body, "hva", "cloud_system", "legacy")
+	presentBools := presentJSONKeys(body, "hva", "cloud_system", "legacy", "sdl_sync_enabled")
 
 	vars := mux.Vars(r)
 	if v, ok := vars["fismasystemid"]; ok {
