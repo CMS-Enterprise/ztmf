@@ -107,3 +107,24 @@ func TestMassEmailReadonlyAdminRecipientsIntegration(t *testing.T) {
 	assert.NotContains(t, recipients, "Test.User@nowhere.xyz", "OWNER must not be in the read-only audience")
 	assert.NotContains(t, recipients, "Opdiv.Admin@empire.test", "OPDIV_ADMIN must not be in the read-only audience")
 }
+
+// TestMassEmailSystemDelegateRecipientsIntegration pins the SYSTEM_DELEGATE
+// audience against the empire seed. The group's e2e case asserts only a 201, and
+// SaveMassEmail returns 201 with an empty recipient list when a group resolves
+// to nobody, so a query that silently matched no rows would still pass there.
+// This asserts the recipients themselves: a delegate is reached, and the tiers
+// that are not delegates are not.
+func TestMassEmailSystemDelegateRecipientsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	ctx := context.Background()
+	m := &MassEmail{Group: "SYSTEM_DELEGATE", Subject: "delegate subject", Body: "delegate body"}
+	recipients, err := m.Recipients(ctx)
+	require.NoError(t, err)
+
+	assert.Contains(t, recipients, "Delegate.User@nowhere.xyz", "SYSTEM_DELEGATE seed user")
+	assert.NotContains(t, recipients, "Test.User@nowhere.xyz", "OWNER must not be in the delegate audience")
+	assert.NotContains(t, recipients, "Readonly.Admin@nowhere.xyz", "HHS_READONLY_ADMIN must not be in the delegate audience")
+}
