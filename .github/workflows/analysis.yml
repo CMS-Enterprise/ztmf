@@ -130,10 +130,14 @@ jobs:
         run: tflint --version
 
       - name: TFLINT init
-        run: tflint --chdir=infrastructure/ --init
+        run: |
+          tflint --chdir=infrastructure/ --init
+          tflint --chdir=infrastructure/pr-env/ --init
 
       - name: TFLINT run
-        run: tflint  --chdir=infrastructure/ -f compact
+        run: |
+          tflint --chdir=infrastructure/ -f compact
+          tflint --chdir=infrastructure/pr-env/ -f compact
 
   Snyk-Test:
     name: snyk test
