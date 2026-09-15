@@ -11,6 +11,11 @@ name: Manual Deploy to DEV
 on:
   workflow_dispatch:
 
+# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+concurrency:
+  group: manual-deploy-dev-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Analysis
@@ -27,6 +32,11 @@ jobs:
     secrets: inherit
 
   infrastructure:
+    # Shares the dev apply queue with orchestration-dev.
+    concurrency:
+      group: deploy-dev
+      queue: max
+      cancel-in-progress: false
     name: Infrastructure
     needs:
       - analysis

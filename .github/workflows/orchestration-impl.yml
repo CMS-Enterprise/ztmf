@@ -43,6 +43,11 @@ on:
       - synchronize
       - ready_for_review
 
+# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+concurrency:
+  group: orchestration-impl-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Analysis
@@ -87,6 +92,12 @@ jobs:
     secrets: inherit
 
   infrastructure:
+    # One impl apply at a time, shared with the manual deploy. queue: max keeps
+    # every waiter; never cancel an apply mid-flight.
+    concurrency:
+      group: deploy-impl
+      queue: max
+      cancel-in-progress: false
     name: Infrastructure
     needs:
       - analysis

@@ -10,6 +10,11 @@ on:
       - synchronize
       - ready_for_review
 
+# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+concurrency:
+  group: orchestration-dev-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Analysis
@@ -98,6 +103,13 @@ jobs:
     secrets: inherit
      
   infrastructure:
+    # One dev apply at a time across all PRs. queue: max keeps every waiter
+    # (default single evicts the pending one, leaving that PR with no DEV
+    # deployment and therefore unmergeable); never cancel an apply mid-flight.
+    concurrency:
+      group: deploy-dev
+      queue: max
+      cancel-in-progress: false
     name: Infrastructure
     needs: 
       - analysis
