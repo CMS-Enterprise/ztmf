@@ -1,0 +1,345 @@
+name: Orchestration PR
+
+# Per-PR environment for ztmf PRs (ztmf-misc#342, epic ztmf-misc#321). Every
+# non-draft PR to main gets its own API, Postgres, and frontend task behind
+# https://dev.ztmf.cms.gov/pr/ztmf/<n>/, applied from infrastructure/pr-env
+# with state keyed pr/ztmf/<n> in the dev state bucket. The deploy job runs
+# under a GitHub Environment named pr-ztmf-<n>, which gives the PR the View
+# deployment button and a per-push deployment history. That environment holds
+# no secrets: a dynamically named environment cannot see environment-scoped
+# secrets, so the OIDC role ARN comes from the repo-level PR_ENV_ROLEARN.
+#
+# Close or merge destroys the root, its state object, its images, and the
+# environment. Merge also publishes the test target as main-<sha> in
+# ztmf/api-pr and records it in ztmf_api_test_tag, the API image a ztmf-ui PR
+# environment runs (ztmf-misc#343).
+#
+# The manual equivalent of every step is in infrastructure/pr-env/README.md.
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - closed
+
+# One run per PR at a time. A newer pending event replaces an older pending
+# one, so a close queued behind a push wins; a run mid-apply is never
+# cancelled, which would strand a half-built environment.
+concurrency:
+  group: pr-env-ztmf-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  ENV_NAME: pr-ztmf-${{ github.event.pull_request.number }}
+  API_REPO: ztmf/api-pr
+  STATE_BUCKET: ztmf-terraform-state-use1-dev
+  STATE_KEY: pr/ztmf/${{ github.event.pull_request.number }}
+  AWS_REGION: us-east-1
+  TF_ROOT: infrastructure/pr-env
+
+jobs:
+  build:
+    name: Build PR API image
+    if: github.event.action != 'closed' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      api_tag: ${{ steps.tag.outputs.api_tag }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Image tag
+        id: tag
+        run: echo "api_tag=pr-ztmf-${PR_NUMBER}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.PR_ENV_ROLEARN }}
+          role-duration-seconds: 1800
+          aws-region: us-east-1
+
+      - name: Docker - Login
+        id: ecr
+        run: |
+          uri=$(aws ecr describe-repositories --repository-names "$API_REPO" \
+            --query 'repositories[0].repositoryUri' --output text)
+          echo "uri=$uri" >> "$GITHUB_OUTPUT"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${uri%%/*}"
+
+      # The test target is the deploy image plus the empire seed, which the
+      # pr-env root requires (a seedless image fatals on DB_POPULATE). Snyk and
+      # the Emberfall smoke already ran on this commit's deploy image in
+      # orchestration-dev. Tags are immutable, so a re-run for the same commit
+      # skips the push instead of failing on it.
+      - name: Docker - Build and Push (test target)
+        env:
+          TAG: ${{ steps.tag.outputs.api_tag }}
+          IMAGE: ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.api_tag }}
+        run: |
+          if aws ecr describe-images --repository-name "$API_REPO" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "$API_REPO:$TAG already exists; skipping the build."
+            exit 0
+          fi
+          docker buildx build --platform linux/amd64 --target test --tag "$IMAGE" --push ./backend
+
+  deploy:
+    name: Deploy PR environment
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-ztmf-${{ github.event.pull_request.number }}
+      url: ${{ steps.apply.outputs.url }}
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.PR_ENV_ROLEARN }}
+          # The apply waits for ECS steady state, up to 20 minutes on a crash loop.
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.10.3"
+          terraform_wrapper: false
+
+      # ztmf-ui writes ztmf_ui_tag on every merge to its main (ztmf-misc#343).
+      - name: Resolve the frontend image
+        id: ui
+        run: |
+          if ! tag=$(aws ssm get-parameter --name ztmf_ui_tag --query 'Parameter.Value' --output text 2>/dev/null); then
+            echo "::error::SSM parameter ztmf_ui_tag is missing. ztmf-ui publishes it on merge to main; until then set it by hand to a ui-<sha> image in ztmf/ui."
+            exit 1
+          fi
+          echo "ui_tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform init
+        run: |
+          terraform -chdir="$TF_ROOT" init -input=false \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=$STATE_KEY" \
+            -backend-config="region=$AWS_REGION"
+
+      - name: Terraform apply
+        id: apply
+        env:
+          API_TAG: ${{ needs.build.outputs.api_tag }}
+          UI_TAG: ${{ steps.ui.outputs.ui_tag }}
+        run: |
+          terraform -chdir="$TF_ROOT" apply -input=false -no-color -auto-approve \
+            -var repo=ztmf -var "pr_number=$PR_NUMBER" \
+            -var "api_image_tag=$API_TAG" -var "ui_image_tag=$UI_TAG"
+          echo "url=$(terraform -chdir="$TF_ROOT" output -raw url)" >> "$GITHUB_OUTPUT"
+
+      # One comment per PR, edited in place on every push; the deployment
+      # history under the environment carries the per-push record.
+      - name: Comment the URL on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.apply.outputs.url }}
+          API_TAG: ${{ needs.build.outputs.api_tag }}
+          UI_TAG: ${{ steps.ui.outputs.ui_tag }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- pr-env-url -->'
+          cat > comment.md <<EOF
+          $marker
+          PR environment: $URL
+
+          API image \`$API_TAG\`, frontend image \`$UI_TAG\`, built from ${HEAD_SHA:0:7} at $(date -u +%Y-%m-%dT%H:%MZ). Rebuilt on every push and removed when the PR closes. Sign in with CMS credentials; the app then runs as the seeded test admin.
+          EOF
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@comment.md >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md >/dev/null
+          fi
+
+      # Same shape as infrastructure.yml's diagnostics: why the task stopped,
+      # without dumping application logs into a public job log.
+      - name: Deploy failure diagnostics
+        if: failure()
+        run: |
+          set +e
+          echo "::group::ECS service events (ztmf/$ENV_NAME)"
+          aws ecs describe-services --cluster ztmf --services "$ENV_NAME" \
+            --query 'services[0].events[:15].[createdAt,message]' --output text
+          echo "::endgroup::"
+          echo "::group::Stopped task reasons"
+          TASKS=$(aws ecs list-tasks --cluster ztmf --service-name "$ENV_NAME" \
+            --desired-status STOPPED --query 'taskArns[:10]' --output text)
+          if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
+            read -ra tasks <<< "$TASKS"
+            aws ecs describe-tasks --cluster ztmf --tasks "${tasks[@]}" \
+              --query 'tasks[].{stoppedAt:stoppedAt,containers:containers[].{name:name,exitCode:exitCode,reason:reason}}' \
+              --output table
+            echo "Full logs: CloudWatch log group /ztmf/$ENV_NAME"
+          else
+            echo "No stopped tasks: not a crash loop."
+          fi
+          echo "::endgroup::"
+          exit 0
+
+  teardown:
+    name: Tear down PR environment
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      deployments: write
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.PR_ENV_ROLEARN }}
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.10.3"
+          terraform_wrapper: false
+
+      # A draft closed without ever deploying has no state and nothing to
+      # destroy. The tag values only shape the task definition being destroyed;
+      # the placeholders satisfy the root's validation. Target-group
+      # deregistration has outlasted a first destroy before (ztmf#586
+      # validation), so one retry is part of the normal path.
+      - name: Terraform destroy
+        run: |
+          if ! aws s3api head-object --bucket "$STATE_BUCKET" --key "$STATE_KEY" >/dev/null 2>&1; then
+            echo "No state at s3://$STATE_BUCKET/$STATE_KEY; nothing was deployed for this PR."
+            exit 0
+          fi
+          terraform -chdir="$TF_ROOT" init -input=false \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=$STATE_KEY" \
+            -backend-config="region=$AWS_REGION"
+          destroy() {
+            terraform -chdir="$TF_ROOT" destroy -input=false -no-color -auto-approve \
+              -var repo=ztmf -var "pr_number=$PR_NUMBER" \
+              -var "api_image_tag=pr-ztmf-${PR_NUMBER}-0000000" -var ui_image_tag=ui-0000000
+          }
+          destroy || destroy
+          aws s3 rm "s3://$STATE_BUCKET/$STATE_KEY"
+
+      - name: Delete the PR's images
+        run: |
+          ids=$(aws ecr list-images --repository-name "$API_REPO" --filter tagStatus=TAGGED \
+            --query "imageIds[?starts_with(imageTag, 'pr-ztmf-${PR_NUMBER}-')]" --output json)
+          if [ "$ids" = "[]" ]; then
+            echo "No pr-ztmf-${PR_NUMBER}-* images in $API_REPO."
+            exit 0
+          fi
+          aws ecr batch-delete-image --repository-name "$API_REPO" --image-ids "$ids"
+
+      # Deployments go inactive with the job token. Deleting the environment
+      # itself is an Administration-scoped call GITHUB_TOKEN cannot make, so it
+      # uses the fine-grained PAT in PR_ENV_ADMIN_TOKEN and is skipped, not
+      # failed, when that secret is absent.
+      - name: Retire the GitHub Environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMIN_TOKEN: ${{ secrets.PR_ENV_ADMIN_TOKEN }}
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/environments/$ENV_NAME" >/dev/null 2>&1; then
+            echo "Environment $ENV_NAME does not exist; nothing to retire."
+            exit 0
+          fi
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=$ENV_NAME&per_page=100" --jq '.[].id'); do
+            gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=inactive >/dev/null
+          done
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "::warning::PR_ENV_ADMIN_TOKEN is not set; leaving the $ENV_NAME environment in place."
+            exit 0
+          fi
+          GH_TOKEN="$ADMIN_TOKEN" gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$ENV_NAME"
+
+      - name: Report a failed teardown on the PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cat > comment.md <<EOF
+          Tearing down this PR's environment failed in [this run]($RUN_URL); it keeps running in dev until it is cleaned up. Manual teardown from a workstation with the ztmf-dev profile:
+
+          \`\`\`shell
+          cd $TF_ROOT
+          terraform init -reconfigure -backend-config=bucket=$STATE_BUCKET -backend-config=key=$STATE_KEY -backend-config=region=$AWS_REGION
+          terraform destroy -auto-approve -var repo=ztmf -var pr_number=$PR_NUMBER -var api_image_tag=pr-ztmf-$PR_NUMBER-0000000 -var ui_image_tag=ui-0000000
+          aws s3 rm s3://$STATE_BUCKET/$STATE_KEY
+          aws ecr batch-delete-image --repository-name $API_REPO --image-ids "\$(aws ecr list-images --repository-name $API_REPO --query "imageIds[?starts_with(imageTag, 'pr-ztmf-$PR_NUMBER-')]" --output json)"
+          gh api -X DELETE repos/$GITHUB_REPOSITORY/environments/$ENV_NAME
+          \`\`\`
+          EOF
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md >/dev/null
+
+  # The API image a ztmf-ui PR environment runs: main's test target, published
+  # here rather than in orchestration-prod because it is PR-environment plumbing.
+  publish-main:
+    name: Publish main test image
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the merge commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.PR_ENV_ROLEARN }}
+          role-duration-seconds: 1800
+          aws-region: us-east-1
+
+      - name: Docker - Build, Push, and Record main-<sha>
+        run: |
+          tag="main-$(git rev-parse --short HEAD)"
+          uri=$(aws ecr describe-repositories --repository-names "$API_REPO" \
+            --query 'repositories[0].repositoryUri' --output text)
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${uri%%/*}"
+          if aws ecr describe-images --repository-name "$API_REPO" --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            echo "$API_REPO:$tag already exists; skipping the build."
+          else
+            docker buildx build --platform linux/amd64 --target test --tag "$uri:$tag" --push ./backend
+          fi
+          aws ssm put-parameter --name ztmf_api_test_tag --type String --value "$tag" --overwrite
