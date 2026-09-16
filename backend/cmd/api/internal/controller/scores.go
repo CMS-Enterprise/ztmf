@@ -61,10 +61,7 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 //	@Router		/scores [post]
 //	@Router		/scores/{scoreid} [put]
 func SaveScore(w http.ResponseWriter, r *http.Request) {
-	var (
-		scoreID int32
-		err     error
-	)
+	var err error
 
 	user := model.UserFromContext(r.Context())
 	score := &model.Score{}
@@ -85,12 +82,8 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-
-	if v, ok := vars["scoreid"]; ok {
-		fmt.Sscan(v, &scoreID)
-		score.ScoreID = scoreID
-	}
+	// Unconditional, so a POST body's "scoreid" is zeroed rather than honoured.
+	score.ScoreID = scoreIDFromRequest(r)
 
 	// Authorization is deliberately asymmetric between create and update.
 	//
@@ -136,6 +129,20 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
+}
+
+// scoreIDFromRequest returns the scoreid the request targets. Only the URL path
+// supplies it: a POST body's "scoreid" is deliberately ignored, since POST
+// /scores means "write this system's answer to this question for this cycle"
+// and that target is resolved from the natural key inside Score.Save
+// (ztmf#491). Honouring the body id gave POST a second, undocumented route into
+// the update branch.
+func scoreIDFromRequest(r *http.Request) int32 {
+	var id int32
+	if v, ok := mux.Vars(r)["scoreid"]; ok {
+		fmt.Sscan(v, &id)
+	}
+	return id
 }
 
 // guardScoreWrite is the shared authorization for every score-mutating

@@ -91,10 +91,10 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// empire seed's fictional function names), and rows tied on the sort key
 		// would otherwise come back in heap order, which shifts whenever a row is
 		// rewritten. functionid no longer breaks a tie now that both branches
-		// resolve one catalog, but scoreid does: a duplicate score row on a single
-		// function (ztmf#491, live on two systems) ties on every other key, and the
-		// two copies can carry different notes, so without it the export presents a
-		// different answer first from run to run.
+		// resolve one catalog; scoreid is kept as a last resort. It used to be
+		// load-bearing for duplicate score rows on one function (ztmf#491), which
+		// migration 0061 now prevents, but it costs nothing and keeps the export
+		// deterministic if a duplicate ever reappears.
 		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid, scores.scoreid ASC")
 
 	if input.UserID != nil {
