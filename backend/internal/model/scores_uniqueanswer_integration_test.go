@@ -199,11 +199,17 @@ func TestSaveCreateIsIdempotentOnRepeatIntegration(t *testing.T) {
 		"a read-through repeat records no event - the no-op guard must survive the natural-key resolve")
 }
 
-// TestSaveRedirectsAwayFromForeignScoreIDIntegration covers the other direction
-// of the resolve: the natural key wins over a scoreid that names a different
-// question. Without it, a caller could edit one question's row into a duplicate
-// of another's.
-func TestSaveRedirectsAwayFromForeignScoreIDIntegration(t *testing.T) {
+// TestSaveRejectsOptionFromAnotherQuestionIntegration covers the update path's
+// half of the natural key. A score's question is part of its identity, so an
+// update carrying an option from a DIFFERENT question is malformed.
+//
+// On main this request is how a duplicate gets manufactured: the row is
+// rewritten to the new question, which both collides with that question's
+// existing answer and throws away the answer this row was holding. Rejecting is
+// also why the update path does not resolve the natural key the way the create
+// path does - silently writing the other row would leave a buggy client
+// believing it had edited the row it named.
+func TestSaveRejectsOptionFromAnotherQuestionIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test")
 	}
@@ -232,19 +238,72 @@ func TestSaveRedirectsAwayFromForeignScoreIDIntegration(t *testing.T) {
 	saved, err := (&Score{
 		ScoreID:          otherID, // names the OTHER question's row
 		FismaSystemID:    f.fismaSystemID,
-		FunctionOptionID: f.optionB, // but answers the FIRST question
+		FunctionOptionID: f.optionB, // but carries the FIRST question's option
+		DataCallID:       f.dataCallID,
+		Notes:            &notes,
+	}).Save(empireOwnerCtx(ctx))
+
+	require.Error(t, err, "an option from another question must be rejected, not written elsewhere")
+	assert.Nil(t, saved)
+
+	var invalid *InvalidInputError
+	require.ErrorAs(t, err, &invalid, "must be a 400-shaped field error, not a 500")
+	assert.Contains(t, invalid.Data(), "functionoptionid", "the offending field must be named")
+
+	// Neither row moved: not the one that was named, and not the one the old
+	// redirect behaviour would have written.
+	var namedOption int32
+	var namedNotes, targetNotes string
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT functionoptionid, notes FROM scores WHERE scoreid = $1`, otherID).Scan(&namedOption, &namedNotes))
+	assert.EqualValues(t, f.otherOption, namedOption, "the named row must keep its own question's answer")
+	assert.Equal(t, "an unrelated question", namedNotes)
+
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT notes FROM scores WHERE scoreid = $1`, targetID).Scan(&targetNotes))
+	assert.Equal(t, "the question being answered", targetNotes,
+		"a rejected update must not have written the natural-key row either")
+}
+
+// TestSaveUpdateAllowsSiblingOptionOfSameQuestionIntegration is the other half
+// of the check above: changing the answer WITHIN a question is the ordinary edit
+// and must keep working. Without this, a guard that rejected everything would
+// pass the rejection test and break the questionnaire.
+func TestSaveUpdateAllowsSiblingOptionOfSameQuestionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	f := newUniqueAnswerFixture(t, ctx, conn, "sibling")
+
+	var id int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+		VALUES ($1, $2, $3, 'first pass') RETURNING scoreid
+	`, f.fismaSystemID, f.optionA, f.dataCallID).Scan(&id))
+
+	notes := "changed my mind"
+	saved, err := (&Score{
+		ScoreID:          id,
+		FismaSystemID:    f.fismaSystemID,
+		FunctionOptionID: f.optionB, // a sibling option of the SAME question
 		DataCallID:       f.dataCallID,
 		Notes:            &notes,
 	}).Save(empireOwnerCtx(ctx))
 	require.NoError(t, err)
 	require.NotNil(t, saved)
 
-	assert.Equal(t, targetID, saved.ScoreID, "the natural key decides the row, not the supplied scoreid")
-
-	var otherNotes string
-	require.NoError(t, conn.QueryRow(ctx,
-		`SELECT notes FROM scores WHERE scoreid = $1`, otherID).Scan(&otherNotes))
-	assert.Equal(t, "an unrelated question", otherNotes, "the unrelated answer must be untouched")
+	assert.Equal(t, id, saved.ScoreID)
+	assert.EqualValues(t, f.optionB, saved.FunctionOptionID, "the answer must change within the question")
+	assert.Equal(t, scoreStatusDone, saved.Status)
 }
 
 // TestSaveConcurrentCreatesResolveToOneRowIntegration covers the race the

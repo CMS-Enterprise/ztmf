@@ -141,23 +141,40 @@ func (s *Score) save(ctx context.Context, cfg *scoreSaveConfig, retryOnConflict 
 	var sqlb SqlBuilder
 
 	// An answer is identified by (system, data call, question), never by
-	// scoreid, and migration 0061 enforces that (ztmf#491). Resolve the natural
-	// key before choosing insert-vs-update: a caller that does not know the
-	// existing scoreid used to create a second row, and would now get a 400.
-	//
-	// Skipped when the caller preloaded the row and the option is unchanged -
-	// the stored row is then the natural-key row by construction, so the lookup
-	// would be a redundant round trip on every questionnaire Next click.
-	if s.ScoreID == 0 || cfg.current == nil || cfg.current.FunctionOptionID != s.FunctionOptionID {
+	// scoreid, and migration 0061 enforces that (ztmf#491). Create and update
+	// resolve that key differently, and deliberately so.
+	if s.ScoreID == 0 {
+		// CREATE: the caller names no row, so the natural key names it for them.
+		// This is the ztmf#491 fix - a caller that does not know the existing
+		// scoreid (a bulk write that did not read current state, a client that
+		// lost the id) used to insert a second answer, and would now take a 400.
 		targetID, err := findScoreIDByNaturalKey(ctx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
 		if err != nil {
 			return nil, err
 		}
-		if targetID != 0 && targetID != s.ScoreID {
+		if targetID != 0 {
 			s.ScoreID = targetID
-			// The preloaded row describes a different row now, so it must not
-			// feed the no-op comparison below.
-			cfg.current = nil
+		}
+	} else if cfg.current == nil || cfg.current.FunctionOptionID != s.FunctionOptionID {
+		// UPDATE: the question is part of the row's identity, so an option
+		// belonging to a DIFFERENT question is a malformed request rather than
+		// an instruction to go write somewhere else.
+		//
+		// Rejecting is what keeps this honest. Writing the natural-key row
+		// instead would silently modify a row the caller never named and leave
+		// the named one untouched, so a buggy client would appear to succeed.
+		// Letting it through is worse still: on main it rewrites this row's
+		// question, which both duplicates the target question and discards this
+		// row's own answer - the ztmf#491 defect, manufactured on the spot.
+		//
+		// Skipped on the hot path: an unchanged option is necessarily the same
+		// question, so the questionnaire's Next-click PUT pays nothing.
+		same, err := scoreAnswersSameQuestion(ctx, s.ScoreID, s.FunctionOptionID)
+		if err != nil {
+			return nil, err
+		}
+		if !same {
+			return nil, errOptionAnswersDifferentQuestion()
 		}
 	}
 
@@ -245,13 +262,25 @@ func (s *Score) save(ctx context.Context, cfg *scoreSaveConfig, retryOnConflict 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
 	if err != nil {
 		// Two writers raced between the natural-key lookup and this INSERT; the
-		// loser gets 23505 from scores_fismasystem_datacall_function_uniq. The
-		// row it wanted now exists, so re-resolve and land as the update it
-		// always was. Same reasoning as Confirm's ErrNoData reload below: a
-		// conditional write that lost a race is a successful outcome, not a
-		// client error.
+		// loser gets 23505 and the row it wanted now exists, so re-resolve and
+		// land as the update it always was. Same reasoning as Confirm's
+		// ErrNoData reload below: a conditional write that lost a race is a
+		// successful outcome, not a client error.
+		//
+		// Gated on the key actually resolving now, rather than on the error
+		// alone. trapError collapses every 23505 into ErrNotUnique and discards
+		// the PgError, so the constraint name is not recoverable here - and a
+		// future second unique index on scores would otherwise be retried as if
+		// it were this one. Re-resolving says what we mean: retry only when the
+		// answer we were inserting is already there.
 		if inserting && retryOnConflict && errors.Is(err, ErrNotUnique) {
-			return s.save(ctx, &scoreSaveConfig{}, false)
+			targetID, lookupErr := findScoreIDByNaturalKey(ctx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if targetID != 0 {
+				return s.save(ctx, &scoreSaveConfig{}, false)
+			}
 		}
 		return saved, err
 	}
@@ -472,6 +501,53 @@ func findScoreIDByNaturalKey(ctx context.Context, fismaSystemID, dataCallID, fun
 	}
 
 	return scoreID, nil
+}
+
+// scoreAnswersSameQuestion reports whether the stored score already answers the
+// question the given functionoption belongs to - i.e. whether an update carrying
+// that option is editing this answer rather than trying to repoint the row at a
+// different question.
+//
+// An unknown functionoptionid makes the comparison NULL and is reported as a
+// match, deliberately: rejecting it here would turn the existing 400
+// ErrNoReference (raised by the trigger as 23503 when the write lands) into a
+// less accurate "wrong question" error. Let the write proceed and fail on the
+// real reason.
+//
+// Read path, so no event is recorded for a lookup.
+func scoreAnswersSameQuestion(ctx context.Context, scoreID, functionOptionID int32) (bool, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, trapError(err)
+	}
+	defer conn.Release()
+
+	var same bool
+	err = conn.QueryRow(ctx, `
+		SELECT COALESCE(
+		         s.functionid = (SELECT fo.functionid FROM functionoptions fo
+		                          WHERE fo.functionoptionid = $2),
+		         TRUE)
+		FROM scores s
+		WHERE s.scoreid = $1
+	`, scoreID, functionOptionID).Scan(&same)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, ErrNoData
+		}
+		return false, trapError(err)
+	}
+
+	return same, nil
+}
+
+// errOptionAnswersDifferentQuestion is the 400 for an update whose option
+// belongs to another question. Same InvalidInputError shape every other field
+// validation uses, keyed on the offending field.
+func errOptionAnswersDifferentQuestion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different question than this score; save an answer for that question instead of changing this one",
+	}}
 }
 
 // scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
