@@ -170,7 +170,7 @@ jobs:
           $marker
           PR environment: $URL
 
-          API image \`$API_TAG\`, frontend image \`$UI_TAG\`, built from ${HEAD_SHA:0:7} at $(date -u +%Y-%m-%dT%H:%MZ). Rebuilt on every push and removed when the PR closes. Sign in with CMS credentials; the app then runs as the seeded test admin.
+          API image \`$API_TAG\`, frontend image \`$UI_TAG\`, for commit ${HEAD_SHA:0:7} (the API image is built from the PR merged with main, so its tag carries the merge SHA, the same way the dev deploy tags images) at $(date -u +%Y-%m-%dT%H:%MZ). Rebuilt on every push and removed when the PR closes. Sign in with CMS credentials; the app then runs as the seeded test admin.
           EOF
           existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
             --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
