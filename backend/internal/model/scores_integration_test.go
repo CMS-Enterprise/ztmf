@@ -507,12 +507,60 @@ func captureRolloverLog(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// withScoresUniquenessSuspended drops migration 0061's unique index for the
+// duration of fn and restores it afterwards.
+//
+// This is not a workaround for the constraint - it is how the precondition the
+// guard under test defends against gets reproduced. copyPreviousScores' DISTINCT
+// ON exists for a source cycle that already holds duplicates (a restore from a
+// pre-cleanup backup, a bulk load run with the index dropped); 0061 makes that
+// state unreachable through ordinary writes, so a test for the guard has to
+// manufacture it. And it cannot do so inside its own transaction:
+// copyPreviousScores opens its own pooled connection, so the index has to
+// actually be gone, globally, for the length of the call.
+//
+// The DDL is read back from pg_indexes rather than restated here, so the restore
+// cannot drift from whatever 0061 created. Restore runs via t.Cleanup, which Go
+// runs after the test's deferred purge - so the fixture's duplicates are gone by
+// then and the index can rebuild. It is a require, not an assert: a database
+// left without the constraint must fail loudly rather than silently drop
+// coverage for every later test.
+func withScoresUniquenessSuspended(t *testing.T, ctx context.Context, conn *pgxpool.Conn, fn func()) {
+	t.Helper()
+	const idx = "scores_fismasystem_datacall_function_uniq"
+
+	var ddl string
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = $1`, idx,
+	).Scan(&ddl), "migration 0061's index must exist; was it renamed?")
+
+	_, err := conn.Exec(ctx, `DROP INDEX public.`+idx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// A fresh connection, deliberately: t.Cleanup runs after the calling
+		// test's deferred conn.Release(), so reusing conn here dereferences a
+		// resource already returned to the pool.
+		restoreCtx := context.Background()
+		restoreConn, err := db.Conn(restoreCtx)
+		require.NoError(t, err, "the ztmf#491 unique index MUST be restored")
+		defer restoreConn.Release()
+
+		_, err = restoreConn.Exec(restoreCtx, ddl)
+		require.NoError(t, err, "the ztmf#491 unique index MUST be restored")
+	})
+
+	fn()
+}
+
 // TestCopyPreviousScoresDeduplicatesIntegration covers the DISTINCT ON guard in
-// copyPreviousScores (ztmf#502). scores has no uniqueness constraint on
-// (fismasystemid, datacallid, functionid), so a source cycle can legitimately
-// hold two answers to the same question via two functionoptions of one function
-// (ztmf#491). Without the guard both copy forward and the new cycle opens with a
-// duplicate answer; with it, exactly one row lands.
+// copyPreviousScores (ztmf#502). A source cycle can hold two answers to the same
+// question via two functionoptions of one function (ztmf#491). Without the guard
+// both copy forward and the new cycle opens with a duplicate answer; with it,
+// exactly one row lands.
+//
+// Migration 0061 prevents that source state through ordinary writes, so the
+// fixture suspends the index to build it - see withScoresUniquenessSuspended.
 //
 // The assertion is on functionid, not functionoptionid: two rows differing only
 // by functionoptionid are already distinct on the latter, so counting that column
@@ -532,25 +580,31 @@ func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
 
 	f := newRolloverFixture(t, ctx, conn, "dedup")
 
-	// Inserted in order and left at the default status, so the pair ties on status
-	// and optionB wins on the higher scoreid.
-	for _, opt := range []int32{f.optionA, f.optionB} {
+	var copied int64
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		// Inserted in order and left at the default status, so the pair ties on status
+		// and optionB wins on the higher scoreid.
+		for _, opt := range []int32{f.optionA, f.optionB} {
+			_, err = conn.Exec(ctx, `
+				INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+				VALUES ($1, $2, $3, $4)
+			`, f.fismaSystemID, opt, f.prevDC, fmt.Sprintf("dedup marker %d", opt))
+			require.NoError(t, err)
+		}
+
+		// A second, singly-answered question on the same system. Dedup must not touch
+		// it - see the note on rolloverFixture.otherFunctionID.
 		_, err = conn.Exec(ctx, `
 			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
-			VALUES ($1, $2, $3, $4)
-		`, f.fismaSystemID, opt, f.prevDC, fmt.Sprintf("dedup marker %d", opt))
+			VALUES ($1, $2, $3, 'control question')
+		`, f.fismaSystemID, f.otherOption, f.prevDC)
 		require.NoError(t, err)
-	}
 
-	// A second, singly-answered question on the same system. Dedup must not touch
-	// it - see the note on rolloverFixture.otherFunctionID.
-	_, err = conn.Exec(ctx, `
-		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
-		VALUES ($1, $2, $3, 'control question')
-	`, f.fismaSystemID, f.otherOption, f.prevDC)
-	require.NoError(t, err)
-
-	copied, err := copyPreviousScores(ctx, f.newDC)
+		// Inside the suspension too: if the guard regresses, the copy emits two
+		// rows and the assertions below name the failure, instead of the index
+		// aborting the copy with an opaque 23505.
+		copied, err = copyPreviousScores(ctx, f.newDC)
+	})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, copied,
 		"the duplicated question collapses to one row and the control question survives alongside it")
@@ -605,21 +659,24 @@ func TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration(t *testing.T) {
 
 	f := newRolloverFixture(t, ctx, conn, "status")
 
-	// Answered first (lower scoreid), untouched twin second (higher scoreid) -
-	// the ordering that makes scoreid and status disagree.
-	_, err = conn.Exec(ctx, `
-		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
-		VALUES ($1, $2, $3, $4, 'answered this cycle')
-	`, f.fismaSystemID, f.optionA, f.prevDC, scoreStatusDone)
-	require.NoError(t, err)
+	var copied int64
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		// Answered first (lower scoreid), untouched twin second (higher scoreid) -
+		// the ordering that makes scoreid and status disagree.
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+			VALUES ($1, $2, $3, $4, 'answered this cycle')
+		`, f.fismaSystemID, f.optionA, f.prevDC, scoreStatusDone)
+		require.NoError(t, err)
 
-	_, err = conn.Exec(ctx, `
-		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
-		VALUES ($1, $2, $3, $4, 'stale carried twin')
-	`, f.fismaSystemID, f.optionB, f.prevDC, scoreStatusNotStarted)
-	require.NoError(t, err)
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+			VALUES ($1, $2, $3, $4, 'stale carried twin')
+		`, f.fismaSystemID, f.optionB, f.prevDC, scoreStatusNotStarted)
+		require.NoError(t, err)
 
-	copied, err := copyPreviousScores(ctx, f.newDC)
+		copied, err = copyPreviousScores(ctx, f.newDC)
+	})
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, copied, "the duplicate pair must still collapse to one row")
 
@@ -668,27 +725,30 @@ func TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration(t *testing.T) {
 
 	f := newRolloverFixture(t, ctx, conn, "alarm")
 
-	for _, opt := range []int32{f.optionA, f.optionB} {
-		_, err = conn.Exec(ctx, `
-			INSERT INTO scores (fismasystemid, functionoptionid, datacallid)
-			VALUES ($1, $2, $3)
-		`, f.fismaSystemID, opt, f.prevDC)
-		require.NoError(t, err)
-	}
-
-	var sourceRows int64
-	err = conn.QueryRow(ctx,
-		`SELECT COUNT(*) FROM scores WHERE datacallid = $1`, f.prevDC,
-	).Scan(&sourceRows)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, sourceRows, "the source must hold the duplicate pair for this to assert anything")
-
 	var copied int64
-	logged := captureRolloverLog(t, func() {
-		// Proves the redirect is live. Without it a broken capture would return
-		// an empty string and the NotContains below would pass vacuously.
-		log.Print("capture-is-live")
-		copied, err = copyPreviousScores(ctx, f.newDC)
+	var logged string
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		for _, opt := range []int32{f.optionA, f.optionB} {
+			_, err = conn.Exec(ctx, `
+				INSERT INTO scores (fismasystemid, functionoptionid, datacallid)
+				VALUES ($1, $2, $3)
+			`, f.fismaSystemID, opt, f.prevDC)
+			require.NoError(t, err)
+		}
+
+		var sourceRows int64
+		err = conn.QueryRow(ctx,
+			`SELECT COUNT(*) FROM scores WHERE datacallid = $1`, f.prevDC,
+		).Scan(&sourceRows)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, sourceRows, "the source must hold the duplicate pair for this to assert anything")
+
+		logged = captureRolloverLog(t, func() {
+			// Proves the redirect is live. Without it a broken capture would return
+			// an empty string and the NotContains below would pass vacuously.
+			log.Print("capture-is-live")
+			copied, err = copyPreviousScores(ctx, f.newDC)
+		})
 	})
 	require.NoError(t, err)
 	require.Contains(t, logged, "capture-is-live", "log capture must be working for the assertion below to mean anything")
