@@ -88,8 +88,12 @@ CREATE TABLE IF NOT EXISTS public.score_revisions (
     -- concurrent Saves land 1 and 2 rather than one of them surfacing a 23505.
     CONSTRAINT score_revisions_scoreid_revision_no_uniq UNIQUE (scoreid, revision_no),
 
-    CONSTRAINT score_revisions_create_has_no_prev
-        CHECK (kind <> 'create' OR prev_functionoptionid IS NULL),
+    -- Biconditional on purpose. "create implies no prev" alone would still let
+    -- a non-create row carry a NULL prev_functionoptionid, and undo reads
+    -- head.prev unconditionally once it has ruled out a create - so a row the
+    -- app never writes would be a nil dereference rather than a clean refusal.
+    CONSTRAINT score_revisions_prev_iff_not_create
+        CHECK ((kind = 'create') = (prev_functionoptionid IS NULL)),
     CONSTRAINT score_revisions_undo_names_target
         CHECK ((kind = 'undo') = (undoes_revisionid IS NOT NULL))
 );

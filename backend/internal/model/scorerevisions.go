@@ -318,6 +318,14 @@ func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, ca
 // whether the cycle is still open, and the controller authorizes against the
 // loaded FismaSystemID rather than a client-asserted one.
 func FindScoreRevisions(ctx context.Context, score *Score, policy ScoreUndoPolicy) (*ScoreHistory, error) {
+	// Resolved BEFORE a connection is acquired, and deliberately not moved down
+	// beside its only use. dataCallOpen reads datacalls through the pool, so
+	// calling it while holding a connection means every caller holds one and
+	// waits for a second: at maxConns concurrent readers the pool is fully
+	// held by waiters and nothing can complete. copyPreviousScores resolves its
+	// data call before taking a connection for the same reason.
+	callOpen := score.dataCallOpen(ctx)
+
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, trapError(err)
@@ -354,7 +362,6 @@ func FindScoreRevisions(ctx context.Context, score *Score, policy ScoreUndoPolic
 		return nil, trapError(err)
 	}
 
-	callOpen := score.dataCallOpen(ctx)
 	for i, rev := range history.Revisions {
 		applyUndoPolicy(rev, i == 0, policy, callOpen)
 	}
@@ -437,7 +444,14 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 			}
 		}
 
+		// Defence in depth behind score_revisions_prev_iff_not_create: a
+		// non-create revision always has a prev, so reaching here with nil means
+		// the table was written by something other than this package. Refuse
+		// rather than panic on a nil dereference.
 		target := head.Prev
+		if target == nil {
+			return nil, ErrRevisionConflict
+		}
 
 		sqlb := stmntBuilder.
 			Update("public.scores").

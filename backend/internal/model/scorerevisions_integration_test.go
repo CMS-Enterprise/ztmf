@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -527,5 +528,69 @@ func TestScoreConcurrentSavesNumberRevisionsIntegration(t *testing.T) {
 	require.Len(t, seen, writers+1, "every write must have recorded exactly one revision")
 	for i, n := range seen {
 		assert.Equal(t, int32(i+1), n, "revision numbers must be contiguous from 1")
+	}
+}
+
+// TestScoreRevisionsConcurrentReadsDoNotExhaustPoolIntegration pins a
+// discipline rather than a behaviour: a model function that holds a pooled
+// connection must not call another that acquires one.
+//
+// FindScoreRevisions needs to know whether the data call is still open, and
+// dataCallOpen reads datacalls through the pool. Resolving that while holding
+// its own connection means every concurrent caller holds one and blocks
+// waiting for a second, so at maxConns (16) readers the pool is entirely held
+// by waiters and nothing can ever complete - the API stops serving every
+// endpoint, not just this one. copyPreviousScores avoids the same trap by
+// resolving its data call before taking a connection.
+//
+// 24 callers is comfortably past the pool ceiling. On the broken ordering this
+// does not merely run slowly, it never finishes; the timeout is what fails.
+func TestScoreRevisionsConcurrentReadsDoNotExhaustPoolIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+
+	fx := newTxWriteFixture(t, conn, "revpool")
+	notes := "pool probe"
+	saved, err := (&Score{
+		FismaSystemID:    fx.fismaSystemID,
+		FunctionOptionID: fx.functionOptionID,
+		DataCallID:       fx.dataCallID,
+		Notes:            &notes,
+	}).Save(fx.editorCtx)
+	require.NoError(t, err)
+
+	// Released before the fan-out: holding one here would mask the very
+	// starvation this test exists to catch by changing the arithmetic.
+	conn.Release()
+
+	const callers = 24
+	var wg sync.WaitGroup
+	errs := make([]error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = FindScoreRevisions(ctx, saved, writePolicy)
+		}(i)
+	}
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+		for i, err := range errs {
+			require.NoError(t, err, "caller %d", i)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("concurrent history reads did not complete: a nested pool acquisition has starved the connection pool")
 	}
 }
