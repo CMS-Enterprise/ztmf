@@ -297,15 +297,19 @@ func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, ca
 		rev.Reason = &s
 	}
 
+	// Reader-wide reasons first, then row-specific ones. A caller who cannot
+	// write, or whose cycle has closed, gets the same explanation on every row
+	// rather than "this is the original answer" on one and "no permission" on
+	// the next - the reason is a property of the caller there, not the revision.
 	switch {
-	case !isHead:
-		reason(reasonNotHead)
-	case rev.Kind == revisionKindCreate:
-		reason(reasonIsCreate)
 	case !policy.CanWrite:
 		reason(reasonCannotWrite)
 	case !callOpen:
 		reason(reasonCallClosed)
+	case !isHead:
+		reason(reasonNotHead)
+	case rev.Kind == revisionKindCreate:
+		reason(reasonIsCreate)
 	default:
 		rev.Undoable = true
 		rev.Reason = nil
@@ -432,10 +436,22 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		if err != nil {
 			return nil, err
 		}
-		// No history at all is a conflict rather than a 404: the score exists,
-		// the caller simply held a view of it that cannot be acted on. Every
-		// answer written since this feature shipped has a revision.
-		if head == nil || head.RevisionID != *expectedHead {
+		// Two distinct conditions, deliberately not collapsed into one code.
+		//
+		// No history is not a conflict: nothing changed underneath the caller,
+		// there is simply nothing to undo - a row carried forward by the
+		// rollover, or written before this feature shipped, has no revisions.
+		// Answering ErrRevisionConflict would be actively harmful, because
+		// ztmf-misc#392 treats that code as "refresh the drawer and let the user
+		// retry" - a retry that can never succeed however many times it refreshes.
+		if head == nil {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": "this answer has no recorded history to undo"},
+			}
+		}
+		// A stale token IS a conflict: someone else moved the answer in between,
+		// and refreshing against the new head is exactly the right recovery.
+		if head.RevisionID != *expectedHead {
 			return nil, ErrRevisionConflict
 		}
 		if head.Kind == revisionKindCreate {

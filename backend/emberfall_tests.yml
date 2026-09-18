@@ -3848,8 +3848,9 @@ tests:
     expect:
       status: 204
 
-  - id: delegateRevisions
-    url: "http://localhost:8080/api/v1/scores/{{.delegateCreateScoreForUndo.Response.data.scoreid}}/revisions"
+  # No id: nothing templates off this case. The delegate undo that would have
+  # is covered in Go for the body-template reason above.
+  - url: "http://localhost:8080/api/v1/scores/{{.delegateCreateScoreForUndo.Response.data.scoreid}}/revisions"
     method: GET
     headers:
       <<: *delegateHeaders

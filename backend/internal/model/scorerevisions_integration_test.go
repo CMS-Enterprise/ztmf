@@ -583,14 +583,76 @@ func TestScoreRevisionsConcurrentReadsDoNotExhaustPoolIntegration(t *testing.T) 
 	}
 
 	done := make(chan struct{})
+	started := time.Now()
 	go func() { wg.Wait(); close(done) }()
+
+	// A bound, not merely completion. These reads take single-digit
+	// milliseconds when nothing contends; a later change that adds a second
+	// pooled call inside the connection's lifetime would still finish
+	// eventually, as callers time out and retry, and a completion-only
+	// assertion would pass while the endpoint degraded badly. Five seconds is
+	// three orders of magnitude of headroom and still fails loudly.
+	const budget = 5 * time.Second
 
 	select {
 	case <-done:
 		for i, err := range errs {
 			require.NoError(t, err, "caller %d", i)
 		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("concurrent history reads did not complete: a nested pool acquisition has starved the connection pool")
+		assert.Less(t, time.Since(started), budget,
+			"concurrent history reads completed but took %s: something is serialising on the pool", time.Since(started))
+	case <-time.After(budget):
+		t.Fatalf("concurrent history reads did not complete within %s: a nested pool acquisition has starved the connection pool", budget)
 	}
+}
+
+// TestScoreUndoWithNoHistoryIsNotAConflictIntegration separates two refusals
+// that share a shape but not a meaning.
+//
+// A score with no revisions - carried forward by the rollover, or written
+// before this feature shipped - has nothing to undo. Answering
+// ErrRevisionConflict would be actively harmful rather than merely imprecise:
+// ztmf-misc#392 treats that code as "refresh the drawer and retry", so a
+// no-history conflict would send it into a refresh loop that can never
+// succeed. A stale token is the real conflict, and refreshing IS the recovery.
+func TestScoreUndoWithNoHistoryIsNotAConflictIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	fx := newTxWriteFixture(t, conn, "revnohistory")
+
+	// Inserted directly, exactly as copyPreviousScores does: a real answer with
+	// no revision behind it.
+	var scoreID int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes, status)
+		VALUES ($1, $2, $3, 'carried with no history', 'not_started')
+		RETURNING scoreid
+	`, fx.fismaSystemID, fx.functionOptionID, fx.dataCallID).Scan(&scoreID))
+
+	stored, err := FindScoreByID(ctx, scoreID)
+	require.NoError(t, err)
+
+	history, err := FindScoreRevisions(fx.editorCtx, stored, writePolicy)
+	require.NoError(t, err, "a score with no history still reads cleanly")
+	assert.Empty(t, history.Revisions)
+	assert.Nil(t, history.Head, "no head means the client renders no undo button")
+
+	anyHead := int64(1)
+	_, err = UndoScoreRevision(fx.editorCtx, stored, &anyHead)
+
+	var invalid *InvalidInputError
+	require.ErrorAs(t, err, &invalid,
+		"no history to undo is a field-level 400, not a conflict the client should retry")
+	assert.NotErrorIs(t, err, ErrRevisionConflict,
+		"answering REVISION_CONFLICT here would put the undo drawer in a refresh loop")
 }
