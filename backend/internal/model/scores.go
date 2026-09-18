@@ -137,6 +137,11 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		// the populated-write path through FindScores. The PUT controller
 		// writes 204 today but still encodes the body, so the response is
 		// observable to clients that parse 204 bodies.
+		// prev is the before-image the revision records. It comes from the
+		// locked row, so it is exactly what this statement is about to
+		// overwrite, and stays nil on a create where there is no earlier value.
+		var prev *scoreSnapshot
+
 		if s.ScoreID != 0 {
 			current, err := lockScore(ctx, tx, s.ScoreID)
 			if err != nil {
@@ -148,6 +153,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 				}
 				return current, nil
 			}
+			prev = snapshotOf(current)
 		}
 
 		// status is set to 'done' in the same INSERT/UPDATE statement as the
@@ -158,10 +164,10 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 		// short-circuits before here and never touches status, so a carried-over
 		// row stays not_started (ztmf#299 preserved).
 		var sqlb SqlBuilder
-		action := eventActionUpdated
+		action, kind := eventActionUpdated, revisionKindUpdate
 
 		if s.ScoreID == 0 {
-			action = eventActionCreated
+			action, kind = eventActionCreated, revisionKindCreate
 			sqlb = stmntBuilder.
 				Insert("public.scores").
 				Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
@@ -201,7 +207,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			return nil, err
 		}
 
-		if err := insertScoreEvent(ctx, tx, action, saved); err != nil {
+		if err := recordScoreWrite(ctx, tx, saved, prev, kind, action, nil); err != nil {
 			return nil, err
 		}
 
@@ -273,14 +279,17 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		return s, nil
 	}
 
-	// No lockScore here, unlike Save. The UPDATE below is conditional on
-	// status <> 'done', which takes its own row lock and evaluates the
-	// predicate atomically, so a separate FOR UPDATE would add a round trip
-	// and guard nothing; a concurrent Save holding the lock blocks this
-	// statement regardless. Note ztmf-misc#391 changes this: allocating
-	// revision_no as MAX+1 needs the lock held across the read, so Confirm
-	// takes it too once score_revisions lands.
+	// lockScore before the conditional UPDATE. The UPDATE's status <> 'done'
+	// predicate would be atomic on its own, but the revision needs two things
+	// the predicate cannot give: the before-image to record as prev, and
+	// revision_no allocated as MAX+1 with the read and the insert under one
+	// lock.
 	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		current, err := lockScore(ctx, tx, s.ScoreID)
+		if err != nil {
+			return nil, err
+		}
+
 		sqlb := stmntBuilder.
 			Update("public.scores").
 			Set("status", scoreStatusDone).
@@ -295,7 +304,11 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 			return nil, err
 		}
 
-		if err := insertScoreEvent(ctx, tx, eventActionUpdated, updated); err != nil {
+		// kind='confirm' rather than 'update': the answer did not change, only
+		// the affirmation that it is still accurate. ztmf-misc#392 labels the
+		// undo button off this value, and undoing it un-confirms without
+		// touching the answer.
+		if err := recordScoreWrite(ctx, tx, updated, snapshotOf(current), revisionKindConfirm, eventActionUpdated, nil); err != nil {
 			return nil, err
 		}
 

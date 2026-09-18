@@ -3619,3 +3619,269 @@ tests:
                 - pillar: "Data"
                 - pillar: "CrossCutting"
                 - pillar: "Identity"
+
+  # ---------------------------------------------------------------------------
+  # Answer history and undo (ztmf-misc#391)
+  #
+  # datacallid 5 ("Audit Fields Smoke Cycle", deadline 2099) for the same reason
+  # every other write case uses it: datacall 104's deadline has passed, so a
+  # non-admin write there trips ErrPastDeadline.
+  #
+  # Option ids 5 and 6 both belong to functionid 7002, so the PUT below edits ONE
+  # answer rather than answering a second question - which is what makes the
+  # revision's prev/new a comparison within a single question.
+  #
+  # Appended at the end of the file, after the audit-fields block that asserts
+  # the full datacall-5 score list for system 1001. Verify through /revisions
+  # rather than re-asserting that list.
+  # ---------------------------------------------------------------------------
+
+  - id: createScoreForUndo
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1002
+        functionoptionid: 5
+        datacallid: 5
+        notes: "original answer"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            functionoptionid: 5
+            notes: "original answer"
+            status: "done"
+
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1002
+        functionoptionid: 6
+        datacallid: 5
+        notes: "changed answer"
+    expect:
+      status: 204
+
+  # Read-through PUT of the identical body: the no-op guard returns before the
+  # transaction opens, so no third revision. revision_no 2 below is what pins it.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1002
+        functionoptionid: 6
+        datacallid: 5
+        notes: "changed answer"
+    expect:
+      status: 204
+
+  - id: revisionsAfterChange
+    url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 1002
+            datacallid: 5
+            head:
+              revision_no: 2
+              kind: "update"
+              undoable: true
+            revisions:
+              - revision_no: 2
+                kind: "update"
+                undoable: true
+                prev:
+                  functionoptionid: 5
+                  notes: "original answer"
+                new:
+                  functionoptionid: 6
+                  notes: "changed answer"
+              - revision_no: 1
+                kind: "create"
+                undoable: false
+
+  # The first 409 in this API: a stale expected_head_revisionid.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions/undo"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        expected_head_revisionid: 1
+    expect:
+      status: 409
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          code: "REVISION_CONFLICT"
+
+  # A missing token is a field-level 400, never a silent last-write-wins.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions/undo"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json: {}
+    expect:
+      status: 400
+
+  # The SUCCESSFUL undo is not asserted here. It needs the live head revisionid
+  # in the request BODY, and Emberfall substitutes {{...}} templates into URLs
+  # only - the same limitation already noted on the datacall export and the
+  # fismasystem reactivate cases above. A quoted template would post the literal
+  # string and earn a type-mismatch 400, which would assert nothing useful.
+  #
+  # The happy path is covered end to end in Go instead:
+  # TestScoreUndoRestoresPreviousAnswerIntegration (answer -> change -> undo ->
+  # original is back, plus redo), TestScoreUndoOfConfirmUnconfirmsIntegration,
+  # and TestScoreUndoOfCarriedForwardEditRestoresNotStartedIntegration. What
+  # Emberfall pins here is everything reachable with a static body: the history
+  # projection above, and every refusal below.
+
+  # Read-only tiers: history readable for audit, undo refused. This pair is what
+  # makes "undoable" reader-relative rather than a property of the row.
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions"
+    method: GET
+    headers:
+      <<: *readonlyAdminHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            head:
+              undoable: false
+
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions/undo"
+    method: POST
+    headers:
+      <<: *readonlyAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        expected_head_revisionid: 1
+    expect:
+      status: 403
+
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions/undo"
+    method: POST
+    headers:
+      <<: *opDivReadonlyHeaders
+      content-type: "application/json"
+    body:
+      json:
+        expected_head_revisionid: 1
+    expect:
+      status: 403
+
+  # ISSO on a system it does not hold (1002; isso.user holds 1003).
+  - url: "http://localhost:8080/api/v1/scores/{{.createScoreForUndo.Response.data.scoreid}}/revisions"
+    method: GET
+    headers:
+      <<: *issoHeaders
+    expect:
+      status: 403
+
+  # --- SYSTEM_DELEGATE positive case (#455 invariant, answer-surface half) ---
+  # The delegate is assigned to 1001. Undo IS a data-call answer surface, so
+  # unlike target maturity it must be ALLOWED. If a future blanket delegate
+  # guard lands on the score write paths, this goes red.
+  - id: delegateCreateScoreForUndo
+    url: http://localhost:8080/api/v1/scores
+    method: POST
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 9
+        datacallid: 5
+        notes: "delegate original"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      # The body assertion is load-bearing, not decoration: Emberfall only
+      # captures a case's .Response for later templating when the case asserts
+      # on the body, so without this the scoreid below renders empty.
+      body:
+        json:
+          data:
+            fismasystemid: 1001
+            functionoptionid: 9
+            notes: "delegate original"
+
+  - url: "http://localhost:8080/api/v1/scores/{{.delegateCreateScoreForUndo.Response.data.scoreid}}"
+    method: PUT
+    headers:
+      <<: *delegateHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismasystemid: 1001
+        functionoptionid: 10
+        datacallid: 5
+        notes: "delegate changed"
+    expect:
+      status: 204
+
+  - id: delegateRevisions
+    url: "http://localhost:8080/api/v1/scores/{{.delegateCreateScoreForUndo.Response.data.scoreid}}/revisions"
+    method: GET
+    headers:
+      <<: *delegateHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            head:
+              kind: "update"
+              undoable: true
+
+  # The delegate's successful undo is asserted in Go for the body-template
+  # reason above; what matters at this layer is that the delegate is not
+  # refused, which the 200 on its own history read proves - a blanket
+  # IsSystemDelegate() guard on the score paths would 403 there first.
+
+  # Missing row: 404 on both verbs.
+  - url: "http://localhost:8080/api/v1/scores/999999999/revisions"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
+  - url: "http://localhost:8080/api/v1/scores/999999999/revisions/undo"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        expected_head_revisionid: 1
+    expect:
+      status: 404
