@@ -106,7 +106,8 @@ type ScoreHistory struct {
 
 // ScoreUndoResult is the undo response. It carries the score so the client can
 // repaint the answer and its chip without a refetch, and the new head so the
-// next undo - which is redo - does not immediately 409.
+// client can render its state - which for an undo means reporting that it
+// cannot itself be undone, rather than offering a further action.
 type ScoreUndoResult struct {
 	Score    *Score             `json:"score"`
 	Revision *ScoreRevision     `json:"revision"`
@@ -401,8 +402,9 @@ func (s *Score) dataCallOpen(ctx context.Context) bool {
 
 // UndoScoreRevision reverts an answer to the value its head revision replaced,
 // APPENDING a kind='undo' revision rather than popping the head. Who undid what
-// therefore stays auditable, and an undo is itself undoable - which is what
-// redo is, with no separate endpoint and no extra column.
+// therefore stays auditable. An undo is NOT itself undoable: see reasonIsUndo
+// below - allowing it would let one repeatedly-clicked button write a run of
+// revisions all describing the same two values.
 //
 // expectedHead is the optimistic-concurrency token, compared under the same FOR
 // UPDATE lock that serialises Save. A caller whose history is stale takes
