@@ -192,23 +192,31 @@ func TestScoreUndoRestoresPreviousAnswerIntegration(t *testing.T) {
 	assert.Equal(t, head, *result.Revision.UndoesRevisionID,
 		"the undo revision must name what it reverted")
 
-	// The undo is itself the head and is undoable - that is redo, with no
-	// separate endpoint.
+	// An undo is terminal: it is the head, and it is NOT undoable. Because undo
+	// appends rather than pops, allowing redo would let one repeatedly-clicked
+	// button write a run of revisions that all describe the same two values -
+	// noise in the audit trail this table exists to provide.
 	require.NotNil(t, result.Head)
-	assert.True(t, result.Head.Undoable)
 	assert.Equal(t, revisionKindUndo, result.Head.Kind)
+	assert.False(t, result.Head.Undoable, "an undo cannot itself be undone")
+	require.NotNil(t, result.Head.Reason)
+	assert.Equal(t, reasonIsUndo, *result.Head.Reason)
 
+	// Refused on the write path too, not merely withheld from the read: the
+	// read decides what to offer, but a request can name any revision.
 	redoHead := result.Head.RevisionID
-	redone, err := UndoScoreRevision(fx.editorCtx, result.Score, &redoHead)
-	require.NoError(t, err)
-	assert.Equal(t, changed, derefString(redone.Score.Notes),
-		"undoing the undo must return the value undo removed")
+	_, err = UndoScoreRevision(fx.editorCtx, result.Score, &redoHead)
+	var invalid *InvalidInputError
+	require.ErrorAs(t, err, &invalid, "undoing an undo must be refused, not silently applied")
+	assert.Equal(t, reasonIsUndo, invalid.Data()["expected_head_revisionid"])
 
-	// The answer is still readable from the row itself, not just the response.
+	// The refusal changed nothing: the answer is still the undone value, and no
+	// fourth revision was appended.
 	var storedNotes string
 	require.NoError(t, conn.QueryRow(ctx,
 		`SELECT notes FROM scores WHERE scoreid = $1`, saved.ScoreID).Scan(&storedNotes))
-	assert.Equal(t, changed, storedNotes)
+	assert.Equal(t, original, storedNotes)
+	assert.Equal(t, 3, revisionCount(t, conn, saved.ScoreID))
 }
 
 // TestScoreUndoOfCarriedForwardEditRestoresNotStartedIntegration pins the

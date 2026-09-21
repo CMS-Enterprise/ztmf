@@ -980,6 +980,52 @@ ON CONFLICT DO NOTHING;
 -- exercised locally. Record one 'updated' event per new score, attributed to
 -- the system's assigned officer at the score's assessment date, matching the
 -- shape recordEvent writes (resource 'public.scores', payload carrying scoreid).
+-- ---------------------------------------------------------------------------
+-- Answer history fixture (ztmf-misc#391 / #392)
+--
+-- One answered question on datacall 5 (the open Audit Fields Smoke Cycle) that
+-- already carries revisions, so the questionnaire's history drawer has
+-- something to render for the 508 scan and for local review. Nothing else
+-- seeds score_revisions: the table is append-only, written only by the app's
+-- score write path, and the rollover deliberately records nothing.
+--
+-- On the Executor (1002) and on functionid 7006, and both choices are load
+-- bearing:
+--
+--   * 1002, not DS-1, because emberfall_tests.yml asserts BOTH the full
+--     datacall-5 score list for 1001 and the exact set of data calls 1001 has
+--     scores in. A seeded answer changes both. 1002 carries no aggregate or
+--     score-list assertions, so a fixture there disturbs nothing.
+--   * 7006 because 1002 is Imperial-Fleet, so only 7001-7006 appear in its
+--     questionnaire, and Identity leads PILLAR_ORDER - 7006 is the question
+--     the questionnaire lands on, putting the drawer one click from the page
+--     the accessibility scan opens, with no navigation steps. Emberfall's own
+--     1002 rows use 7002, so this shares no question with them.
+--
+-- Columns are named rather than positional so ztmf-misc#394 can append
+-- versionid / root_functionid without editing these statements. revisionid is
+-- omitted because it is GENERATED ALWAYS AS IDENTITY.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid, status)
+    VALUES (9040, 1002, '2026-02-02 00:00:00+00', 'Fleet identity now standardized on biometric credentials', 21, 5, 'done')
+    ON CONFLICT DO NOTHING;
+
+INSERT INTO public.score_revisions (
+        scoreid, revision_no, fismasystemid, datacallid, functionid, kind,
+        prev_functionoptionid, prev_notes, prev_notes_is_ai_summary, prev_status,
+        new_functionoptionid, new_notes, new_notes_is_ai_summary, new_status,
+        userid, createdat)
+    VALUES
+      (9040, 1, 1002, 5, 7006, 'create',
+       NULL, NULL, NULL, NULL,
+       20, 'Officers still verified by hand at the bridge', FALSE, 'done',
+       '11111111-1111-1111-1111-111111111111', '2026-02-01 00:00:00+00'),
+      (9040, 2, 1002, 5, 7006, 'update',
+       20, 'Officers still verified by hand at the bridge', FALSE, 'done',
+       21, 'Fleet identity now standardized on biometric credentials', FALSE, 'done',
+       '11111111-1111-1111-1111-111111111111', '2026-02-02 00:00:00+00')
+    ON CONFLICT DO NOTHING;
+
 INSERT INTO public.events (userid, action, resource, createdat, payload)
 SELECT DISTINCT ON (s.scoreid)
        uf.userid,

@@ -36,6 +36,12 @@ const (
 	reasonIsCreate    = "This is the original answer - there is no earlier value to return to."
 	reasonCannotWrite = "You do not have permission to change this answer."
 	reasonCallClosed  = "This data call has closed."
+	// An undo is deliberately terminal. Because undo appends rather than pops,
+	// redo-of-undo-of-redo writes a growing run of revisions that all describe
+	// the same two values, which makes the history unreadable - noise in the
+	// audit trail this table exists to provide. The prior value stays visible
+	// in the history, so it can be re-entered as an ordinary edit.
+	reasonIsUndo = "An undo cannot itself be undone. Change the answer directly instead."
 )
 
 // RevisionSide is one side of a change. Field-for-field identical to
@@ -310,6 +316,8 @@ func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, ca
 		reason(reasonNotHead)
 	case rev.Kind == revisionKindCreate:
 		reason(reasonIsCreate)
+	case rev.Kind == revisionKindUndo:
+		reason(reasonIsUndo)
 	default:
 		rev.Undoable = true
 		rev.Reason = nil
@@ -454,9 +462,18 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		if head.RevisionID != *expectedHead {
 			return nil, ErrRevisionConflict
 		}
+		// The two terminal kinds, refused with the same string the read
+		// surfaces so the client never has to author this copy. Enforced here
+		// as well as in applyUndoPolicy because the read only decides what to
+		// OFFER - a request can name any revision it likes.
 		if head.Kind == revisionKindCreate {
 			return nil, &InvalidInputError{
 				data: map[string]any{"expected_head_revisionid": reasonIsCreate},
+			}
+		}
+		if head.Kind == revisionKindUndo {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": reasonIsUndo},
 			}
 		}
 
