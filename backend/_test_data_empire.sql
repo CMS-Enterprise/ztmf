@@ -1026,6 +1026,21 @@ INSERT INTO public.score_revisions (
        '11111111-1111-1111-1111-111111111111', '2026-02-02 00:00:00+00')
     ON CONFLICT DO NOTHING;
 
+-- The audit caption the history link hangs off reads events, not revisions, so
+-- without this the "Last edited by ..." footer returns null and the drawer has
+-- no trigger. The bulk events insert below is scoped to scoreid >= 9100, which
+-- deliberately excludes this fixture.
+INSERT INTO public.events (userid, action, resource, createdat, payload)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'updated', 'public.scores',
+            '2026-02-02 00:00:00+00',
+            jsonb_build_object(
+                'scoreid', 9040,
+                'fismasystemid', 1002,
+                'functionoptionid', 21,
+                'datacallid', 5,
+                'notes', 'Fleet identity now standardized on biometric credentials'
+            ));
+
 INSERT INTO public.events (userid, action, resource, createdat, payload)
 SELECT DISTINCT ON (s.scoreid)
        uf.userid,
