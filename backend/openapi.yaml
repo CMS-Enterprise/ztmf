@@ -364,6 +364,28 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-model_ScoreHistory:
+      properties:
+        code:
+          description: Typed error code set by sanitizeErr; clients branch on it,
+            not the status.
+          type: string
+        data:
+          $ref: '#/components/schemas/model.ScoreHistory'
+        error:
+          type: string
+      type: object
+    controller.apiResponse-model_ScoreUndoResult:
+      properties:
+        code:
+          description: Typed error code set by sanitizeErr; clients branch on it,
+            not the status.
+          type: string
+        data:
+          $ref: '#/components/schemas/model.ScoreUndoResult'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_SystemEnrichment:
       properties:
         code:
@@ -425,6 +447,11 @@ components:
             type: integer
           type: array
           uniqueItems: false
+      type: object
+    controller.undoRequest:
+      properties:
+        expected_head_revisionid:
+          type: integer
       type: object
     model.AuditRef:
       properties:
@@ -767,6 +794,21 @@ components:
         questionid:
           type: integer
       type: object
+    model.RevisionSide:
+      properties:
+        functionoptionid:
+          type: integer
+        notes:
+          type: string
+        notes_is_ai_summary:
+          type: boolean
+        optionname:
+          type: string
+        score:
+          type: number
+        status:
+          type: string
+      type: object
     model.Score:
       properties:
         datacallid:
@@ -849,6 +891,22 @@ components:
         scoreid:
           type: integer
       type: object
+    model.ScoreHistory:
+      properties:
+        datacallid:
+          type: integer
+        fismasystemid:
+          type: integer
+        head:
+          $ref: '#/components/schemas/model.ScoreRevisionHead'
+        revisions:
+          items:
+            $ref: '#/components/schemas/model.ScoreRevision'
+          type: array
+          uniqueItems: false
+        scoreid:
+          type: integer
+      type: object
     model.ScoreProgress:
       properties:
         fismasystemid:
@@ -897,6 +955,58 @@ components:
             since the start of the data call" - by name in the response, so a
             consumer rendering a boolean chip never touches the numeric fields.
           type: boolean
+      type: object
+    model.ScoreRevision:
+      properties:
+        actor:
+          $ref: '#/components/schemas/model.AuditRef'
+        createdat:
+          type: string
+        kind:
+          type: string
+        new:
+          $ref: '#/components/schemas/model.RevisionSide'
+        prev:
+          $ref: '#/components/schemas/model.RevisionSide'
+        reason:
+          type: string
+        revision_no:
+          type: integer
+        revisionid:
+          type: integer
+        scoreid:
+          type: integer
+        undoable:
+          description: |-
+            Undoable is reader-relative, not a property of the row: a read-only tier
+            sees false with reasonCannotWrite on every revision. That is what lets
+            ztmf-misc#392 show history read-only for audit without the client knowing
+            the role matrix. Reason is non-nil exactly when Undoable is false.
+          type: boolean
+        undoes_revisionid:
+          type: integer
+      type: object
+    model.ScoreRevisionHead:
+      properties:
+        kind:
+          type: string
+        reason:
+          type: string
+        revision_no:
+          type: integer
+        revisionid:
+          type: integer
+        undoable:
+          type: boolean
+      type: object
+    model.ScoreUndoResult:
+      properties:
+        head:
+          $ref: '#/components/schemas/model.ScoreRevisionHead'
+        revision:
+          $ref: '#/components/schemas/model.ScoreRevision'
+        score:
+          $ref: '#/components/schemas/model.Score'
       type: object
     model.SystemAttribute:
       properties:
@@ -2968,6 +3078,107 @@ paths:
       security:
       - bearerAuth: []
       summary: Confirm a carried-forward score without changing it
+      tags:
+      - scores
+  /scores/{scoreid}/revisions:
+    get:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_ScoreHistory'
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Read an answer's revision history
+      tags:
+      - scores
+  /scores/{scoreid}/revisions/undo:
+    post:
+      parameters:
+      - description: Score ID
+        in: path
+        name: scoreid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.undoRequest'
+                description: Head revision the caller expects
+                summary: body
+        description: Head revision the caller expects
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_ScoreUndoResult'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Undo the most recent change to an answer
       tags:
       - scores
   /scores/aggregate:

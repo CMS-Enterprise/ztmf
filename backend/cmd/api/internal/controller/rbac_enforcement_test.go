@@ -106,6 +106,28 @@ func TestSaveScore_OpDivReadonlyForbiddenOnUpdate(t *testing.T) {
 			"otherwise the 403/404 split reveals which score ids exist")
 }
 
+// --- UndoScoreRevision: read-only tiers are blocked before any DB access ---
+
+// Same discriminating trick, and for the same reason: undo authorizes against
+// the stored row, so the lookup is easy to place before the role check. A
+// nonexistent scoreid separates the two orderings - 403 means role first, 404
+// means the row was looked up first, and that difference is the existence leak.
+// The Emberfall cases for this endpoint use a real score, so they would pass
+// under either ordering and cannot stand in for this (ztmf-misc#391).
+func TestUndoScoreRevision_OpDivReadonlyForbidden(t *testing.T) {
+	const missingScoreID = "2147483600" // no fixture allocates anything near this
+	body := jsonBody(t, map[string]any{"expected_head_revisionid": 1})
+	r := httptest.NewRequest("POST", "/api/v1/scores/"+missingScoreID+"/revisions/undo", body)
+	r = mux.SetURLVars(r, map[string]string{"scoreid": missingScoreID})
+	r = withUser(r, opdivReadonly)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	UndoScoreRevision(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a read-only tier must be rejected on role before the stored-row lookup, "+
+			"otherwise the 403/404 split reveals which score ids exist")
+}
+
 // --- ConfirmScore: read-only tiers are blocked before any DB access ---
 
 func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {

@@ -33,6 +33,12 @@ const (
 	// keying on the bare 403, which the global auth interceptor would otherwise
 	// swallow into a generic toast.
 	CodeDelegateNotEnabled = "DELEGATE_NOT_ENABLED"
+	// Set by the controller (sanitizeErr): an undo named a head revision that is
+	// no longer current, so someone else changed the answer in between. Carries
+	// a code because parseApiError has no 409 branch and would otherwise fall
+	// through to the generic passthrough; the FE refreshes the history drawer
+	// against the fresh head rather than retrying (ztmf-misc#392).
+	CodeRevisionConflict = "REVISION_CONFLICT"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a

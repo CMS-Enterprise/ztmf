@@ -56,6 +56,7 @@ func TestSanitizeErrMapping(t *testing.T) {
 		{"forbidden -> 403", ErrForbidden, 403},
 		{"past deadline -> 403", model.ErrPastDeadline, 403},
 		{"not unique -> 400", model.ErrNotUnique, 400},
+		{"revision conflict -> 409", model.ErrRevisionConflict, 409},
 		{"db connection -> 503", model.ErrDbConnection, 503},
 		{"unknown -> 500", errors.New("boom"), 500},
 	}
@@ -74,6 +75,17 @@ func TestSanitizeErrDelegateRequiresAdminCarriesCode(t *testing.T) {
 	assert.Equal(t, 400, status)
 	assert.Equal(t, auth.CodeDelegateRequiresAdmin, code)
 	assert.Equal(t, model.ErrDelegateRequiresAdmin, out, "human-readable message is preserved alongside the code")
+}
+
+// The undo conflict is the first and only 409 in this API. It carries a code
+// because the FE's parseApiError has no 409 branch and would otherwise fall
+// through to the generic passthrough; on this code the drawer refreshes against
+// the fresh head rather than retrying (ztmf-misc#392).
+func TestSanitizeErrRevisionConflictCarriesCode(t *testing.T) {
+	status, code, out := sanitizeErr(model.ErrRevisionConflict)
+	assert.Equal(t, 409, status)
+	assert.Equal(t, auth.CodeRevisionConflict, code)
+	assert.Equal(t, model.ErrRevisionConflict, out, "human-readable message is preserved alongside the code")
 }
 
 // The capability-off rejection is a 403 that also carries a code, so the FE can
