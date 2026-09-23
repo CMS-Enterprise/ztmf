@@ -1538,6 +1538,38 @@ tests:
           data:
             <<: *updatedFunctionData
 
+  # A PUT that omits "order" must leave the stored rank alone. Function.Ordr is
+  # a *int for exactly this: absent and 0 are indistinguishable once decoded, so
+  # the unconditional Set this replaced would clobber the rank the functions.ordr
+  # backfill populates. Last in this sequence because it is the one case that
+  # changes a field the assertions above pin.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        function: "Updated Identity Management"
+        description: "partial update omitting order"
+        datacenterenvironment: "AWS"
+        questionid: 8001
+        pillarid: 1
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            description: "partial update omitting order"
+            order: 2
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET
@@ -3496,11 +3528,16 @@ tests:
   # reduced set only when asked for an in-scope cycle, and the aggregate stops
   # scoring the excluded pillars from the anchor cycle onward.
   #
-  # Row order note: on seeded test databases pillars.ordr and questions.ordr
-  # are 0 (migration 0056 runs before the populate seed), so the questionnaire
-  # sorts by its questionid tiebreaker and the aggregate by pillarid - both of
-  # which happen to walk the fixture pillars as Devices, Applications,
-  # Networks, Data, CrossCutting, Identity.
+  # Row order note: migrations run before the populate seed, so the ordr
+  # backfills match none of the fixture's fictional function names and
+  # _test_data_empire.sql ranks its own rows, mirroring the CISA sequence 0056
+  # gave the real catalog. These arrays therefore read Identity, Devices,
+  # Networks, Applications, Data, CrossCutting - the order production renders.
+  # They previously read pillarid order, which was not a contract but the
+  # fallback the questionid tiebreaker produced while every ordr was 0
+  # (ztmf-misc#393). The aggregate arrays move with them: it used to order by
+  # ps.pillarid and now orders by the same pillars.ordr the questionnaire does,
+  # so the two can no longer disagree about pillar sequence.
   # ==========================================================================
 
   # Without a data call the environment's full catalog returns - the pre-#545
@@ -3518,17 +3555,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # The anchor cycle serves the reduced set: Devices and Applications drop,
   # order otherwise unchanged.
@@ -3544,13 +3581,13 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Networks"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # A cycle deadlined before the anchor keeps the full catalog.
   - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=103
@@ -3565,17 +3602,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # Scoring: on the anchor cycle the aggregate carries exactly the four
   # in-scope pillar scores, even though the seed leaves carried-forward
@@ -3594,10 +3631,10 @@ tests:
             - fismasystemid: 2016
               datacallid: 104
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Networks"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"
 
   - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=103&include_pillars=true"
     method: GET
@@ -3613,9 +3650,9 @@ tests:
             - fismasystemid: 2016
               datacallid: 103
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Devices"
-                - pillar: "Applications"
                 - pillar: "Networks"
+                - pillar: "Applications"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"

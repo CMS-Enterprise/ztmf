@@ -10,9 +10,12 @@ import (
 )
 
 // The questionnaire's order used to live only in the frontend (ztmf-ui's
-// PILLAR_ORDER / PILLAR_FUNCTION_MAP), because pillars.ordr and questions.ordr
-// were 0 on every row. Migration 0056 moves that order into the data and the
-// read paths sort by it with a questionid tiebreaker.
+// PILLAR_ORDER / PILLAR_FUNCTION_MAP), because pillars.ordr, questions.ordr and
+// functions.ordr were 0 on every row. Migration 0056 and the functions.ordr
+// backfill that followed it move that order into the data, and the read paths
+// sort by it with a questionid tiebreaker.
+// Since ztmf-misc#393 deleted the client-side sort, this response IS the order
+// the questionnaire renders in.
 //
 // These tests pin the property that survives regardless of which fixture the
 // database was seeded from: the same call twice returns the same sequence, and
@@ -20,10 +23,11 @@ import (
 // That is the guarantee an unordered query cannot make - it returns heap order,
 // which is stable only until a row is rewritten (the ztmf-misc#279 failure).
 //
-// The curated ranks themselves are not asserted here, because the empire seed
-// loads after migrations run and leaves every ordr at 0 on an ephemeral test
-// database. Migration 0056's own SQL is covered directly in the migrations
-// package (TestOrderingDataMigrationIntegration), which supplies its own
+// The curated CISA ranks are still not asserted here. The empire seed loads
+// after migrations run, so the ordr backfills match none of its fictional
+// function names; it carries its own ranks instead (see _test_data_empire.sql),
+// which are deliberately its pillarid sequence rather than the CISA one. Those
+// migrations' own SQL is covered directly in the migrations package, on
 // canonically-named fixture rows.
 
 func TestFindQuestionsByFismaSystemOrderingIntegration(t *testing.T) {
@@ -63,13 +67,22 @@ func TestFindQuestionsByFismaSystemOrderingIntegration(t *testing.T) {
 
 	assertPillarsContiguous(t, len(first), func(i int) any { return first[i].Pillar.PillarID })
 
+	// Every pillar the questionnaire returns must carry a real rank. Without
+	// this the sort below passes vacuously on an all-zero catalog, which is
+	// exactly the state ztmf-misc#393 exists to end.
+	for i, q := range first {
+		assert.NotZerof(t, q.Pillar.Order,
+			"row %d: pillar %q is unranked; the catalog's ordering is not in the database",
+			i, q.Pillar.Pillar)
+	}
+
 	// The declared sort key must be non-decreasing across the result: whatever
 	// order the rows are in, it is the order the ORDER BY asked for.
 	for i := 1; i < len(first); i++ {
-		prev := [3]int{first[i-1].Pillar.Order, derefInt(first[i-1].Ordr), int(first[i-1].QuestionID)}
-		cur := [3]int{first[i].Pillar.Order, derefInt(first[i].Ordr), int(first[i].QuestionID)}
+		prev := []int{first[i-1].Pillar.Order, derefInt(first[i-1].Ordr), derefInt(first[i-1].Function.Ordr), int(first[i-1].QuestionID)}
+		cur := []int{first[i].Pillar.Order, derefInt(first[i].Ordr), derefInt(first[i].Function.Ordr), int(first[i].QuestionID)}
 		assert.LessOrEqualf(t, sortKeyCompare(prev, cur), 0,
-			"row %d breaks the (pillars.ordr, questions.ordr, questionid) sort: %v then %v",
+			"row %d breaks the (pillars.ordr, questions.ordr, functions.ordr, questionid) sort: %v then %v",
 			i, prev, cur)
 	}
 }
@@ -126,7 +139,7 @@ func assertPillarsContiguous(t *testing.T, n int, keyAt func(int) any) {
 
 // sortKeyCompare returns -1, 0 or 1 for the lexicographic order of two sort
 // keys. Written out because testify's ordering assertions only handle scalars.
-func sortKeyCompare(a, b [3]int) int {
+func sortKeyCompare(a, b []int) int {
 	for i := range a {
 		switch {
 		case a[i] < b[i]:

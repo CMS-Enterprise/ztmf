@@ -173,12 +173,27 @@ SELECT u.userid, o.opdiv_id
 ON CONFLICT DO NOTHING;
 
 -- Test Pillars (using production pillar names for testing consistency)
-INSERT INTO public.pillars VALUES (1, 'Devices', 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.pillars VALUES (2, 'Applications', 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.pillars VALUES (3, 'Networks', 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.pillars VALUES (4, 'Data', 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.pillars VALUES (5, 'CrossCutting', 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.pillars VALUES (6, 'Identity', 0) ON CONFLICT DO NOTHING;
+--
+-- ordr is ranked here rather than left at 0 (ztmf-misc#393): the seed loads
+-- after migrations, so the ordr backfills match none of these fictional
+-- function names, and with the client-side sort gone this file is what orders
+-- the seeded questionnaire.
+--
+-- The ranks mirror what migration 0056 did to the real catalog, so a local or
+-- test stack renders the questionnaire in the same sequence production does:
+-- pillars in the CISA ZTMM order (Identity, Devices, Networks, Applications,
+-- Data, CrossCutting), and questions banded as pillar_rank * 100 + index.
+-- Note the pillarids below are NOT in that sequence - Identity is 6 - so the
+-- rank and the id deliberately disagree. Before these values existed every ordr
+-- was 0 and the API fell through to its questionid tiebreaker, which walked the
+-- fixture in pillarid order; the emberfall pillar arrays were written against
+-- that accident and are updated to the ranked order here.
+INSERT INTO public.pillars VALUES (1, 'Devices', 2) ON CONFLICT DO NOTHING;
+INSERT INTO public.pillars VALUES (2, 'Applications', 4) ON CONFLICT DO NOTHING;
+INSERT INTO public.pillars VALUES (3, 'Networks', 3) ON CONFLICT DO NOTHING;
+INSERT INTO public.pillars VALUES (4, 'Data', 5) ON CONFLICT DO NOTHING;
+INSERT INTO public.pillars VALUES (5, 'CrossCutting', 6) ON CONFLICT DO NOTHING;
+INSERT INTO public.pillars VALUES (6, 'Identity', 1) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
 -- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
@@ -378,34 +393,34 @@ INSERT INTO public.datacalls_fismasystems VALUES (5, 1003) ON CONFLICT DO NOTHIN
 -- Imperial Zero Trust Questionnaire (Full Coverage)
 
 -- Devices Pillar Questions
-INSERT INTO public.questions VALUES (8001, 'Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?', 'What tools does the Imperial Navy use to track Death Stars, Super Star Destroyers, and fighter assets? Include details about maintenance schedules and operational status.', 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8002, 'How does your system manage Imperial device supply chain risks from Rebel sabotage?', 'Describe security measures for Imperial manufacturing facilities and component verification processes. Include protocols for detecting tampered equipment.', 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8003, 'What threat protection is integrated into all Imperial device workflows?', 'Detail automated security scanning for Imperial vessels and equipment. Include real-time monitoring of device behavior and anomaly detection.', 1, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8001, 'Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?', 'What tools does the Imperial Navy use to track Death Stars, Super Star Destroyers, and fighter assets? Include details about maintenance schedules and operational status.', 1, 201) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8002, 'How does your system manage Imperial device supply chain risks from Rebel sabotage?', 'Describe security measures for Imperial manufacturing facilities and component verification processes. Include protocols for detecting tampered equipment.', 1, 202) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8003, 'What threat protection is integrated into all Imperial device workflows?', 'Detail automated security scanning for Imperial vessels and equipment. Include real-time monitoring of device behavior and anomaly detection.', 1, 203) ON CONFLICT DO NOTHING;
 
 -- Applications Pillar Questions  
-INSERT INTO public.questions VALUES (8004, 'How does your system integrate security testing throughout Imperial software development?', 'What tools does the Imperial Engineering Corps use to test superlaser targeting systems, reactor control applications, and tactical software?', 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8005, 'Does your system enforce security policies for Death Star application development and deployment?', 'Describe automated policy enforcement for critical Imperial applications. Include details about secure coding standards and deployment controls.', 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8006, 'What security monitoring covers all Imperial applications to maintain Death Star-wide visibility?', 'Detail application performance monitoring and security event correlation across all Imperial battle station systems.', 2, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8004, 'How does your system integrate security testing throughout Imperial software development?', 'What tools does the Imperial Engineering Corps use to test superlaser targeting systems, reactor control applications, and tactical software?', 2, 401) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8005, 'Does your system enforce security policies for Death Star application development and deployment?', 'Describe automated policy enforcement for critical Imperial applications. Include details about secure coding standards and deployment controls.', 2, 402) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8006, 'What security monitoring covers all Imperial applications to maintain Death Star-wide visibility?', 'Detail application performance monitoring and security event correlation across all Imperial battle station systems.', 2, 403) ON CONFLICT DO NOTHING;
 
 -- Networks Pillar Questions
-INSERT INTO public.questions VALUES (8007, 'How does your system secure Imperial communication networks from Rebel infiltration?', 'Describe network segmentation, encryption protocols, and monitoring systems used for Imperial Fleet communications and tactical coordination.', 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8008, 'What network security controls prevent unauthorized access to Imperial command channels?', 'Detail access controls, authentication mechanisms, and intrusion detection for secure Imperial military networks.', 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8009, 'How does your system maintain secure network connectivity across the Imperial Fleet?', 'Describe network architecture, redundancy, and security monitoring for communications between Star Destroyers, TIE squadrons, and command centers.', 3, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8007, 'How does your system secure Imperial communication networks from Rebel infiltration?', 'Describe network segmentation, encryption protocols, and monitoring systems used for Imperial Fleet communications and tactical coordination.', 3, 301) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8008, 'What network security controls prevent unauthorized access to Imperial command channels?', 'Detail access controls, authentication mechanisms, and intrusion detection for secure Imperial military networks.', 3, 302) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8009, 'How does your system maintain secure network connectivity across the Imperial Fleet?', 'Describe network architecture, redundancy, and security monitoring for communications between Star Destroyers, TIE squadrons, and command centers.', 3, 303) ON CONFLICT DO NOTHING;
 
 -- Data Pillar Questions
-INSERT INTO public.questions VALUES (8010, 'How does your system identify and manage Imperial tactical data inventory?', 'What tools does the Imperial Security Bureau use to automatically catalog Death Star plans, fleet positions, and strategic intelligence?', 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8011, 'Does your system have automated processes for Imperial data lifecycle and security policies?', 'Describe automated classification, encryption, and retention policies for sensitive Imperial military data and intelligence reports.', 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8012, 'What visibility does your system provide across the full Imperial data lifecycle with analytics?', 'Detail data access monitoring, usage analytics, and compliance reporting for Imperial classified information and tactical databases.', 4, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8010, 'How does your system identify and manage Imperial tactical data inventory?', 'What tools does the Imperial Security Bureau use to automatically catalog Death Star plans, fleet positions, and strategic intelligence?', 4, 501) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8011, 'Does your system have automated processes for Imperial data lifecycle and security policies?', 'Describe automated classification, encryption, and retention policies for sensitive Imperial military data and intelligence reports.', 4, 502) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8012, 'What visibility does your system provide across the full Imperial data lifecycle with analytics?', 'Detail data access monitoring, usage analytics, and compliance reporting for Imperial classified information and tactical databases.', 4, 503) ON CONFLICT DO NOTHING;
 
 -- CrossCutting Pillar Questions
-INSERT INTO public.questions VALUES (8013, 'How does your system coordinate Imperial security policies across all battle stations and fleets?', 'Describe centralized policy management, enforcement mechanisms, and compliance monitoring across the entire Imperial military structure.', 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8014, 'What automated governance processes ensure consistent Imperial security across all systems?', 'Detail automated policy deployment, configuration management, and compliance verification for Empire-wide security standards.', 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8015, 'How does your system provide comprehensive security analytics and reporting for Imperial leadership?', 'Describe security dashboards, threat intelligence reporting, and strategic security metrics provided to Imperial command structure.', 5, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8013, 'How does your system coordinate Imperial security policies across all battle stations and fleets?', 'Describe centralized policy management, enforcement mechanisms, and compliance monitoring across the entire Imperial military structure.', 5, 601) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8014, 'What automated governance processes ensure consistent Imperial security across all systems?', 'Detail automated policy deployment, configuration management, and compliance verification for Empire-wide security standards.', 5, 602) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8015, 'How does your system provide comprehensive security analytics and reporting for Imperial leadership?', 'Describe security dashboards, threat intelligence reporting, and strategic security metrics provided to Imperial command structure.', 5, 603) ON CONFLICT DO NOTHING;
 
 -- Identity Pillar Questions
-INSERT INTO public.questions VALUES (8016, 'How does your system authenticate and verify Imperial officer identities across all access points?', 'Describe authentication mechanisms, biometric verification, and clearance level management for Imperial personnel access to sensitive systems.', 6, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8017, 'What measures detect Force-sensitive individuals or Rebel infiltrators attempting system access?', 'Detail identity verification processes, behavioral analysis, and security screening protocols to identify potential security threats among personnel.', 6, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.questions VALUES (8018, 'How does your system manage Imperial identity lifecycle from recruitment to retirement?', 'Describe automated identity provisioning, access reviews, and deprovisioning processes for Imperial officers, contractors, and service accounts.', 6, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8016, 'How does your system authenticate and verify Imperial officer identities across all access points?', 'Describe authentication mechanisms, biometric verification, and clearance level management for Imperial personnel access to sensitive systems.', 6, 101) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8017, 'What measures detect Force-sensitive individuals or Rebel infiltrators attempting system access?', 'Detail identity verification processes, behavioral analysis, and security screening protocols to identify potential security threats among personnel.', 6, 102) ON CONFLICT DO NOTHING;
+INSERT INTO public.questions VALUES (8018, 'How does your system manage Imperial identity lifecycle from recruitment to retirement?', 'Describe automated identity provisioning, access reviews, and deprovisioning processes for Imperial officers, contractors, and service accounts.', 6, 103) ON CONFLICT DO NOTHING;
 
 -- datacenterenvironments mapping rows for the Imperial (test) environments
 -- (ztmf#392). The migration seeds the real CMS/HHS vocabulary; these identity
@@ -426,28 +441,28 @@ ON CONFLICT DO NOTHING;
 -- (INNER JOIN functions ON functions.questionid=questions.questionid)
 
 -- Imperial-Fleet functions (system 1002 - Executor) - one per pillar
-INSERT INTO public.functions VALUES (7001, 'Imperial Device Management', 'Track and secure all Imperial battle stations, Star Destroyers, and TIE fighters', 'Imperial-Fleet', 8001, 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7002, 'Fleet Application Security', 'Secure fleet command applications and tactical software', 'Imperial-Fleet', 8004, 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7003, 'Imperial Network Security', 'Protect Imperial communication networks from Rebel infiltration', 'Imperial-Fleet', 8007, 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7004, 'Fleet Data Protection', 'Safeguard tactical intelligence from unauthorized access', 'Imperial-Fleet', 8010, 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7005, 'Imperial Cross-Cutting Controls', 'Enforce Empire-wide security policies across all systems and fleets', 'Imperial-Fleet', 8013, 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7006, 'Imperial Identity Verification', 'Authenticate Imperial officers and detect Force-sensitive infiltrators', 'Imperial-Fleet', 8016, 6, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7001, 'Imperial Device Management', 'Track and secure all Imperial battle stations, Star Destroyers, and TIE fighters', 'Imperial-Fleet', 8001, 1, 201) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7002, 'Fleet Application Security', 'Secure fleet command applications and tactical software', 'Imperial-Fleet', 8004, 2, 401) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7003, 'Imperial Network Security', 'Protect Imperial communication networks from Rebel infiltration', 'Imperial-Fleet', 8007, 3, 301) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7004, 'Fleet Data Protection', 'Safeguard tactical intelligence from unauthorized access', 'Imperial-Fleet', 8010, 4, 501) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7005, 'Imperial Cross-Cutting Controls', 'Enforce Empire-wide security policies across all systems and fleets', 'Imperial-Fleet', 8013, 5, 601) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7006, 'Imperial Identity Verification', 'Authenticate Imperial officers and detect Force-sensitive infiltrators', 'Imperial-Fleet', 8016, 6, 101) ON CONFLICT DO NOTHING;
 
 -- Space-Station functions (system 1001 - Death Star) - one per pillar
-INSERT INTO public.functions VALUES (7007, 'Battle Station Device Management', 'Track and secure all Death Star systems and defensive installations', 'Space-Station', 8001, 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7008, 'Death Star Application Security', 'Secure superlaser targeting systems and reactor core applications', 'Space-Station', 8004, 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7009, 'Station Network Security', 'Protect Death Star internal communication networks', 'Space-Station', 8007, 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7010, 'Death Star Data Protection', 'Safeguard Death Star plans and schematics from unauthorized access', 'Space-Station', 8010, 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7011, 'Station Cross-Cutting Controls', 'Enforce security policies across all Death Star subsystems', 'Space-Station', 8013, 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7012, 'Station Identity Verification', 'Authenticate personnel accessing Death Star critical systems', 'Space-Station', 8016, 6, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7007, 'Battle Station Device Management', 'Track and secure all Death Star systems and defensive installations', 'Space-Station', 8001, 1, 201) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7008, 'Death Star Application Security', 'Secure superlaser targeting systems and reactor core applications', 'Space-Station', 8004, 2, 401) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7009, 'Station Network Security', 'Protect Death Star internal communication networks', 'Space-Station', 8007, 3, 301) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7010, 'Death Star Data Protection', 'Safeguard Death Star plans and schematics from unauthorized access', 'Space-Station', 8010, 4, 501) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7011, 'Station Cross-Cutting Controls', 'Enforce security policies across all Death Star subsystems', 'Space-Station', 8013, 5, 601) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7012, 'Station Identity Verification', 'Authenticate personnel accessing Death Star critical systems', 'Space-Station', 8016, 6, 101) ON CONFLICT DO NOTHING;
 
 -- Forest-Moon functions (system 1003 - Shield Generator) - one per pillar
-INSERT INTO public.functions VALUES (7013, 'Bunker Device Management', 'Track and secure shield generator equipment and AT-ST walkers', 'Forest-Moon', 8001, 1, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7014, 'Bunker Application Security', 'Secure shield generator control applications', 'Forest-Moon', 8004, 2, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7015, 'Endor Network Security', 'Protect Forest Moon communication networks from Ewok interference', 'Forest-Moon', 8007, 3, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7016, 'Bunker Data Protection', 'Safeguard shield generator technical data and access codes', 'Forest-Moon', 8010, 4, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7017, 'Moon Cross-Cutting Controls', 'Enforce security policies across all Forest Moon installations', 'Forest-Moon', 8013, 5, 0) ON CONFLICT DO NOTHING;
-INSERT INTO public.functions VALUES (7018, 'Moon Identity Verification', 'Authenticate Imperial personnel and detect Rebel infiltrators on Endor', 'Forest-Moon', 8016, 6, 0) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7013, 'Bunker Device Management', 'Track and secure shield generator equipment and AT-ST walkers', 'Forest-Moon', 8001, 1, 201) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7014, 'Bunker Application Security', 'Secure shield generator control applications', 'Forest-Moon', 8004, 2, 401) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7015, 'Endor Network Security', 'Protect Forest Moon communication networks from Ewok interference', 'Forest-Moon', 8007, 3, 301) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7016, 'Bunker Data Protection', 'Safeguard shield generator technical data and access codes', 'Forest-Moon', 8010, 4, 501) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7017, 'Moon Cross-Cutting Controls', 'Enforce security policies across all Forest Moon installations', 'Forest-Moon', 8013, 5, 601) ON CONFLICT DO NOTHING;
+INSERT INTO public.functions VALUES (7018, 'Moon Identity Verification', 'Authenticate Imperial personnel and detect Rebel infiltrators on Endor', 'Forest-Moon', 8016, 6, 101) ON CONFLICT DO NOTHING;
 
 -- Sample Function Options (Zero Trust Maturity Levels) - MUST come before scores
 -- Imperial-Fleet functions (7001-7006)
@@ -742,30 +757,30 @@ ON CONFLICT DO NOTHING;
 -- Extra questions for the three new questionnaires (one per pillar per env).
 -- Ground-Assault (Army): 8019-8024
 INSERT INTO public.questions VALUES
-    (8019, 'Does your ground-assault force maintain a verified inventory of every walker, speeder, and emplacement?', 'Detail how AT-AT, AT-ST, and artillery assets are tracked through deployment, battlefield loss, and salvage.', 1, 0),
-    (8020, 'How is targeting and fire-control software for ground assets secured against tampering?', 'Describe code-signing and change control for walker targeting and artillery fire-control applications.', 2, 0),
-    (8021, 'How are forward-operating-base tactical networks segmented from the wider Imperial net?', 'Describe field network segmentation, encryption, and how a captured relay is contained.', 3, 0),
-    (8022, 'How is battlefield intelligence classified, encrypted, and purged on capture risk?', 'Detail handling of ground-campaign maps, troop dispositions, and emergency data destruction.', 4, 0),
-    (8023, 'How are ground-campaign security policies enforced consistently across dispersed units?', 'Describe centralized policy push and compliance checks for units operating out of contact.', 5, 0),
-    (8024, 'How are field commissions and trooper credentials verified at forward positions?', 'Detail identity and clearance verification when reinforcements rotate through a front line.', 6, 0)
+    (8019, 'Does your ground-assault force maintain a verified inventory of every walker, speeder, and emplacement?', 'Detail how AT-AT, AT-ST, and artillery assets are tracked through deployment, battlefield loss, and salvage.', 1, 211),
+    (8020, 'How is targeting and fire-control software for ground assets secured against tampering?', 'Describe code-signing and change control for walker targeting and artillery fire-control applications.', 2, 411),
+    (8021, 'How are forward-operating-base tactical networks segmented from the wider Imperial net?', 'Describe field network segmentation, encryption, and how a captured relay is contained.', 3, 311),
+    (8022, 'How is battlefield intelligence classified, encrypted, and purged on capture risk?', 'Detail handling of ground-campaign maps, troop dispositions, and emergency data destruction.', 4, 511),
+    (8023, 'How are ground-campaign security policies enforced consistently across dispersed units?', 'Describe centralized policy push and compliance checks for units operating out of contact.', 5, 611),
+    (8024, 'How are field commissions and trooper credentials verified at forward positions?', 'Detail identity and clearance verification when reinforcements rotate through a front line.', 6, 111)
 ON CONFLICT DO NOTHING;
 -- Surveillance-Net (ISB / Intelligence): 8025-8030
 INSERT INTO public.questions VALUES
-    (8025, 'Does the surveillance network inventory every listening post, probe droid, and informant feed?', 'Detail asset tracking for covert collection devices and their chain of custody.', 1, 0),
-    (8026, 'How is the analysis tooling that processes intercepts protected and access-controlled?', 'Describe security testing and least-privilege for the applications that triage surveillance feeds.', 2, 0),
-    (8027, 'How is the collection network isolated so a compromised node cannot expose sources?', 'Detail segmentation and anonymization between collection, transport, and analysis tiers.', 3, 0),
-    (8028, 'How are informant identities and intercept archives classified and compartmented?', 'Describe encryption, need-to-know compartments, and retention for source-identifying data.', 4, 0),
-    (8029, 'How are collection-authority and oversight policies enforced across the bureau?', 'Detail policy governance preventing unauthorized surveillance and ensuring auditability.', 5, 0),
-    (8030, 'How are analyst and handler identities verified for access to compartmented intelligence?', 'Describe clearance-tiered authentication and continuous vetting for intelligence personnel.', 6, 0)
+    (8025, 'Does the surveillance network inventory every listening post, probe droid, and informant feed?', 'Detail asset tracking for covert collection devices and their chain of custody.', 1, 221),
+    (8026, 'How is the analysis tooling that processes intercepts protected and access-controlled?', 'Describe security testing and least-privilege for the applications that triage surveillance feeds.', 2, 421),
+    (8027, 'How is the collection network isolated so a compromised node cannot expose sources?', 'Detail segmentation and anonymization between collection, transport, and analysis tiers.', 3, 321),
+    (8028, 'How are informant identities and intercept archives classified and compartmented?', 'Describe encryption, need-to-know compartments, and retention for source-identifying data.', 4, 521),
+    (8029, 'How are collection-authority and oversight policies enforced across the bureau?', 'Detail policy governance preventing unauthorized surveillance and ensuring auditability.', 5, 621),
+    (8030, 'How are analyst and handler identities verified for access to compartmented intelligence?', 'Describe clearance-tiered authentication and continuous vetting for intelligence personnel.', 6, 121)
 ON CONFLICT DO NOTHING;
 -- Shipyard-RnD (Sienar / Kuat): 8031-8036
 INSERT INTO public.questions VALUES
-    (8031, 'Does the R&D program track every prototype, test article, and fabrication rig?', 'Detail inventory and provenance for experimental hulls, drives, and weapon prototypes.', 1, 0),
-    (8032, 'How is the design and simulation software for new weapon systems secured?', 'Describe secure development and integrity verification for CAD, simulation, and CAM toolchains.', 2, 0),
-    (8033, 'How is the shipyard design network isolated from production and external suppliers?', 'Detail segmentation between classified design, the build floor, and contractor links.', 3, 0),
-    (8034, 'How are classified schematics (e.g., superweapon plans) protected across their lifecycle?', 'Describe classification, encryption, and access logging for top-secret design data.', 4, 0),
-    (8035, 'How are export, contractor, and security policies enforced across the R&D enterprise?', 'Detail governance over contractor access and consistent policy across program sites.', 5, 0),
-    (8036, 'How are engineer, contractor, and service-account identities managed for design systems?', 'Describe provisioning, review, and deprovisioning for a mixed workforce on classified programs.', 6, 0)
+    (8031, 'Does the R&D program track every prototype, test article, and fabrication rig?', 'Detail inventory and provenance for experimental hulls, drives, and weapon prototypes.', 1, 231),
+    (8032, 'How is the design and simulation software for new weapon systems secured?', 'Describe secure development and integrity verification for CAD, simulation, and CAM toolchains.', 2, 431),
+    (8033, 'How is the shipyard design network isolated from production and external suppliers?', 'Detail segmentation between classified design, the build floor, and contractor links.', 3, 331),
+    (8034, 'How are classified schematics (e.g., superweapon plans) protected across their lifecycle?', 'Describe classification, encryption, and access logging for top-secret design data.', 4, 531),
+    (8035, 'How are export, contractor, and security policies enforced across the R&D enterprise?', 'Detail governance over contractor access and consistent policy across program sites.', 5, 631),
+    (8036, 'How are engineer, contractor, and service-account identities managed for design systems?', 'Describe provisioning, review, and deprovisioning for a mixed workforce on classified programs.', 6, 131)
 ON CONFLICT DO NOTHING;
 
 -- New FISMA systems (1101-1110) across the branch OpDivs.
@@ -816,26 +831,26 @@ ON CONFLICT DO NOTHING;
 -- each referencing the matching new question. functionids 7019-7036.
 INSERT INTO public.functions VALUES
     -- Ground-Assault (7019-7024)
-    (7019, 'Ground Asset Management',        'Track walkers, speeders, and emplacements through their lifecycle',     'Ground-Assault',   8019, 1, 0),
-    (7020, 'Fire-Control Application Security','Secure walker targeting and artillery fire-control software',          'Ground-Assault',   8020, 2, 0),
-    (7021, 'Field Network Security',         'Segment and protect forward-operating-base tactical networks',          'Ground-Assault',   8021, 3, 0),
-    (7022, 'Battlefield Data Protection',    'Classify and protect ground-campaign intelligence and dispositions',    'Ground-Assault',   8022, 4, 0),
-    (7023, 'Ground Campaign Governance',     'Enforce security policy consistently across dispersed ground units',    'Ground-Assault',   8023, 5, 0),
-    (7024, 'Field Identity Verification',    'Verify field commissions and trooper credentials at forward positions', 'Ground-Assault',   8024, 6, 0),
+    (7019, 'Ground Asset Management',        'Track walkers, speeders, and emplacements through their lifecycle',     'Ground-Assault',   8019, 1, 211),
+    (7020, 'Fire-Control Application Security','Secure walker targeting and artillery fire-control software',          'Ground-Assault',   8020, 2, 411),
+    (7021, 'Field Network Security',         'Segment and protect forward-operating-base tactical networks',          'Ground-Assault',   8021, 3, 311),
+    (7022, 'Battlefield Data Protection',    'Classify and protect ground-campaign intelligence and dispositions',    'Ground-Assault',   8022, 4, 511),
+    (7023, 'Ground Campaign Governance',     'Enforce security policy consistently across dispersed ground units',    'Ground-Assault',   8023, 5, 611),
+    (7024, 'Field Identity Verification',    'Verify field commissions and trooper credentials at forward positions', 'Ground-Assault',   8024, 6, 111),
     -- Surveillance-Net (7025-7030)
-    (7025, 'Collection Asset Management',    'Inventory listening posts, probe droids, and informant feeds',          'Surveillance-Net', 8025, 1, 0),
-    (7026, 'Analysis Tooling Security',      'Protect and least-privilege the intercept-analysis applications',       'Surveillance-Net', 8026, 2, 0),
-    (7027, 'Collection Network Isolation',   'Isolate collection nodes so a compromise cannot expose sources',        'Surveillance-Net', 8027, 3, 0),
-    (7028, 'Source Data Protection',         'Compartment and encrypt informant identities and intercept archives',   'Surveillance-Net', 8028, 4, 0),
-    (7029, 'Collection Oversight Governance','Enforce collection-authority and oversight policy across the bureau',   'Surveillance-Net', 8029, 5, 0),
-    (7030, 'Intelligence Identity Verification','Verify analyst and handler identities for compartmented access',     'Surveillance-Net', 8030, 6, 0),
+    (7025, 'Collection Asset Management',    'Inventory listening posts, probe droids, and informant feeds',          'Surveillance-Net', 8025, 1, 221),
+    (7026, 'Analysis Tooling Security',      'Protect and least-privilege the intercept-analysis applications',       'Surveillance-Net', 8026, 2, 421),
+    (7027, 'Collection Network Isolation',   'Isolate collection nodes so a compromise cannot expose sources',        'Surveillance-Net', 8027, 3, 321),
+    (7028, 'Source Data Protection',         'Compartment and encrypt informant identities and intercept archives',   'Surveillance-Net', 8028, 4, 521),
+    (7029, 'Collection Oversight Governance','Enforce collection-authority and oversight policy across the bureau',   'Surveillance-Net', 8029, 5, 621),
+    (7030, 'Intelligence Identity Verification','Verify analyst and handler identities for compartmented access',     'Surveillance-Net', 8030, 6, 121),
     -- Shipyard-RnD (7031-7036)
-    (7031, 'Prototype Asset Management',     'Track prototypes, test articles, and fabrication rigs',                 'Shipyard-RnD',     8031, 1, 0),
-    (7032, 'Design Toolchain Security',      'Secure CAD, simulation, and fabrication software for new weapons',      'Shipyard-RnD',     8032, 2, 0),
-    (7033, 'Shipyard Network Isolation',     'Isolate classified design networks from build floor and suppliers',     'Shipyard-RnD',     8033, 3, 0),
-    (7034, 'Schematic Data Protection',      'Protect classified schematics across their full lifecycle',             'Shipyard-RnD',     8034, 4, 0),
-    (7035, 'R&D Enterprise Governance',      'Enforce export, contractor, and security policy across program sites',  'Shipyard-RnD',     8035, 5, 0),
-    (7036, 'Engineering Identity Management','Manage engineer, contractor, and service-account identities',           'Shipyard-RnD',     8036, 6, 0)
+    (7031, 'Prototype Asset Management',     'Track prototypes, test articles, and fabrication rigs',                 'Shipyard-RnD',     8031, 1, 231),
+    (7032, 'Design Toolchain Security',      'Secure CAD, simulation, and fabrication software for new weapons',      'Shipyard-RnD',     8032, 2, 431),
+    (7033, 'Shipyard Network Isolation',     'Isolate classified design networks from build floor and suppliers',     'Shipyard-RnD',     8033, 3, 331),
+    (7034, 'Schematic Data Protection',      'Protect classified schematics across their full lifecycle',             'Shipyard-RnD',     8034, 4, 531),
+    (7035, 'R&D Enterprise Governance',      'Enforce export, contractor, and security policy across program sites',  'Shipyard-RnD',     8035, 5, 631),
+    (7036, 'Engineering Identity Management','Manage engineer, contractor, and service-account identities',           'Shipyard-RnD',     8036, 6, 131)
 ON CONFLICT DO NOTHING;
 
 -- Four maturity options (Traditional/Defined/Managed/Advanced) for each new
@@ -1154,10 +1169,10 @@ ON CONFLICT DO NOTHING;
 -- questions.pillarid, not functions.pillarid) resolves. Hardcoding catalogue ids
 -- here collided silently with the Ground-Assault set under ON CONFLICT DO NOTHING.
 INSERT INTO public.functions (functionid, function, description, datacenterenvironment, questionid, pillarid, ordr)
-SELECT 7100 + p.pillarid, 'SaaS ' || p.pillar, 'SaaS reduced-scope fixture', 'SaaS', q.questionid, p.pillarid, 0
+SELECT 7100 + p.pillarid, 'SaaS ' || p.pillar, 'SaaS reduced-scope fixture', 'SaaS', q.questionid, p.pillarid, q.ordr
   FROM public.pillars p
   CROSS JOIN LATERAL (
-      SELECT questionid FROM public.questions WHERE pillarid = p.pillarid ORDER BY questionid LIMIT 1
+      SELECT questionid, ordr FROM public.questions WHERE pillarid = p.pillarid ORDER BY questionid LIMIT 1
   ) q
 ON CONFLICT DO NOTHING;
 

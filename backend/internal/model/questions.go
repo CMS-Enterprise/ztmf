@@ -95,16 +95,18 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32, input 
 	// on that key. This is the same indirection the scoring aggregate uses, so the
 	// answer form an ISSO sees matches the functions a system is scored against.
 	sqlb := stmntBuilder.
-		Select("questions.questionid, question, notesprompt, questions.ordr, pillars.pillarid, pillars.pillar, pillars.ordr, functionid, function, description").
+		Select("questions.questionid, question, notesprompt, questions.ordr, pillars.pillarid, pillars.pillar, pillars.ordr, functionid, function, description, functions.ordr").
 		From("questions").
 		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
 		InnerJoin("functions ON functions.questionid=questions.questionid").
 		InnerJoin("datacenterenvironments dce ON dce.scoring_key=functions.datacenterenvironment").
 		InnerJoin("fismasystems ON fismasystems.datacenterenvironment=dce.datacenterenvironment AND fismasystems.fismasystemid=?", fismaSystemID).
-		// questionid breaks ties so questions sharing an ordr (0 wherever
-		// migration 0056 found no canonical rank) still list deterministically
+		// functions.ordr orders the functions a single question fans out to; the
+		// catalog gives each (question, environment) one row, so today it only
+		// matters for a question that forks. questionid breaks the remaining ties
+		// so rows an ordr backfill could not rank still list deterministically
 		// rather than in heap order. See FindAnswers for the same tiebreaker.
-		OrderBy("pillars.ordr, questions.ordr, questions.questionid ASC")
+		OrderBy("pillars.ordr, questions.ordr, functions.ordr, questions.questionid ASC")
 
 	if input.DataCallID != nil {
 		sqlb = sqlb.Where(reducedPillarScopeSQL("dce.scoring_key", "pillars.pillar", "?"), *input.DataCallID)
@@ -115,7 +117,7 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32, input 
 			Pillar:   &Pillar{},
 			Function: &Function{},
 		}
-		err := row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Ordr, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description)
+		err := row.Scan(&q.QuestionID, &q.Question, &q.NotesPrompt, &q.Ordr, &q.Pillar.PillarID, &q.Pillar.Pillar, &q.Pillar.Order, &q.Function.FunctionID, &q.Function.Function, &q.Function.Description, &q.Function.Ordr)
 		return &q, err
 	})
 }

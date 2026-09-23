@@ -747,8 +747,11 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 // recomputing the same average in a different runtime.
 //
 // The input slice is assumed to be ordered by (datacallid, fismasystemid,
-// pillarid), which is the canonical ordering emitted by the underlying SQL
-// in findPillarScoresAll. The output preserves that order.
+// pillars.ordr, pillarid), which is the canonical ordering emitted by the
+// underlying SQL in findPillarScoresAll. The output preserves that order, and
+// PillarScoresModal renders pillarscores in array order, so this is what an
+// ISSO reads - it has to match the questionnaire's sequence rather than
+// whatever order the pillars happened to be inserted in (ztmf-misc#393).
 func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAggregate {
 	type key struct {
 		dataCallID    int32
@@ -903,7 +906,7 @@ WITH scored_pairs AS (
     SELECT DISTINCT fismasystemid, datacallid FROM scores
 ),
 expected AS (
-    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, f.functionid
+    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, p.ordr, f.functionid
     FROM scored_pairs sp
     INNER JOIN fismasystems fs ON fs.fismasystemid = sp.fismasystemid
     INNER JOIN datacalls dc    ON dc.datacallid    = sp.datacallid
@@ -930,13 +933,14 @@ pillar_scores AS (
         e.fismasystemid,
         e.pillarid,
         e.pillar,
+        e.ordr,
         AVG(COALESCE(a.score, 0) + 1.0)::float8 AS pillar_score
     FROM expected e
     LEFT JOIN answers a
       ON a.fismasystemid = e.fismasystemid
      AND a.datacallid    = e.datacallid
      AND a.functionid    = e.functionid
-    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar
+    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar, e.ordr
 )
 SELECT
     ps.datacallid,
@@ -946,7 +950,7 @@ SELECT
     ps.pillar_score AS score,
     AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
 FROM pillar_scores ps
-ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
+ORDER BY ps.datacallid, ps.fismasystemid, ps.ordr, ps.pillarid
 `, userJoin, strings.Join(conds, " AND "))
 
 	return sql, args

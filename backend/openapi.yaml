@@ -525,6 +525,13 @@ components:
         functionid:
           type: integer
         order:
+          description: |-
+            Ordr is a pointer for the same reason Question.Ordr is: a PUT that omits
+            "order" must leave the stored rank alone rather than clobber it to 0.
+            The clobber was harmless while every row was 0; the functions.ordr
+            backfill (ztmf-misc#393) populates this column, so it would now silently
+            destroy the function's position in the questionnaire, the export, and the
+            score diff.
           type: integer
         pillarid:
           description: Derived from the function's question on write; a value sent
