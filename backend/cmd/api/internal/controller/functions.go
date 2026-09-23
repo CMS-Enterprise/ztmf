@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -47,8 +46,7 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	}
-	var functionID int32
-	fmt.Sscan(ID, &functionID)
+	functionID := pathInt32(ID)
 
 	f, err := model.FindFunctionByID(r.Context(), functionID)
 
@@ -85,9 +83,11 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["functionid"]; ok {
-		fmt.Sscan(v, &f.FunctionID)
+	// Re-pinned from the route after decoding, never taken from the body; same
+	// reasoning as SaveQuestion (ztmf-misc#398).
+	f.FunctionID = 0
+	if v, ok := mux.Vars(r)["functionid"]; ok {
+		f.FunctionID = pathInt32(v)
 	}
 
 	f, err = f.Save(r.Context())

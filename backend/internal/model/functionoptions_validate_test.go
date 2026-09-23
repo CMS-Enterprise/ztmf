@@ -45,6 +45,12 @@ func TestFunctionOptionValidate(t *testing.T) {
 		assert.NoError(t, fo.validate())
 	})
 
+	t.Run("accepts a description exactly at the column limit", func(t *testing.T) {
+		fo := valid()
+		fo.Description = strings.Repeat("a", maxOptionDescriptionLen)
+		assert.NoError(t, fo.validate())
+	})
+
 	cases := []struct {
 		name   string
 		mutate func(*FunctionOption)
@@ -58,6 +64,9 @@ func TestFunctionOptionValidate(t *testing.T) {
 			fo.OptionName = strings.Repeat("a", maxOptionNameLen+1)
 		}, "optionname"},
 		{"missing functionid", func(fo *FunctionOption) { fo.FunctionID = 0 }, "functionid"},
+		{"description past the column limit", func(fo *FunctionOption) {
+			fo.Description = strings.Repeat("a", maxOptionDescriptionLen+1)
+		}, "description"},
 	}
 
 	for _, c := range cases {

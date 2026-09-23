@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -22,8 +21,7 @@ func ListFunctionOptions(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	if v, ok := vars["functionid"]; ok {
-		var functionID int32
-		fmt.Sscan(v, &functionID)
+		functionID := pathInt32(v)
 		input.FunctionID = &functionID
 	}
 
@@ -74,11 +72,9 @@ func SaveFunctionOption(w http.ResponseWriter, r *http.Request) {
 	// named. The route decides create vs update; the body only carries content.
 	pathOptionID, isUpdate := vars["functionoptionid"]
 	fo.FunctionOptionID = 0
-	if isUpdate {
-		fmt.Sscan(pathOptionID, &fo.FunctionOptionID)
-	}
 
 	if isUpdate {
+		fo.FunctionOptionID = pathInt32(pathOptionID)
 		// PUT carries no functionid in the path, so the stored row is the only
 		// trustworthy source for which function this option belongs to.
 		stored, err := model.FindFunctionOptionByID(r.Context(), fo.FunctionOptionID)
@@ -90,7 +86,7 @@ func SaveFunctionOption(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fo.FunctionID = 0
 		if v, ok := vars["functionid"]; ok {
-			fmt.Sscan(v, &fo.FunctionID)
+			fo.FunctionID = pathInt32(v)
 		}
 	}
 

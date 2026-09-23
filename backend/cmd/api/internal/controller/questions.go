@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -28,7 +27,7 @@ func ListFismaSystemQuestions(w http.ResponseWriter, r *http.Request) {
 	if v, ok := vars["fismasystemid"]; !ok {
 		respond(w, r, nil, ErrNotFound)
 	} else {
-		fmt.Sscan(v, &fismaSystemID)
+		fismaSystemID = pathInt32(v)
 	}
 
 	var questions []*model.Question
@@ -70,7 +69,7 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	} else {
-		fmt.Sscan(v, &questionID)
+		questionID = pathInt32(v)
 	}
 	question, err := model.FindQuestionByID(r.Context(), questionID)
 	respond(w, r, question, err)
@@ -110,9 +109,14 @@ func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["questionid"]; ok {
-		fmt.Sscan(v, &q.QuestionID)
+	// Re-pinned from the route after decoding, never taken from the body. getJSON
+	// decodes any field present on the struct, so without this a POST carrying
+	// "questionid" lands in the id and Save takes its UPDATE branch - silently
+	// rewriting that question, and answering 201 Created for it. The route
+	// decides create vs update; the body only carries content (ztmf-misc#398).
+	q.QuestionID = 0
+	if v, ok := mux.Vars(r)["questionid"]; ok {
+		q.QuestionID = pathInt32(v)
 	}
 
 	q, err = q.Save(r.Context())

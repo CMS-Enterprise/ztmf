@@ -85,3 +85,33 @@ func TestSanitizeErrDelegatesNotEnabledCarriesCode(t *testing.T) {
 	assert.Equal(t, auth.CodeDelegateNotEnabled, code)
 	assert.Equal(t, model.ErrDelegatesNotEnabled, out, "human-readable message is preserved alongside the code")
 }
+
+// pathInt32 replaced fmt.Sscan for path variables. Sscan's default verb honours
+// an octal prefix, and every mux pattern here is [0-9]+ - so "0012" routed
+// fine and then scanned as 10, silently addressing the wrong row on a PUT.
+// Anything unparseable must come back 0, which callers already read as "absent"
+// on create and as an id no row matches on update.
+func TestPathInt32(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int32
+	}{
+		{"1", 1},
+		{"7001", 7001},
+		{"0012", 12}, // octal prefix under fmt.Sscan: was 10
+		{"010", 10},  // was 8
+		{"0", 0},
+		{"2147483647", 2147483647},
+		{"2147483648", 0}, // past int32
+		{"99999999999999999999", 0},
+		{"", 0},
+		{"abc", 0},
+		{"-5", -5}, // unreachable through [0-9]+, but never a silent other-row id
+	}
+
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			assert.Equal(t, c.want, pathInt32(c.in))
+		})
+	}
+}

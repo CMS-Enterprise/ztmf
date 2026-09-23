@@ -112,10 +112,16 @@ func (fo *FunctionOption) Save(ctx context.Context) (*FunctionOption, error) {
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FunctionOption])
 }
 
-// maxOptionNameLen mirrors functionoptions.optionname's varchar(30). Checked
-// here so an over-long name is a field-named 400 rather than a Postgres
-// string-truncation error surfacing as a 500.
-const maxOptionNameLen = 30
+// maxOptionNameLen and maxOptionDescriptionLen mirror functionoptions'
+// varchar(30) and varchar(1024). Checked here so an over-long value is a
+// field-named 400 rather than a Postgres string-truncation error (22001, which
+// trapError does not map) surfacing as a 500. Both are new reachable inputs -
+// the table had no write path before ztmf-misc#398 - so neither inherits the
+// unchecked-length gap the other catalog varchars still carry.
+const (
+	maxOptionNameLen        = 30
+	maxOptionDescriptionLen = 1024
+)
 
 func (fo *FunctionOption) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
@@ -140,7 +146,10 @@ func (fo *FunctionOption) validate() error {
 	}
 
 	// description is nullable in the schema, so unlike Function.Description it
-	// is not required.
+	// is not required - only bounded.
+	if utf8.RuneCountInString(fo.Description) > maxOptionDescriptionLen {
+		err.data["description"] = fo.Description
+	}
 
 	if len(err.data) > 0 {
 		return &err

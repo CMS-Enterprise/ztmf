@@ -1538,6 +1538,42 @@ tests:
           data:
             <<: *updatedFunctionData
 
+  # A POST carrying functionid must still create. The id comes from the route,
+  # never the body: without that re-pin Save reads the body id, takes its UPDATE
+  # branch, and rewrites that function while answering 201 Created.
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionid: 7001
+        function: "Body Id Override Function"
+        description: "must create, not update the function named in the body"
+        datacenterenvironment: "AWS"
+        order: 98
+        questionid: 8001
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded function 7001 is untouched - only the create above happened. A
+  # literal id, not a {{...}} reference: Emberfall substitutes templates in URLs
+  # only, never inside a body.
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            functionid: 7001
+            function: "Imperial Device Management"
+            datacenterenvironment: "Imperial-Fleet"
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET
@@ -1643,6 +1679,22 @@ tests:
         score: 3
         optionname: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         description: "31 characters"
+    expect:
+      status: 400
+
+  # description is varchar(1024). optionname was bounded from the start; this
+  # column is the other newly reachable string on a table that had no write path
+  # at all, and 22001 is not mapped by trapError - unbounded it is a 500.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 3
+        optionname: "Over-long description"
+        description: "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     expect:
       status: 400
 
@@ -2610,6 +2662,40 @@ tests:
         json:
           data:
             <<: *updatedQuestionData
+
+  # A POST carrying questionid must still create, for the same reason the
+  # functionoptions create does: getJSON decodes any field on the struct, so an
+  # un-re-pinned body id sends Save down its UPDATE branch and silently rewrites
+  # that question - under a 201 Created.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionid: 8001
+        question: "Body Id Override Question"
+        notesprompt: "must create, not update the question named in the body"
+        order: 98
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded question 8001 still carries its seeded text. A literal id, not a
+  # {{...}} reference: Emberfall substitutes templates in URLs only, never
+  # inside a body.
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionid: 8001
+            question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
 
   - url: http://localhost:8080/api/v1/questions
     method: GET

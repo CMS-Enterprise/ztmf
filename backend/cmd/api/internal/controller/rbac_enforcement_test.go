@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
@@ -121,9 +122,12 @@ func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
 // editing a question changes what every other OpDiv answers. They pass
 // IsAdmin(), which is what these gates used to read (ztmf-misc#398).
 //
-// The bodies are deliberately well-formed. A malformed one would 400 anyway
-// once it reached validate(), so it could not tell a working gate from a
-// missing one - the point is that a valid write is still refused.
+// The bodies in this table are deliberately well-formed: the point is that a
+// genuinely valid write is refused, not merely that a broken one fails. Note
+// the consequence - if a gate ever regresses, these cases reach the DB and
+// write for real against whatever DB_* env is set. They fail loudly when that
+// happens, which is the tradeoff; TestCatalogWrites_GatePrecedesDecode covers
+// the same six routes with an unparseable body and so can never write at all.
 
 // catalogWriteCases covers every content route in one table so a new one cannot
 // be added with a weaker gate unnoticed. PUT cases carry their path var because
@@ -210,9 +214,19 @@ func TestCatalogWrites_HHSWideOnly(t *testing.T) {
 	}
 }
 
-// OWNER and HHS_ADMIN must still pass the gate. Without a DB they fail
-// downstream, so the assertion is only that the failure is not a 403 - the same
-// shape TestSetOpDivSystemDelegateEnabled_HHSWideOnly uses.
+// OWNER and HHS_ADMIN must still pass the gate.
+//
+// The body here is deliberately UNPARSEABLE, the inverse of the forbidden
+// table's. A well-formed one would pass the gate and go on to write: these
+// handlers reach the DB through whatever DB_* env happens to be set, and the
+// repo's own pre-push hook sources dev.compose.env before running
+// `go test -short ./...`. That combination inserted junk questions and
+// functions into the local seed and clobbered functionoptions row 1 - while the
+// test still passed, because "not 403" is true of a successful write too.
+//
+// Malformed JSON fails at getJSON, which sits after the gate and before any DB
+// access, so 400 means the gate passed and nothing was written. It is also a
+// stronger assertion than "not 403": only one status satisfies it.
 func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
 	allowed := []*model.User{
 		{Role: "OWNER"},
@@ -222,7 +236,7 @@ func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
 	for _, c := range catalogWriteCases {
 		for _, u := range allowed {
 			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
-				r := httptest.NewRequest(c.method, c.target, jsonBody(t, c.body))
+				r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
 				if c.vars != nil {
 					r = mux.SetURLVars(r, c.vars)
 				}
@@ -230,8 +244,28 @@ func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
 				r.Header.Set("Content-Type", "application/json")
 				w := httptest.NewRecorder()
 				c.handler(w, r)
-				assert.NotEqual(t, http.StatusForbidden, w.Code)
+				assert.Equal(t, http.StatusBadRequest, w.Code)
 			})
 		}
+	}
+}
+
+// The gate must run before getJSON, which is what lets the test above assume a
+// malformed body never reaches the DB. Pinned from the other side: a forbidden
+// role sending that same unparseable body must still get 403, not the 400 a
+// decode-first handler would return.
+func TestCatalogWrites_GatePrecedesDecode(t *testing.T) {
+	for _, c := range catalogWriteCases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
+			if c.vars != nil {
+				r = mux.SetURLVars(r, c.vars)
+			}
+			r = withUser(r, opdivAdmin)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			c.handler(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+		})
 	}
 }

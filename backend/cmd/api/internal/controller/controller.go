@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
@@ -90,6 +91,20 @@ func getJSON(r io.Reader, dest any) error {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	return d.Decode(dest)
+}
+
+// pathInt32 parses a decimal path variable. strconv rather than fmt.Sscan,
+// whose default verb honours an octal prefix: the mux patterns are [0-9]+, so a
+// zero-padded id like "0012" is routed and then scanned as 10 - silently the
+// wrong row. Returns 0 on any failure (non-numeric, or past int32), which every
+// caller already treats as "absent" on create and as an id no row matches on
+// update, so a bad id is a 400 or 404 rather than a write somewhere else.
+func pathInt32(s string) int32 {
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return 0
+	}
+	return int32(v)
 }
 
 func parseRFC3339(dateStr string) (time.Time, error) {
