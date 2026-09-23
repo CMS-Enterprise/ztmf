@@ -3535,8 +3535,9 @@ tests:
   # Networks, Applications, Data, CrossCutting - the order production renders.
   # They previously read pillarid order, which was not a contract but the
   # fallback the questionid tiebreaker produced while every ordr was 0
-  # (ztmf-misc#393). The aggregate below is unaffected either way: it orders by
-  # ps.pillarid, not pillars.ordr.
+  # (ztmf-misc#393). The aggregate arrays move with them: it used to order by
+  # ps.pillarid and now orders by the same pillars.ordr the questionnaire does,
+  # so the two can no longer disagree about pillar sequence.
   # ==========================================================================
 
   # Without a data call the environment's full catalog returns - the pre-#545
@@ -3630,10 +3631,10 @@ tests:
             - fismasystemid: 2016
               datacallid: 104
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Networks"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"
 
   - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=103&include_pillars=true"
     method: GET
@@ -3649,9 +3650,9 @@ tests:
             - fismasystemid: 2016
               datacallid: 103
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Devices"
-                - pillar: "Applications"
                 - pillar: "Networks"
+                - pillar: "Applications"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"
