@@ -3529,12 +3529,14 @@ tests:
   # scoring the excluded pillars from the anchor cycle onward.
   #
   # Row order note: migrations run before the populate seed, so the ordr
-  # backfills match none of the fixture's fictional function names; it ranks
-  # its own rows instead, deliberately by pillarid rather than the CISA sequence
-  # the real catalog uses. That reproduces the order these arrays were written
-  # against - Devices, Applications, Networks, Data, CrossCutting, Identity -
-  # so they hold unchanged now that the ordering is served from the database
-  # (ztmf-misc#393). If they ever need editing, the seed's ranks are wrong.
+  # backfills match none of the fixture's fictional function names and
+  # _test_data_empire.sql ranks its own rows, mirroring the CISA sequence 0056
+  # gave the real catalog. These arrays therefore read Identity, Devices,
+  # Networks, Applications, Data, CrossCutting - the order production renders.
+  # They previously read pillarid order, which was not a contract but the
+  # fallback the questionid tiebreaker produced while every ordr was 0
+  # (ztmf-misc#393). The aggregate below is unaffected either way: it orders by
+  # ps.pillarid, not pillars.ordr.
   # ==========================================================================
 
   # Without a data call the environment's full catalog returns - the pre-#545
@@ -3552,17 +3554,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # The anchor cycle serves the reduced set: Devices and Applications drop,
   # order otherwise unchanged.
@@ -3578,13 +3580,13 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Networks"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # A cycle deadlined before the anchor keeps the full catalog.
   - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=103
@@ -3599,17 +3601,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # Scoring: on the anchor cycle the aggregate carries exactly the four
   # in-scope pillar scores, even though the seed leaves carried-forward
