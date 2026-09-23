@@ -239,6 +239,13 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-model_FunctionOption:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.FunctionOption'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_OpDiv:
       properties:
         data:
@@ -539,6 +546,12 @@ components:
         description:
           type: string
         functionid:
+          description: |-
+            Taken from the path on create and from the stored row on update; a value
+            sent by a client is ignored, so an option cannot be moved between
+            functions by a body field. The tag publishes that as readOnly in the
+            OpenAPI spec; the re-pin in SaveFunctionOption is what enforces it.
+          readOnly: true
           type: integer
         functionoptionid:
           type: integer
@@ -2077,6 +2090,68 @@ paths:
       summary: Set a system's target maturity tier and justification
       tags:
       - fismasystems
+  /functionoptions/{functionoptionid}:
+    put:
+      parameters:
+      - description: Function ID (create)
+        in: path
+        name: functionid
+        schema:
+          type: integer
+      - description: Function Option ID (update)
+        in: path
+        name: functionoptionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.FunctionOption'
+                description: Option to create or update
+                summary: body
+        description: Option to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FunctionOption'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update an answer option
+      tags:
+      - functions
   /functions:
     get:
       responses:
@@ -2251,6 +2326,67 @@ paths:
       security:
       - bearerAuth: []
       summary: List options for a function
+      tags:
+      - functions
+    post:
+      parameters:
+      - description: Function ID (create)
+        in: path
+        name: functionid
+        schema:
+          type: integer
+      - description: Function Option ID (update)
+        in: path
+        name: functionoptionid
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/model.FunctionOption'
+                description: Option to create or update
+                summary: body
+        description: Option to create or update
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_FunctionOption'
+          description: Created
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Create or update an answer option
       tags:
       - functions
   /insights:

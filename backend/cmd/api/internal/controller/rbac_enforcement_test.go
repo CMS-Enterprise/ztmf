@@ -114,3 +114,124 @@ func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
 	ConfirmScore(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
+
+// --- Questionnaire catalog writes: HHS-wide, so OPDIV_ADMIN is out ---
+//
+// The catalog is a single set every OpDiv is scored against, so an OPDIV_ADMIN
+// editing a question changes what every other OpDiv answers. They pass
+// IsAdmin(), which is what these gates used to read (ztmf-misc#398).
+//
+// The bodies are deliberately well-formed. A malformed one would 400 anyway
+// once it reached validate(), so it could not tell a working gate from a
+// missing one - the point is that a valid write is still refused.
+
+// catalogWriteCases covers every content route in one table so a new one cannot
+// be added with a weaker gate unnoticed. PUT cases carry their path var because
+// the handlers read it, though the gate returns before that matters.
+var catalogWriteCases = []struct {
+	name    string
+	handler func(http.ResponseWriter, *http.Request)
+	method  string
+	target  string
+	vars    map[string]string
+	body    map[string]any
+}{
+	{
+		name:    "SaveQuestion create",
+		handler: SaveQuestion,
+		method:  "POST",
+		target:  "/api/v1/questions",
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveQuestion update",
+		handler: SaveQuestion,
+		method:  "PUT",
+		target:  "/api/v1/questions/1",
+		vars:    map[string]string{"questionid": "1"},
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveFunction create",
+		handler: SaveFunction,
+		method:  "POST",
+		target:  "/api/v1/functions",
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunction update",
+		handler: SaveFunction,
+		method:  "PUT",
+		target:  "/api/v1/functions/1",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunctionOption create",
+		handler: SaveFunctionOption,
+		method:  "POST",
+		target:  "/api/v1/functions/1/options",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+	{
+		name:    "SaveFunctionOption update",
+		handler: SaveFunctionOption,
+		method:  "PUT",
+		target:  "/api/v1/functionoptions/1",
+		vars:    map[string]string{"functionoptionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+}
+
+func TestCatalogWrites_HHSWideOnly(t *testing.T) {
+	forbidden := []*model.User{
+		opdivAdmin,
+		opdivReadonly,
+		{Role: "HHS_READONLY_ADMIN"},
+		{Role: "ISSO"},
+		{Role: "SYSTEM_DELEGATE"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range forbidden {
+			t.Run(c.name+" forbidden for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, jsonBody(t, c.body))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusForbidden, w.Code)
+			})
+		}
+	}
+}
+
+// OWNER and HHS_ADMIN must still pass the gate. Without a DB they fail
+// downstream, so the assertion is only that the failure is not a 403 - the same
+// shape TestSetOpDivSystemDelegateEnabled_HHSWideOnly uses.
+func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
+	allowed := []*model.User{
+		{Role: "OWNER"},
+		{Role: "HHS_ADMIN"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range allowed {
+			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, jsonBody(t, c.body))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.NotEqual(t, http.StatusForbidden, w.Code)
+			})
+		}
+	}
+}

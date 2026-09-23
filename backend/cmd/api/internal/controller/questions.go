@@ -92,7 +92,11 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 //	@Router		/questions/{questionid} [put]
 func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// The questionnaire catalog is a single HHS-wide set, so an OPDIV_ADMIN must
+	// not reach it even though IsAdmin() includes them - editing a question here
+	// changes what every other OpDiv is scored on (ztmf-misc#398). Gate runs
+	// before getJSON and before any DB access, which rbac_enforcement_test pins.
+	if !user.CanWriteHHSWide() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}

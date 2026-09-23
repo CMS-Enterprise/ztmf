@@ -70,7 +70,8 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 //	@Router		/functions/{functionid} [put]
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// HHS-wide catalog, same reasoning as SaveQuestion (ztmf-misc#398).
+	if !user.CanWriteHHSWide() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
