@@ -9,6 +9,9 @@ name: Orchestration PR
 # no secrets: a dynamically named environment cannot see environment-scoped
 # secrets, so the OIDC role ARN comes from the repo-level PR_ENV_ROLEARN.
 #
+# Dependabot PRs are skipped: their runs see only Dependabot secrets, which do
+# not include PR_ENV_ROLEARN, so build and teardown would fail on credentials.
+#
 # Close or merge destroys the root, its state object, its images, and the
 # environment. Merge also publishes the test target as main-<sha> in
 # ztmf/api-pr and records it in ztmf_api_test_tag, the API image a ztmf-ui PR
@@ -49,7 +52,10 @@ env:
 jobs:
   build:
     name: Build PR API image
-    if: github.event.action != 'closed' && github.event.pull_request.draft == false
+    if: >-
+      github.event.action != 'closed'
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -207,11 +213,16 @@ jobs:
 
   teardown:
     name: Tear down PR environment
-    if: github.event.action == 'closed'
+    if: >-
+      github.event.action == 'closed'
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+      # Reading an environment is an Actions-scoped call; without this the
+      # existence check 403s and the step exits as if nothing were deployed.
+      actions: read
       pull-requests: write
       deployments: write
     steps:
@@ -310,7 +321,10 @@ jobs:
   # here rather than in orchestration-prod because it is PR-environment plumbing.
   publish-main:
     name: Publish main test image
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    if: >-
+      github.event.action == 'closed'
+      && github.event.pull_request.merged == true
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
