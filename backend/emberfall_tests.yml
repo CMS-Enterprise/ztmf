@@ -1538,6 +1538,65 @@ tests:
           data:
             <<: *updatedFunctionData
 
+  # A POST carrying functionid must still create. The id comes from the route,
+  # never the body: without that re-pin Save reads the body id, takes its UPDATE
+  # branch, and rewrites that function while answering 201 Created.
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionid: 7001
+        function: "Body Id Override Function"
+        description: "must create, not update the function named in the body"
+        datacenterenvironment: "AWS"
+        order: 98
+        questionid: 8001
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded function 7001 is untouched - only the create above happened. A
+  # literal id, not a {{...}} reference: Emberfall substitutes templates in URLs
+  # only, never inside a body.
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            functionid: 7001
+            function: "Imperial Device Management"
+            datacenterenvironment: "Imperial-Fleet"
+
+  # Same unusable-path-id rule on functions (see the questions pair below).
+  - url: http://localhost:8080/api/v1/functions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET
@@ -1547,6 +1606,193 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # functionoptions gained a write path in ztmf-misc#398; before it the 1-4
+  # scoring scale every answer points at could only be changed by hand in SQL.
+  # functionid comes from the path on create - the body deliberately names a
+  # different function to prove it is ignored, which is what stops a write
+  # retargeting an option to a function the caller never named.
+  - id: createFunctionOption
+    url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionid: 7001
+        score: 2
+        optionname: "Initial"
+        description: "Some progress"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            score: 2
+            optionname: "Initial"
+
+  # A POST carrying functionoptionid must still create. Both ids come from the
+  # route, never the body: without that re-pin this reroutes into an update of
+  # option 1 - on whatever function owns it - and the path is ignored entirely.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionoptionid: 1
+        functionid: 7001
+        score: 1
+        optionname: "Traditional"
+        description: "must create, not update option 1"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            score: 1
+            optionname: "Traditional"
+
+  # Function 7001 still holds exactly its four seeded options, in score order -
+  # the write above created on the path function and touched nothing here.
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            - functionoptionid: 1
+              score: 1
+            - functionoptionid: 2
+              score: 2
+            - functionoptionid: 3
+              score: 3
+            - functionoptionid: 4
+              score: 4
+
+  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400, not a
+  # CHECK violation - there is no CHECK on this column.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 5
+        optionname: "Beyond"
+        description: "off the scale"
+    expect:
+      status: 400
+
+  # optionname is varchar(30); without the length check Postgres raises a
+  # truncation error instead of a 400 naming the field.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 3
+        optionname: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        description: "31 characters"
+    expect:
+      status: 400
+
+  # description is varchar(1024). optionname was bounded from the start; this
+  # column is the other newly reachable string on a table that had no write path
+  # at all, and 22001 is not mapped by trapError - unbounded it is a 500.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 3
+        optionname: "Over-long description"
+        description: "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    expect:
+      status: 400
+
+  - url: "http://localhost:8080/api/v1/functionoptions/{{.createFunctionOption.Response.data.functionoptionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 4
+        optionname: "Optimal"
+        description: "Fully realized"
+    expect:
+      status: 204
+
+  # PUT against an option that does not exist is a 404, from the stored-row
+  # lookup the update path needs to resolve the owning function.
+  - url: http://localhost:8080/api/v1/functionoptions/999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  # Unusable path ids on the option PUT: "0" and an over-int32 value both 404
+  # before any lookup, rather than reaching the create branch.
+  - url: http://localhost:8080/api/v1/functionoptions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functionoptions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  # The update keeps the option on its original function: PUT carries no
+  # functionid in the path, so the stored row is what decides. Two options now -
+  # the body-override create above and this updated one - in score order.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            - score: 1
+              optionname: "Traditional"
+            - score: 4
+              optionname: "Optimal"
 
   # Users Endpoints
   - id: createUser
@@ -2384,7 +2630,164 @@ tests:
         json:
           data:
             <<: *updatedQuestionData
-  
+
+  # Question.validate was a commented-out stub and Save called no validation at
+  # all (ztmf-misc#398), so an empty body inserted a row with empty text and
+  # pillarid 0 - which only failed downstream, on the FK, naming no field. All
+  # three columns are NOT NULL with no useful default, and Save's UPDATE sets
+  # each unconditionally, so a PUT omitting one would clobber it rather than
+  # leave it alone. order stays optional: it is a *int so a PUT that omits it
+  # preserves the stored rank.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json: {}
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: ""
+        notesprompt: "prompt without a question"
+        pillarid: 1
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "A question with no pillar"
+        notesprompt: "prompt"
+    expect:
+      status: 400
+
+  # Well-formed but naming a pillar that does not exist. Left to the FK rather
+  # than a pre-emptive lookup: pillars carries no finder, and 23503 already
+  # surfaces as a 400 through ErrNoReference.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "A question on a pillar that does not exist"
+        notesprompt: "prompt"
+        pillarid: 999999
+    expect:
+      status: 400
+
+  # A partial PUT is refused rather than silently clearing notesprompt.
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "Only the question text"
+        pillarid: 1
+    expect:
+      status: 400
+
+  # Nothing from the rejected writes applied.
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedQuestionData
+
+  # A POST carrying questionid must still create, for the same reason the
+  # functionoptions create does: getJSON decodes any field on the struct, so an
+  # un-re-pinned body id sends Save down its UPDATE branch and silently rewrites
+  # that question - under a 201 Created.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionid: 8001
+        question: "Body Id Override Question"
+        notesprompt: "must create, not update the question named in the body"
+        order: 98
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded question 8001 still carries its seeded text. A literal id, not a
+  # {{...}} reference: Emberfall substitutes templates in URLs only, never
+  # inside a body.
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionid: 8001
+            question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
+
+  # A PUT whose path id routes but cannot address a row is a 404, not a create.
+  # [0-9]+ matches both "0" and an over-int32 value; each used to parse to 0,
+  # read as "no id in the path", and insert a new question under the PUT's 204.
+  - url: http://localhost:8080/api/v1/questions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/questions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  # Whitespace-only text is NOT NULL and non-empty as far as the column is
+  # concerned, but renders blank in the questionnaire and the export.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "   "
+        notesprompt: "prompt"
+        pillarid: 1
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/questions
     method: GET
     headers:
@@ -3362,6 +3765,82 @@ tests:
       json:
         subject: "blocked"
         body: "blocked"
+    expect:
+      status: 403
+
+  # Questionnaire catalog writes are HHS-wide (ztmf-misc#398): the catalog is one
+  # set every OpDiv is scored against, so editing a question here changes what
+  # every other OpDiv answers. CanWriteHHSWide runs before getJSON and before any
+  # DB work, so an OPDIV_ADMIN (though IsAdmin) is 403 on all six routes. The
+  # bodies are well-formed on purpose - a malformed one would 400 at validate()
+  # anyway and could not tell a working gate from a missing one.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedQuestionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *functionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Blocked"
+        description: "must not be written"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functionoptions/1
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Blocked"
+        description: "must not be written"
     expect:
       status: 403
 
