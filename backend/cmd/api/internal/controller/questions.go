@@ -27,7 +27,9 @@ func ListFismaSystemQuestions(w http.ResponseWriter, r *http.Request) {
 	if v, ok := vars["fismasystemid"]; !ok {
 		respond(w, r, nil, ErrNotFound)
 	} else {
-		fismaSystemID = pathInt32(v)
+		// An unusable id matches no system, which the join already renders as an
+		// empty list - the established contract for this endpoint.
+		fismaSystemID, _ = pathInt32(v)
 	}
 
 	var questions []*model.Question
@@ -69,7 +71,12 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	} else {
-		questionID = pathInt32(v)
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		questionID = id
 	}
 	question, err := model.FindQuestionByID(r.Context(), questionID)
 	respond(w, r, question, err)
@@ -86,6 +93,7 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 //	@Success	204			"No Content"
 //	@Failure	400			{object}	apiResponse[any]
 //	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
 //	@Failure	500			{object}	apiResponse[any]
 //	@Router		/questions [post]
 //	@Router		/questions/{questionid} [put]
@@ -116,7 +124,14 @@ func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 	// decides create vs update; the body only carries content (ztmf-misc#398).
 	q.QuestionID = 0
 	if v, ok := mux.Vars(r)["questionid"]; ok {
-		q.QuestionID = pathInt32(v)
+		// A path id that is present but unusable (0, or past int32) is a 404,
+		// never a fallthrough to the create branch - the route said update.
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		q.QuestionID = id
 	}
 
 	q, err = q.Save(r.Context())

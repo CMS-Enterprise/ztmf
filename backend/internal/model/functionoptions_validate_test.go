@@ -60,6 +60,7 @@ func TestFunctionOptionValidate(t *testing.T) {
 		{"score above the scale", func(fo *FunctionOption) { fo.Score = 5 }, "score"},
 		{"negative score", func(fo *FunctionOption) { fo.Score = -1 }, "score"},
 		{"empty optionname", func(fo *FunctionOption) { fo.OptionName = "" }, "optionname"},
+		{"whitespace-only optionname", func(fo *FunctionOption) { fo.OptionName = "   " }, "optionname"},
 		{"optionname past the column limit", func(fo *FunctionOption) {
 			fo.OptionName = strings.Repeat("a", maxOptionNameLen+1)
 		}, "optionname"},

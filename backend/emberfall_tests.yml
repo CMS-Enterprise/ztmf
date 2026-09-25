@@ -1574,6 +1574,29 @@ tests:
             function: "Imperial Device Management"
             datacenterenvironment: "Imperial-Fleet"
 
+  # Same unusable-path-id rule on functions (see the questions pair below).
+  - url: http://localhost:8080/api/v1/functions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET
@@ -1714,6 +1737,34 @@ tests:
   # PUT against an option that does not exist is a 404, from the stored-row
   # lookup the update path needs to resolve the owning function.
   - url: http://localhost:8080/api/v1/functionoptions/999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  # Unusable path ids on the option PUT: "0" and an over-int32 value both 404
+  # before any lookup, rather than reaching the create branch.
+  - url: http://localhost:8080/api/v1/functionoptions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functionoptions/99999999999
     method: PUT
     headers:
       <<: *commonHeaders
@@ -2696,6 +2747,46 @@ tests:
           data:
             questionid: 8001
             question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
+
+  # A PUT whose path id routes but cannot address a row is a 404, not a create.
+  # [0-9]+ matches both "0" and an over-int32 value; each used to parse to 0,
+  # read as "no id in the path", and insert a new question under the PUT's 204.
+  - url: http://localhost:8080/api/v1/questions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/questions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  # Whitespace-only text is NOT NULL and non-empty as far as the column is
+  # concerned, but renders blank in the questionnaire and the export.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "   "
+        notesprompt: "prompt"
+        pillarid: 1
+    expect:
+      status: 400
 
   - url: http://localhost:8080/api/v1/questions
     method: GET

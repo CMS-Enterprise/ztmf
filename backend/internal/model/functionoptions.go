@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -139,8 +140,10 @@ func (fo *FunctionOption) validate() error {
 		err.data["score"] = fo.Score
 	}
 
-	if fo.OptionName == "" {
-		err.data["optionname"] = ""
+	// TrimSpace for emptiness, raw length for the bound: " " is a blank answer
+	// label, and it is the raw string that has to fit varchar(30).
+	if strings.TrimSpace(fo.OptionName) == "" {
+		err.data["optionname"] = fo.OptionName
 	} else if utf8.RuneCountInString(fo.OptionName) > maxOptionNameLen {
 		err.data["optionname"] = fo.OptionName
 	}

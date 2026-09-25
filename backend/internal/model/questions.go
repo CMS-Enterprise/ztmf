@@ -75,12 +75,16 @@ func (q *Question) Save(ctx context.Context) (*Question, error) {
 func (q *Question) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
 
-	if q.Question == "" {
-		err.data["question"] = ""
+	// TrimSpace, not == "": a question of " " is NOT NULL and non-empty as far
+	// as the column is concerned, but renders blank in the questionnaire and in
+	// the export. Rejected rather than trimmed - silently rewriting a caller's
+	// text is worse than refusing it.
+	if strings.TrimSpace(q.Question) == "" {
+		err.data["question"] = q.Question
 	}
 
-	if q.NotesPrompt == "" {
-		err.data["notesprompt"] = ""
+	if strings.TrimSpace(q.NotesPrompt) == "" {
+		err.data["notesprompt"] = q.NotesPrompt
 	}
 
 	// Not isValidIntID: that helper takes any but type-switches only int32 and

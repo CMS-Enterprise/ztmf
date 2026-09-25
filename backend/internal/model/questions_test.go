@@ -46,6 +46,8 @@ func TestQuestionValidate(t *testing.T) {
 	}{
 		{"empty question text", func(q *Question) { q.Question = "" }, "question"},
 		{"empty notesprompt", func(q *Question) { q.NotesPrompt = "" }, "notesprompt"},
+		{"whitespace-only question text", func(q *Question) { q.Question = "   " }, "question"},
+		{"whitespace-only notesprompt", func(q *Question) { q.NotesPrompt = "\t\n " }, "notesprompt"},
 		{"zero pillarid", func(q *Question) { q.PillarID = 0 }, "pillarid"},
 		{"negative pillarid", func(q *Question) { q.PillarID = -1 }, "pillarid"},
 	}

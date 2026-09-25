@@ -21,7 +21,8 @@ func ListFunctionOptions(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	if v, ok := vars["functionid"]; ok {
-		functionID := pathInt32(v)
+		// Unusable id matches no function; the list comes back empty, as before.
+		functionID, _ := pathInt32(v)
 		input.FunctionID = &functionID
 	}
 
@@ -74,7 +75,12 @@ func SaveFunctionOption(w http.ResponseWriter, r *http.Request) {
 	fo.FunctionOptionID = 0
 
 	if isUpdate {
-		fo.FunctionOptionID = pathInt32(pathOptionID)
+		id, valid := pathInt32(pathOptionID)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		fo.FunctionOptionID = id
 		// PUT carries no functionid in the path, so the stored row is the only
 		// trustworthy source for which function this option belongs to.
 		stored, err := model.FindFunctionOptionByID(r.Context(), fo.FunctionOptionID)
@@ -86,7 +92,8 @@ func SaveFunctionOption(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fo.FunctionID = 0
 		if v, ok := vars["functionid"]; ok {
-			fo.FunctionID = pathInt32(v)
+			// 0 here is left to validate(), which names the field in a 400.
+			fo.FunctionID, _ = pathInt32(v)
 		}
 	}
 

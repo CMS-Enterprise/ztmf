@@ -46,7 +46,11 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	}
-	functionID := pathInt32(ID)
+	functionID, valid := pathInt32(ID)
+	if !valid {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
 
 	f, err := model.FindFunctionByID(r.Context(), functionID)
 
@@ -63,6 +67,7 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 //	@Success	201			{object}	apiResponse[model.Function]
 //	@Failure	400			{object}	apiResponse[any]
 //	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
 //	@Failure	500			{object}	apiResponse[any]
 //	@Router		/functions [post]
 //	@Router		/functions/{functionid} [put]
@@ -87,7 +92,13 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	// reasoning as SaveQuestion (ztmf-misc#398).
 	f.FunctionID = 0
 	if v, ok := mux.Vars(r)["functionid"]; ok {
-		f.FunctionID = pathInt32(v)
+		// See SaveQuestion: an unusable path id must not fall through to create.
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		f.FunctionID = id
 	}
 
 	f, err = f.Save(r.Context())
