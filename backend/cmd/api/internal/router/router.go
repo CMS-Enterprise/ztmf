@@ -75,7 +75,14 @@ func Handler() http.Handler {
 	// TODO: deprecate this in favor of non-nested URIs
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListFismaSystemQuestions).Methods("GET")
 
+	// The options are the 1-4 scoring scale every answer points at. Create is
+	// nested so the owning function comes from the path; update is flat because
+	// an option's function is a fact about the stored row, not the request
+	// (ztmf-misc#398). No DELETE until the catalog is versioned - see
+	// FunctionOption.Save.
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.SaveFunctionOption).Methods("POST")
+	router.HandleFunc("/api/v1/functionoptions/{functionoptionid:[0-9]+}", controller.SaveFunctionOption).Methods("PUT")
 
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
 	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
