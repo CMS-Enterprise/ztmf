@@ -35,3 +35,9 @@ variable "pr_env_enabled" {
   type        = bool
   default     = false
 }
+
+variable "pr_env_max_environments" {
+  description = "Concurrent per-PR environment cap (ztmf-misc#344). The fleet alarm fires when more pr-env tasks than this run for 10 minutes. Recorded on the epic, ztmf-misc#321."
+  type        = number
+  default     = 10
+}
