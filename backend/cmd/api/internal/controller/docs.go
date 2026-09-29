@@ -10,4 +10,6 @@ package controller
 type apiResponse[T any] struct {
 	Data  T      `json:"data,omitempty"`
 	Error string `json:"error,omitempty"`
+	// Typed error code set by sanitizeErr; clients branch on it, not the status.
+	Code string `json:"code,omitempty"`
 }

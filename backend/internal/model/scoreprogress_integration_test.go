@@ -287,7 +287,7 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 // (the questionnaire UI PUTs on every Next click) must keep status =
 // 'not_started', so it never counts as updated this cycle. The sibling progress
 // test only proves not_started -> done on a genuine edit; this proves the no-op
-// guard (scoreUpdateIsNoOp) leaves status untouched, which is the exact path a
+// guard in Save leaves status untouched, which is the exact path a
 // broken guard would regress - silently flipping carried rows to done and
 // over-counting progress, the bug this whole change exists to kill.
 //

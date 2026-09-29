@@ -120,10 +120,11 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		score.FismaSystemID = stored.FismaSystemID
 		score.DataCallID = stored.DataCallID
 
-		// Hand Save the row we just read so its no-op comparison does not
-		// fetch it again. The questionnaire PUTs on every Next click, so this
-		// is the hottest write path in the app.
-		score, err = score.Save(r.Context(), model.WithCurrentScore(stored))
+		// The row read above authorizes the write; it is deliberately not
+		// handed to Save, which re-reads it FOR UPDATE so its no-op comparison
+		// runs against the values the UPDATE would overwrite rather than a
+		// snapshot taken before the lock.
+		score, err = score.Save(r.Context())
 		respond(w, r, score, err)
 		return
 	}

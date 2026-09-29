@@ -77,34 +77,17 @@ func (s *Score) AuditInfo() (*time.Time, *AuditRef) {
 	return s.LastEditedAt, s.LastEditedBy
 }
 
-// scoreSaveConfig carries request-shape context that is not part of the
-// persisted entity.
-type scoreSaveConfig struct {
-	current *Score
-}
-
-// ScoreSaveOption configures a Score.Save call.
-type ScoreSaveOption func(*scoreSaveConfig)
-
-// WithCurrentScore hands Save the stored row the caller has already loaded, so
-// the no-op comparison does not read it a second time. The update path
-// authorizes against the stored row, which means the controller loads it on
-// every PUT; the questionnaire PUTs on each Next click, so the duplicate read
-// would land on the hottest write path in the app.
-//
-// The row passed here MUST be the one Save is about to update, read through
-// FindScoreByID. Passing a stale or unrelated row would make the no-op
-// comparison lie about whether the answer changed.
-func WithCurrentScore(current *Score) ScoreSaveOption {
-	return func(c *scoreSaveConfig) { c.current = current }
-}
-
 // Save writes one answer for the current data call, as an interactive human
 // edit. It is the questionnaire's write path and it hardcodes that meaning:
 // every successful write sets status to scoreStatusDone, and the event it
-// records through queryRow carries action 'created' or 'updated' - the two
-// actions that migration 0048's backfill and the seed status-sync treat as
-// "a human answered this cycle".
+// records carries action 'created' or 'updated' - the two actions that
+// migration 0048's backfill and the seed status-sync treat as "a human answered
+// this cycle".
+//
+// The answer row and its audit event are written in one transaction (see
+// scoretx.go). Both must land or neither: the read-back below projects the
+// event this call just wrote, so an event that failed separately would leave
+// the response advertising an editor the next GET could not confirm.
 //
 // Importer contract (ztmf#445): a future bulk importer must NOT reuse Save as
 // it stands. Loading history through it would flip every imported row to done
@@ -112,9 +95,8 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 // status column exists to preserve - imported rows are supposed to stay
 // not_started and report no last-updated. An importer should either
 //
-//   - take an explicit status/provenance parameter added to Save (a
-//     ScoreSaveOption alongside WithCurrentScore is the natural shape), so the
-//     caller states the status to write and the action to record; or
+//   - take an explicit status/provenance parameter, so the caller states the
+//     status to write and the action to record; or
 //   - write through its own path that inserts the rows and records action
 //     'imported' (eventActionImported in events.go), mirroring the provenance
 //     the 0048 backfill and the seed data deliberately exclude.
@@ -122,116 +104,128 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 // Adding the parameter is the larger change of the two and was deliberately
 // left undone here rather than designed speculatively without an importer to
 // shape it.
-func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
-	var sqlb SqlBuilder
-
-	cfg := &scoreSaveConfig{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
+func (s *Score) Save(ctx context.Context) (*Score, error) {
 	if err := s.validate(ctx); err != nil {
 		return nil, err
 	}
 
-	// Audit-preserving no-op: on an UPDATE that does not actually change
-	// any answer field, skip the write entirely. The questionnaire UI
-	// PUTs on every Next click regardless of whether the user touched
-	// the answer, so without this guard a read-through user gets stamped
-	// as the new editor and the prior cycle's real editor is overwritten.
-	// The product rule is "save on real change, not on read-through" so
-	// we enforce it here as defense in depth even if the client adds its
-	// own dirty check.
-	//
-	// Treats nil notes and empty-string notes as the same value, since the
-	// FE may submit either for an unanswered notes box. Returns the
-	// current row through the same lookupScoreAudit path the normal write
-	// uses, so the caller cannot tell a no-op apart from a successful
-	// write -- only the events table (unchanged) reveals the truth.
-	//
-	// On a no-op match we carry the incoming.FunctionOption (if any)
-	// onto the returned current row so callers that requested
-	// ?include=functionoption still get a fully-shaped response, matching
-	// the populated-write path through queryRow + FindScores. The PUT
-	// controller writes 204 today but still encodes the body, so the
-	// response is observable to clients that parse 204 bodies.
-	if s.ScoreID != 0 {
-		if same, current, err := scoreUpdateIsNoOp(ctx, s, cfg.current); err != nil {
+	saved, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		// Audit-preserving no-op: on an UPDATE that does not actually change
+		// any answer field, skip the write entirely. The questionnaire UI
+		// PUTs on every Next click regardless of whether the user touched
+		// the answer, so without this guard a read-through user gets stamped
+		// as the new editor and the prior cycle's real editor is overwritten.
+		// The product rule is "save on real change, not on read-through" so
+		// we enforce it here as defense in depth even if the client adds its
+		// own dirty check.
+		//
+		// Compared against the FOR UPDATE row rather than one the controller
+		// preloaded, so "unchanged" is decided against the values this
+		// statement would overwrite and holds until commit. Returning here
+		// commits a transaction that only took the lock, which is what
+		// releases it.
+		//
+		// Treats nil notes and empty-string notes as the same value, since the
+		// FE may submit either for an unanswered notes box. Returns the
+		// current row through the same lookupScoreAudit path the normal write
+		// uses, so the caller cannot tell a no-op apart from a successful
+		// write -- only the events table (unchanged) reveals the truth.
+		//
+		// On a no-op match we carry the incoming.FunctionOption (if any)
+		// onto the returned current row so callers that requested
+		// ?include=functionoption still get a fully-shaped response, matching
+		// the populated-write path through FindScores. The PUT controller
+		// writes 204 today but still encodes the body, so the response is
+		// observable to clients that parse 204 bodies.
+		if s.ScoreID != 0 {
+			current, err := lockScore(ctx, tx, s.ScoreID)
+			if err != nil {
+				return nil, err
+			}
+			if scoresEqualForUpdate(current, s) {
+				if s.FunctionOption != nil {
+					current.FunctionOption = s.FunctionOption
+				}
+				return current, nil
+			}
+		}
+
+		// status is set to 'done' in the same INSERT/UPDATE statement as the
+		// answer (ztmf#435). Because it rides the same write, the state can never
+		// disagree with the row it describes. Reaching this point means a genuine
+		// create (scoreid == 0) or a change that cleared the no-op guard above,
+		// which is exactly what "updated this cycle" means. A read-through PUT
+		// short-circuits before here and never touches status, so a carried-over
+		// row stays not_started (ztmf#299 preserved).
+		var sqlb SqlBuilder
+		action := eventActionUpdated
+
+		if s.ScoreID == 0 {
+			action = eventActionCreated
+			sqlb = stmntBuilder.
+				Insert("public.scores").
+				Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
+				Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
+				Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+		} else {
+			// fismasystemid and datacallid are deliberately NOT in the SET list.
+			// Saving an answer must never move the row to another system or
+			// another cycle: those are the two columns that decide who may write
+			// the row and which deadline applies to it, so letting a request body
+			// rewrite them turns an answer edit into a reparenting primitive.
+			// The controller authorizes an update against the stored row and pins
+			// both values onto the receiver before calling Save.
+			setCols := squirrel.Eq{
+				"notes":            s.Notes,
+				"functionoptionid": s.FunctionOptionID,
+				"status":           scoreStatusDone,
+			}
+			if s.NotesIsAISummary != nil {
+				setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
+			}
+			// Bind the write to the row the caller was authorized against, not to
+			// the id alone. The controller loads the row and pins these two fields
+			// onto the receiver before calling Save; matching on them here means a
+			// future caller that forgets to pin cannot write a row it did not
+			// authorize - it updates zero rows and fails as ErrNoData rather than
+			// succeeding against someone else's answer.
+			sqlb = stmntBuilder.
+				Update("public.scores").
+				SetMap(setCols).
+				Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
+				Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+		}
+
+		saved, err := writeScore(ctx, tx, sqlb)
+		if err != nil {
 			return nil, err
-		} else if same {
-			if s.FunctionOption != nil {
-				current.FunctionOption = s.FunctionOption
-			}
-			if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
-				current.LastEditedAt = at
-				current.LastEditedBy = by
-			}
-			return current, nil
 		}
-	}
 
-	// status is set to 'done' in the same INSERT/UPDATE statement as the
-	// answer (ztmf#435). Because it rides the same write, the state can never
-	// disagree with the row it describes - unlike the old events-derived
-	// progress, which depended on a fire-and-forget, non-transactional,
-	// context-gated event write landing separately. Reaching this point means
-	// a genuine create (scoreid == 0) or a change that cleared the no-op guard
-	// above, which is exactly what "updated this cycle" means. A read-through
-	// PUT short-circuits before here and never touches status, so a carried-over
-	// row stays not_started (ztmf#299 preserved).
-	if s.ScoreID == 0 {
-		sqlb = stmntBuilder.
-			Insert("public.scores").
-			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-	} else {
-		// fismasystemid and datacallid are deliberately NOT in the SET list.
-		// Saving an answer must never move the row to another system or
-		// another cycle: those are the two columns that decide who may write
-		// the row and which deadline applies to it, so letting a request body
-		// rewrite them turns an answer edit into a reparenting primitive.
-		// The controller authorizes an update against the stored row and pins
-		// both values onto the receiver before calling Save.
-		setCols := squirrel.Eq{
-			"notes":            s.Notes,
-			"functionoptionid": s.FunctionOptionID,
-			"status":           scoreStatusDone,
+		if err := insertScoreEvent(ctx, tx, action, saved); err != nil {
+			return nil, err
 		}
-		if s.NotesIsAISummary != nil {
-			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
-		}
-		// Bind the write to the row the caller was authorized against, not to
-		// the id alone. The controller loads the row and pins these two fields
-		// onto the receiver before calling Save; matching on them here means a
-		// future caller that forgets to pin cannot write a row it did not
-		// authorize - it updates zero rows and fails as ErrNoData rather than
-		// succeeding against someone else's answer.
-		sqlb = stmntBuilder.
-			Update("public.scores").
-			SetMap(setCols).
-			Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-	}
 
-	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+		return saved, nil
+	})
 	if err != nil {
-		return saved, err
+		return nil, err
 	}
 
 	// Stamp the just-performed edit onto the response so the POST/PUT body
 	// is consistent with what a subsequent GET will return. We read back
-	// the canonical row that recordEvent (fired from queryRow above) just
-	// wrote, rather than synthesizing from time.Now() + ctx user. Two
-	// reasons:
-	//   1) recordEvent currently logs-and-swallows errors. If the event
-	//      INSERT failed (FK, JSONB issue, transient), no event row
-	//      exists. Reading back means we leave audit fields nil instead
-	//      of advertising a phantom editor the next GET cannot confirm.
-	//   2) Postgres CURRENT_TIMESTAMP is the authoritative source. Using
-	//      time.Now().UTC() invites sub-second clock skew between the
-	//      stamped response and the canonical events.createdat that
-	//      subsequent reads project. Same source = no drift.
+	// the canonical event row the transaction above committed, rather than
+	// synthesizing from time.Now() + ctx user, because Postgres
+	// CURRENT_TIMESTAMP is the authoritative source: using time.Now().UTC()
+	// invites sub-second clock skew between the stamped response and the
+	// events.createdat that subsequent reads project. Same source = no drift.
+	//
+	// The read is outside the transaction and therefore sees the committed
+	// event. On a no-op it resolves the PRIOR editor's event rather than
+	// nothing, which is exactly the guard's purpose: a read-through caller
+	// cannot tell a skipped write from a real one, and the earlier editor keeps
+	// the attribution (TestScoreSaveNoOpPreservesPriorEditorIntegration). It
+	// resolves nothing only for a row that has never been edited, or a context
+	// with no user - which is why the both-or-neither guard stays.
 	if saved != nil {
 		// Both-or-neither: only stamp when the lateral lookup resolved
 		// both the event timestamp AND the editor identity. See the
@@ -251,8 +245,9 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 // "reviewed and agreed" needs its own explicit, attributable write.
 //
 // Deliberately narrow: sets ONLY status - notably not notes_is_ai_summary,
-// since agreeing with an AI-drafted justification is not authoring it. Runs
-// through queryRow so recordEvent stamps the confirming user as the editor.
+// since agreeing with an AI-drafted justification is not authoring it. Writes
+// its audit event in the same transaction as the status flip, so the confirming
+// user is recorded as the editor or the confirm does not happen at all.
 // Idempotent on an already-'done' row.
 //
 // The receiver must be a row loaded by FindScoreByID, not a client-supplied
@@ -278,16 +273,34 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		return s, nil
 	}
 
-	sqlb := stmntBuilder.
-		Update("public.scores").
-		Set("status", scoreStatusDone).
-		// Keep the no-op guard in the write predicate as well as above. Two
-		// requests can both load not_started before either reaches Confirm; only
-		// the first must be allowed to update and create an audit event.
-		Where("scoreid=? AND status <> ?", s.ScoreID, scoreStatusDone).
-		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+	// No lockScore here, unlike Save. The UPDATE below is conditional on
+	// status <> 'done', which takes its own row lock and evaluates the
+	// predicate atomically, so a separate FOR UPDATE would add a round trip
+	// and guard nothing; a concurrent Save holding the lock blocks this
+	// statement regardless. Note ztmf-misc#391 changes this: allocating
+	// revision_no as MAX+1 needs the lock held across the read, so Confirm
+	// takes it too once score_revisions lands.
+	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		sqlb := stmntBuilder.
+			Update("public.scores").
+			Set("status", scoreStatusDone).
+			// Keep the no-op guard in the write predicate as well as above. Two
+			// requests can both load not_started before either reaches Confirm; only
+			// the first must be allowed to update and create an audit event.
+			Where("scoreid=? AND status <> ?", s.ScoreID, scoreStatusDone).
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 
-	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+		updated, err := writeScore(ctx, tx, sqlb)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := insertScoreEvent(ctx, tx, eventActionUpdated, updated); err != nil {
+			return nil, err
+		}
+
+		return updated, nil
+	})
 	if err != nil {
 		// A conditional UPDATE that lost the race to another confirmer returns
 		// no row. Reload to distinguish that successful idempotent outcome from
@@ -320,56 +333,10 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	return confirmed, nil
 }
 
-// scoreUpdateIsNoOp reports whether the incoming Score's answer fields
-// match the existing row exactly. Used by Save to short-circuit the
-// "Next click without editing" path so the prior editor is not
-// overwritten by a read-through. Returns the existing row alongside the
-// boolean so callers can return it as the response without a second
-// round trip.
-//
-// notes is compared as a string with nil normalized to "" -- the FE may
-// submit either for an unanswered notes box and we treat them as the
-// same value. Whitespace-only notes intentionally do NOT normalize to
-// empty; the FE trims before submitting today, so reaching this layer
-// with " " means a caller is sending whitespace deliberately and the
-// stored value should reflect that. See TestScoresEqualForUpdate's
-// WhitespaceNotesNotEqualEmpty case for the pinned contract.
-// fismasystemid and datacallid are included in the comparison because
-// a PUT that moves a score across systems or cycles is a real change
-// even if notes and option are unchanged.
-//
-// Concurrency: this SELECT precedes the (skipped) UPDATE outside any
-// transaction, so a concurrent writer could land a real change in the
-// gap. The window is small and the practical consequence is "the next
-// GET corrects the audit fields" -- there is no data loss, only a
-// brief response that lags the latest write. Wrapping Save in a
-// transaction would close the window but rework every model that
-// relies on queryRow's auto-event hook, which is out of scope for the
-// audit-fields branch.
-//
-// Returns ErrNotData when the row is missing so the caller can fail
-// cleanly without paying a second round trip through the UPDATE that
-// would also fail.
-// A non-nil preloaded row is used as-is instead of re-reading: the update path
-// authorizes against the stored row, so the controller has already fetched it.
-func scoreUpdateIsNoOp(ctx context.Context, incoming, preloaded *Score) (bool, *Score, error) {
-	current := preloaded
-	if current == nil {
-		var err error
-		current, err = FindScoreByID(ctx, incoming.ScoreID)
-		if err != nil {
-			return false, nil, err
-		}
-	}
-
-	return scoresEqualForUpdate(current, incoming), current, nil
-}
-
 // FindScoreByID reads one score row by id, on the read-only path (a plain
 // conn.QueryRow, never queryRow, so no event is recorded for a lookup).
 //
-// Shared by scoreUpdateIsNoOp, which needs the current answer fields to compare
-// against, and by ConfirmScore, which needs the row's real fismasystemid so the
+// Used by the score controller, which needs the row's real fismasystemid so the
 // controller can authorize against it rather than against a client-asserted one.
 //
 // Returns ErrNoData when the row is missing so callers can fail cleanly without
@@ -401,10 +368,18 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	return current, nil
 }
 
-// scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
+// scoresEqualForUpdate is the pure comparison behind Save's no-op guard,
 // extracted so unit tests can pin the equality rules without spinning up
 // a database. Returns true when the incoming Score would produce no
 // observable change to the answer fields on the current row.
+//
+// notes is compared as a string with nil normalized to "" -- the FE may submit
+// either for an unanswered notes box and we treat them as the same value.
+// Whitespace-only notes intentionally do NOT normalize to empty; the FE trims
+// before submitting today, so reaching this layer with " " means a caller is
+// sending whitespace deliberately and the stored value should reflect that. See
+// TestScoresEqualForUpdate's WhitespaceNotesNotEqualEmpty case for the pinned
+// contract.
 func scoresEqualForUpdate(current, incoming *Score) bool {
 	if current == nil || incoming == nil {
 		return false
