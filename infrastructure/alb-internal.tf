@@ -41,12 +41,6 @@ resource "aws_lb" "ztmf_api" {
     enabled = true
   }
 
-  # Per-connection TLS telemetry (tls_protocol, tls_cipher, tls_keyexchange,
-  # tls_handshake_latency) for the post-quantum work in ztmf#572; access logs
-  # carry none of the handshake fields. These describe the client side of the
-  # listener only, which here is always CloudFront. Same literal-name
-  # reasoning as above. The bucket policy in s3.tf grants the
-  # rest-api-alb-conn/* prefix and a lifecycle rule there expires it.
   connection_logs {
     bucket  = "ztmf-logs-${local.account_id}-use1"
     prefix  = "rest-api-alb-conn"

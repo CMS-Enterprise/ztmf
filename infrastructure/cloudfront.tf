@@ -303,21 +303,6 @@ resource "aws_cloudfront_distribution" "ztmf" {
   }
 }
 
-// CloudFront standard logging (v2) for the post-quantum TLS work (ztmf#572):
-// ssl-protocol and ssl-cipher per request are how we measure the TLS 1.2
-// share before retiring it at the edge. v2 goes through CloudWatch vended
-// logs rather than the distribution's legacy logging_config, which would need
-// ACLs enabled on the log bucket.
-//
-// Fields are listed explicitly rather than taking the default set, which
-// includes cs(Cookie) and cs-uri-query; the app's session cookie must never
-// land in a log. c-ip and cs(User-Agent) stay because they are how we find
-// whichever clients still arrive over TLS 1.2.
-//
-// Delivery sources and destinations are account-scoped names, and dev and
-// impl share an account, so both carry name_suffix. Objects land under
-// cloudfront/<env>/ in the shared log bucket; s3.tf grants the vended-logs
-// principal that prefix and expires it after 90 days.
 resource "aws_cloudwatch_log_delivery_source" "cloudfront" {
   name         = "ztmf-cloudfront${local.name_suffix}"
   log_type     = "ACCESS_LOGS"
@@ -325,8 +310,7 @@ resource "aws_cloudwatch_log_delivery_source" "cloudfront" {
 }
 
 resource "aws_cloudwatch_log_delivery_destination" "cloudfront_s3" {
-  name = "ztmf-cloudfront-s3${local.name_suffix}"
-  // Output format is fixed at creation; changing it replaces the destination.
+  name          = "ztmf-cloudfront-s3${local.name_suffix}"
   output_format = "json"
 
   delivery_destination_configuration {

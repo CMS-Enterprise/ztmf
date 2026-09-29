@@ -79,11 +79,6 @@ resource "aws_s3_bucket_policy" "ztmf_logs_access" {
   policy = data.aws_iam_policy_document.ztmf_logs_access.json
 }
 
-# The TLS telemetry prefixes (ztmf#572) are working data for the post-quantum
-# rollout, not audit records, so they expire. rest-api-alb/ (access logs) is
-# deliberately not covered; its retention is a separate decision. This
-# resource owns the bucket's whole lifecycle configuration, so any rule added
-# outside Terraform would be replaced on apply.
 resource "aws_s3_bucket_lifecycle_configuration" "ztmf_logs" {
   count  = local.manage_account_singletons ? 1 : 0
   bucket = aws_s3_bucket.ztmf_logs[0].id
@@ -134,13 +129,6 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
     ]
   }
 
-  # CloudFront standard logging (v2) delivers through CloudWatch vended logs,
-  # whose service principal writes the objects. Scoped to this account's
-  # delivery sources, which covers both dev's and impl's distributions since
-  # they share the account and this bucket. Statement shape is the one AWS
-  # documents; AWS would add it itself on first delivery, but Terraform owns
-  # this policy and would strip it on the next apply.
-  # https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AWS-logs-and-resource-policy.html#AWS-logs-infrastructure-V2-S3
   statement {
     sid = "AWSLogsDeliveryWrite"
 
