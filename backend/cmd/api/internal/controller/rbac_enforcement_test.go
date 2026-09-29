@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
@@ -113,4 +114,158 @@ func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	ConfirmScore(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// --- Questionnaire catalog writes: HHS-wide, so OPDIV_ADMIN is out ---
+//
+// The catalog is a single set every OpDiv is scored against, so an OPDIV_ADMIN
+// editing a question changes what every other OpDiv answers. They pass
+// IsAdmin(), which is what these gates used to read (ztmf-misc#398).
+//
+// The bodies in this table are deliberately well-formed: the point is that a
+// genuinely valid write is refused, not merely that a broken one fails. Note
+// the consequence - if a gate ever regresses, these cases reach the DB and
+// write for real against whatever DB_* env is set. They fail loudly when that
+// happens, which is the tradeoff; TestCatalogWrites_GatePrecedesDecode covers
+// the same six routes with an unparseable body and so can never write at all.
+
+// catalogWriteCases covers every content route in one table so a new one cannot
+// be added with a weaker gate unnoticed. PUT cases carry their path var because
+// the handlers read it, though the gate returns before that matters.
+var catalogWriteCases = []struct {
+	name    string
+	handler func(http.ResponseWriter, *http.Request)
+	method  string
+	target  string
+	vars    map[string]string
+	body    map[string]any
+}{
+	{
+		name:    "SaveQuestion create",
+		handler: SaveQuestion,
+		method:  "POST",
+		target:  "/api/v1/questions",
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveQuestion update",
+		handler: SaveQuestion,
+		method:  "PUT",
+		target:  "/api/v1/questions/1",
+		vars:    map[string]string{"questionid": "1"},
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveFunction create",
+		handler: SaveFunction,
+		method:  "POST",
+		target:  "/api/v1/functions",
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunction update",
+		handler: SaveFunction,
+		method:  "PUT",
+		target:  "/api/v1/functions/1",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunctionOption create",
+		handler: SaveFunctionOption,
+		method:  "POST",
+		target:  "/api/v1/functions/1/options",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+	{
+		name:    "SaveFunctionOption update",
+		handler: SaveFunctionOption,
+		method:  "PUT",
+		target:  "/api/v1/functionoptions/1",
+		vars:    map[string]string{"functionoptionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+}
+
+func TestCatalogWrites_HHSWideOnly(t *testing.T) {
+	forbidden := []*model.User{
+		opdivAdmin,
+		opdivReadonly,
+		{Role: "HHS_READONLY_ADMIN"},
+		{Role: "ISSO"},
+		{Role: "SYSTEM_DELEGATE"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range forbidden {
+			t.Run(c.name+" forbidden for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, jsonBody(t, c.body))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusForbidden, w.Code)
+			})
+		}
+	}
+}
+
+// OWNER and HHS_ADMIN must still pass the gate.
+//
+// The body here is deliberately UNPARSEABLE, the inverse of the forbidden
+// table's. A well-formed one would pass the gate and go on to write: these
+// handlers reach the DB through whatever DB_* env happens to be set, and the
+// repo's own pre-push hook sources dev.compose.env before running
+// `go test -short ./...`. That combination inserted junk questions and
+// functions into the local seed and clobbered functionoptions row 1 - while the
+// test still passed, because "not 403" is true of a successful write too.
+//
+// Malformed JSON fails at getJSON, which sits after the gate and before any DB
+// access, so 400 means the gate passed and nothing was written. It is also a
+// stronger assertion than "not 403": only one status satisfies it.
+func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
+	allowed := []*model.User{
+		{Role: "OWNER"},
+		{Role: "HHS_ADMIN"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range allowed {
+			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusBadRequest, w.Code)
+			})
+		}
+	}
+}
+
+// The gate must run before getJSON, which is what lets the test above assume a
+// malformed body never reaches the DB. Pinned from the other side: a forbidden
+// role sending that same unparseable body must still get 403, not the 400 a
+// decode-first handler would return.
+func TestCatalogWrites_GatePrecedesDecode(t *testing.T) {
+	for _, c := range catalogWriteCases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
+			if c.vars != nil {
+				r = mux.SetURLVars(r, c.vars)
+			}
+			r = withUser(r, opdivAdmin)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			c.handler(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+		})
+	}
 }
