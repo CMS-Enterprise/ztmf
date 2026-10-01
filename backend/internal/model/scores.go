@@ -898,9 +898,11 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 // The input slice is assumed to be ordered by (datacallid, fismasystemid,
 // pillars.ordr, pillarid), which is the canonical ordering emitted by the
 // underlying SQL in findPillarScoresAll. The output preserves that order, and
-// PillarScoresModal renders pillarscores in array order, so this is what an
-// ISSO reads - it has to match the questionnaire's sequence rather than
-// whatever order the pillars happened to be inserted in (ztmf-misc#393).
+// ztmf-ui's buildRadarData plots pillarscores in array order without sorting,
+// so this is what an ISSO reads on the trend radar - it has to match the
+// questionnaire's sequence rather than whatever order the pillars happened to
+// be inserted in (ztmf-misc#393). The other consumers (PillarGrid,
+// SystemDetailReadView) re-sort client-side and are indifferent.
 func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAggregate {
 	type key struct {
 		dataCallID    int32
