@@ -79,6 +79,37 @@ resource "aws_s3_bucket_policy" "ztmf_logs_access" {
   policy = data.aws_iam_policy_document.ztmf_logs_access.json
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "ztmf_logs" {
+  count  = local.manage_account_singletons ? 1 : 0
+  bucket = aws_s3_bucket.ztmf_logs[0].id
+
+  rule {
+    id     = "expire-cloudfront-standard-logs"
+    status = "Enabled"
+
+    filter {
+      prefix = "cloudfront/"
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+
+  rule {
+    id     = "expire-alb-connection-logs"
+    status = "Enabled"
+
+    filter {
+      prefix = "rest-api-alb-conn/"
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+}
+
 data "aws_iam_policy_document" "ztmf_logs_access" {
   statement {
     principals {
@@ -93,8 +124,44 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
     ]
 
     resources = [
-      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb/*"
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb/*",
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb-conn/AWSLogs/${local.account_id}/*",
     ]
+  }
+
+  statement {
+    sid = "AWSLogDeliveryWrite"
+
+    principals {
+      type        = "Service"
+      identifiers = ["delivery.logs.amazonaws.com"]
+    }
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/cloudfront/*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:logs:us-east-1:${local.account_id}:delivery-source:*"]
+    }
   }
 
   statement {
