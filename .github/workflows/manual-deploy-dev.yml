@@ -1,8 +1,8 @@
 name: Manual Deploy to DEV
 
 # Deploy main to DEV on demand.
-#   - orchestration-dev (open/sync a PR): preview a feature branch on DEV.
-#   - this workflow: (re)deploy main to DEV, e.g. to reset DEV after branch deploys.
+#   - orchestration-prod (merge to main): deploys DEV, then PROD.
+#   - this workflow: (re)deploy main to DEV, e.g. to reset DEV.
 # The rollout IS the terraform apply (backend.yml only builds/pushes the image;
 # ecs.tf reads the tag from the ztmf_api_tag SSM param), so infrastructure always runs.
 # Caveat: re-running on an unchanged main SHA fails the immutable ECR tag push —
@@ -32,7 +32,7 @@ jobs:
     secrets: inherit
 
   infrastructure:
-    # Shares the dev apply queue with orchestration-dev.
+    # Shares the dev apply queue with orchestration-prod.
     concurrency:
       group: deploy-dev
       queue: max
