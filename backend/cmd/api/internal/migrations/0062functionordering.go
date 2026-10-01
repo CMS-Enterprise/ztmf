@@ -42,6 +42,20 @@ WHERE q.questionid = f.questionid
   AND coalesce(q.ordr, 0) <> 0
   AND coalesce(f.ordr, 0) = 0;
 		`,
-		`UPDATE functions SET ordr = 0;
+		`
+-- Reverts only what the up migration set, so a rank someone chose deliberately
+-- survives a rollback the same way it survives the up. A blanket reset would
+-- also break up/down/up: the cleared rank reads as 0 on the way back up and
+-- gets overwritten with the question's, losing the deliberate value for good.
+-- Rows the up skipped keep their NULL, since NULL = q.ordr is never true.
+--
+-- A rank deliberately set to the question's own is indistinguishable from one
+-- this migration wrote, and reverts. Restoring NULL on a row the up did rank
+-- is not possible either - that distinction is gone once it is overwritten.
+UPDATE functions f
+SET ordr = 0
+FROM questions q
+WHERE q.questionid = f.questionid
+  AND f.ordr = q.ordr;
 		`)
 }

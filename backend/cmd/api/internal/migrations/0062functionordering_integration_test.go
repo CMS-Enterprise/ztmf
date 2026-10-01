@@ -104,7 +104,17 @@ func TestFunctionOrderingMigrationIntegration(t *testing.T) {
 	require.NoError(t, err, "migration down SQL must apply cleanly")
 
 	assert.Equal(t, []int{0, 0}, functionOrdrs(ctx, t, tx, canonical), "down must clear the ranks it set")
-	assert.Equal(t, []int{0}, functionOrdrs(ctx, t, tx, preranked), "down clears every function rank")
+	assert.Equal(t, []int{42}, functionOrdrs(ctx, t, tx, preranked),
+		"down must leave a deliberate rank alone, the same way up does")
+
+	// up/down/up round-trips: the deliberate rank is still 42 rather than
+	// having been cleared on the way down and overwritten on the way back up.
+	_, err = tx.Exec(ctx, up)
+	require.NoError(t, err, "migration up SQL must re-apply cleanly after down")
+	assert.Equal(t, []int{104, 104}, functionOrdrs(ctx, t, tx, canonical),
+		"re-applying up restores the ranks down cleared")
+	assert.Equal(t, []int{42}, functionOrdrs(ctx, t, tx, preranked),
+		"a deliberate rank survives up/down/up")
 }
 
 // functionOrdrs returns the ranks of a question's functions, ordered so the
