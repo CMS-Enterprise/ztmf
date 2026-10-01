@@ -9,7 +9,20 @@ import (
 )
 
 var (
-	functionOptionColumns = []string{"functionoptions.functionoptionid", "functionid", "score", "optionname", "description"}
+	// Fully qualified because FindScores selects this list across a join to
+	// scores, which has carried its own functionid since migration 0060
+	// (ztmf#491) - a bare name there is 42702, not a 500 anyone can read.
+	functionOptionColumns = []string{
+		"functionoptions.functionoptionid",
+		"functionoptions.functionid",
+		"functionoptions.score",
+		"functionoptions.optionname",
+		"functionoptions.description",
+	}
+
+	// INSERT column lists and RETURNING reject a table-qualified name, so writes
+	// use these. Same columns, same order.
+	functionOptionWriteColumns = []string{"functionoptionid", "functionid", "score", "optionname", "description"}
 )
 
 type FunctionOption struct {
@@ -89,15 +102,12 @@ func (fo *FunctionOption) Save(ctx context.Context) (*FunctionOption, error) {
 		return nil, err
 	}
 
-	// functionOptionColumns[0] is table-qualified, unlike the other catalog
-	// column slices, so RETURNING is built from an unqualified list. Columns
-	// [1:] is unaffected either way.
-	returning := "functionoptionid, functionid, score, optionname, description"
+	returning := strings.Join(functionOptionWriteColumns, ", ")
 
 	if fo.FunctionOptionID == 0 {
 		sqlb = stmntBuilder.
 			Insert("functionoptions").
-			Columns(functionOptionColumns[1:]...).
+			Columns(functionOptionWriteColumns[1:]...).
 			Values(fo.FunctionID, fo.Score, fo.OptionName, fo.Description).
 			Suffix("RETURNING " + returning)
 	} else {
