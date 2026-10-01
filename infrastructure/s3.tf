@@ -125,12 +125,12 @@ data "aws_iam_policy_document" "ztmf_logs_access" {
 
     resources = [
       "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb/*",
-      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb-conn/*",
+      "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/rest-api-alb-conn/AWSLogs/${local.account_id}/*",
     ]
   }
 
   statement {
-    sid = "AWSLogsDeliveryWrite"
+    sid = "AWSLogDeliveryWrite"
 
     principals {
       type        = "Service"

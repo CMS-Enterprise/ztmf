@@ -28,6 +28,8 @@ resource "aws_lb" "ztmf_api" {
   subnets                    = data.aws_subnets.private.ids
   enable_deletion_protection = true
 
+  depends_on = [aws_s3_bucket_policy.ztmf_logs_access]
+
   # Per-request access logs record actions_executed + error_reason for failed
   # authenticate-oidc, the one signal missing when an Entra/Okta login breaks.
   # Bucket name is referenced literally (not aws_s3_bucket.ztmf_logs[0].id)

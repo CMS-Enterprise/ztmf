@@ -328,6 +328,7 @@ resource "aws_cloudwatch_log_delivery" "cloudfront_s3" {
     "x-edge-location",
     "c-ip",
     "c-country",
+    "asn",
     "cs-method",
     "cs(Host)",
     "cs-uri-stem",
