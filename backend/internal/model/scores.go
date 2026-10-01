@@ -123,8 +123,6 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 // left undone here rather than designed speculatively without an importer to
 // shape it.
 func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
-	var sqlb SqlBuilder
-
 	cfg := &scoreSaveConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -132,6 +130,52 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 
 	if err := s.validate(ctx); err != nil {
 		return nil, err
+	}
+
+	return s.save(ctx, cfg, true)
+}
+
+// save is Save's body, split out so a lost natural-key race can be retried
+// once. retryOnConflict is false on the retry, so a loop is impossible.
+func (s *Score) save(ctx context.Context, cfg *scoreSaveConfig, retryOnConflict bool) (*Score, error) {
+	var sqlb SqlBuilder
+
+	// An answer is identified by (system, data call, question), never by
+	// scoreid, and migration 0061 enforces that (ztmf#491). Create and update
+	// resolve that key differently, and deliberately so.
+	if s.ScoreID == 0 {
+		// CREATE: the caller names no row, so the natural key names it for them.
+		// This is the ztmf#491 fix - a caller that does not know the existing
+		// scoreid (a bulk write that did not read current state, a client that
+		// lost the id) used to insert a second answer, and would now take a 400.
+		targetID, err := findScoreIDByNaturalKey(ctx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+		if err != nil {
+			return nil, err
+		}
+		if targetID != 0 {
+			s.ScoreID = targetID
+		}
+	} else if cfg.current == nil || cfg.current.FunctionOptionID != s.FunctionOptionID {
+		// UPDATE: the question is part of the row's identity, so an option
+		// belonging to a DIFFERENT question is a malformed request rather than
+		// an instruction to go write somewhere else.
+		//
+		// Rejecting is what keeps this honest. Writing the natural-key row
+		// instead would silently modify a row the caller never named and leave
+		// the named one untouched, so a buggy client would appear to succeed.
+		// Letting it through is worse still: on main it rewrites this row's
+		// question, which both duplicates the target question and discards this
+		// row's own answer - the ztmf#491 defect, manufactured on the spot.
+		//
+		// Skipped on the hot path: an unchanged option is necessarily the same
+		// question, so the questionnaire's Next-click PUT pays nothing.
+		same, err := scoreAnswersSameQuestion(ctx, s.ScoreID, s.FunctionOptionID)
+		if err != nil {
+			return nil, err
+		}
+		if !same {
+			return nil, errOptionAnswersDifferentQuestion()
+		}
 	}
 
 	// Audit-preserving no-op: on an UPDATE that does not actually change
@@ -179,7 +223,8 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 	// above, which is exactly what "updated this cycle" means. A read-through
 	// PUT short-circuits before here and never touches status, so a carried-over
 	// row stays not_started (ztmf#299 preserved).
-	if s.ScoreID == 0 {
+	inserting := s.ScoreID == 0
+	if inserting {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
 			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
@@ -216,6 +261,27 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 
 	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
 	if err != nil {
+		// Two writers raced between the natural-key lookup and this INSERT; the
+		// loser gets 23505 and the row it wanted now exists, so re-resolve and
+		// land as the update it always was. Same reasoning as Confirm's
+		// ErrNoData reload below: a conditional write that lost a race is a
+		// successful outcome, not a client error.
+		//
+		// Gated on the key actually resolving now, rather than on the error
+		// alone. trapError collapses every 23505 into ErrNotUnique and discards
+		// the PgError, so the constraint name is not recoverable here - and a
+		// future second unique index on scores would otherwise be retried as if
+		// it were this one. Re-resolving says what we mean: retry only when the
+		// answer we were inserting is already there.
+		if inserting && retryOnConflict && errors.Is(err, ErrNotUnique) {
+			targetID, lookupErr := findScoreIDByNaturalKey(ctx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if targetID != 0 {
+				return s.save(ctx, &scoreSaveConfig{}, false)
+			}
+		}
 		return saved, err
 	}
 
@@ -399,6 +465,89 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	}
 
 	return current, nil
+}
+
+// findScoreIDByNaturalKey resolves the scoreid holding this system's answer to
+// the question the given functionoption belongs to, in the given data call.
+// Returns 0 when there is none.
+//
+// On the read-only path (a plain conn.QueryRow, never queryRow) for the same
+// reason FindScoreByID is: a lookup is not a mutation and must not record an
+// event.
+//
+// An unknown functionoptionid makes the subquery NULL, matches nothing, and
+// returns 0; the caller then attempts the INSERT and gets the usual 400.
+func findScoreIDByNaturalKey(ctx context.Context, fismaSystemID, dataCallID, functionOptionID int32) (int32, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return 0, trapError(err)
+	}
+	defer conn.Release()
+
+	var scoreID int32
+	err = conn.QueryRow(ctx, `
+		SELECT s.scoreid
+		FROM scores s
+		WHERE s.fismasystemid = $1
+		  AND s.datacallid    = $2
+		  AND s.functionid    = (SELECT fo.functionid FROM functionoptions fo
+		                          WHERE fo.functionoptionid = $3)
+	`, fismaSystemID, dataCallID, functionOptionID).Scan(&scoreID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, nil
+		}
+		return 0, trapError(err)
+	}
+
+	return scoreID, nil
+}
+
+// scoreAnswersSameQuestion reports whether the stored score already answers the
+// question the given functionoption belongs to - i.e. whether an update carrying
+// that option is editing this answer rather than trying to repoint the row at a
+// different question.
+//
+// An unknown functionoptionid makes the comparison NULL and is reported as a
+// match, deliberately: rejecting it here would turn the existing 400
+// ErrNoReference (raised by the trigger as 23503 when the write lands) into a
+// less accurate "wrong question" error. Let the write proceed and fail on the
+// real reason.
+//
+// Read path, so no event is recorded for a lookup.
+func scoreAnswersSameQuestion(ctx context.Context, scoreID, functionOptionID int32) (bool, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, trapError(err)
+	}
+	defer conn.Release()
+
+	var same bool
+	err = conn.QueryRow(ctx, `
+		SELECT COALESCE(
+		         s.functionid = (SELECT fo.functionid FROM functionoptions fo
+		                          WHERE fo.functionoptionid = $2),
+		         TRUE)
+		FROM scores s
+		WHERE s.scoreid = $1
+	`, scoreID, functionOptionID).Scan(&same)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, ErrNoData
+		}
+		return false, trapError(err)
+	}
+
+	return same, nil
+}
+
+// errOptionAnswersDifferentQuestion is the 400 for an update whose option
+// belongs to another question. Same InvalidInputError shape every other field
+// validation uses, keyed on the offending field.
+func errOptionAnswersDifferentQuestion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different question than this score; save an answer for that question instead of changing this one",
+	}}
 }
 
 // scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
@@ -919,6 +1068,11 @@ expected AS (
     %s
     WHERE %s
 ),
+-- Deliberately NOT de-duplicated: migration 0061 guarantees one row per
+-- (fismasystemid, datacallid, functionid), so the LEFT JOIN below cannot fan
+-- out and the AVG cannot double-weight a question. A DISTINCT ON here would
+-- mask a lost index by producing plausible numbers instead of a visibly wrong
+-- average (ztmf#491).
 answers AS (
     SELECT s.fismasystemid, s.datacallid, fo.functionid, fo.score
     FROM scores s
@@ -1024,11 +1178,15 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// trap where Postgres resolves the placeholder to text and the column
 	// comparison fails at runtime.
 	//
-	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question:
-	// scores has no uniqueness constraint on (fismasystemid, datacallid,
-	// functionid), so a source cycle may hold duplicates (ztmf#491, live in prod)
-	// and would otherwise copy both. The ORDER BY must lead with the same two
-	// expressions for DISTINCT ON to be legal; the rest picks the winner.
+	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question.
+	// Migration 0061 now makes a duplicated source cycle unreachable through
+	// ordinary writes, but this stays: without it a single stale duplicate - a
+	// restore from a pre-cleanup backup, a bulk load run with the index dropped -
+	// aborts this whole INSERT...SELECT with 23505 and the entire annual rollover
+	// emits nothing. That is the ztmf#411 all-or-nothing foot-gun the INNER JOINs
+	// above defuse, reopened on a different error class. The ORDER BY must lead
+	// with the same two expressions for DISTINCT ON to be legal; the rest picks
+	// the winner.
 	//
 	// status outranks scoreid, and the order matters. scoreid is creation order,
 	// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so
