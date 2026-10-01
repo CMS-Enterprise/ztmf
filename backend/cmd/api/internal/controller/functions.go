@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -47,8 +46,11 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	}
-	var functionID int32
-	fmt.Sscan(ID, &functionID)
+	functionID, valid := pathInt32(ID)
+	if !valid {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
 
 	f, err := model.FindFunctionByID(r.Context(), functionID)
 
@@ -65,12 +67,14 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 //	@Success	201			{object}	apiResponse[model.Function]
 //	@Failure	400			{object}	apiResponse[any]
 //	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
 //	@Failure	500			{object}	apiResponse[any]
 //	@Router		/functions [post]
 //	@Router		/functions/{functionid} [put]
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// HHS-wide catalog, same reasoning as SaveQuestion (ztmf-misc#398).
+	if !user.CanWriteHHSWide() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -84,9 +88,17 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["functionid"]; ok {
-		fmt.Sscan(v, &f.FunctionID)
+	// Re-pinned from the route after decoding, never taken from the body; same
+	// reasoning as SaveQuestion (ztmf-misc#398).
+	f.FunctionID = 0
+	if v, ok := mux.Vars(r)["functionid"]; ok {
+		// See SaveQuestion: an unusable path id must not fall through to create.
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		f.FunctionID = id
 	}
 
 	f, err = f.Save(r.Context())
