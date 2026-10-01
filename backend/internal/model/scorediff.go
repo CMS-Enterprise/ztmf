@@ -121,14 +121,14 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	// FY24 single spaces -- is not reported as a change. Only the comparison is
 	// normalized; the stored notes are returned verbatim (see #409).
 	//
-	// Rows come back in questionnaire order. functions.ordr, the previous sort
-	// key, is 0 on every row in production, so the diff was effectively ordered
-	// by functionid - deterministic, but not the order a reviewer reads the
-	// questionnaire in. pillars is the only join this needed (questions was
-	// already here for the label), so ordering by pillars.ordr then
-	// questions.ordr - the ranks migration 0056 populates - costs one LEFT JOIN
-	// and matches FindAnswers and FindQuestionsByFismaSystem. functionid stays
-	// last as the tiebreaker for rows the migration could not rank.
+	// Rows come back in questionnaire order: pillars.ordr then questions.ordr -
+	// the ranks migration 0056 populates - then functions.ordr, backfilled from
+	// questions.ordr by ztmf-misc#393. Before those backfills every ordr was
+	// 0 and the diff was effectively ordered by functionid, deterministic but
+	// not the order a reviewer reads the questionnaire in. pillars is the only
+	// join this needed (questions was already here for the label), and the sort
+	// now matches FindAnswers and FindQuestionsByFismaSystem. functionid stays
+	// last as the tiebreaker for rows the backfills could not rank.
 	sql := fmt.Sprintf(`
 WITH from_scores AS (%s),
      to_scores AS (%s)
