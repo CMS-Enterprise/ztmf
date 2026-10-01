@@ -2144,6 +2144,30 @@ tests:
                 email: "Test.User@nowhere.xyz"
                 role: "OWNER"
 
+  # ?include=functionoption is the questionnaire's own read and the only place
+  # functionOptionColumns is selected across a join to scores. It was untested,
+  # and migration 0060's scores.functionid made the unqualified name in that list
+  # ambiguous (42702) - a 500 on every questionnaire in prod (ztmf#491 fallout).
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=5&include=functionoption"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+              functionoptionid: 1
+              datacallid: 5
+              functionoption:
+                functionoptionid: 1
+                functionid: 7001
+                score: 1
+                optionname: "Traditional"
+
   # Malformed query params on GET list endpoints are the caller's fault and must
   # return 400, not 500 (#420). The gorilla/schema decode fails before scope or
   # any DB call, so the sanitizeErr mapping is what these pin. A non-numeric int
