@@ -26,7 +26,7 @@ import (
 // The curated CISA ranks are still not asserted here. The empire seed loads
 // after migrations run, so the ordr backfills match none of its fictional
 // function names; it carries its own ranks instead (see _test_data_empire.sql),
-// which are deliberately its pillarid sequence rather than the CISA one. Those
+// which follow the CISA sequence and deliberately disagree with its pillarids. Those
 // migrations' own SQL is covered directly in the migrations package, on
 // canonically-named fixture rows.
 
