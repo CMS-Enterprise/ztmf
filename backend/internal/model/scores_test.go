@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -491,4 +492,24 @@ func TestDerefString(t *testing.T) {
 		assert.Equal(t, "", derefString(&v),
 			"pointer to empty string is distinct from nil and must round-trip")
 	})
+}
+
+func TestBuildPillarScoresSQL_ScoresPairsScopedToDataCall(t *testing.T) {
+	// ztmf#607: when a data call is named, scored_pairs must not scan every
+	// scores row — DISTINCT over the whole table is what made the dashboard
+	// re-read the entire history on each request.
+	id := int32(36)
+	sql, _ := buildPillarScoresSQL(FindScoresInput{DataCallID: &id})
+	if !strings.Contains(sql, "FROM scores WHERE datacallid = $1") {
+		t.Fatalf("scored_pairs not scoped to the data call:\n%s", sql[:500])
+	}
+
+	sqlAll, _ := buildPillarScoresSQL(FindScoresInput{})
+	if !strings.Contains(sqlAll, "SELECT DISTINCT fismasystemid, datacallid FROM scores\n") &&
+		!strings.Contains(sqlAll, "SELECT DISTINCT fismasystemid, datacallid FROM scores") {
+		t.Fatalf("unscoped scored_pairs missing:\n%s", sqlAll[:400])
+	}
+	if strings.Contains(sqlAll, "FROM scores WHERE datacallid") {
+		t.Fatal("unscoped query unexpectedly filters datacallid in scored_pairs")
+	}
 }

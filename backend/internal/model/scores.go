@@ -1047,9 +1047,19 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// pillar does not silently shift the math. system_score is carried on
 	// every pillar row via a window function so callers that want only
 	// the system roll-up read it from any row without a second query.
+	// Scored pairs can be scoped to one data call when the caller names one.
+	// Unscoped DISTINCT over every scores row is what made the home dashboard
+	// re-read the whole table on every request (ztmf#607).
+	scoredPairs := "SELECT DISTINCT fismasystemid, datacallid FROM scores"
+	if input.DataCallID != nil {
+		// args currently holds the filters built above; DataCallID is the
+		// first bound parameter whenever it is present (dc.datacallid = $1).
+		scoredPairs = "SELECT DISTINCT fismasystemid, datacallid FROM scores WHERE datacallid = $1"
+	}
+
 	sql := fmt.Sprintf(`
 WITH scored_pairs AS (
-    SELECT DISTINCT fismasystemid, datacallid FROM scores
+    %s
 ),
 expected AS (
     SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, f.functionid
@@ -1101,7 +1111,7 @@ SELECT
     AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
 FROM pillar_scores ps
 ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
-`, userJoin, strings.Join(conds, " AND "))
+`, scoredPairs, userJoin, strings.Join(conds, " AND "))
 
 	return sql, args
 }
