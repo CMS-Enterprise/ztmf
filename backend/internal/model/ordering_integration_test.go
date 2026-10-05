@@ -67,13 +67,16 @@ func TestFindQuestionsByFismaSystemOrderingIntegration(t *testing.T) {
 
 	assertPillarsContiguous(t, len(first), func(i int) any { return first[i].Pillar.PillarID })
 
-	// Every pillar the questionnaire returns must carry a real rank. Without
+	// Every pillar and function returned must carry a real rank. Without
 	// this the sort below passes vacuously on an all-zero catalog, which is
 	// exactly the state ztmf-misc#393 exists to end.
 	for i, q := range first {
 		assert.NotZerof(t, q.Pillar.Order,
 			"row %d: pillar %q is unranked; the catalog's ordering is not in the database",
 			i, q.Pillar.Pillar)
+		assert.NotZerof(t, derefInt(q.Function.Ordr),
+			"row %d: function %q has no rank; functions.ordr is not reaching the payload",
+			i, q.Function.Function)
 	}
 
 	// The declared sort key must be non-decreasing across the result: whatever

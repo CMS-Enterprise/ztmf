@@ -15,12 +15,8 @@ type Function struct {
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	// Ordr is a pointer for the same reason Question.Ordr is: a PUT that omits
-	// "order" must leave the stored rank alone rather than clobber it to 0.
-	// The clobber was harmless while every row was 0; the functions.ordr
-	// backfill (ztmf-misc#393) populates this column, so it would now silently
-	// destroy the function's position in the questionnaire, the export, and the
-	// score diff.
+	// Rank among the functions of one question. Omitted or null keeps the
+	// stored value; a rank cannot be reset to null.
 	Ordr       *int   `json:"order"`
 	QuestionID *int32 `json:"questionid,omitempty"`
 	// Derived from the function's question on write; a value sent by a client is ignored.

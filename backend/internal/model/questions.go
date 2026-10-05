@@ -14,12 +14,8 @@ type Question struct {
 	QuestionID  int32     `json:"questionid"`
 	Question    string    `json:"question"`
 	NotesPrompt string    `json:"notesprompt"`
-	// Ordr is a pointer so a PUT that omits "order" leaves the stored rank
-	// alone instead of clobbering it to 0. Before migration 0056 populated
-	// these values the clobber was a harmless no-op; now it would silently
-	// destroy a question's canonical position in the questionnaire, the
-	// export, and the score diff (the CLAUDE.md optional-field rule - it
-	// applies to every optional column, not just bools).
+	// Rank within the question's pillar. Omitted or null keeps the stored
+	// value; a rank cannot be reset to null.
 	Ordr        *int      `json:"order"`
 	PillarID    int       `json:"pillarid"`
 	Pillar      *Pillar   `json:"pillar,omitempty"`

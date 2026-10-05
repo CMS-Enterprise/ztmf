@@ -533,12 +533,8 @@ components:
           type: integer
         order:
           description: |-
-            Ordr is a pointer for the same reason Question.Ordr is: a PUT that omits
-            "order" must leave the stored rank alone rather than clobber it to 0.
-            The clobber was harmless while every row was 0; the functions.ordr
-            backfill (ztmf-misc#393) populates this column, so it would now silently
-            destroy the function's position in the questionnaire, the export, and the
-            score diff.
+            Rank among the functions of one question. Omitted or null keeps the
+            stored value; a rank cannot be reset to null.
           type: integer
         pillarid:
           description: Derived from the function's question on write; a value sent
@@ -642,12 +638,8 @@ components:
           type: string
         order:
           description: |-
-            Ordr is a pointer so a PUT that omits "order" leaves the stored rank
-            alone instead of clobbering it to 0. Before migration 0056 populated
-            these values the clobber was a harmless no-op; now it would silently
-            destroy a question's canonical position in the questionnaire, the
-            export, and the score diff (the CLAUDE.md optional-field rule - it
-            applies to every optional column, not just bools).
+            Rank within the question's pillar. Omitted or null keeps the stored
+            value; a rank cannot be reset to null.
           type: integer
         pillar:
           $ref: '#/components/schemas/model.Pillar'
