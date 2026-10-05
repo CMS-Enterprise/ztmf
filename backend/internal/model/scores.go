@@ -222,13 +222,14 @@ func (s *Score) save(ctx context.Context, cfg *scoreSaveConfig, retryOnConflict 
 	// a genuine create (scoreid == 0) or a change that cleared the no-op guard
 	// above, which is exactly what "updated this cycle" means. A read-through
 	// PUT short-circuits before here and never touches status, so a carried-over
-	// row stays not_started (ztmf#299 preserved).
+	// row stays not_started (ztmf#299 preserved). last_updated_at rides the same
+	// write for the same reason; progress reads it instead of the events log.
 	inserting := s.ScoreID == 0
 	if inserting {
 		sqlb = stmntBuilder.
 			Insert("public.scores").
-			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
+			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status", "last_updated_at").
+			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone, squirrel.Expr("now()")).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 	} else {
 		// fismasystemid and datacallid are deliberately NOT in the SET list.
@@ -242,6 +243,7 @@ func (s *Score) save(ctx context.Context, cfg *scoreSaveConfig, retryOnConflict 
 			"notes":            s.Notes,
 			"functionoptionid": s.FunctionOptionID,
 			"status":           scoreStatusDone,
+			"last_updated_at":  squirrel.Expr("now()"),
 		}
 		if s.NotesIsAISummary != nil {
 			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
@@ -347,6 +349,7 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	sqlb := stmntBuilder.
 		Update("public.scores").
 		Set("status", scoreStatusDone).
+		Set("last_updated_at", squirrel.Expr("now()")).
 		// Keep the no-op guard in the write predicate as well as above. Two
 		// requests can both load not_started before either reaches Confirm; only
 		// the first must be allowed to update and create an audit event.

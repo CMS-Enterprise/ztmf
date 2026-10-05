@@ -748,15 +748,10 @@ components:
           type: integer
         lastupdatedat:
           description: |-
-            LastUpdatedAt is the most recent edit event across the system's answers
-            in this data call; nil when nothing has been touched this cycle. Only
-            in-app edit actions count, the same ones the status backfill treats as a
-            genuine answer (0048): provenance attached by an out-of-band load records
-            who and when the data arrived, but an import is not someone answering
-            this cycle, so it must not surface as an update here when it does not
-            count as one in QuestionsUpdated. This is a legitimately observational
-            use of the events table (audit timeline), kept even though the counts no
-            longer read events.
+            LastUpdatedAt is the newest scores.last_updated_at across the system's
+            answers in this data call; nil when nothing has been touched this cycle.
+            Only in-app saves stamp it (the same writes that set status = 'done'), so
+            imported or carried-forward rows never surface as an update here.
           type: string
         questionsanswered:
           description: |-
