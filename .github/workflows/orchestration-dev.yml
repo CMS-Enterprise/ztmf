@@ -1,5 +1,8 @@
-name: Orchestration DEV
+name: PR checks
 
+# Tests every PR to main without deploying it. PR previews run in per-PR
+# environments (orchestration-pr.yml); DEV deploys only from merges to main,
+# ahead of PROD (orchestration-prod.yml). Context: ztmf-misc#345.
 on:
   pull_request:
     branches:
@@ -10,7 +13,7 @@ on:
       - synchronize
       - ready_for_review
 
-# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+# Serialize runs on the same ref.
 concurrency:
   group: orchestration-dev-${{ github.ref }}
   cancel-in-progress: false
@@ -100,24 +103,22 @@ jobs:
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV
+      deploy: false
     secrets: inherit
-     
-  infrastructure:
-    # One dev apply at a time across all PRs. queue: max keeps every waiter
-    # (default single evicts the pending one, leaving that PR with no DEV
-    # deployment and therefore unmergeable); never cancel an apply mid-flight.
-    concurrency:
-      group: deploy-dev
-      queue: max
-      cancel-in-progress: false
-    name: Infrastructure
-    needs: 
-      - analysis
-      - diff
-      - backend
-    if: ${{ github.event.pull_request.draft == false && !failure() && !cancelled() }}
-    uses: ./.github/workflows/infrastructure.yml
-    with:
-      environment: DEV
-    secrets: inherit
-  
+
+  # The one check the main ruleset requires. Skipped reusable-workflow jobs
+  # report under the caller's name and run ones under nested names, so no
+  # single nested check is always present to require.
+  result:
+    name: PR checks passed
+    if: always()
+    needs: [analysis, diff, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any check failed or was cancelled
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::A PR check failed or was cancelled."
+            exit 1
+          fi
+          echo "All PR checks passed or were skipped."
