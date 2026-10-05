@@ -17,7 +17,7 @@ ALTER TABLE public.scores
   ADD COLUMN IF NOT EXISTS last_updated_at timestamptz;
 
 COMMENT ON COLUMN public.scores.last_updated_at IS
-  'Last in-app save or confirm of this answer (ztmf-misc#426). Written only by Score.Save and Score.Confirm; NULL for carried-forward and imported rows. Backfilled by 0063 from events created/updated.';
+  'Last in-app save or confirm of this answer (ztmf-misc#426). Written only by Score.Save and Score.Confirm; NULL for carried-forward and imported rows. Backfilled by 0064 from events created/updated.';
 `,
 		`ALTER TABLE public.scores DROP COLUMN IF EXISTS last_updated_at;`,
 	)

@@ -32,7 +32,7 @@ type Event struct {
 //     run in every environment - the rows it wrote are permanent.
 //   - the seed data (_test_data_empire.sql) repeats that same predicate to
 //     keep scores.status agreeing with the events it seeds.
-//   - the analyst queries in docs/timespent_queries.sql and migration 0063's
+//   - the analyst queries in docs/timespent_queries.sql and migration 0064's
 //     last_updated_at backfill filter on these literals inline.
 //
 // Renaming one of these constants' VALUES is therefore a data migration
@@ -56,7 +56,7 @@ const (
 	// here so there is one authoritative home for it.
 	//
 	// Note which consumers actually depend on the exact spelling: the readers
-	// that exclude imported rows (0048's and 0063's backfills, the seed
+	// that exclude imported rows (0048's and 0064's backfills, the seed
 	// status-sync) do NOT name this value at all - they allowlist
 	// 'created'/'updated', so they would exclude an import under any spelling.
 	// The sites that would silently drift on a respelling are the WRITERS and

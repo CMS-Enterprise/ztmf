@@ -1045,7 +1045,7 @@ WHERE EXISTS (
       AND (e.payload->>'scoreid')::int = s.scoreid
 );
 
--- Same derivation for last_updated_at, mirroring migration 0063's backfill
+-- Same derivation for last_updated_at, mirroring migration 0064's backfill
 -- (migrations run before this seed loads, so the backfill saw empty tables).
 UPDATE public.scores s
    SET last_updated_at = e.max_at

@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLastUpdatedAtBackfillIntegration pins 0063: last_updated_at takes the
+// TestLastUpdatedAtBackfillIntegration pins 0064: last_updated_at takes the
 // newest created/updated event and ignores imported provenance, matching the
-// progress lateral it replaced. tern ran 0063 against empty tables, so the SQL
+// progress lateral it replaced. tern ran 0064 against empty tables, so the SQL
 // is re-run here on fixtures inside a rolled-back transaction.
 func TestLastUpdatedAtBackfillIntegration(t *testing.T) {
 	if testing.Short() {

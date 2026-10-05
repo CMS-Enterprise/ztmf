@@ -9,7 +9,7 @@ func init() {
 -- cycle's rows. On a prod-scale copy this cut the aggregate's
 -- page reads by a quarter and stops them growing with each new data call.
 --
--- Ordered after the 0063 backfill so its row rewrites don't bloat this index.
+-- Ordered after the 0064 backfill so its row rewrites don't bloat this index.
 -- Not CONCURRENTLY, for the reason in 0061.
 SET LOCAL lock_timeout = '10s';
 
