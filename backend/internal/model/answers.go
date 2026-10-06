@@ -86,16 +86,18 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 			),
 			input.DataCallID,
 		).
-		// questionid is the tiebreaker, not decoration: pillars.ordr and
-		// questions.ordr are 0 for any row migration 0056 could not rank (the
-		// empire seed's fictional function names), and rows tied on the sort key
-		// would otherwise come back in heap order, which shifts whenever a row is
-		// rewritten. functionid no longer breaks a tie now that both branches
-		// resolve one catalog; scoreid is kept as a last resort. It used to be
-		// load-bearing for duplicate score rows on one function (ztmf#491), which
-		// migration 0061 now prevents, but it costs nothing and keeps the export
-		// deterministic if a duplicate ever reappears.
-		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, questions.questionid, functions.functionid, scores.scoreid ASC")
+		// functions.ordr follows questions.ordr so the export walks the catalog in
+		// the same sequence as the questionnaire (FindQuestionsByFismaSystem).
+		// questionid is the tiebreaker, not decoration: the ordr columns are 0 for
+		// any row the backfills could not rank (the empire seed's fictional
+		// function names), and rows tied on the sort key would otherwise come back
+		// in heap order, which shifts whenever a row is rewritten. functionid no
+		// longer breaks a tie now that both branches resolve one catalog; scoreid
+		// is kept as a last resort. It used to be load-bearing for duplicate score
+		// rows on one function (ztmf#491), which migration 0061 now prevents, but
+		// it costs nothing and keeps the export deterministic if a duplicate ever
+		// reappears.
+		OrderBy("fismasystems.fismasystemid, pillars.ordr, questions.ordr, functions.ordr, questions.questionid, functions.functionid, scores.scoreid ASC")
 
 	if input.UserID != nil {
 		sqlb = sqlb.InnerJoin("users_fismasystems ON users_fismasystems.userid=? AND users_fismasystems.fismasystemid=fismasystems.fismasystemid", input.UserID)

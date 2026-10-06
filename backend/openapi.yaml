@@ -532,6 +532,9 @@ components:
         functionid:
           type: integer
         order:
+          description: |-
+            Rank among the functions of one question. Omitted or null keeps the
+            stored value; a rank cannot be reset to null.
           type: integer
         pillarid:
           description: Derived from the function's question on write; a value sent
@@ -635,12 +638,8 @@ components:
           type: string
         order:
           description: |-
-            Ordr is a pointer so a PUT that omits "order" leaves the stored rank
-            alone instead of clobbering it to 0. Before migration 0056 populated
-            these values the clobber was a harmless no-op; now it would silently
-            destroy a question's canonical position in the questionnaire, the
-            export, and the score diff (the CLAUDE.md optional-field rule - it
-            applies to every optional column, not just bools).
+            Rank within the question's pillar. Omitted or null keeps the stored
+            value; a rank cannot be reset to null.
           type: integer
         pillar:
           $ref: '#/components/schemas/model.Pillar'
