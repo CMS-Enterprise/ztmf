@@ -1017,7 +1017,7 @@ SELECT DISTINCT ON (s.scoreid)
 -- account plus one 'imported' event per archived score, mirroring how
 -- externally-loaded history is attributed in real environments (ztmf#435). These
 -- give the archived rows a who/when in the audit log but use action 'imported',
--- which both the status-sync below and the score-progress last-updated lateral
+-- which both the status-sync and the last_updated_at stamp below
 -- deliberately exclude - so the archived answers keep status 'not_started' and
 -- report no last-updated, despite carrying events. This is the shape that proves
 -- imported != updated: answers present, provenance present, never 'done'.
@@ -1059,6 +1059,17 @@ WHERE EXISTS (
       AND e.action IN ('created', 'updated')
       AND (e.payload->>'scoreid')::int = s.scoreid
 );
+
+-- Same derivation for last_updated_at, mirroring migration 0064's backfill
+-- (migrations run before this seed loads, so the backfill saw empty tables).
+UPDATE public.scores s
+   SET last_updated_at = e.max_at
+  FROM (SELECT (payload->>'scoreid')::int AS scoreid, MAX(createdat) AS max_at
+          FROM public.events
+         WHERE resource = 'public.scores'
+           AND action IN ('created', 'updated')
+         GROUP BY 1) e
+ WHERE e.scoreid = s.scoreid;
 
 -- Reset every SERIAL sequence to its current table max. Use
 -- pg_get_serial_sequence() so the right name is resolved at runtime: some

@@ -32,8 +32,8 @@ type Event struct {
 //     run in every environment - the rows it wrote are permanent.
 //   - the seed data (_test_data_empire.sql) repeats that same predicate to
 //     keep scores.status agreeing with the events it seeds.
-//   - the analyst queries in docs/timespent_queries.sql and the progress
-//     query in scoreprogress.go filter on these literals inline.
+//   - the analyst queries in docs/timespent_queries.sql and migration 0064's
+//     last_updated_at backfill filter on these literals inline.
 //
 // Renaming one of these constants' VALUES is therefore a data migration
 // (backfill the events table, update every SQL predicate above), not a
@@ -56,13 +56,13 @@ const (
 	// here so there is one authoritative home for it.
 	//
 	// Note which consumers actually depend on the exact spelling: the readers
-	// that exclude imported rows (0048's backfill, the seed status-sync, the
-	// last-updated lateral in scoreprogress.go) do NOT name this value at all -
-	// they allowlist 'created'/'updated', so they would exclude an import under
-	// any spelling. The sites that would silently drift on a respelling are the
-	// WRITERS and the assertions over them: the seed INSERT in
-	// _test_data_empire.sql and scoreprogress_integration_test.go, which read
-	// back `action='imported'` to prove imported history stays not_started.
+	// that exclude imported rows (0048's and 0064's backfills, the seed
+	// status-sync) do NOT name this value at all - they allowlist
+	// 'created'/'updated', so they would exclude an import under any spelling.
+	// The sites that would silently drift on a respelling are the WRITERS and
+	// the assertions over them: the seed INSERT in _test_data_empire.sql and
+	// scoreprogress_integration_test.go, which read back `action='imported'`
+	// to prove imported history stays not_started.
 	//
 	// A future bulk importer must write this action rather than reusing the
 	// in-app create/update path - see Score.Save.

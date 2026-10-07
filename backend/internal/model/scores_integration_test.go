@@ -928,6 +928,12 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, "Grand Moff Tarkin", saved.LastEditedBy.Name)
 	assert.Equal(t, "Grand.Moff@DeathStar.Empire", saved.LastEditedBy.Email)
 	assert.Equal(t, "OWNER", saved.LastEditedBy.Role)
+
+	var stamped *time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid = $1`, saved.ScoreID).Scan(&stamped))
+	if assert.NotNil(t, stamped, "a newly created answer must stamp last_updated_at") {
+		assert.False(t, stamped.Before(before), "last_updated_at at or after the moment of Save")
+	}
 }
 
 // TestFindScoresIncludesAuditFieldsIntegration verifies the read-side
@@ -1104,6 +1110,15 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 	scoreID := saved.ScoreID
 	defer func() { _, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid=$1`, scoreID) }()
 
+	lastUpdated := func() time.Time {
+		t.Helper()
+		var at *time.Time
+		require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid=$1`, scoreID).Scan(&at))
+		require.NotNil(t, at, "a saved answer must carry last_updated_at")
+		return *at
+	}
+	createdAt := lastUpdated()
+
 	// Capture the event count for this scoreid as our baseline. We do not
 	// assert an absolute count here because the dev events table accretes
 	// across test runs and a recycled sequence value can leave stale event
@@ -1145,6 +1160,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 		tarkinResult.LastEditedBy.UserID,
 		"no-op Save response must report Krennic as the editor, not Tarkin who issued the PUT")
 	assert.Equal(t, "ISSO", tarkinResult.LastEditedBy.Role)
+	assert.True(t, lastUpdated().Equal(createdAt), "a no-op Save must not move last_updated_at")
 
 	// Step 4: A real change DOES record a new event. Confirms the no-op
 	// guard is not over-broad.
@@ -1167,6 +1183,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111",
 		realResult.LastEditedBy.UserID,
 		"after a real change, the editor must be the user who made it")
+	assert.True(t, lastUpdated().After(createdAt), "a genuine edit must move last_updated_at forward")
 }
 
 // TestFindScoreDiffIntegration exercises the real diff SQL against Postgres:
@@ -1788,6 +1805,9 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	assert.Equal(t, int32(1), after.QuestionsUpdated,
 		"a confirmed answer must count as updated")
 	assert.Equal(t, int32(1), after.QuestionsAnswered)
+	if assert.NotNil(t, after.LastUpdatedAt, "confirm must stamp last_updated_at, or progress shows updated with no timestamp") {
+		assert.WithinDuration(t, time.Now(), *after.LastUpdatedAt, 5*time.Minute)
+	}
 
 	// Phase 3: atomic, audit-preserving idempotency. A different user whose
 	// request loaded not_started before the first write still gets the same
@@ -1806,6 +1826,8 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	assert.Equal(t, "done", reconfirmed.Status)
 	assert.Equal(t, eventsAfterFirstConfirm, countScoreEvents(t, ctx, conn, copiedScoreID),
 		"re-confirming must not append an audit event")
+	assert.Equal(t, after.LastUpdatedAt, progressFor().LastUpdatedAt,
+		"re-confirming must not move last_updated_at")
 	if assert.NotNil(t, reconfirmed.LastEditedBy, "the original confirmer must remain the editor") {
 		assert.Equal(t, confirmerID, reconfirmed.LastEditedBy.UserID)
 		assert.NotEqual(t, secondConfirmerID, reconfirmed.LastEditedBy.UserID)
