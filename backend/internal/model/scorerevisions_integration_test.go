@@ -87,7 +87,7 @@ func TestScoreRevisionsRecordedOnWriteIntegration(t *testing.T) {
 	}).Save(fx.editorCtx)
 	require.NoError(t, err)
 
-	history, err = FindScoreRevisions(fx.editorCtx, saved, writePolicy)
+	history, err = FindScoreRevisions(fx.editorCtx, mustFindScore(t, saved.ScoreID), writePolicy)
 	require.NoError(t, err)
 	require.Len(t, history.Revisions, 2)
 	assert.Equal(t, revisionKindUpdate, history.Revisions[0].Kind, "newest first")
@@ -124,8 +124,9 @@ func TestScoreRevisionsRecordedOnWriteIntegration(t *testing.T) {
 		RETURNING datacallid
 	`, fmt.Sprintf("%srevrollover_%d", integrationTestPrefix, fx.dataCallID)).Scan(&nextDC))
 
-	_, err = copyPreviousScores(fx.editorCtx, nextDC)
+	copied, err := copyPreviousScores(fx.editorCtx, nextDC)
 	require.NoError(t, err)
+	require.Positive(t, copied, "the rollover must copy something, or zero revisions proves nothing")
 
 	var carriedRevisions int
 	require.NoError(t, conn.QueryRow(ctx, `
@@ -138,8 +139,8 @@ func TestScoreRevisionsRecordedOnWriteIntegration(t *testing.T) {
 
 // TestScoreUndoRestoresPreviousAnswerIntegration is the core undo contract:
 // answer, change, undo, original value is back - and the undo is itself
-// recorded rather than popping the head, so who undid what stays auditable and
-// redo is just undoing the undo.
+// recorded rather than popping the head, so who undid what stays auditable. The
+// undo itself is terminal: one step back, no redo.
 func TestScoreUndoRestoresPreviousAnswerIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test")
@@ -228,12 +229,9 @@ func TestScoreUndoRestoresPreviousAnswerIntegration(t *testing.T) {
 // scores.status so it tolerates the move, but it will look like a bug to anyone
 // watching a dashboard, which is why it is asserted rather than assumed.
 //
-// NOTE: "decrements questionsupdated by exactly one" is only guaranteed once
-// ztmf#491's unique index exists. Without it a second 'done' row for the same
-// function keeps the count up, and duplicates are live in prod (124 pairs
-// across three cycles per ztmf-misc#336). This test asserts the status
-// transition, which holds either way, and checks the count against the same
-// score's own function rather than the whole system.
+// questionsupdated drops by exactly one because migration 0061 allows one
+// answer per question, and undo still stamps last_updated_at: someone acted
+// this cycle, even though the answer is back to not_started.
 func TestScoreUndoOfCarriedForwardEditRestoresNotStartedIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test")
@@ -274,6 +272,19 @@ func TestScoreUndoOfCarriedForwardEditRestoresNotStartedIntegration(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, scoreStatusDone, afterEdit.Status, "a real edit marks the answer done")
 
+	progress := func() *ScoreProgress {
+		t.Helper()
+		rows, err := FindScoreProgress(ctx, FindScoreProgressInput{
+			DataCallID:    &fx.dataCallID,
+			FismaSystemID: &fx.fismaSystemID,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		return rows[0]
+	}
+	beforeUndo := progress()
+	require.NotNil(t, beforeUndo.LastUpdatedAt)
+
 	history, err := FindScoreRevisions(fx.editorCtx, afterEdit, writePolicy)
 	require.NoError(t, err)
 	require.Len(t, history.Revisions, 1, "only the edit is recorded; the carried row itself is not a revision")
@@ -293,6 +304,13 @@ func TestScoreUndoOfCarriedForwardEditRestoresNotStartedIntegration(t *testing.T
 	require.NoError(t, conn.QueryRow(ctx,
 		`SELECT status FROM scores WHERE scoreid = $1`, scoreID).Scan(&storedStatus))
 	assert.Equal(t, scoreStatusNotStarted, storedStatus)
+
+	afterUndo := progress()
+	assert.Equal(t, beforeUndo.QuestionsUpdated-1, afterUndo.QuestionsUpdated,
+		"undo must decrement questionsupdated by exactly one")
+	require.NotNil(t, afterUndo.LastUpdatedAt)
+	assert.True(t, afterUndo.LastUpdatedAt.After(*beforeUndo.LastUpdatedAt),
+		"undo must advance last_updated_at")
 }
 
 // TestScoreUndoOfConfirmUnconfirmsIntegration pins the answer to #391's open
@@ -417,6 +435,95 @@ func TestScoreUndoConflictAndGuardsIntegration(t *testing.T) {
 	assert.Equal(t, second, unchanged, "a refused undo must change nothing")
 	assert.Equal(t, 2, revisionCount(t, conn, saved.ScoreID),
 		"a refused undo must append no revision")
+}
+
+// TestScoreUndoRefusesDriftAndTranslateIntegration pins the two refusals that
+// guard against a head revision that no longer describes the row: a write that
+// bypassed the revision path, and a reserved translate (ztmf-misc#397). Both
+// are 400s, not 409s, because refreshing yields the same head.
+func TestScoreUndoRefusesDriftAndTranslateIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	fx := newTxWriteFixture(t, conn, "revdrift")
+
+	first, second := "first", "second"
+	saved, err := (&Score{
+		FismaSystemID:    fx.fismaSystemID,
+		FunctionOptionID: fx.functionOptionID,
+		DataCallID:       fx.dataCallID,
+		Notes:            &first,
+	}).Save(fx.editorCtx)
+	require.NoError(t, err)
+	_, err = (&Score{
+		ScoreID:          saved.ScoreID,
+		FismaSystemID:    fx.fismaSystemID,
+		FunctionOptionID: fx.functionOptionID,
+		DataCallID:       fx.dataCallID,
+		Notes:            &second,
+	}).Save(fx.editorCtx)
+	require.NoError(t, err)
+
+	// A write with no revision, as a future importer or a manual fix would make.
+	_, err = conn.Exec(ctx, `UPDATE scores SET notes = 'out of band' WHERE scoreid = $1`, saved.ScoreID)
+	require.NoError(t, err)
+
+	stored, err := FindScoreByID(ctx, saved.ScoreID)
+	require.NoError(t, err)
+	history, err := FindScoreRevisions(fx.editorCtx, stored, writePolicy)
+	require.NoError(t, err)
+	require.False(t, history.Head.Undoable, "a drifted head must not be offered")
+	require.NotNil(t, history.Head.Reason)
+	assert.Equal(t, reasonDrifted, *history.Head.Reason)
+
+	head := history.Head.RevisionID
+	_, err = UndoScoreRevision(fx.editorCtx, stored, &head)
+	var invalid *InvalidInputError
+	require.ErrorAs(t, err, &invalid)
+	assert.Equal(t, reasonDrifted, invalid.Data()["expected_head_revisionid"])
+	assert.Equal(t, "out of band", derefString(mustFindScore(t, saved.ScoreID).Notes),
+		"a refused undo must not discard the out-of-band write")
+	assert.Equal(t, 2, revisionCount(t, conn, saved.ScoreID))
+
+	// A translate head describing the current row is still refused.
+	var translateID int64
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO score_revisions (
+			scoreid, revision_no, fismasystemid, datacallid, functionid, kind,
+			prev_functionoptionid, prev_notes, prev_notes_is_ai_summary, prev_status,
+			new_functionoptionid, new_notes, new_notes_is_ai_summary, new_status, userid)
+		SELECT s.scoreid, 3, s.fismasystemid, s.datacallid, s.functionid, 'translate',
+		       s.functionoptionid, s.notes, s.notes_is_ai_summary, s.status,
+		       s.functionoptionid, s.notes, s.notes_is_ai_summary, s.status, $2
+		  FROM scores s WHERE s.scoreid = $1
+		RETURNING revisionid
+	`, saved.ScoreID, UserFromContext(fx.editorCtx).UserID).Scan(&translateID))
+
+	history, err = FindScoreRevisions(fx.editorCtx, stored, writePolicy)
+	require.NoError(t, err)
+	require.False(t, history.Head.Undoable)
+	assert.Equal(t, reasonIsTranslate, *history.Head.Reason)
+
+	_, err = UndoScoreRevision(fx.editorCtx, stored, &translateID)
+	require.ErrorAs(t, err, &invalid)
+	assert.Equal(t, reasonIsTranslate, invalid.Data()["expected_head_revisionid"])
+	assert.Equal(t, 3, revisionCount(t, conn, saved.ScoreID))
+}
+
+func mustFindScore(t *testing.T, scoreID int32) *Score {
+	t.Helper()
+	s, err := FindScoreByID(context.Background(), scoreID)
+	require.NoError(t, err)
+	return s
 }
 
 // TestScoreRevisionsReadOnlyReaderIntegration pins that undoability is

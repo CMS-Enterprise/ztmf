@@ -110,108 +110,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 	}
 
 	saved, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
-		// Audit-preserving no-op: on an UPDATE that does not actually change
-		// any answer field, skip the write entirely. The questionnaire UI
-		// PUTs on every Next click regardless of whether the user touched
-		// the answer, so without this guard a read-through user gets stamped
-		// as the new editor and the prior cycle's real editor is overwritten.
-		// The product rule is "save on real change, not on read-through" so
-		// we enforce it here as defense in depth even if the client adds its
-		// own dirty check.
-		//
-		// Compared against the FOR UPDATE row rather than one the controller
-		// preloaded, so "unchanged" is decided against the values this
-		// statement would overwrite and holds until commit. Returning here
-		// commits a transaction that only took the lock, which is what
-		// releases it.
-		//
-		// Treats nil notes and empty-string notes as the same value, since the
-		// FE may submit either for an unanswered notes box. Returns the
-		// current row through the same lookupScoreAudit path the normal write
-		// uses, so the caller cannot tell a no-op apart from a successful
-		// write -- only the events table (unchanged) reveals the truth.
-		//
-		// On a no-op match we carry the incoming.FunctionOption (if any)
-		// onto the returned current row so callers that requested
-		// ?include=functionoption still get a fully-shaped response, matching
-		// the populated-write path through FindScores. The PUT controller
-		// writes 204 today but still encodes the body, so the response is
-		// observable to clients that parse 204 bodies.
-		// prev is the before-image the revision records. It comes from the
-		// locked row, so it is exactly what this statement is about to
-		// overwrite, and stays nil on a create where there is no earlier value.
-		var prev *scoreSnapshot
-
-		if s.ScoreID != 0 {
-			current, err := lockScore(ctx, tx, s.ScoreID)
-			if err != nil {
-				return nil, err
-			}
-			if scoresEqualForUpdate(current, s) {
-				if s.FunctionOption != nil {
-					current.FunctionOption = s.FunctionOption
-				}
-				return current, nil
-			}
-			prev = snapshotOf(current)
-		}
-
-		// status is set to 'done' in the same INSERT/UPDATE statement as the
-		// answer (ztmf#435). Because it rides the same write, the state can never
-		// disagree with the row it describes. Reaching this point means a genuine
-		// create (scoreid == 0) or a change that cleared the no-op guard above,
-		// which is exactly what "updated this cycle" means. A read-through PUT
-		// short-circuits before here and never touches status, so a carried-over
-		// row stays not_started (ztmf#299 preserved).
-		var sqlb SqlBuilder
-		action, kind := eventActionUpdated, revisionKindUpdate
-
-		if s.ScoreID == 0 {
-			action, kind = eventActionCreated, revisionKindCreate
-			sqlb = stmntBuilder.
-				Insert("public.scores").
-				Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-				Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
-				Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-		} else {
-			// fismasystemid and datacallid are deliberately NOT in the SET list.
-			// Saving an answer must never move the row to another system or
-			// another cycle: those are the two columns that decide who may write
-			// the row and which deadline applies to it, so letting a request body
-			// rewrite them turns an answer edit into a reparenting primitive.
-			// The controller authorizes an update against the stored row and pins
-			// both values onto the receiver before calling Save.
-			setCols := squirrel.Eq{
-				"notes":            s.Notes,
-				"functionoptionid": s.FunctionOptionID,
-				"status":           scoreStatusDone,
-			}
-			if s.NotesIsAISummary != nil {
-				setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
-			}
-			// Bind the write to the row the caller was authorized against, not to
-			// the id alone. The controller loads the row and pins these two fields
-			// onto the receiver before calling Save; matching on them here means a
-			// future caller that forgets to pin cannot write a row it did not
-			// authorize - it updates zero rows and fails as ErrNoData rather than
-			// succeeding against someone else's answer.
-			sqlb = stmntBuilder.
-				Update("public.scores").
-				SetMap(setCols).
-				Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
-				Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-		}
-
-		saved, err := writeScore(ctx, tx, sqlb)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := recordScoreWrite(ctx, tx, saved, prev, kind, action, nil); err != nil {
-			return nil, err
-		}
-
-		return saved, nil
+		return s.saveTx(ctx, tx)
 	})
 	if err != nil {
 		return nil, err
@@ -241,6 +140,162 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 			saved.LastEditedBy = by
 		}
 	}
+	return saved, nil
+}
+
+// saveTx is Save's write - resolve the row, lock it, skip a no-op, write it and
+// record its event and revision - inside the caller's transaction.
+//
+// status is set to 'done' in the same INSERT/UPDATE statement as the answer
+// (ztmf#435). Because it rides the same write, the state can never disagree with
+// the row it describes. Reaching either write means a genuine create or a change
+// that cleared the no-op guard, which is exactly what "updated this cycle" means.
+// A read-through PUT short-circuits before the UPDATE and never touches status,
+// so a carried-over row stays not_started (ztmf#299 preserved). last_updated_at
+// rides the same write for the same reason; progress reads it instead of the
+// events log (ztmf-misc#426). clock_timestamp(), not now(), for the reason
+// insertScoreEvent gives: now() is transaction start.
+func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
+	// An answer is identified by (system, data call, question), never by
+	// scoreid, and migration 0061 enforces that (ztmf#491). Create and update
+	// resolve that key differently, and deliberately so.
+	var current *Score
+	if s.ScoreID == 0 {
+		// CREATE: the caller names no row, so the natural key names it for them.
+		// This is the ztmf#491 fix - a caller that does not know the existing
+		// scoreid (a bulk write that did not read current state, a client that
+		// lost the id) used to insert a second answer, and would now take a 400.
+		var err error
+		current, err = lockScoreByNaturalKey(ctx, tx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+		if errors.Is(err, ErrNoData) {
+			sqlb := stmntBuilder.
+				Insert("public.scores").
+				Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status", "last_updated_at").
+				Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone, squirrel.Expr("clock_timestamp()")).
+				Suffix("ON CONFLICT (fismasystemid, datacallid, functionid) DO NOTHING RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+			var created *Score
+			created, err = writeScore(ctx, tx, sqlb)
+			if err == nil {
+				if err := recordScoreWrite(ctx, tx, created, nil, revisionKindCreate, eventActionCreated, nil); err != nil {
+					return nil, err
+				}
+				return created, nil
+			}
+			if !errors.Is(err, ErrNoData) {
+				return nil, err
+			}
+			// No row back means a concurrent writer inserted this answer after the
+			// lookup above. DO NOTHING waited for it to commit instead of raising
+			// 23505, so this transaction is intact: lock the winner's row and land
+			// as the update this always was. The conflict target names 0061's index
+			// only, so any other unique violation still fails.
+			current, err = lockScoreByNaturalKey(ctx, tx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+		}
+		if err != nil {
+			return nil, err
+		}
+		s.ScoreID = current.ScoreID
+	} else {
+		locked, functionID, err := lockScore(ctx, tx, s.ScoreID)
+		if err != nil {
+			return nil, err
+		}
+		current = locked
+
+		// UPDATE: the question is part of the row's identity, so an option
+		// belonging to a DIFFERENT question is a malformed request rather than an
+		// instruction to go write somewhere else.
+		//
+		// Rejecting is what keeps this honest. Writing the natural-key row instead
+		// would silently modify a row the caller never named and leave the named
+		// one untouched, so a buggy client would appear to succeed. Letting it
+		// through is worse still: it rewrites this row's question, which both
+		// duplicates the target question and discards this row's own answer - the
+		// ztmf#491 defect, manufactured on the spot.
+		//
+		// Skipped on the hot path: an unchanged option is necessarily the same
+		// question, so the questionnaire's Next-click PUT pays nothing.
+		if current.FunctionOptionID != s.FunctionOptionID {
+			optionFunctionID, err := functionIDOfOption(ctx, tx, s.FunctionOptionID)
+			if err != nil {
+				return nil, err
+			}
+			if optionFunctionID != 0 && optionFunctionID != functionID {
+				return nil, errOptionAnswersDifferentQuestion()
+			}
+		}
+	}
+
+	// Audit-preserving no-op: on an UPDATE that does not actually change any
+	// answer field, skip the write entirely. The questionnaire UI PUTs on every
+	// Next click regardless of whether the user touched the answer, so without
+	// this guard a read-through user gets stamped as the new editor and the prior
+	// cycle's real editor is overwritten. The product rule is "save on real
+	// change, not on read-through" so we enforce it here as defense in depth even
+	// if the client adds its own dirty check.
+	//
+	// Compared against the FOR UPDATE row rather than one the controller
+	// preloaded, so "unchanged" is decided against the values this statement
+	// would overwrite and holds until commit. Returning here commits a
+	// transaction that only took the lock, which is what releases it.
+	//
+	// Treats nil notes and empty-string notes as the same value, since the FE may
+	// submit either for an unanswered notes box. Returns the current row through
+	// the same lookupScoreAudit path the normal write uses, so the caller cannot
+	// tell a no-op apart from a successful write -- only the events table
+	// (unchanged) reveals the truth.
+	//
+	// On a no-op match we carry the incoming.FunctionOption (if any) onto the
+	// returned current row so callers that requested ?include=functionoption
+	// still get a fully-shaped response, matching the populated-write path
+	// through FindScores. The PUT controller writes 204 today but still encodes
+	// the body, so the response is observable to clients that parse 204 bodies.
+	if scoresEqualForUpdate(current, s) {
+		if s.FunctionOption != nil {
+			current.FunctionOption = s.FunctionOption
+		}
+		return current, nil
+	}
+
+	// fismasystemid and datacallid are deliberately NOT in the SET list. Saving
+	// an answer must never move the row to another system or another cycle:
+	// those are the two columns that decide who may write the row and which
+	// deadline applies to it, so letting a request body rewrite them turns an
+	// answer edit into a reparenting primitive. The controller authorizes an
+	// update against the stored row and pins both values onto the receiver
+	// before calling Save.
+	setCols := squirrel.Eq{
+		"notes":            s.Notes,
+		"functionoptionid": s.FunctionOptionID,
+		"status":           scoreStatusDone,
+		"last_updated_at":  squirrel.Expr("clock_timestamp()"),
+	}
+	if s.NotesIsAISummary != nil {
+		setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
+	}
+	// Bind the write to the row the caller was authorized against, not to the id
+	// alone. The controller loads the row and pins these two fields onto the
+	// receiver before calling Save; matching on them here means a future caller
+	// that forgets to pin cannot write a row it did not authorize - it updates
+	// zero rows and fails as ErrNoData rather than succeeding against someone
+	// else's answer.
+	sqlb := stmntBuilder.
+		Update("public.scores").
+		SetMap(setCols).
+		Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
+		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+
+	saved, err := writeScore(ctx, tx, sqlb)
+	if err != nil {
+		return nil, err
+	}
+
+	// A create that resolved to an existing row is an update, and records one,
+	// with the locked row as its before-image.
+	if err := recordScoreWrite(ctx, tx, saved, snapshotOf(current), revisionKindUpdate, eventActionUpdated, nil); err != nil {
+		return nil, err
+	}
+
 	return saved, nil
 }
 
@@ -285,7 +340,7 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	// revision_no allocated as MAX+1 with the read and the insert under one
 	// lock.
 	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
-		current, err := lockScore(ctx, tx, s.ScoreID)
+		current, _, err := lockScore(ctx, tx, s.ScoreID)
 		if err != nil {
 			return nil, err
 		}
@@ -293,6 +348,7 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		sqlb := stmntBuilder.
 			Update("public.scores").
 			Set("status", scoreStatusDone).
+			Set("last_updated_at", squirrel.Expr("clock_timestamp()")).
 			// Keep the no-op guard in the write predicate as well as above. Two
 			// requests can both load not_started before either reaches Confirm; only
 			// the first must be allowed to update and create an audit event.
@@ -379,6 +435,37 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	}
 
 	return current, nil
+}
+
+// functionIDOfOption returns the question a functionoption answers, or 0 when
+// the option does not exist.
+//
+// Save treats an unknown option as answering the same question, deliberately:
+// rejecting it there would turn the existing 400 ErrNoReference (raised by the
+// trigger as 23503 when the write lands) into a less accurate "wrong question"
+// error. Let the write proceed and fail on the real reason.
+func functionIDOfOption(ctx context.Context, tx pgx.Tx, functionOptionID int32) (int32, error) {
+	var functionID int32
+	err := tx.QueryRow(ctx,
+		`SELECT functionid FROM functionoptions WHERE functionoptionid = $1`, functionOptionID,
+	).Scan(&functionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, trapError(err)
+	}
+
+	return functionID, nil
+}
+
+// errOptionAnswersDifferentQuestion is the 400 for an update whose option
+// belongs to another question. Same InvalidInputError shape every other field
+// validation uses, keyed on the offending field.
+func errOptionAnswersDifferentQuestion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different question than this score; save an answer for that question instead of changing this one",
+	}}
 }
 
 // scoresEqualForUpdate is the pure comparison behind Save's no-op guard,
@@ -735,8 +822,13 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 // recomputing the same average in a different runtime.
 //
 // The input slice is assumed to be ordered by (datacallid, fismasystemid,
-// pillarid), which is the canonical ordering emitted by the underlying SQL
-// in findPillarScoresAll. The output preserves that order.
+// pillars.ordr, pillarid), which is the canonical ordering emitted by the
+// underlying SQL in findPillarScoresAll. The output preserves that order, and
+// ztmf-ui's buildRadarData plots pillarscores in array order without sorting,
+// so this is what an ISSO reads on the trend radar - it has to match the
+// questionnaire's sequence rather than whatever order the pillars happened to
+// be inserted in (ztmf-misc#393). The other consumers (PillarGrid,
+// SystemDetailReadView) re-sort client-side and are indifferent.
 func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAggregate {
 	type key struct {
 		dataCallID    int32
@@ -891,7 +983,7 @@ WITH scored_pairs AS (
     SELECT DISTINCT fismasystemid, datacallid FROM scores
 ),
 expected AS (
-    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, f.functionid
+    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, p.ordr, f.functionid
     FROM scored_pairs sp
     INNER JOIN fismasystems fs ON fs.fismasystemid = sp.fismasystemid
     INNER JOIN datacalls dc    ON dc.datacallid    = sp.datacallid
@@ -907,6 +999,11 @@ expected AS (
     %s
     WHERE %s
 ),
+-- Deliberately NOT de-duplicated: migration 0061 guarantees one row per
+-- (fismasystemid, datacallid, functionid), so the LEFT JOIN below cannot fan
+-- out and the AVG cannot double-weight a question. A DISTINCT ON here would
+-- mask a lost index by producing plausible numbers instead of a visibly wrong
+-- average (ztmf#491).
 answers AS (
     SELECT s.fismasystemid, s.datacallid, fo.functionid, fo.score
     FROM scores s
@@ -918,13 +1015,14 @@ pillar_scores AS (
         e.fismasystemid,
         e.pillarid,
         e.pillar,
+        e.ordr,
         AVG(COALESCE(a.score, 0) + 1.0)::float8 AS pillar_score
     FROM expected e
     LEFT JOIN answers a
       ON a.fismasystemid = e.fismasystemid
      AND a.datacallid    = e.datacallid
      AND a.functionid    = e.functionid
-    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar
+    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar, e.ordr
 )
 SELECT
     ps.datacallid,
@@ -934,7 +1032,7 @@ SELECT
     ps.pillar_score AS score,
     AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
 FROM pillar_scores ps
-ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
+ORDER BY ps.datacallid, ps.fismasystemid, ps.ordr, ps.pillarid
 `, userJoin, strings.Join(conds, " AND "))
 
 	return sql, args
@@ -1012,11 +1110,15 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// trap where Postgres resolves the placeholder to text and the column
 	// comparison fails at runtime.
 	//
-	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question:
-	// scores has no uniqueness constraint on (fismasystemid, datacallid,
-	// functionid), so a source cycle may hold duplicates (ztmf#491, live in prod)
-	// and would otherwise copy both. The ORDER BY must lead with the same two
-	// expressions for DISTINCT ON to be legal; the rest picks the winner.
+	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question.
+	// Migration 0061 now makes a duplicated source cycle unreachable through
+	// ordinary writes, but this stays: without it a single stale duplicate - a
+	// restore from a pre-cleanup backup, a bulk load run with the index dropped -
+	// aborts this whole INSERT...SELECT with 23505 and the entire annual rollover
+	// emits nothing. That is the ztmf#411 all-or-nothing foot-gun the INNER JOINs
+	// above defuse, reopened on a different error class. The ORDER BY must lead
+	// with the same two expressions for DISTINCT ON to be legal; the rest picks
+	// the winner.
 	//
 	// status outranks scoreid, and the order matters. scoreid is creation order,
 	// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so

@@ -43,16 +43,12 @@ CREATE TABLE IF NOT EXISTS public.score_revisions (
     fismasystemid INT NOT NULL REFERENCES public.fismasystems (fismasystemid),
     datacallid    INT NOT NULL REFERENCES public.datacalls (datacallid) ON DELETE CASCADE,
 
-    -- The question this revision is about, derived from
-    -- functionoptions.functionid at write time. It makes a revision
+    -- The question this revision is about, copied from scores.functionid at
+    -- write time. It makes a revision
     -- self-describing rather than only row-identified: once ztmf-misc#397 can
     -- re-point a cycle at a different questionnaire version, the stored
     -- functionoptionid lives in the OLD version's namespace and the whole
     -- pre-bump history becomes unreadable without this column.
-    --
-    -- Derived from functionoptions rather than copied from scores.functionid,
-    -- which does not exist on main (it arrives with ztmf#491 / ztmf#594). That
-    -- keeps this migration applicable either way.
     functionid INT NOT NULL REFERENCES public.functions (functionid),
 
     -- 'translate' is unused today and present deliberately: ztmf-misc#397 writes
@@ -77,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.score_revisions (
     new_status               varchar(20) NOT NULL,
 
     -- Undo APPENDS a revision rather than popping the head, so who undid what
-    -- stays auditable and redo is just undoing the undo.
+    -- stays auditable. An undo is terminal: one step back, no redo.
     undoes_revisionid BIGINT REFERENCES public.score_revisions (revisionid),
 
     userid    uuid NOT NULL REFERENCES public.users (userid),
@@ -117,8 +113,14 @@ CREATE INDEX IF NOT EXISTS score_revisions_scope_idx
 
 COMMENT ON TABLE public.score_revisions IS
   'Append-only answer history (ztmf-misc#391). Written in the score write transaction; never updated, only inserted. Deleting a data call destroys that cycle history by design.';
+
+-- Undo is now a third writer of 0063's column.
+COMMENT ON COLUMN public.scores.last_updated_at IS
+  'Last in-app save, confirm or undo of this answer (ztmf-misc#426, ztmf-misc#391). Written only by Score.Save, Score.Confirm and UndoScoreRevision; NULL for carried-forward and imported rows. Backfilled by 0064 from events created/updated.';
 		`,
 		`
+COMMENT ON COLUMN public.scores.last_updated_at IS
+  'Last in-app save or confirm of this answer (ztmf-misc#426). Written only by Score.Save and Score.Confirm; NULL for carried-forward and imported rows. Backfilled by 0064 from events created/updated.';
 DROP TABLE IF EXISTS public.score_revisions;
 		`)
 }

@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/db"
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
 // Revision kinds. Stored data, pinned by score_revisions_kind_check in
-// migration 0060 - changing a VALUE here is a data migration, not an edit.
+// migration 0066 - changing a VALUE here is a data migration, not an edit.
 //
 // revisionKindTranslate is reserved for ztmf-misc#397's version re-pin and is
 // never written today.
@@ -42,6 +43,12 @@ const (
 	// audit trail this table exists to provide. The prior value stays visible
 	// in the history, so it can be re-entered as an ordinary edit.
 	reasonIsUndo = "An undo cannot itself be undone. Change the answer directly instead."
+	// A re-pin moves the answer into another questionnaire version; reverting
+	// it would put an old version's option back on the row (ztmf-misc#397).
+	reasonIsTranslate = "This change moved the answer to a new questionnaire version and cannot be undone."
+	// The row no longer holds what its head revision recorded, so something
+	// wrote it without a revision. Undoing would silently discard that write.
+	reasonDrifted = "This answer was changed outside its history. Change the answer directly instead."
 )
 
 // RevisionSide is one side of a change. Field-for-field identical to
@@ -168,9 +175,8 @@ func recordScoreWrite(ctx context.Context, tx pgx.Tx, saved *Score, prev *scoreS
 // UPDATE lock first - on a create the row is brand new and invisible to other
 // transactions, so it is always 1.
 //
-// functionid is derived from the option being written rather than read from
-// scores.functionid, which does not exist on main. Once ztmf#594 lands this can
-// become saved.FunctionID off the RETURNING row.
+// functionid is read back from the row just written rather than added to the
+// RETURNING list, which would put it on Score and so on the API and event payload.
 func insertScoreRevision(ctx context.Context, tx pgx.Tx, saved *Score, prev *scoreSnapshot, kind string, undoes *int64) error {
 	actor := UserFromContext(ctx)
 	if actor == nil {
@@ -199,7 +205,7 @@ func insertScoreRevision(ctx context.Context, tx pgx.Tx, saved *Score, prev *sco
 		SELECT $1,
 		       COALESCE((SELECT MAX(revision_no) FROM public.score_revisions WHERE scoreid = $1), 0) + 1,
 		       $2, $3,
-		       (SELECT fo.functionid FROM public.functionoptions fo WHERE fo.functionoptionid = $11),
+		       (SELECT functionid FROM public.scores WHERE scoreid = $1),
 		       $4, $5, $6, $7, $8, $11, $9, $10, $12, $13, $14, clock_timestamp()
 	`,
 		saved.ScoreID, saved.FismaSystemID, saved.DataCallID,
@@ -298,7 +304,7 @@ func scanScoreRevision(row pgx.Row) (*ScoreRevision, error) {
 // undoable: undo walks back one step at a time, which keeps
 // expected_head_revisionid an unambiguous token and keeps the client from
 // having to reason about what a mid-history revert would mean.
-func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, callOpen bool) {
+func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, callOpen bool, current *Score) {
 	reason := func(s string) {
 		rev.Undoable = false
 		rev.Reason = &s
@@ -319,9 +325,33 @@ func applyUndoPolicy(rev *ScoreRevision, isHead bool, policy ScoreUndoPolicy, ca
 		reason(reasonIsCreate)
 	case rev.Kind == revisionKindUndo:
 		reason(reasonIsUndo)
+	case rev.Kind == revisionKindTranslate:
+		reason(reasonIsTranslate)
+	case !revisionMatches(rev.New, current):
+		reason(reasonDrifted)
 	default:
 		rev.Undoable = true
 		rev.Reason = nil
+	}
+}
+
+// revisionMatches reports whether the stored row still holds what a revision
+// recorded as its new side.
+func revisionMatches(side *RevisionSide, s *Score) bool {
+	return side != nil && s != nil &&
+		side.FunctionOptionID == s.FunctionOptionID &&
+		derefString(side.Notes) == derefString(s.Notes) &&
+		side.NotesIsAISummary == derefBool(s.NotesIsAISummary) &&
+		side.Status == s.Status
+}
+
+func headOf(rev *ScoreRevision) *ScoreRevisionHead {
+	return &ScoreRevisionHead{
+		RevisionID: rev.RevisionID,
+		RevisionNo: rev.RevisionNo,
+		Kind:       rev.Kind,
+		Undoable:   rev.Undoable,
+		Reason:     rev.Reason,
 	}
 }
 
@@ -376,18 +406,11 @@ func FindScoreRevisions(ctx context.Context, score *Score, policy ScoreUndoPolic
 	}
 
 	for i, rev := range history.Revisions {
-		applyUndoPolicy(rev, i == 0, policy, callOpen)
+		applyUndoPolicy(rev, i == 0, policy, callOpen, score)
 	}
 
 	if len(history.Revisions) > 0 {
-		h := history.Revisions[0]
-		history.Head = &ScoreRevisionHead{
-			RevisionID: h.RevisionID,
-			RevisionNo: h.RevisionNo,
-			Kind:       h.Kind,
-			Undoable:   h.Undoable,
-			Reason:     h.Reason,
-		}
+		history.Head = headOf(history.Revisions[0])
 	}
 
 	return history, nil
@@ -421,6 +444,7 @@ func (s *Score) dataCallOpen(ctx context.Context) bool {
 // The receiver must be a row loaded by FindScoreByID, not a client body:
 // DataCallID drives the deadline check and the controller authorized against
 // the loaded FismaSystemID. Same contract as Confirm.
+//
 // expectedHead is a pointer so a missing field is distinguishable from a zero
 // one, and it is required rather than optional: an undo with no token is
 // last-write-wins on a destructive action, and the client always holds the head
@@ -436,8 +460,9 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		return nil, err
 	}
 
+	var undoRev *ScoreRevision
 	reverted, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
-		current, err := lockScore(ctx, tx, score.ScoreID)
+		current, _, err := lockScore(ctx, tx, score.ScoreID)
 		if err != nil {
 			return nil, err
 		}
@@ -478,6 +503,17 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 				data: map[string]any{"expected_head_revisionid": reasonIsUndo},
 			}
 		}
+		if head.Kind == revisionKindTranslate {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": reasonIsTranslate},
+			}
+		}
+		// Not a 409: refreshing yields the same head, so a retry can never succeed.
+		if !revisionMatches(head.New, current) {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": reasonDrifted},
+			}
+		}
 
 		// Defence in depth behind score_revisions_prev_iff_not_create: a
 		// non-create revision always has a prev, so reaching here with nil means
@@ -495,6 +531,9 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 				"notes":               target.Notes,
 				"notes_is_ai_summary": target.NotesIsAISummary,
 				"status":              target.Status,
+				// clock_timestamp() for the same reason as Save: now() is
+				// transaction start, and this tx may have waited on the lock.
+				"last_updated_at": squirrel.Expr("clock_timestamp()"),
 			}).
 			// Same binding discipline as Save: pin the write to the row the
 			// caller was authorized against, not to the id alone.
@@ -506,11 +545,17 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 			return nil, err
 		}
 
-		// action stays 'updated', not a new 'undone' verb: migration 0048's
-		// backfill, the seed status-sync and scoreprogress.go all allowlist
-		// ('created','updated'), so a new value would make an undone answer
-		// report no last-updated rather than read as differently labelled.
+		// action stays 'updated', not a new 'undone' verb: the audit readers and
+		// the 0048/0064 backfills allowlist ('created','updated'), so a new value
+		// would drop an undo from last_edited_by rather than relabel it.
 		if err := recordScoreWrite(ctx, tx, updated, snapshotOf(current), revisionKindUndo, eventActionUpdated, &head.RevisionID); err != nil {
+			return nil, err
+		}
+
+		// Read back under the lock, so a Save committing right after this one
+		// cannot be reported as the undo.
+		undoRev, err = lockedHeadRevision(ctx, tx, score.ScoreID)
+		if err != nil {
 			return nil, err
 		}
 
@@ -525,17 +570,13 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		reverted.LastEditedBy = by
 	}
 
-	// Re-read so the response carries the revision exactly as a subsequent GET
-	// will render it, rather than a hand-assembled copy that could drift from
-	// the projection.
-	history, err := FindScoreRevisions(ctx, reverted, ScoreUndoPolicy{CanWrite: true})
-	if err != nil {
-		return nil, err
-	}
-
-	result := &ScoreUndoResult{Score: reverted, Head: history.Head}
-	if len(history.Revisions) > 0 {
-		result.Revision = history.Revisions[0]
+	// Same projection and policy a subsequent GET applies. With no user in ctx
+	// no revision was written, so the head read back is not this undo.
+	result := &ScoreUndoResult{Score: reverted}
+	if undoRev != nil && undoRev.Kind == revisionKindUndo {
+		applyUndoPolicy(undoRev, true, ScoreUndoPolicy{CanWrite: true}, true, reverted)
+		result.Revision = undoRev
+		result.Head = headOf(undoRev)
 	}
 
 	return result, nil

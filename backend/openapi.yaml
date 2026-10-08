@@ -28,22 +28,22 @@ components:
         fullname:
           type: string
       type: object
-    controller.apiResponse-any:
+    controller.apiError:
       properties:
         code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
+          description: 'REVISION_CONFLICT on the undo 409: refresh history and retry.'
           type: string
+        error:
+          type: string
+      type: object
+    controller.apiResponse-any:
+      properties:
         data: {}
         error:
           type: string
       type: object
     controller.apiResponse-array_int32:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             type: integer
@@ -54,10 +54,6 @@ components:
       type: object
     controller.apiResponse-array_model_DataCall:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.DataCall'
@@ -68,10 +64,6 @@ components:
       type: object
     controller.apiResponse-array_model_DataCenterEnvironment:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.DataCenterEnvironment'
@@ -82,10 +74,6 @@ components:
       type: object
     controller.apiResponse-array_model_DataCenterMismatch:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.DataCenterMismatch'
@@ -96,10 +84,6 @@ components:
       type: object
     controller.apiResponse-array_model_FismaSystem:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.FismaSystem'
@@ -110,10 +94,6 @@ components:
       type: object
     controller.apiResponse-array_model_Function:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.Function'
@@ -124,10 +104,6 @@ components:
       type: object
     controller.apiResponse-array_model_FunctionOption:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.FunctionOption'
@@ -138,10 +114,6 @@ components:
       type: object
     controller.apiResponse-array_model_OpDiv:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.OpDiv'
@@ -152,10 +124,6 @@ components:
       type: object
     controller.apiResponse-array_model_Question:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.Question'
@@ -166,10 +134,6 @@ components:
       type: object
     controller.apiResponse-array_model_Score:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.Score'
@@ -180,10 +144,6 @@ components:
       type: object
     controller.apiResponse-array_model_ScoreAggregate:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.ScoreAggregate'
@@ -194,10 +154,6 @@ components:
       type: object
     controller.apiResponse-array_model_ScoreDiff:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.ScoreDiff'
@@ -208,10 +164,6 @@ components:
       type: object
     controller.apiResponse-array_model_ScoreProgress:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.ScoreProgress'
@@ -222,10 +174,6 @@ components:
       type: object
     controller.apiResponse-array_model_SystemAttribute:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.SystemAttribute'
@@ -236,10 +184,6 @@ components:
       type: object
     controller.apiResponse-array_model_SystemInsight:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.SystemInsight'
@@ -250,10 +194,6 @@ components:
       type: object
     controller.apiResponse-array_model_User:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             $ref: '#/components/schemas/model.User'
@@ -264,10 +204,6 @@ components:
       type: object
     controller.apiResponse-array_string:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           items:
             type: string
@@ -278,10 +214,6 @@ components:
       type: object
     controller.apiResponse-controller_idpLookupResponse:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/controller.idpLookupResponse'
         error:
@@ -289,10 +221,6 @@ components:
       type: object
     controller.apiResponse-model_DataCall:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.DataCall'
         error:
@@ -300,10 +228,6 @@ components:
       type: object
     controller.apiResponse-model_EventsPage:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.EventsPage'
         error:
@@ -311,10 +235,6 @@ components:
       type: object
     controller.apiResponse-model_FismaSystem:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.FismaSystem'
         error:
@@ -322,10 +242,6 @@ components:
       type: object
     controller.apiResponse-model_Function:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.Function'
         error:
@@ -340,10 +256,6 @@ components:
       type: object
     controller.apiResponse-model_OpDiv:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.OpDiv'
         error:
@@ -351,10 +263,6 @@ components:
       type: object
     controller.apiResponse-model_Question:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.Question'
         error:
@@ -362,10 +270,6 @@ components:
       type: object
     controller.apiResponse-model_Score:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.Score'
         error:
@@ -373,10 +277,6 @@ components:
       type: object
     controller.apiResponse-model_ScoreHistory:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.ScoreHistory'
         error:
@@ -384,10 +284,6 @@ components:
       type: object
     controller.apiResponse-model_ScoreUndoResult:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.ScoreUndoResult'
         error:
@@ -395,10 +291,6 @@ components:
       type: object
     controller.apiResponse-model_SystemEnrichment:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.SystemEnrichment'
         error:
@@ -406,10 +298,6 @@ components:
       type: object
     controller.apiResponse-model_User:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.User'
         error:
@@ -417,10 +305,6 @@ components:
       type: object
     controller.apiResponse-model_UserFismaSystem:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.UserFismaSystem'
         error:
@@ -428,10 +312,6 @@ components:
       type: object
     controller.apiResponse-model_UserOpDiv:
       properties:
-        code:
-          description: Typed error code set by sanitizeErr; clients branch on it,
-            not the status.
-          type: string
         data:
           $ref: '#/components/schemas/model.UserOpDiv'
         error:
@@ -679,6 +559,9 @@ components:
         functionid:
           type: integer
         order:
+          description: |-
+            Rank among the functions of one question. Omitted or null keeps the
+            stored value; a rank cannot be reset to null.
           type: integer
         pillarid:
           description: Derived from the function's question on write; a value sent
@@ -782,12 +665,8 @@ components:
           type: string
         order:
           description: |-
-            Ordr is a pointer so a PUT that omits "order" leaves the stored rank
-            alone instead of clobbering it to 0. Before migration 0056 populated
-            these values the clobber was a harmless no-op; now it would silently
-            destroy a question's canonical position in the questionnaire, the
-            export, and the score diff (the CLAUDE.md optional-field rule - it
-            applies to every optional column, not just bools).
+            Rank within the question's pillar. Omitted or null keeps the stored
+            value; a rank cannot be reset to null.
           type: integer
         pillar:
           $ref: '#/components/schemas/model.Pillar'
@@ -926,15 +805,10 @@ components:
           type: integer
         lastupdatedat:
           description: |-
-            LastUpdatedAt is the most recent edit event across the system's answers
-            in this data call; nil when nothing has been touched this cycle. Only
-            in-app edit actions count, the same ones the status backfill treats as a
-            genuine answer (0048): provenance attached by an out-of-band load records
-            who and when the data arrived, but an import is not someone answering
-            this cycle, so it must not surface as an update here when it does not
-            count as one in QuestionsUpdated. This is a legitimately observational
-            use of the events table (audit timeline), kept even though the counts no
-            longer read events.
+            LastUpdatedAt is the newest scores.last_updated_at across the system's
+            answers in this data call; nil when nothing has been touched this cycle.
+            Only in-app saves stamp it (the same writes that set status = 'done'), so
+            imported or carried-forward rows never surface as an update here.
           type: string
         questionsanswered:
           description: |-
@@ -3328,7 +3202,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/controller.apiResponse-any'
+                $ref: '#/components/schemas/controller.apiError'
           description: Conflict
         "500":
           content:

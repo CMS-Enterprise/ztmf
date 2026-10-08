@@ -93,11 +93,12 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 
 	// Seed one answer in the previous cycle via raw SQL (no events, same as
 	// historical data), then roll it into the new cycle the way datacall
-	// creation does.
+	// creation does. The source row is stamped so the carried copy's NULL
+	// below proves the rollover does not copy last_updated_at.
 	notes := "progress integration marker"
 	_, err = conn.Exec(ctx, `
-		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes, last_updated_at)
+		VALUES ($1, $2, $3, $4, now() - interval '1 day')
 	`, fismaSystemID, functionOptionID, prevDC, notes)
 	require.NoError(t, err)
 
@@ -126,7 +127,7 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	assert.Equal(t, int32(1), before.QuestionsAnswered,
 		"the carried-forward answer has a row, so it counts as answered even before it is touched")
 	assert.False(t, before.UpdatedSinceStart)
-	assert.Nil(t, before.LastUpdatedAt)
+	assert.Nil(t, before.LastUpdatedAt, "a carried-forward row must not inherit the source cycle's last_updated_at")
 	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(1),
 		"expected count resolves through the environment mapping and includes the applicable answered function")
 
@@ -174,7 +175,7 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	assert.True(t, after.UpdatedSinceStart)
 	assert.LessOrEqual(t, after.QuestionsUpdated, after.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
-	if assert.NotNil(t, after.LastUpdatedAt, "last update timestamp must surface from the edit event") {
+	if assert.NotNil(t, after.LastUpdatedAt, "a real Save must stamp last_updated_at") {
 		assert.WithinDuration(t, time.Now(), *after.LastUpdatedAt, 5*time.Minute)
 	}
 }
@@ -413,6 +414,10 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 		"a no-op re-save must not transition a carried answer to done (ztmf#299)")
 	assert.Equal(t, int32(0), questionsUpdated(),
 		"a no-op re-save must leave QuestionsUpdated at zero")
+
+	var stamped *time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid = $1`, copiedScoreID).Scan(&stamped))
+	assert.Nil(t, stamped, "a no-op re-save must not stamp last_updated_at")
 }
 
 // TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration pins the
@@ -461,10 +466,9 @@ func TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration(t *testing.T) 
 // TestScoreProgressLastUpdatedIgnoresImportedEventsIntegration pins ztmf#513
 // through the real FindScoreProgress path: a score row whose only events are
 // out-of-band provenance ('imported') reports NO last-updated, matching the
-// status backfill that already refuses to call such a row done. Before the
-// action filter the lateral took the newest event of any action, so these rows
-// reported the load's timestamp while questionsupdated stayed 0 - last-updated
-// and questionsupdated disagreed about the same events.
+// status backfill that already refuses to call such a row done. last_updated_at
+// is derived from created/updated events only (0063's backfill and the seed's
+// copy of it), so these rows stay NULL while questionsupdated stays 0.
 //
 // The systems under test are resolved from the events table rather than
 // hardcoded, so the test cannot pass vacuously against a data call that simply

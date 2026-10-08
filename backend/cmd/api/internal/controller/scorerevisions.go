@@ -74,7 +74,7 @@ func ListScoreRevisions(w http.ResponseWriter, r *http.Request) {
 //	@Failure	400		{object}	apiResponse[any]
 //	@Failure	403		{object}	apiResponse[any]
 //	@Failure	404		{object}	apiResponse[any]
-//	@Failure	409		{object}	apiResponse[any]
+//	@Failure	409		{object}	apiError
 //	@Failure	500		{object}	apiResponse[any]
 //	@Router		/scores/{scoreid}/revisions/undo [post]
 func UndoScoreRevision(w http.ResponseWriter, r *http.Request) {

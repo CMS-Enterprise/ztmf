@@ -7,7 +7,11 @@ on:
         type: string
         description: environment to deploy to
         required: true
-        
+      deploy:
+        type: boolean
+        description: push the image, update the Lambdas, and write the image tag; false runs the build and tests only
+        default: true
+
 jobs:
   integration-tests:
     name: Integration Tests
@@ -31,22 +35,23 @@ jobs:
       # merges green.
       #
       # This is a peer of `build`, so it gates the MERGE (mark it a required check
-      # in branch protection) but does not block `build`'s deploy steps, which run
+      # in the main ruleset) but does not block `build`'s deploy steps, which run
       # in parallel. That is intentional: merge-gating keeps a red integration test
-      # out of main, and prod (deployed post-merge) therefore never runs on red.
-      # A PR auto-deploying to dev while red is acceptable and self-corrects on the
-      # next green push. To gate the deploy itself, add `needs: [integration-tests]`
-      # to `build`.
+      # out of main, so the post-merge dev and prod deploys never run on red. To
+      # gate the deploy itself, add `needs: [integration-tests]` to `build`.
       - name: Integration tests (isolated ephemeral DB)
         run: make test-integration
 
   build:
     name: Build and Smoke Test
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # No environment when only testing, so a PR check records no deployment.
+    environment: ${{ inputs.deploy && inputs.environment || '' }}
     permissions:
       id-token: write
       contents: read
+    env:
+      IMAGE_REPO: ${{ inputs.deploy && secrets.ECR_REPO_URL || 'ztmf-api' }}
     outputs:
       shaShort: ${{ steps.revParse.outputs.shaShort }}
     steps:
@@ -61,14 +66,14 @@ jobs:
         run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
       - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
+        run: docker buildx build --platform linux/amd64 --tag ${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
 
       - name: Snyk - Test Image
         uses: snyk/actions/docker@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
+          image: "${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}"
           args: --severity-threshold=high --file=./backend/Dockerfile --policy-path=./backend/.snyk
       
       - name: Start API and Postgres Containers
@@ -76,7 +81,7 @@ jobs:
         with:
           compose-file: ./backend/actions-compose.yml
         env:
-          API_IMAGE_URI: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
+          API_IMAGE_URI: "${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}"
           
           # for postgre container
           POSTGRES_DB: ztmf
@@ -107,6 +112,7 @@ jobs:
           file: ./backend/emberfall_tests.yml
 
       - name: AWS - Get Credentials
+        if: inputs.deploy
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ secrets.ROLEARN }}
@@ -114,12 +120,15 @@ jobs:
           aws-region: us-east-1
               
       - name: Docker - Login
+        if: inputs.deploy
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
       - name: Docker - Push
-        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
+        if: inputs.deploy
+        run: docker push ${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}
 
       - name: Setup Go
+        if: inputs.deploy
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Read the required Go from go.mod rather than hardcoding it. setup-go
@@ -129,6 +138,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Lambda - Build (Kion Key Rotate)
+        if: inputs.deploy
         # Kion rotate Lambda runs on Graviton (arm64) with provided.al2023 runtime.
         # The other Lambdas in this workflow are still x86_64/al2; those are tracked
         # for a separate upgrade PR (see ztmf-misc follow-up issue).
@@ -142,6 +152,7 @@ jobs:
           ls -la kion-key-rotate-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
       - name: Lambda - Build (Cert Rotation)
+        if: inputs.deploy
         run: |
           set -e
           cd backend
@@ -152,6 +163,7 @@ jobs:
           ls -la cert-rotation-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
       - name: Lambda - Upload to S3
+        if: inputs.deploy
         run: |
           set -e
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
@@ -170,6 +182,7 @@ jobs:
           echo "All Lambda deployment packages uploaded successfully"
 
       - name: Lambda - Update Function Code
+        if: inputs.deploy
         run: |
           set -e
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
@@ -198,6 +211,7 @@ jobs:
           done
         
       - name: AWS - SSM Put Parameter
+        if: inputs.deploy
         # Guard against IMPL environment misconfiguration: if PARAMETER_NAME
         # is copy-pasted from DEV (ztmf_api_tag) into IMPL, every impl CI
         # run silently overwrites dev's image pointer and dev's next apply
