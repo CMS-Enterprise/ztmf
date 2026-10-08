@@ -368,7 +368,7 @@ test-integration:
 	@sleep 15
 	@echo "🔬 Running integration tests against :54399..."
 	@cd backend && DB_SECRET_ID= DB_ENDPOINT=localhost DB_PORT=54399 DB_NAME=ztmf DB_USER=admin DB_PASS=testpass ENVIRONMENT=test \
-		go test -run Integration ./... -count=1 \
+		go test -p 1 -run Integration ./... -count=1 \
 		|| (echo "❌ Integration tests failed"; docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🧹 Cleaning up test environment..."
 	@cd backend && docker compose -f compose-test.yml down -v

@@ -302,3 +302,51 @@ resource "aws_cloudfront_distribution" "ztmf" {
     }
   }
 }
+
+resource "aws_cloudwatch_log_delivery_source" "cloudfront" {
+  name         = "ztmf-cloudfront${local.name_suffix}"
+  log_type     = "ACCESS_LOGS"
+  resource_arn = aws_cloudfront_distribution.ztmf.arn
+}
+
+resource "aws_cloudwatch_log_delivery_destination" "cloudfront_s3" {
+  name          = "ztmf-cloudfront-s3${local.name_suffix}"
+  output_format = "json"
+
+  delivery_destination_configuration {
+    destination_resource_arn = "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/cloudfront/${var.environment}"
+  }
+}
+
+resource "aws_cloudwatch_log_delivery" "cloudfront_s3" {
+  delivery_source_name     = aws_cloudwatch_log_delivery_source.cloudfront.name
+  delivery_destination_arn = aws_cloudwatch_log_delivery_destination.cloudfront_s3.arn
+
+  record_fields = [
+    "date",
+    "time",
+    "x-edge-location",
+    "c-ip",
+    "c-country",
+    "asn",
+    "cs-method",
+    "cs(Host)",
+    "cs-uri-stem",
+    "sc-status",
+    "cs(User-Agent)",
+    "cs-protocol",
+    "cs-protocol-version",
+    "ssl-protocol",
+    "ssl-cipher",
+    "time-to-first-byte",
+    "time-taken",
+    "x-edge-result-type",
+    "x-edge-detailed-result-type",
+    "x-edge-request-id",
+  ]
+
+  s3_delivery_configuration = [{
+    suffix_path                 = "{yyyy}/{MM}/{dd}"
+    enable_hive_compatible_path = false
+  }]
+}

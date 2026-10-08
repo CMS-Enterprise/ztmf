@@ -25,13 +25,14 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	questionID := int32(8004) // pillar 2
+	fixtureOrdr := 99
 
 	t.Run("InsertIgnoresCallerPillar", func(t *testing.T) {
 		f := &Function{
 			Function:              "pillar derive insert fixture",
 			Description:           "pillar must come from the question, not the caller",
 			DataCenterEnvironment: "AWS",
-			Ordr:                  99,
+			Ordr:                  &fixtureOrdr,
 			QuestionID:            &questionID,
 			PillarID:              1, // deliberately wrong
 		}
@@ -52,7 +53,7 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 			Function:              "pillar derive update fixture",
 			Description:           "an admin edit must not be able to introduce drift",
 			DataCenterEnvironment: "AWS",
-			Ordr:                  99,
+			Ordr:                  &fixtureOrdr,
 			QuestionID:            &questionID,
 			PillarID:              2,
 		}
@@ -75,7 +76,7 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 			Function:              "pillar derive questionless fixture",
 			Description:           "must not be written",
 			DataCenterEnvironment: "AWS",
-			Ordr:                  99,
+			Ordr:                  &fixtureOrdr,
 			PillarID:              3,
 		}
 		saved, err := f.Save(ctx)
@@ -93,7 +94,7 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 			Function:              "pillar derive bad question fixture",
 			Description:           "must not be written",
 			DataCenterEnvironment: "AWS",
-			Ordr:                  99,
+			Ordr:                  &fixtureOrdr,
 			QuestionID:            &missing,
 			PillarID:              1,
 		}

@@ -75,25 +75,51 @@ func scoreTx[T any](ctx context.Context, fn func(pgx.Tx) (*T, error)) (*T, error
 // reclaim it by comparing against a caller-supplied row before opening the
 // transaction: that is precisely the race this closes, and it reads as a
 // harmless optimization.
-func lockScore(ctx context.Context, tx pgx.Tx, scoreID int32) (*Score, error) {
-	current := &Score{}
-	err := tx.QueryRow(ctx, `
+//
+// Also returns the row's functionid, which Save's same-question check needs.
+// It is returned beside the Score rather than added to it because Score is
+// both the API response and the event payload.
+func lockScore(ctx context.Context, tx pgx.Tx, scoreID int32) (*Score, int32, error) {
+	return scanLockedScore(tx.QueryRow(ctx, lockedScoreSelect+`
+		WHERE scoreid = $1 FOR UPDATE
+	`, scoreID))
+}
+
+// lockScoreByNaturalKey is lockScore for a create, which names no scoreid: it
+// locks this system's answer to the option's question in the data call. An
+// unknown option matches nothing and reports ErrNoData.
+func lockScoreByNaturalKey(ctx context.Context, tx pgx.Tx, fismaSystemID, dataCallID, functionOptionID int32) (*Score, error) {
+	current, _, err := scanLockedScore(tx.QueryRow(ctx, lockedScoreSelect+`
+		WHERE fismasystemid = $1
+		  AND datacallid    = $2
+		  AND functionid    = (SELECT fo.functionid FROM functionoptions fo
+		                        WHERE fo.functionoptionid = $3)
+		FOR UPDATE
+	`, fismaSystemID, dataCallID, functionOptionID))
+	return current, err
+}
+
+const lockedScoreSelect = `
 		SELECT scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) AS datecalculated,
-		       notes, notes_is_ai_summary, functionoptionid, datacallid, status
-		FROM scores WHERE scoreid = $1 FOR UPDATE
-	`, scoreID).Scan(
+		       notes, notes_is_ai_summary, functionoptionid, datacallid, status, functionid
+		FROM scores`
+
+func scanLockedScore(row pgx.Row) (*Score, int32, error) {
+	current := &Score{}
+	var functionID int32
+	err := row.Scan(
 		&current.ScoreID, &current.FismaSystemID, &current.DateCalculated,
 		&current.Notes, &current.NotesIsAISummary, &current.FunctionOptionID, &current.DataCallID,
-		&current.Status,
+		&current.Status, &functionID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNoData
+		return nil, 0, ErrNoData
 	}
 	if err != nil {
-		return nil, trapError(err)
+		return nil, 0, trapError(err)
 	}
 
-	return current, nil
+	return current, functionID, nil
 }
 
 // writeScore executes a squirrel-built INSERT or UPDATE on scores inside tx and
