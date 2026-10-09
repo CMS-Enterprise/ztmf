@@ -454,6 +454,16 @@ func TestSaveCreateLosingToInFlightInsertIntegration(t *testing.T) {
 	`, rivalID).Scan(&created, &updated))
 	assert.Equal(t, 0, created, "the losing INSERT did nothing, so it must not record 'created'")
 	assert.Equal(t, 1, updated)
+
+	// Same for the revision: one update, with the rival's row as its before-image.
+	var kinds []string
+	var prevNotes *string
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT array_agg(kind ORDER BY revision_no), (array_agg(prev_notes))[1]
+		  FROM score_revisions WHERE scoreid = $1
+	`, rivalID).Scan(&kinds, &prevNotes))
+	assert.Equal(t, []string{revisionKindUpdate}, kinds)
+	assert.Equal(t, "rival", derefString(prevNotes))
 }
 
 // TestScoresUniqueAnswerConstraintIntegration asserts the guarantee at the

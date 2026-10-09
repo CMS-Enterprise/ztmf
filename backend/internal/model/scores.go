@@ -144,7 +144,7 @@ func (s *Score) Save(ctx context.Context) (*Score, error) {
 }
 
 // saveTx is Save's write - resolve the row, lock it, skip a no-op, write it and
-// record its event - inside the caller's transaction.
+// record its event and revision - inside the caller's transaction.
 //
 // status is set to 'done' in the same INSERT/UPDATE statement as the answer
 // (ztmf#435). Because it rides the same write, the state can never disagree with
@@ -176,7 +176,7 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 			var created *Score
 			created, err = writeScore(ctx, tx, sqlb)
 			if err == nil {
-				if err := insertScoreEvent(ctx, tx, eventActionCreated, created); err != nil {
+				if err := recordScoreWrite(ctx, tx, created, nil, revisionKindCreate, eventActionCreated, nil); err != nil {
 					return nil, err
 				}
 				return created, nil
@@ -290,8 +290,9 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 		return nil, err
 	}
 
-	// A create that resolved to an existing row is an update, and records one.
-	if err := insertScoreEvent(ctx, tx, eventActionUpdated, saved); err != nil {
+	// A create that resolved to an existing row is an update, and records one,
+	// with the locked row as its before-image.
+	if err := recordScoreWrite(ctx, tx, saved, snapshotOf(current), revisionKindUpdate, eventActionUpdated, nil); err != nil {
 		return nil, err
 	}
 
@@ -333,14 +334,17 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		return s, nil
 	}
 
-	// No lockScore here, unlike Save. The UPDATE below is conditional on
-	// status <> 'done', which takes its own row lock and evaluates the
-	// predicate atomically, so a separate FOR UPDATE would add a round trip
-	// and guard nothing; a concurrent Save holding the lock blocks this
-	// statement regardless. Note ztmf-misc#391 changes this: allocating
-	// revision_no as MAX+1 needs the lock held across the read, so Confirm
-	// takes it too once score_revisions lands.
+	// lockScore before the conditional UPDATE. The UPDATE's status <> 'done'
+	// predicate would be atomic on its own, but the revision needs two things
+	// the predicate cannot give: the before-image to record as prev, and
+	// revision_no allocated as MAX+1 with the read and the insert under one
+	// lock.
 	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		current, _, err := lockScore(ctx, tx, s.ScoreID)
+		if err != nil {
+			return nil, err
+		}
+
 		sqlb := stmntBuilder.
 			Update("public.scores").
 			Set("status", scoreStatusDone).
@@ -356,7 +360,11 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 			return nil, err
 		}
 
-		if err := insertScoreEvent(ctx, tx, eventActionUpdated, updated); err != nil {
+		// kind='confirm' rather than 'update': the answer did not change, only
+		// the affirmation that it is still accurate. ztmf-misc#392 labels the
+		// undo button off this value, and undoing it un-confirms without
+		// touching the answer.
+		if err := recordScoreWrite(ctx, tx, updated, snapshotOf(current), revisionKindConfirm, eventActionUpdated, nil); err != nil {
 			return nil, err
 		}
 
