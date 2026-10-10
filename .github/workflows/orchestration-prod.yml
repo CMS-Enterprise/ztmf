@@ -1,5 +1,9 @@
 name: Orchestration PROD
 
+# Every merge to main deploys DEV first, then PROD only if DEV succeeded, so a
+# bad image or Terraform change stops at DEV. DEV deploys only from here (and
+# manual-deploy-dev); PRs deploy to per-PR environments. Context: ztmf-misc#345.
+
 on:
   pull_request:
     branches:
@@ -7,31 +11,67 @@ on:
     types:
       - closed
 
-jobs:   
+# One prod run at a time across merges; a later merge already includes earlier
+# ones, so the single pending slot is enough. Keyed on merged so an unmerged
+# close lands in its own bucket and cannot evict a pending prod deploy.
+concurrency:
+  group: orchestration-prod-${{ github.event.pull_request.merged }}
+  cancel-in-progress: false
+
+jobs:
   analysis:
     name: Analysis
     if: ${{ github.event.pull_request.merged }}
     uses: ./.github/workflows/analysis.yml
     secrets: inherit
 
-  backend:
-    name: Backend
+  backend-dev:
+    name: Backend DEV
     if: ${{ github.event.pull_request.merged }}
     needs:
       - analysis
     uses: ./.github/workflows/backend.yml
     with:
+      environment: DEV
+    secrets: inherit
+
+  infrastructure-dev:
+    # One dev apply at a time, shared with manual-deploy-dev; queue, do not cancel.
+    concurrency:
+      group: deploy-dev
+      queue: max
+      cancel-in-progress: false
+    name: Infrastructure DEV
+    if: ${{ github.event.pull_request.merged }}
+    needs:
+      - analysis
+      - backend-dev
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: DEV
+    secrets: inherit
+
+  backend:
+    name: Backend PROD
+    if: ${{ github.event.pull_request.merged }}
+    needs:
+      - infrastructure-dev
+    uses: ./.github/workflows/backend.yml
+    with:
       environment: PROD
     secrets: inherit
-      
+
   infrastructure:
-    name: Infrastructure
+    # One prod apply at a time; queue, do not cancel.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    name: Infrastructure PROD
     if: ${{ github.event.pull_request.merged }}
-    needs: 
+    needs:
       - analysis
       - backend
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: PROD
     secrets: inherit
-  

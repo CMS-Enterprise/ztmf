@@ -15,8 +15,10 @@ type Function struct {
 	Function              string `json:"function"`
 	Description           string `json:"description"`
 	DataCenterEnvironment string `json:"datacenterenvironment"`
-	Ordr                  int    `json:"order"`
-	QuestionID            *int32 `json:"questionid,omitempty"`
+	// Rank among the functions of one question. Omitted or null keeps the
+	// stored value; a rank cannot be reset to null.
+	Ordr       *int   `json:"order"`
+	QuestionID *int32 `json:"questionid,omitempty"`
 	// Derived from the function's question on write; a value sent by a client is ignored.
 	PillarID int32 `json:"pillarid" readonly:"true"`
 }
@@ -44,7 +46,10 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 		sqlb = sqlb.Where("datacenterenvironment=?", i.DataCenterEnvironment)
 	}
 
-	sqlb = sqlb.OrderBy("ordr ASC")
+	// functionid breaks ties: after the functions.ordr backfill every edition of
+	// a function shares one ordr, so ordr alone would return heap order while
+	// looking sorted.
+	sqlb = sqlb.OrderBy("ordr ASC, functionid ASC")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[Function])
 }
@@ -102,16 +107,20 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 		sqlb = stmntBuilder.
 			Insert("functions").
 			Columns(functionsColumns[1:]...).
-			Values(f.Function, f.Description, f.DataCenterEnvironment, f.Ordr, f.QuestionID, f.PillarID).
+			Values(f.Function, f.Description, f.DataCenterEnvironment, derefInt(f.Ordr), f.QuestionID, f.PillarID).
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	} else {
-		sqlb = stmntBuilder.Update("functions").
+		ub := stmntBuilder.Update("functions").
 			Set("function", f.Function).
 			Set("description", f.Description).
 			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("ordr", f.Ordr).
 			Set("questionid", f.QuestionID).
-			Set("pillarid", f.PillarID).
+			Set("pillarid", f.PillarID)
+		// Only write ordr when the caller supplied it (see the field comment).
+		if f.Ordr != nil {
+			ub = ub.Set("ordr", *f.Ordr)
+		}
+		sqlb = ub.
 			Where("functionid=?", f.FunctionID).
 			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
 	}

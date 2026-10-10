@@ -24,3 +24,6 @@ alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "dev"
 cert_rotation_domain        = "dev.ztmf.cms.gov"
+
+# Per-PR environments (ztmf-misc#321) live under dev.ztmf.cms.gov/pr/<repo>/<n>/.
+pr_env_enabled = true

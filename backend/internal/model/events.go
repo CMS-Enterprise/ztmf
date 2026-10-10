@@ -32,8 +32,8 @@ type Event struct {
 //     run in every environment - the rows it wrote are permanent.
 //   - the seed data (_test_data_empire.sql) repeats that same predicate to
 //     keep scores.status agreeing with the events it seeds.
-//   - the analyst queries in docs/timespent_queries.sql and the progress
-//     query in scoreprogress.go filter on these literals inline.
+//   - the analyst queries in docs/timespent_queries.sql and migration 0064's
+//     last_updated_at backfill filter on these literals inline.
 //
 // Renaming one of these constants' VALUES is therefore a data migration
 // (backfill the events table, update every SQL predicate above), not a
@@ -56,13 +56,13 @@ const (
 	// here so there is one authoritative home for it.
 	//
 	// Note which consumers actually depend on the exact spelling: the readers
-	// that exclude imported rows (0048's backfill, the seed status-sync, the
-	// last-updated lateral in scoreprogress.go) do NOT name this value at all -
-	// they allowlist 'created'/'updated', so they would exclude an import under
-	// any spelling. The sites that would silently drift on a respelling are the
-	// WRITERS and the assertions over them: the seed INSERT in
-	// _test_data_empire.sql and scoreprogress_integration_test.go, which read
-	// back `action='imported'` to prove imported history stays not_started.
+	// that exclude imported rows (0048's and 0064's backfills, the seed
+	// status-sync) do NOT name this value at all - they allowlist
+	// 'created'/'updated', so they would exclude an import under any spelling.
+	// The sites that would silently drift on a respelling are the WRITERS and
+	// the assertions over them: the seed INSERT in _test_data_empire.sql and
+	// scoreprogress_integration_test.go, which read back `action='imported'`
+	// to prove imported history stays not_started.
 	//
 	// A future bulk importer must write this action rather than reusing the
 	// in-app create/update path - see Score.Save.
@@ -135,16 +135,23 @@ func (i *FindEventsInput) offset() uint32 {
 	return *i.Offset
 }
 
+type EventWithUser struct {
+	Event
+	UserFullName string `json:"userfullname"`
+	UserEmail    string `json:"useremail"`
+	UserDeleted  bool   `json:"userdeleted"`
+}
+
 // EventsPage is one page of the audit trail plus what a client needs to render
 // paging controls. Total counts every event matching the filters, not just this
 // page; Limit and Offset echo the values actually applied after defaulting and
 // clamping, so a client can trust them for page math without re-deriving the
 // rules.
 type EventsPage struct {
-	Events []*Event `json:"events"`
-	Total  int64    `json:"total"`
-	Limit  uint32   `json:"limit"`
-	Offset uint32   `json:"offset"`
+	Events []*EventWithUser `json:"events"`
+	Total  int64            `json:"total"`
+	Limit  uint32           `json:"limit"`
+	Offset uint32           `json:"offset"`
 }
 
 // recordEvent uses the provided SqlBuilder to determin what write operation was performed (create, update, delete), and
@@ -328,7 +335,7 @@ func FindEvents(ctx context.Context, input *FindEventsInput) (*EventsPage, error
 	// lies to the client's pager; one closure keeps them from drifting.
 	where := func(sqlb squirrel.SelectBuilder) squirrel.SelectBuilder {
 		if input.UserID != nil {
-			sqlb = sqlb.Where("userid=?", input.UserID)
+			sqlb = sqlb.Where("events.userid=?", input.UserID)
 		}
 		if input.Resource != nil {
 			sqlb = sqlb.Where("resource=?", input.Resource)
@@ -353,19 +360,25 @@ func FindEvents(ctx context.Context, input *FindEventsInput) (*EventsPage, error
 	// eventid breaks createdat ties (bulk writers stamp identical
 	// timestamps), making the order total so rows cannot swap across page
 	// boundaries between requests. See migration 0058.
-	sqlb := where(stmntBuilder.Select("*").From("events")).
+	sqlb := where(stmntBuilder.
+		Select("events.*",
+			"users.fullname AS userfullname",
+			"users.email AS useremail",
+			"users.deleted AS userdeleted").
+		From("events").
+		Join("users ON users.userid = events.userid")).
 		OrderBy("createdat DESC", "eventid DESC").
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
-	events, err := query(ctx, sqlb, pgx.RowToAddrOfStructByName[Event])
+	events, err := query(ctx, sqlb, pgx.RowToAddrOfStructByName[EventWithUser])
 	if err != nil {
 		return nil, err
 	}
 	if events == nil {
 		// CollectRows yields nil for zero rows; an empty page must serialize
 		// as [] rather than null.
-		events = []*Event{}
+		events = []*EventWithUser{}
 	}
 
 	total, err := queryRow(ctx, where(stmntBuilder.Select("COUNT(*)").From("events")), pgx.RowTo[int64])

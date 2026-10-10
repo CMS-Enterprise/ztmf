@@ -1,8 +1,10 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -414,6 +416,348 @@ func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
 	assert.Equal(t, 0, afterCount, "newDC must remain empty when the previous cycle had no scores")
 }
 
+// rolloverFixture is the shared scaffolding for the duplicate-handling tests
+// below: a source cycle, a target cycle whose deadline is later (so
+// findPreviousDataCall resolves source as target's predecessor), and a system
+// plus a function carrying at least two functionoptions - the shape that lets a
+// single question hold two different answers.
+//
+// Every lookup is fully ordered. A bare LIMIT 1 is plan-dependent and the empire
+// seed offers several candidates for each, so an unordered pick would make a CI
+// failure reproducible only by luck.
+// otherFunctionID is the control question. Tests that seed it alongside the
+// duplicated one pin the SECOND term of DISTINCT ON: keyed on fismasystemid
+// alone the copy would collapse a system's entire answer set to one row, and a
+// fixture holding only one question cannot tell that apart from correct dedup.
+type rolloverFixture struct {
+	prevDC, newDC    int32
+	fismaSystemID    int32
+	functionID       int32
+	optionA, optionB int32
+	otherFunctionID  int32
+	otherOption      int32
+}
+
+func newRolloverFixture(t *testing.T, ctx context.Context, conn *pgxpool.Conn, label string) rolloverFixture {
+	t.Helper()
+
+	var f rolloverFixture
+	suffix := time.Now().UnixNano()
+
+	err := conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%sprev_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.prevDC)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		RETURNING datacallid
+	`, fmt.Sprintf("%snew_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.newDC)
+	require.NoError(t, err)
+
+	rows, err := conn.Query(ctx, `
+		SELECT fo.functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid)
+		  FROM functionoptions fo
+		 GROUP BY fo.functionid
+		HAVING COUNT(*) >= 2
+		 ORDER BY fo.functionid
+		 LIMIT 2
+	`)
+	require.NoError(t, err)
+	var picked [][3]int32
+	for rows.Next() {
+		var r [3]int32
+		require.NoError(t, rows.Scan(&r[0], &r[1], &r[2]))
+		picked = append(picked, r)
+	}
+	rows.Close()
+	require.NoError(t, rows.Err())
+	require.Len(t, picked, 2, "need two distinct functions with at least two functionoptions each")
+
+	f.functionID, f.optionA, f.optionB = picked[0][0], picked[0][1], picked[0][2]
+	f.otherFunctionID, f.otherOption = picked[1][0], picked[1][1]
+
+	err = conn.QueryRow(ctx,
+		`SELECT fismasystemid FROM fismasystems ORDER BY fismasystemid LIMIT 1`,
+	).Scan(&f.fismaSystemID)
+	require.NoError(t, err)
+
+	return f
+}
+
+// captureRolloverLog runs fn with the standard logger redirected, returning
+// everything it wrote. copyPreviousScores signals through log.Printf rather than
+// its return value, so assertions about ROLLOVER_ANOMALY cannot be made any
+// other way. Safe because no test in this package calls t.Parallel().
+func captureRolloverLog(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	prevOut := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}()
+	fn()
+	return buf.String()
+}
+
+// withScoresUniquenessSuspended drops migration 0061's unique index for the
+// duration of fn and restores it afterwards.
+//
+// This is not a workaround for the constraint - it is how the precondition the
+// guard under test defends against gets reproduced. copyPreviousScores' DISTINCT
+// ON exists for a source cycle that already holds duplicates (a restore from a
+// pre-cleanup backup, a bulk load run with the index dropped); 0061 makes that
+// state unreachable through ordinary writes, so a test for the guard has to
+// manufacture it. And it cannot do so inside its own transaction:
+// copyPreviousScores opens its own pooled connection, so the index has to
+// actually be gone, globally, for the length of the call.
+//
+// The DDL is read back from pg_indexes rather than restated here, so the restore
+// cannot drift from whatever 0061 created. Restore runs via t.Cleanup, which Go
+// runs after the test's deferred purge - so the fixture's duplicates are gone by
+// then and the index can rebuild. It is a require, not an assert: a database
+// left without the constraint must fail loudly rather than silently drop
+// coverage for every later test.
+func withScoresUniquenessSuspended(t *testing.T, ctx context.Context, conn *pgxpool.Conn, fn func()) {
+	t.Helper()
+	const idx = "scores_fismasystem_datacall_function_uniq"
+
+	var ddl string
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = $1`, idx,
+	).Scan(&ddl), "migration 0061's index must exist; was it renamed?")
+
+	_, err := conn.Exec(ctx, `DROP INDEX public.`+idx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// A fresh connection, deliberately: t.Cleanup runs after the calling
+		// test's deferred conn.Release(), so reusing conn here dereferences a
+		// resource already returned to the pool.
+		restoreCtx := context.Background()
+		restoreConn, err := db.Conn(restoreCtx)
+		require.NoError(t, err, "the ztmf#491 unique index MUST be restored")
+		defer restoreConn.Release()
+
+		_, err = restoreConn.Exec(restoreCtx, ddl)
+		require.NoError(t, err, "the ztmf#491 unique index MUST be restored")
+	})
+
+	fn()
+}
+
+// TestCopyPreviousScoresDeduplicatesIntegration covers the DISTINCT ON guard in
+// copyPreviousScores (ztmf#502). A source cycle can hold two answers to the same
+// question via two functionoptions of one function (ztmf#491). Without the guard
+// both copy forward and the new cycle opens with a duplicate answer; with it,
+// exactly one row lands.
+//
+// Migration 0061 prevents that source state through ordinary writes, so the
+// fixture suspends the index to build it - see withScoresUniquenessSuspended.
+//
+// The assertion is on functionid, not functionoptionid: two rows differing only
+// by functionoptionid are already distinct on the latter, so counting that column
+// would pass whether or not the guard exists.
+func TestCopyPreviousScoresDeduplicatesIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	f := newRolloverFixture(t, ctx, conn, "dedup")
+
+	var copied int64
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		// Inserted in order and left at the default status, so the pair ties on status
+		// and optionB wins on the higher scoreid.
+		for _, opt := range []int32{f.optionA, f.optionB} {
+			_, err = conn.Exec(ctx, `
+				INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+				VALUES ($1, $2, $3, $4)
+			`, f.fismaSystemID, opt, f.prevDC, fmt.Sprintf("dedup marker %d", opt))
+			require.NoError(t, err)
+		}
+
+		// A second, singly-answered question on the same system. Dedup must not touch
+		// it - see the note on rolloverFixture.otherFunctionID.
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
+			VALUES ($1, $2, $3, 'control question')
+		`, f.fismaSystemID, f.otherOption, f.prevDC)
+		require.NoError(t, err)
+
+		// Inside the suspension too: if the guard regresses, the copy emits two
+		// rows and the assertions below name the failure, instead of the index
+		// aborting the copy with an opaque 23505.
+		copied, err = copyPreviousScores(ctx, f.newDC)
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, copied,
+		"the duplicated question collapses to one row and the control question survives alongside it")
+
+	var distinctFunctions int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT fo.functionid)
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2
+	`, f.newDC, f.fismaSystemID).Scan(&distinctFunctions)
+	require.NoError(t, err)
+	assert.Equal(t, 2, distinctFunctions,
+		"dedup is per question - keyed on fismasystemid alone it would collapse the whole answer set to one row")
+
+	var landed int32
+	var landedCount int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(*), COALESCE(MAX(s.functionoptionid), 0)
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
+	`, f.newDC, f.fismaSystemID, f.functionID).Scan(&landedCount, &landed)
+	require.NoError(t, err)
+	assert.Equal(t, 1, landedCount, "the new cycle must hold exactly one answer for the function")
+	assert.EqualValues(t, f.optionB, landed, "scoreid DESC must pick the most recent of the duplicate set")
+}
+
+// TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration covers the status
+// term in the dedup tiebreak. scoreid is creation order, not edit order - an
+// edit is an in-place UPDATE that keeps its scoreid - so the highest scoreid is
+// not the freshest answer.
+//
+// The scenario is what a duplicated system looks like one cycle after the
+// duplicate appeared: rollover copied the pair in as not_started, and the ISSO
+// then answered one of them ('done'). The bulk copy leaves their relative
+// scoreid order arbitrary, so this seeds the answered row FIRST - on scoreid
+// alone the untouched twin outranks it and the answer the ISSO actually gave
+// for the cycle is the one thrown away.
+func TestCopyPreviousScoresPrefersAnsweredDuplicateIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	f := newRolloverFixture(t, ctx, conn, "status")
+
+	var copied int64
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		// Answered first (lower scoreid), untouched twin second (higher scoreid) -
+		// the ordering that makes scoreid and status disagree.
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+			VALUES ($1, $2, $3, $4, 'answered this cycle')
+		`, f.fismaSystemID, f.optionA, f.prevDC, scoreStatusDone)
+		require.NoError(t, err)
+
+		_, err = conn.Exec(ctx, `
+			INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, notes)
+			VALUES ($1, $2, $3, $4, 'stale carried twin')
+		`, f.fismaSystemID, f.optionB, f.prevDC, scoreStatusNotStarted)
+		require.NoError(t, err)
+
+		copied, err = copyPreviousScores(ctx, f.newDC)
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, copied, "the duplicate pair must still collapse to one row")
+
+	var landedOption int32
+	var landedNotes string
+	err = conn.QueryRow(ctx, `
+		SELECT s.functionoptionid, s.notes
+		  FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1 AND s.fismasystemid = $2 AND fo.functionid = $3
+	`, f.newDC, f.fismaSystemID, f.functionID).Scan(&landedOption, &landedNotes)
+	require.NoError(t, err)
+	assert.EqualValues(t, f.optionA, landedOption,
+		"the answered row must beat the untouched twin even though the twin has the higher scoreid")
+	assert.Equal(t, "answered this cycle", landedNotes,
+		"notes must travel with the winning row, not be mixed across the pair")
+}
+
+// TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration pins the reason
+// copyPreviousScores resolves three counts instead of one. ROLLOVER_ANOMALY is
+// wired to a CloudWatch alarm, and the accounting this replaced compared copied
+// against a plain COUNT(*) of the source cycle. Deduplicating underneath that
+// comparison makes every healthy rollover of a duplicated cycle look like an
+// under-copy: here the source holds 2 rows and the copy correctly emits 1, which
+// the old arithmetic reads as a partial copy. The alarm would fire precisely
+// when the guard is doing its job.
+//
+// Only the silence is asserted, because the firing side is not deterministically
+// reachable from a test. copied < expected needs the copy to emit fewer rows than
+// the count predicted, and both derive from the same source, joins and filter;
+// resolvable < candidates needs a score whose FK parent is missing, which the
+// schema refuses to create (NOT NULL columns, ON DELETE RESTRICT parents). The
+// existing empty-previous test covers the other benign-silence case.
+func TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	f := newRolloverFixture(t, ctx, conn, "alarm")
+
+	var copied int64
+	var logged string
+	withScoresUniquenessSuspended(t, ctx, conn, func() {
+		for _, opt := range []int32{f.optionA, f.optionB} {
+			_, err = conn.Exec(ctx, `
+				INSERT INTO scores (fismasystemid, functionoptionid, datacallid)
+				VALUES ($1, $2, $3)
+			`, f.fismaSystemID, opt, f.prevDC)
+			require.NoError(t, err)
+		}
+
+		var sourceRows int64
+		err = conn.QueryRow(ctx,
+			`SELECT COUNT(*) FROM scores WHERE datacallid = $1`, f.prevDC,
+		).Scan(&sourceRows)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, sourceRows, "the source must hold the duplicate pair for this to assert anything")
+
+		logged = captureRolloverLog(t, func() {
+			// Proves the redirect is live. Without it a broken capture would return
+			// an empty string and the NotContains below would pass vacuously.
+			log.Print("capture-is-live")
+			copied, err = copyPreviousScores(ctx, f.newDC)
+		})
+	})
+	require.NoError(t, err)
+	require.Contains(t, logged, "capture-is-live", "log capture must be working for the assertion below to mean anything")
+	require.EqualValues(t, 1, copied, "the duplicate pair must collapse, or this asserts nothing")
+
+	assert.NotContains(t, logged, "ROLLOVER_ANOMALY",
+		"collapsing a duplicate is the guard working, not a partial copy - it must not trip the alarm")
+}
+
 // TestFindLatestDataCallByDeadlineIntegration verifies "latest" resolves by
 // deadline, not datacallid: a call inserted later (higher serial id) but with
 // an earlier deadline must NOT win over an earlier-inserted call with a
@@ -584,6 +928,12 @@ func TestScoreSaveStampsAuditFieldsIntegration(t *testing.T) {
 	assert.Equal(t, "Grand Moff Tarkin", saved.LastEditedBy.Name)
 	assert.Equal(t, "Grand.Moff@DeathStar.Empire", saved.LastEditedBy.Email)
 	assert.Equal(t, "OWNER", saved.LastEditedBy.Role)
+
+	var stamped *time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid = $1`, saved.ScoreID).Scan(&stamped))
+	if assert.NotNil(t, stamped, "a newly created answer must stamp last_updated_at") {
+		assert.False(t, stamped.Before(before), "last_updated_at at or after the moment of Save")
+	}
 }
 
 // TestFindScoresIncludesAuditFieldsIntegration verifies the read-side
@@ -760,6 +1110,15 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 	scoreID := saved.ScoreID
 	defer func() { _, _ = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid=$1`, scoreID) }()
 
+	lastUpdated := func() time.Time {
+		t.Helper()
+		var at *time.Time
+		require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid=$1`, scoreID).Scan(&at))
+		require.NotNil(t, at, "a saved answer must carry last_updated_at")
+		return *at
+	}
+	createdAt := lastUpdated()
+
 	// Capture the event count for this scoreid as our baseline. We do not
 	// assert an absolute count here because the dev events table accretes
 	// across test runs and a recycled sequence value can leave stale event
@@ -801,6 +1160,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 		tarkinResult.LastEditedBy.UserID,
 		"no-op Save response must report Krennic as the editor, not Tarkin who issued the PUT")
 	assert.Equal(t, "ISSO", tarkinResult.LastEditedBy.Role)
+	assert.True(t, lastUpdated().Equal(createdAt), "a no-op Save must not move last_updated_at")
 
 	// Step 4: A real change DOES record a new event. Confirms the no-op
 	// guard is not over-broad.
@@ -823,6 +1183,7 @@ func TestScoreSaveNoOpPreservesPriorEditorIntegration(t *testing.T) {
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111",
 		realResult.LastEditedBy.UserID,
 		"after a real change, the editor must be the user who made it")
+	assert.True(t, lastUpdated().After(createdAt), "a genuine edit must move last_updated_at forward")
 }
 
 // TestFindScoreDiffIntegration exercises the real diff SQL against Postgres:
@@ -1444,6 +1805,9 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	assert.Equal(t, int32(1), after.QuestionsUpdated,
 		"a confirmed answer must count as updated")
 	assert.Equal(t, int32(1), after.QuestionsAnswered)
+	if assert.NotNil(t, after.LastUpdatedAt, "confirm must stamp last_updated_at, or progress shows updated with no timestamp") {
+		assert.WithinDuration(t, time.Now(), *after.LastUpdatedAt, 5*time.Minute)
+	}
 
 	// Phase 3: atomic, audit-preserving idempotency. A different user whose
 	// request loaded not_started before the first write still gets the same
@@ -1462,6 +1826,8 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	assert.Equal(t, "done", reconfirmed.Status)
 	assert.Equal(t, eventsAfterFirstConfirm, countScoreEvents(t, ctx, conn, copiedScoreID),
 		"re-confirming must not append an audit event")
+	assert.Equal(t, after.LastUpdatedAt, progressFor().LastUpdatedAt,
+		"re-confirming must not move last_updated_at")
 	if assert.NotNil(t, reconfirmed.LastEditedBy, "the original confirmer must remain the editor") {
 		assert.Equal(t, confirmerID, reconfirmed.LastEditedBy.UserID)
 		assert.NotEqual(t, secondConfirmerID, reconfirmed.LastEditedBy.UserID)

@@ -34,9 +34,10 @@ func TestFindEventsPaginationIntegration(t *testing.T) {
 		conn.Release()
 	})
 
-	// events.userid is a FK, so borrow any seeded user as the initiator.
-	var userID string
-	require.NoError(t, conn.QueryRow(ctx, `SELECT userid FROM public.users LIMIT 1`).Scan(&userID))
+	var userID, fullName, email string
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT userid, fullname, email FROM public.users WHERE deleted=false LIMIT 1`,
+	).Scan(&userID, &fullName, &email))
 
 	// Five rows sharing one timestamp (the case createdat alone cannot order)
 	// plus one strictly older row, all in the far past so they cannot collide
@@ -56,7 +57,7 @@ func TestFindEventsPaginationIntegration(t *testing.T) {
 	// Walk the pages and require exactly-once coverage in a strictly
 	// decreasing (createdat, eventid) order.
 	seen := map[int64]bool{}
-	var prev *Event
+	var prev *EventWithUser
 	for offset := uint32(0); ; offset += limit {
 		off := offset
 		page, err := FindEvents(ctx, &FindEventsInput{Resource: &res, Limit: &limit, Offset: &off})
@@ -69,6 +70,9 @@ func TestFindEventsPaginationIntegration(t *testing.T) {
 		}
 		for _, e := range page.Events {
 			require.Positive(t, e.EventID, "backfilled identity must be present on read")
+			assert.Equal(t, fullName, e.UserFullName, "initiating user resolves on every row")
+			assert.Equal(t, email, e.UserEmail)
+			assert.False(t, e.UserDeleted, "the borrowed user is active")
 			require.False(t, seen[e.EventID], "row %d appeared on two pages", e.EventID)
 			seen[e.EventID] = true
 			if prev != nil {
@@ -100,4 +104,41 @@ func TestFindEventsPaginationIntegration(t *testing.T) {
 	assert.EqualValues(t, 0, page.Total)
 	assert.NotNil(t, page.Events)
 	assert.Empty(t, page.Events)
+}
+
+func TestFindEventsSoftDeletedUserResolutionIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+
+	const resource = "deleted_user_test"
+	var userID string
+	t.Cleanup(func() {
+		// Events first: the FK blocks removing the user while rows cite them.
+		_, _ = conn.Exec(ctx, `DELETE FROM public.events WHERE resource=$1`, resource)
+		_, _ = conn.Exec(ctx, `DELETE FROM public.users WHERE userid=$1`, userID)
+		conn.Release()
+	})
+
+	require.NoError(t, conn.QueryRow(ctx,
+		`INSERT INTO public.users (email, fullname, role, deleted, identity_provider)
+		 VALUES ('retired.officer@empire.test', 'Retired Officer', 'ISSO', true, 'okta')
+		 RETURNING userid`,
+	).Scan(&userID))
+	_, err = conn.Exec(ctx,
+		`INSERT INTO public.events (userid, action, resource, payload) VALUES ($1, 'created', $2, '{}')`,
+		userID, resource)
+	require.NoError(t, err)
+
+	res := resource
+	page, err := FindEvents(ctx, &FindEventsInput{Resource: &res})
+	require.NoError(t, err)
+	require.Len(t, page.Events, 1)
+	e := page.Events[0]
+	assert.Equal(t, "Retired Officer", e.UserFullName, "identity survives soft deletion")
+	assert.Equal(t, "retired.officer@empire.test", e.UserEmail)
+	assert.True(t, e.UserDeleted, "the flag is the client's cue, not a blanked identity")
 }

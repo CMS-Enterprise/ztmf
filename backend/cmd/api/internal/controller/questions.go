@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -28,7 +27,9 @@ func ListFismaSystemQuestions(w http.ResponseWriter, r *http.Request) {
 	if v, ok := vars["fismasystemid"]; !ok {
 		respond(w, r, nil, ErrNotFound)
 	} else {
-		fmt.Sscan(v, &fismaSystemID)
+		// An unusable id matches no system, which the join already renders as an
+		// empty list - the established contract for this endpoint.
+		fismaSystemID, _ = pathInt32(v)
 	}
 
 	var questions []*model.Question
@@ -70,7 +71,12 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	} else {
-		fmt.Sscan(v, &questionID)
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		questionID = id
 	}
 	question, err := model.FindQuestionByID(r.Context(), questionID)
 	respond(w, r, question, err)
@@ -87,12 +93,17 @@ func GetQuestionByID(w http.ResponseWriter, r *http.Request) {
 //	@Success	204			"No Content"
 //	@Failure	400			{object}	apiResponse[any]
 //	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
 //	@Failure	500			{object}	apiResponse[any]
 //	@Router		/questions [post]
 //	@Router		/questions/{questionid} [put]
 func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// The questionnaire catalog is a single HHS-wide set, so an OPDIV_ADMIN must
+	// not reach it even though IsAdmin() includes them - editing a question here
+	// changes what every other OpDiv is scored on (ztmf-misc#398). Gate runs
+	// before getJSON and before any DB access, which rbac_enforcement_test pins.
+	if !user.CanWriteHHSWide() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -106,9 +117,21 @@ func SaveQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["questionid"]; ok {
-		fmt.Sscan(v, &q.QuestionID)
+	// Re-pinned from the route after decoding, never taken from the body. getJSON
+	// decodes any field present on the struct, so without this a POST carrying
+	// "questionid" lands in the id and Save takes its UPDATE branch - silently
+	// rewriting that question, and answering 201 Created for it. The route
+	// decides create vs update; the body only carries content (ztmf-misc#398).
+	q.QuestionID = 0
+	if v, ok := mux.Vars(r)["questionid"]; ok {
+		// A path id that is present but unusable (0, or past int32) is a 404,
+		// never a fallthrough to the create branch - the route said update.
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		q.QuestionID = id
 	}
 
 	q, err = q.Save(r.Context())

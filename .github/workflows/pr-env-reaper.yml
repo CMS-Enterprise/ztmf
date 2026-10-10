@@ -1,0 +1,119 @@
+name: PR Environment Reaper
+
+# Nightly backstop for per-PR environments (ztmf-misc#344, epic ztmf-misc#321)
+# in both ztmf and ztmf-ui. scripts/pr-env-reaper.sh destroys environments
+# whose PR is closed or idle past the TTL, retires dead pr-* GitHub
+# Environments, and reports orphans it cannot clear. Any finding, or a failed
+# run, opens or updates one tracking issue in ztmf-misc instead of relying on
+# the scheduled-workflow failure email, which only reaches whoever last edited
+# this file. The CloudWatch fleet alarm (infrastructure/monitoring-pr-env.tf)
+# covers this workflow not running at all.
+#
+# PR_ENV_REAPER_TOKEN is a fine-grained PAT on ztmf, ztmf-ui, and ztmf-misc:
+# GITHUB_TOKEN cannot comment on ztmf-ui PRs, delete its environments, or file
+# issues in ztmf-misc.
+
+on:
+  schedule:
+    # 07:00 UTC, 2am Central.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what would be reaped without changing anything
+        type: boolean
+        default: false
+      force_failure:
+        description: Fail before reaping, to test the tracking issue
+        type: boolean
+        default: false
+
+concurrency:
+  group: pr-env-reaper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TTL_DAYS: 7
+  TRACKING_REPO: CMS-Enterprise/ztmf-misc
+  TRACKING_TITLE: "pr-env reaper: orphaned environments or a failed run"
+
+jobs:
+  reap:
+    name: Reap PR environments
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: AWS - Get Credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.PR_ENV_ROLEARN }}
+          # Each destroy can wait on target-group deregistration.
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.10.3"
+          terraform_wrapper: false
+
+      - name: Forced failure
+        if: inputs.force_failure
+        run: |
+          echo "::error::force_failure was set on this dispatch; failing before the reaper runs."
+          exit 1
+
+      - name: Reap
+        env:
+          GH_TOKEN: ${{ secrets.PR_ENV_REAPER_TOKEN }}
+          DRY_RUN_FLAG: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          # shellcheck disable=SC2086
+          scripts/pr-env-reaper.sh $DRY_RUN_FLAG --report findings.md
+
+      # A dry run only writes the summary. Otherwise a clean run does nothing,
+      # and any finding or failure comments on the open tracking issue, or
+      # opens one if none is open.
+      - name: Report
+        if: always() && !cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.PR_ENV_REAPER_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          touch findings.md
+          {
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo "The [reaper run]($RUN_URL) failed before finishing, so environments it should have cleaned up may still be running. Check the job log."
+              echo
+            fi
+            if [ -s findings.md ]; then
+              echo "Findings from [this run]($RUN_URL):"
+              echo
+              cat findings.md
+            fi
+          } > report.md
+          if [ ! -s report.md ]; then
+            echo "Clean run: nothing to reap or report." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DRY_RUN" = "true" ]; then
+            exit 0
+          fi
+          existing=$(gh issue list --repo "$TRACKING_REPO" --state open --search "in:title \"$TRACKING_TITLE\"" \
+            --json number,title --jq '.[] | select(.title == env.TRACKING_TITLE) | .number' | head -n 1)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$TRACKING_REPO" --body-file report.md
+          else
+            gh issue create --repo "$TRACKING_REPO" --title "$TRACKING_TITLE" --body-file report.md
+          fi

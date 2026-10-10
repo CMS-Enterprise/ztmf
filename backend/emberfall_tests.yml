@@ -172,12 +172,11 @@ updatedScoreData: &updatedScoreData
   functionoptionid: 1
   notes: "Updated by Emberfall test"
 
-# HHS metadata anchor (12 fields). Used to exercise the RBAC write gate:
-# OWNER writes land in DB. For scoped admins the 9 system attributes are
-# stripped on create and restored on update, while the contact fields -
-# isso_name, system_owner, system_owner_email - are OpDiv-writable and take
-# their value on both paths (ztmf#511, ztmf#512). Values are intentionally
-# Star-Wars-themed to match the fixture.
+# HHS metadata anchor (12 fields). Asserted after OWNER writes (Test A) and
+# after an OpDiv-scoped admin creates a system in a granted OpDiv (Test B):
+# every admin who may manage a system writes all of its fields
+# (ztmf-misc#356). Values are intentionally Star-Wars-themed to match the
+# fixture.
 hhsExpected: &hhsExpected
   hva: true
   fips: "Moderate"
@@ -197,7 +196,7 @@ hhsExpected: &hhsExpected
 # Combined base+HHS anchor for the OWNER create-with-HHS test.
 fismaSystemWithHHSData: &fismaSystemWithHHSData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
-  fismaacronym: "ZTMF"
+  fismaacronym: "ZTMF-HHS" # distinct from fismaSystemData: same-OpDiv duplicates are rejected (ztmf#587)
   fismaname: "Zero Trust Maturity Framework"
   fismasubsystem: "Core System"
   component: "Security"
@@ -695,6 +694,25 @@ tests:
           data:
             <<: *fismaSystemData
   
+  # ztmf#587: a second live system in the same OpDiv may not reuse the acronym
+  # (compared case-insensitively, whitespace-trimmed). Same payload, different
+  # casing and padding on the acronym, still rejected.
+  - url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+        fismauid: "12345678-ABCD-4321-AFAB-123456789DUP"
+        fismaacronym: " ztmf "
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -746,6 +764,71 @@ tests:
             <<: *updatedFismaSystemData
             sdl_sync_enabled: true
 
+  # A PUT that omits sdl_sync_enabled leaves it as stored. It used to be a
+  # plain bool written on every update, so this exact request switched sync
+  # off for the system. Body spelled out rather than merged from the anchor,
+  # which carries sdl_sync_enabled: false explicitly.
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+        fismaacronym: "ZTMF-UPD"
+        fismaname: "Updated Zero Trust Maturity Framework"
+        fismasubsystem: "Updated Core System"
+        component: "Updated Security"
+        groupacronym: "USEC"
+        groupname: "Updated Security Group"
+        divisionname: "Updated IT Division"
+        datacenterenvironment: "AWS"
+        datacallcontact: "updated-contact@example.com"
+        issoemail: "updated-isso@example.com"
+    expect:
+      status: 204
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            sdl_sync_enabled: true
+  # A PUT that omits fismaacronym leaves it as stored; it used to write "".
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
+        fismaname: "Updated Zero Trust Maturity Framework"
+        fismasubsystem: "Updated Core System"
+        component: "Updated Security"
+        groupacronym: "USEC"
+        groupname: "Updated Security Group"
+        divisionname: "Updated IT Division"
+        datacenterenvironment: "AWS"
+        datacallcontact: "updated-contact@example.com"
+        issoemail: "updated-isso@example.com"
+    expect:
+      status: 204
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            fismaacronym: "ZTMF-UPD"
+            sdl_sync_enabled: true
   # Test A — OWNER writes HHS fields on create, reads them back, then does a
   # partial PUT (HHS fields omitted). The partial PUT must NOT wipe the stored
   # HHS values (the conditional SetMap fix in model/fismasystems.go).
@@ -782,6 +865,8 @@ tests:
 
   # Partial PUT — core fields only, HHS fields intentionally omitted.
   # Before the fix this would have written NULL to all 11 HHS columns.
+  # The acronym stays ZTMF-HHS because "ZTMF-UPD" is held by the live system
+  # from createFismaSystem, and a same-OpDiv duplicate is rejected (ztmf#587).
   - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystemWithHHS.Response.data.fismasystemid}}"
     method: PUT
     headers:
@@ -790,6 +875,7 @@ tests:
     body:
       json:
         <<: *updatedFismaSystemData
+        fismaacronym: "ZTMF-HHS"
     expect:
       status: 204
 
@@ -819,6 +905,7 @@ tests:
     body:
       json:
         <<: *updatedFismaSystemData
+        fismaacronym: "ZTMF-HHS" # see the partial PUT above (ztmf#587)
         issoemail: "" # blanked email must not 400 (it clears to NULL)
         hva: null # explicit null clears the boolean to NULL (Unknown)
     expect:
@@ -840,14 +927,34 @@ tests:
             system_owner: "Grand Moff Tarkin" # omitted HHS field preserved
             cloud_system: true # omitted HHS field preserved
 
-  # Test B — Scoped admin RBAC gate.
+  # Test B — Scoped admin write path (ztmf-misc#356).
   #
-  # Part 1: opDivAdmin POSTs a system with HHS fields → clearUnscopedOnlyFields
-  # strips the 9 system attributes; the created record has them null. The
-  # contact fields (isso_name, system_owner, system_owner_email) are not in
-  # that set - an OpDiv-scoped admin may write them - so they persist.
-  # opdiv_id 15 = EMPIRE OpDiv, position 15 in the seed INSERT sequence
-  # (_test_data_empire.sql). If this fails with 403, the seed order changed.
+  # An OPDIV_ADMIN who holds a grant for a system's OpDiv writes every field
+  # on it, the 9 system attributes included. The OpDiv grant, checked by
+  # guardManageFismaSystem, is the only gate. opdiv_id 15 = EMPIRE OpDiv,
+  # position 15 in the seed INSERT sequence (_test_data_empire.sql). If Part 1
+  # fails with 403, the seed order changed.
+  #
+  # Part 1: opDivAdmin POSTs a system with HHS fields → every value persists.
+  # ztmf#587: an update may not take an acronym another live system in the
+  # OpDiv holds (createFismaSystemWithHHS now owns "ZTMF-HHS"). A system
+  # keeping its own acronym on update is not a collision with itself; the two
+  # PUTs on createFismaSystemWithHHS above already exercise that path.
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFismaSystemData
+        fismaacronym: "ztmf-hhs"
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
   - id: createFismaSystemScopedAdmin
     url: http://localhost:8080/api/v1/fismasystems
     method: POST
@@ -865,21 +972,13 @@ tests:
       body:
         json:
           data:
-            hva: null
-            fips: null
-            system_type: null
-            cloud_system: null
-            cloud_service_model: null
-            cloud_vendor: null
-            system_operator: null
-            goco_coco_gogo: null
-            legacy: null
-            isso_name: "Darth Vader" # OpDiv-writable, so the POSTed value persists
-            system_owner: "Grand Moff Tarkin" # OpDiv-writable (ztmf#512)
-            system_owner_email: "tarkin@deathstar.empire" # OpDiv-writable (ztmf#512)
+            <<: *hhsExpected
+            opdiv_id: 15
 
-  # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv — opDivAdmin
-  # holds a write grant for this system).
+  # Part 2: OWNER sets HHS fields on system 1002 (EMPIRE OpDiv, where
+  # opDivAdmin holds a write grant). This PUT also flips the system's data
+  # center to "Other", which the datacentermismatches step later in the suite
+  # relies on.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -891,12 +990,13 @@ tests:
     expect:
       status: 204
 
-  # Part 3: opDivAdmin PUTs system 1002 with different values. The 9 system
-  # attributes are restored from the stored row by preserveUnscopedOnlyFields;
-  # the contact fields are not in that set, so the OpDiv admin's values take
-  # effect. Every contact value sent here must differ from what OWNER stored
-  # in Part 2, or the GET below cannot tell a successful write from a
-  # restored one.
+  # Part 3: opDivAdmin PUTs system 1002 with a different value for every
+  # attribute and contact field it can vary. Each value must differ from what
+  # OWNER stored in Part 2, or the GET below cannot tell a successful write
+  # from an untouched one. Enum values come from the systemattributes
+  # vocabulary, which Save validates. cloud_system stays true: Save rejects a
+  # service model or vendor when cloud_system is No, and cloud_vendor is the
+  # cloud field asserted here (cloud_service_model array equality is not).
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: PUT
     headers:
@@ -905,16 +1005,20 @@ tests:
     body:
       json:
         <<: *system1002WithHHSData
-        hva: false # scoped-admin overwrite attempt; the stored value is restored
-        isso_name: "Wilhuff Tarkin" # OpDiv-writable, so this one does take effect
-        system_owner: "Firmus Piett" # OpDiv-writable (ztmf#512), takes effect
-        system_owner_email: "piett@executor.empire" # OpDiv-writable (ztmf#512), takes effect
+        hva: false
+        fips: "High"
+        system_type: "General Support System"
+        cloud_vendor: "Kuat Drive Yards"
+        system_operator: "Contractor"
+        goco_coco_gogo: "COCO"
+        legacy: true
+        isso_name: "Wilhuff Tarkin"
+        system_owner: "Firmus Piett"
+        system_owner_email: "piett@executor.empire"
     expect:
       status: 204
 
-  # GET confirms OWNER's system-attribute values survived the scoped admin
-  # PUT, while the OpDiv admin's contact fields landed. The explicit keys
-  # override the values carried by the hhsExpected merge key.
+  # GET confirms the OpDiv admin's values landed over OWNER's.
   - url: "http://localhost:8080/api/v1/fismasystems/1002"
     method: GET
     headers:
@@ -926,10 +1030,30 @@ tests:
       body:
         json:
           data:
-            <<: *hhsExpected
+            hva: false
+            fips: "High"
+            system_type: "General Support System"
+            cloud_system: true
+            cloud_vendor: "Kuat Drive Yards"
+            system_operator: "Contractor"
+            goco_coco_gogo: "COCO"
+            legacy: true
             isso_name: "Wilhuff Tarkin"
             system_owner: "Firmus Piett"
             system_owner_email: "piett@executor.empire"
+
+  # Part 4: opDivAdmin PUTs system 1005 (REBELLION, outside the EMPIRE grant)
+  # → 403. The grant check is what remains once the field gate is gone.
+  - url: "http://localhost:8080/api/v1/fismasystems/1005"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
 
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
@@ -1053,6 +1177,55 @@ tests:
         json:
           data:
             <<: *decommissionedFismaSystemData
+
+  # ztmf#587: a decommissioned system's acronym is free for reuse, but the
+  # decommissioned system cannot then be reactivated while the live one holds
+  # it. Create the squatter, prove reactivation is refused, retire the
+  # squatter, and the normal reactivation below succeeds.
+  - id: createAcronymSquatter
+    url: http://localhost:8080/api/v1/fismasystems
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+        fismauid: "12345678-ABCD-4321-AFAB-123456789SQT"
+        fismaacronym: "ZTMF-UPD"
+    expect:
+      status: 201
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismaacronym: "ZTMF-UPD"
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createFismaSystem.Response.data.fismasystemid}}/reactivate"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "Attempted while another live system holds the acronym"
+    expect:
+      status: 400
+      body:
+        json:
+          error: "invalid input"
+
+  - url: "http://localhost:8080/api/v1/fismasystems/{{.createAcronymSquatter.Response.data.fismasystemid}}"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        notes: "Squatter retired so the original can be reactivated"
+    expect:
+      status: 200
 
   # Reactivate the decommissioned system (508 compliance restore path).
   # reactivated_by/reactivated_date are not asserted here because Emberfall does
@@ -1365,6 +1538,97 @@ tests:
           data:
             <<: *updatedFunctionData
 
+  # A POST carrying functionid must still create. The id comes from the route,
+  # never the body: without that re-pin Save reads the body id, takes its UPDATE
+  # branch, and rewrites that function while answering 201 Created.
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionid: 7001
+        function: "Body Id Override Function"
+        description: "must create, not update the function named in the body"
+        datacenterenvironment: "AWS"
+        order: 98
+        questionid: 8001
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded function 7001 is untouched - only the create above happened. A
+  # literal id, not a {{...}} reference: Emberfall substitutes templates in URLs
+  # only, never inside a body.
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            functionid: 7001
+            function: "Imperial Device Management"
+            datacenterenvironment: "Imperial-Fleet"
+
+  # Same unusable-path-id rule on functions (see the questions pair below).
+  - url: http://localhost:8080/api/v1/functions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 404
+
+  # A PUT that omits "order" must leave the stored rank alone. Function.Ordr is
+  # a *int for exactly this: absent and 0 are indistinguishable once decoded, so
+  # the unconditional Set this replaced would clobber the rank the functions.ordr
+  # backfill populates. Last in this sequence because it is the one case that
+  # changes a field the assertions above pin.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        function: "Updated Identity Management"
+        description: "partial update omitting order"
+        datacenterenvironment: "AWS"
+        questionid: 8001
+        pillarid: 1
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            description: "partial update omitting order"
+            order: 2
+
   # Function Options Endpoints
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: GET
@@ -1374,6 +1638,193 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # functionoptions gained a write path in ztmf-misc#398; before it the 1-4
+  # scoring scale every answer points at could only be changed by hand in SQL.
+  # functionid comes from the path on create - the body deliberately names a
+  # different function to prove it is ignored, which is what stops a write
+  # retargeting an option to a function the caller never named.
+  - id: createFunctionOption
+    url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionid: 7001
+        score: 2
+        optionname: "Initial"
+        description: "Some progress"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            score: 2
+            optionname: "Initial"
+
+  # A POST carrying functionoptionid must still create. Both ids come from the
+  # route, never the body: without that re-pin this reroutes into an update of
+  # option 1 - on whatever function owns it - and the path is ignored entirely.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        functionoptionid: 1
+        functionid: 7001
+        score: 1
+        optionname: "Traditional"
+        description: "must create, not update option 1"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            score: 1
+            optionname: "Traditional"
+
+  # Function 7001 still holds exactly its four seeded options, in score order -
+  # the write above created on the path function and touched nothing here.
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            - functionoptionid: 1
+              score: 1
+            - functionoptionid: 2
+              score: 2
+            - functionoptionid: 3
+              score: 3
+            - functionoptionid: 4
+              score: 4
+
+  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400, not a
+  # CHECK violation - there is no CHECK on this column.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 5
+        optionname: "Beyond"
+        description: "off the scale"
+    expect:
+      status: 400
+
+  # optionname is varchar(30); without the length check Postgres raises a
+  # truncation error instead of a 400 naming the field.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 3
+        optionname: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        description: "31 characters"
+    expect:
+      status: 400
+
+  # description is varchar(1024). optionname was bounded from the start; this
+  # column is the other newly reachable string on a table that had no write path
+  # at all, and 22001 is not mapped by trapError - unbounded it is a 500.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 3
+        optionname: "Over-long description"
+        description: "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    expect:
+      status: 400
+
+  - url: "http://localhost:8080/api/v1/functionoptions/{{.createFunctionOption.Response.data.functionoptionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 4
+        optionname: "Optimal"
+        description: "Fully realized"
+    expect:
+      status: 204
+
+  # PUT against an option that does not exist is a 404, from the stored-row
+  # lookup the update path needs to resolve the owning function.
+  - url: http://localhost:8080/api/v1/functionoptions/999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  # Unusable path ids on the option PUT: "0" and an over-int32 value both 404
+  # before any lookup, rather than reaching the create branch.
+  - url: http://localhost:8080/api/v1/functionoptions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/functionoptions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Nowhere"
+        description: "no such option"
+    expect:
+      status: 404
+
+  # The update keeps the option on its original function: PUT carries no
+  # functionid in the path, so the stored row is what decides. Two options now -
+  # the body-override create above and this updated one - in score order.
+  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            - score: 1
+              optionname: "Traditional"
+            - score: 4
+              optionname: "Optimal"
 
   # Users Endpoints
   - id: createUser
@@ -1692,6 +2143,30 @@ tests:
               last_edited_by:
                 email: "Test.User@nowhere.xyz"
                 role: "OWNER"
+
+  # ?include=functionoption is the questionnaire's own read and the only place
+  # functionOptionColumns is selected across a join to scores. It was untested,
+  # and migration 0060's scores.functionid made the unqualified name in that list
+  # ambiguous (42702) - a 500 on every questionnaire in prod (ztmf#491 fallout).
+  - url: "http://localhost:8080/api/v1/scores?fismasystemid=1001&datacallid=5&include=functionoption"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+              functionoptionid: 1
+              datacallid: 5
+              functionoption:
+                functionoptionid: 1
+                functionid: 7001
+                score: 1
+                optionname: "Traditional"
 
   # Malformed query params on GET list endpoints are the caller's fault and must
   # return 400, not 500 (#420). The gorilla/schema decode fails before scope or
@@ -2211,7 +2686,164 @@ tests:
         json:
           data:
             <<: *updatedQuestionData
-  
+
+  # Question.validate was a commented-out stub and Save called no validation at
+  # all (ztmf-misc#398), so an empty body inserted a row with empty text and
+  # pillarid 0 - which only failed downstream, on the FK, naming no field. All
+  # three columns are NOT NULL with no useful default, and Save's UPDATE sets
+  # each unconditionally, so a PUT omitting one would clobber it rather than
+  # leave it alone. order stays optional: it is a *int so a PUT that omits it
+  # preserves the stored rank.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json: {}
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: ""
+        notesprompt: "prompt without a question"
+        pillarid: 1
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "A question with no pillar"
+        notesprompt: "prompt"
+    expect:
+      status: 400
+
+  # Well-formed but naming a pillar that does not exist. Left to the FK rather
+  # than a pre-emptive lookup: pillars carries no finder, and 23503 already
+  # surfaces as a 400 through ErrNoReference.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "A question on a pillar that does not exist"
+        notesprompt: "prompt"
+        pillarid: 999999
+    expect:
+      status: 400
+
+  # A partial PUT is refused rather than silently clearing notesprompt.
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "Only the question text"
+        pillarid: 1
+    expect:
+      status: 400
+
+  # Nothing from the rejected writes applied.
+  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedQuestionData
+
+  # A POST carrying questionid must still create, for the same reason the
+  # functionoptions create does: getJSON decodes any field on the struct, so an
+  # un-re-pinned body id sends Save down its UPDATE branch and silently rewrites
+  # that question - under a 201 Created.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionid: 8001
+        question: "Body Id Override Question"
+        notesprompt: "must create, not update the question named in the body"
+        order: 98
+        pillarid: 1
+    expect:
+      status: 201
+
+  # Seeded question 8001 still carries its seeded text. A literal id, not a
+  # {{...}} reference: Emberfall substitutes templates in URLs only, never
+  # inside a body.
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionid: 8001
+            question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
+
+  # A PUT whose path id routes but cannot address a row is a 404, not a create.
+  # [0-9]+ matches both "0" and an over-int32 value; each used to parse to 0,
+  # read as "no id in the path", and insert a new question under the PUT's 204.
+  - url: http://localhost:8080/api/v1/questions/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  - url: http://localhost:8080/api/v1/questions/99999999999
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 404
+
+  # Whitespace-only text is NOT NULL and non-empty as far as the column is
+  # concerned, but renders blank in the questionnaire and the export.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "   "
+        notesprompt: "prompt"
+        pillarid: 1
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/questions
     method: GET
     headers:
@@ -2263,6 +2895,24 @@ tests:
         json:
           data:
             limit: 500
+
+  # Each row resolves the initiating user server-side (ztmf#565). All
+  # 'imported' events are seeded by the archives service account and no suite
+  # write produces that action, so the first row's identity is deterministic
+  # regardless of what the suite has written before this point.
+  - url: http://localhost:8080/api/v1/events?action=imported&limit=1
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            events:
+              - userfullname: "Imperial Archives Import Service"
+                useremail: "svc-importer@empire.test"
+                userdeleted: false
 
   # A from bound in the far future matches nothing: an empty page with a zero
   # total, not an error. (Runtime events are stamped now, seed events in the
@@ -2335,7 +2985,7 @@ tests:
   #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
   #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
   #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
-  #     the "preserve HHS data" PUT above (*system1002WithHHSData) flips the
+  #     the Test B OWNER PUT above (*system1002WithHHSData) flips the
   #     system to "Other" mid-suite, so by now it reports - proving the report
   #     tracks live system edits. The fresh-seed "matching row is excluded"
   #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
@@ -2439,6 +3089,37 @@ tests:
             subject: null
             body: null
             group: "ADNIM"
+
+  # Success path for the longer group keys. READONLY_ADMIN is the read-only
+  # admin audience (ztmf-misc#297); SYSTEM_DELEGATE previously 500'd because
+  # massemails.group was VARCHAR(5) until 0059. The test stack has no SMTP
+  # configured, so the send goroutine logs a dial error and no mail leaves.
+  # Recipient order is unspecified, so only the status is pinned.
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "readonly admins"
+        body: "readonly admins"
+        group: "READONLY_ADMIN"
+    expect:
+      status: 201
+
+  - url: http://localhost:8080/api/v1/massemails
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        subject: "system delegates"
+        body: "system delegates"
+        group: "SYSTEM_DELEGATE"
+    expect:
+      status: 201
 
   # HHS_READONLY_ADMIN Tests
   # Verify HHS_READONLY_ADMIN can authenticate
@@ -3143,6 +3824,82 @@ tests:
     expect:
       status: 403
 
+  # Questionnaire catalog writes are HHS-wide (ztmf-misc#398): the catalog is one
+  # set every OpDiv is scored against, so editing a question here changes what
+  # every other OpDiv answers. CanWriteHHSWide runs before getJSON and before any
+  # DB work, so an OPDIV_ADMIN (though IsAdmin) is 403 on all six routes. The
+  # bodies are well-formed on purpose - a malformed one would 400 at validate()
+  # anyway and could not tell a working gate from a missing one.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedQuestionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *functionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedFunctionData
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Blocked"
+        description: "must not be written"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functionoptions/1
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 1
+        optionname: "Blocked"
+        description: "must not be written"
+    expect:
+      status: 403
+
   # OPDIV_READONLY_ADMIN can read (scoped) but every write is blocked.
   - url: http://localhost:8080/api/v1/fismasystems
     method: GET
@@ -3274,11 +4031,16 @@ tests:
   # reduced set only when asked for an in-scope cycle, and the aggregate stops
   # scoring the excluded pillars from the anchor cycle onward.
   #
-  # Row order note: on seeded test databases pillars.ordr and questions.ordr
-  # are 0 (migration 0056 runs before the populate seed), so the questionnaire
-  # sorts by its questionid tiebreaker and the aggregate by pillarid - both of
-  # which happen to walk the fixture pillars as Devices, Applications,
-  # Networks, Data, CrossCutting, Identity.
+  # Row order note: migrations run before the populate seed, so the ordr
+  # backfills match none of the fixture's fictional function names and
+  # _test_data_empire.sql ranks its own rows, mirroring the CISA sequence 0056
+  # gave the real catalog. These arrays therefore read Identity, Devices,
+  # Networks, Applications, Data, CrossCutting - the order production renders.
+  # They previously read pillarid order, which was not a contract but the
+  # fallback the questionid tiebreaker produced while every ordr was 0
+  # (ztmf-misc#393). The aggregate arrays move with them: it used to order by
+  # ps.pillarid and now orders by the same pillars.ordr the questionnaire does,
+  # so the two can no longer disagree about pillar sequence.
   # ==========================================================================
 
   # Without a data call the environment's full catalog returns - the pre-#545
@@ -3296,17 +4058,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # The anchor cycle serves the reduced set: Devices and Applications drop,
   # order otherwise unchanged.
@@ -3322,13 +4084,13 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Networks"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # A cycle deadlined before the anchor keeps the full catalog.
   - url: http://localhost:8080/api/v1/fismasystems/2016/questions?datacallid=103
@@ -3343,17 +4105,17 @@ tests:
         json:
           data:
             - pillar:
+                pillar: "Identity"
+            - pillar:
                 pillar: "Devices"
             - pillar:
-                pillar: "Applications"
-            - pillar:
                 pillar: "Networks"
+            - pillar:
+                pillar: "Applications"
             - pillar:
                 pillar: "Data"
             - pillar:
                 pillar: "CrossCutting"
-            - pillar:
-                pillar: "Identity"
 
   # Scoring: on the anchor cycle the aggregate carries exactly the four
   # in-scope pillar scores, even though the seed leaves carried-forward
@@ -3372,10 +4134,10 @@ tests:
             - fismasystemid: 2016
               datacallid: 104
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Networks"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"
 
   - url: "http://localhost:8080/api/v1/scores/aggregate?fismasystemid=2016&datacallid=103&include_pillars=true"
     method: GET
@@ -3391,9 +4153,9 @@ tests:
             - fismasystemid: 2016
               datacallid: 103
               pillarscores:
+                - pillar: "Identity"
                 - pillar: "Devices"
-                - pillar: "Applications"
                 - pillar: "Networks"
+                - pillar: "Applications"
                 - pillar: "Data"
                 - pillar: "CrossCutting"
-                - pillar: "Identity"

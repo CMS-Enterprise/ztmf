@@ -61,10 +61,7 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 //	@Router		/scores [post]
 //	@Router		/scores/{scoreid} [put]
 func SaveScore(w http.ResponseWriter, r *http.Request) {
-	var (
-		scoreID int32
-		err     error
-	)
+	var err error
 
 	user := model.UserFromContext(r.Context())
 	score := &model.Score{}
@@ -85,11 +82,48 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
+	// Unconditional, so a POST body's "scoreid" is zeroed rather than honoured.
+	score.ScoreID = scoreIDFromRequest(r)
 
-	if v, ok := vars["scoreid"]; ok {
-		fmt.Sscan(v, &scoreID)
-		score.ScoreID = scoreID
+	// Authorization is deliberately asymmetric between create and update.
+	//
+	// UPDATE: authorize against the STORED row, never the request body. The
+	// body's fismasystemid is a client assertion; trusting it let any caller
+	// with write access to one system reach every score row by id, since the
+	// UPDATE is keyed on scoreid alone. Load the row first and guard on what
+	// is actually there. The stored datacallid is also carried onto the
+	// receiver so the deadline is evaluated against the cycle the row belongs
+	// to rather than one the caller names.
+	//
+	// CREATE: no row exists yet, so the body's fismasystemid is the only
+	// thing to authorize against, which is correct there.
+	if score.ScoreID != 0 {
+		stored, err := model.FindScoreByID(r.Context(), score.ScoreID)
+		if err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		if err := guardScoreWrite(r.Context(), user, stored.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		// Both columns are immutable on update (Save omits them from the SET
+		// list); pinning them here keeps the receiver honest for the deadline
+		// check and the no-op comparison.
+		score.FismaSystemID = stored.FismaSystemID
+		score.DataCallID = stored.DataCallID
+
+		// Hand Save the row we just read so its no-op comparison does not
+		// fetch it again. The questionnaire PUTs on every Next click, so this
+		// is the hottest write path in the app.
+		score, err = score.Save(r.Context(), model.WithCurrentScore(stored))
+		respond(w, r, score, err)
+		return
+	}
+
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
 	}
 
 	// Authorization is deliberately asymmetric between create and update.
@@ -136,6 +170,20 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	score, err = score.Save(r.Context())
 
 	respond(w, r, score, err)
+}
+
+// scoreIDFromRequest returns the scoreid the request targets. Only the URL path
+// supplies it: a POST body's "scoreid" is deliberately ignored, since POST
+// /scores means "write this system's answer to this question for this cycle"
+// and that target is resolved from the natural key inside Score.Save
+// (ztmf#491). Honouring the body id gave POST a second, undocumented route into
+// the update branch.
+func scoreIDFromRequest(r *http.Request) int32 {
+	var id int32
+	if v, ok := mux.Vars(r)["scoreid"]; ok {
+		fmt.Sscan(v, &id)
+	}
+	return id
 }
 
 // guardScoreWrite is the shared authorization for every score-mutating
