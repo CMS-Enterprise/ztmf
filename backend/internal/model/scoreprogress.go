@@ -27,9 +27,8 @@ import (
 //     (ztmf-ui#537). Cycles genuinely worked in-app keep their backfilled
 //     updated counts; accurate history, just not a completion signal.
 //
-// Both are now read from persisted state (scores.status and score-row
-// presence) rather than reconstructed from the events audit log; see
-// FindScoreProgress.
+// Both, and LastUpdatedAt, are read from persisted state on scores rather
+// than reconstructed from the events audit log; see FindScoreProgress.
 type ScoreProgress struct {
 	FismaSystemID int32 `json:"fismasystemid"`
 	// QuestionsExpected is the number of questionnaire functions applicable to
@@ -51,15 +50,10 @@ type ScoreProgress struct {
 	// exceed it. Read from the persisted scores.status column, not from the
 	// events audit log.
 	QuestionsUpdated int32 `json:"questionsupdated"`
-	// LastUpdatedAt is the most recent edit event across the system's answers
-	// in this data call; nil when nothing has been touched this cycle. Only
-	// in-app edit actions count, the same ones the status backfill treats as a
-	// genuine answer (0048): provenance attached by an out-of-band load records
-	// who and when the data arrived, but an import is not someone answering
-	// this cycle, so it must not surface as an update here when it does not
-	// count as one in QuestionsUpdated. This is a legitimately observational
-	// use of the events table (audit timeline), kept even though the counts no
-	// longer read events.
+	// LastUpdatedAt is the newest scores.last_updated_at across the system's
+	// answers in this data call; nil when nothing has been touched this cycle.
+	// Only in-app saves stamp it (the same writes that set status = 'done'), so
+	// imported or carried-forward rows never surface as an update here.
 	LastUpdatedAt *time.Time `json:"lastupdatedat,omitempty"`
 	// UpdatedSinceStart is derivable (QuestionsUpdated > 0) but kept because
 	// it answers the ticket's literal question - "has this system updated
@@ -107,11 +101,8 @@ func (i FindScoreProgressInput) validate() error {
 // The query is hand-built parameterized SQL through the read-only rawQuery
 // path (never queryRow, which records events), mirroring FindScoreDiff. The
 // counts derive from persisted state - score-row presence for answered,
-// scores.status for updated - so a dropped/failed event write no longer moves
-// the numbers. A LEFT lateral onto events remains only for LastUpdatedAt (an
-// audit timeline, not a count) and is served by the events_score_audit_idx
-// partial index; that index keys on scoreid and createdat only, so the
-// lateral's action filter is applied on top of the descent rather than by it.
+// scores.status for updated, scores.last_updated_at for LastUpdatedAt - so the
+// query never reads the events log.
 func FindScoreProgress(ctx context.Context, input FindScoreProgressInput) ([]*ScoreProgress, error) {
 	if err := input.validate(); err != nil {
 		return nil, err
@@ -201,7 +192,7 @@ updated AS (
            -- pre-populated row copied by copyPreviousScores (status =
            -- 'not_started') is excluded without consulting the events log.
            COUNT(DISTINCT f.functionid) FILTER (WHERE s.status = 'done') AS questionsupdated,
-           MAX(le.createdat) AS lastupdatedat -- newest across the system's rows; the lateral below is per-row
+           MAX(s.last_updated_at) AS lastupdatedat
     FROM scoped_systems ss
     INNER JOIN scores s ON s.fismasystemid = ss.fismasystemid AND s.datacallid = $%d
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
@@ -212,24 +203,6 @@ updated AS (
     INNER JOIN pillars p ON p.pillarid = q.pillarid
       -- Identical to expected's; see the note above the query.
       AND %s
-    -- One newest in-app edit per score row (LIMIT 1 keeps the lateral on the
-    -- index fast path); the outer MAX then picks the newest across the
-    -- system's rows. LEFT now (not the old filtering INNER): it feeds only
-    -- LastUpdatedAt, an audit timeline - a row with no event still counts
-    -- toward the numerators via status/presence and simply contributes no
-    -- timestamp. The action allowlist mirrors the status backfill (0048) so
-    -- last-updated and questionsupdated read the same events: provenance
-    -- attached by an out-of-band load is not an edit, and a row carrying only
-    -- such events reports no last-updated rather than the load's timestamp.
-    LEFT JOIN LATERAL (
-        SELECT createdat
-        FROM events
-        WHERE resource = 'public.scores'
-          AND action IN ('created', 'updated')
-          AND (payload->>'scoreid')::int = s.scoreid
-        ORDER BY createdat DESC
-        LIMIT 1
-    ) le ON TRUE
     GROUP BY ss.fismasystemid
 )
 SELECT ss.fismasystemid,

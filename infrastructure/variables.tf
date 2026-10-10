@@ -29,3 +29,15 @@ variable "kion_rotate_schedule_enabled" {
   type        = bool
   default     = true
 }
+
+variable "pr_env_enabled" {
+  description = "Enable per-PR environment plumbing in this account (ztmf-misc#321): the /pr/* CloudFront behavior on the internal-ALB origin and the ztmf/ui ECR repo the PR frontend image is published to. Dev only; the pr-env root (infrastructure/pr-env) creates everything per PR."
+  type        = bool
+  default     = false
+}
+
+variable "pr_env_max_environments" {
+  description = "Concurrent per-PR environment cap (ztmf-misc#344). The fleet alarm fires when more pr-env tasks than this run for 10 minutes. Recorded on the epic, ztmf-misc#321."
+  type        = number
+  default     = 10
+}

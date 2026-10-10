@@ -71,7 +71,7 @@ func RecordQuestionView(w http.ResponseWriter, r *http.Request) {
 }
 
 //	@Summary		List audit-trail events, newest first, one page at a time
-//	@Description	Returns one page of the audit trail ordered by createdat descending (ties broken by eventid, so paging is stable). The response echoes the limit and offset actually applied and carries the total count matching the filters, for page math.
+//	@Description	Returns one page of the audit trail ordered by createdat descending (ties broken by eventid, so paging is stable). Each row resolves the initiating user to display name and email server-side; a soft-deleted user still resolves, with userdeleted true so the client can mark the retired account. The response echoes the limit and offset actually applied and carries the total count matching the filters, for page math.
 //	@Tags		events
 //	@Produce	json
 //	@Security	bearerAuth
