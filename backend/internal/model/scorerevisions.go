@@ -537,7 +537,7 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 			}).
 			// Same binding discipline as Save: pin the write to the row the
 			// caller was authorized against, not to the id alone.
-			Where("scoreid=? AND fismasystemid=? AND datacallid=?", score.ScoreID, current.FismaSystemID, current.DataCallID).
+			Where("scoreid=? AND fismasystemid=? AND datacallid=?", score.ScoreID, score.FismaSystemID, score.DataCallID).
 			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
 
 		updated, err := writeScore(ctx, tx, sqlb)
