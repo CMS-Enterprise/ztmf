@@ -987,14 +987,6 @@ SELECT s.scoreid + 49, s.fismasystemid, '2020-06-01 00:00:00+00',
  WHERE s.datacallid = 3 AND s.scoreid < 9100
 ON CONFLICT DO NOTHING;
 
--- Audit trail for the seeded scores. last_edited_at / last_edited_by are NOT
--- stored on scores; FindScores derives them from the events table (the most
--- recent 'public.scores' write whose payload scoreid matches). Seed data
--- inserted via SQL bypasses the app's recordEvent path, so without these rows
--- the UI shows blank "last edited by" and the audit features cannot be
--- exercised locally. Record one 'updated' event per new score, attributed to
--- the system's assigned officer at the score's assessment date, matching the
--- shape recordEvent writes (resource 'public.scores', payload carrying scoreid).
 -- ---------------------------------------------------------------------------
 -- Answer history fixture (ztmf-misc#391 / #392)
 --
@@ -1056,6 +1048,14 @@ INSERT INTO public.events (userid, action, resource, createdat, payload)
                 'notes', 'Fleet identity now standardized on biometric credentials'
             ));
 
+-- Audit trail for the seeded scores. last_edited_at / last_edited_by are NOT
+-- stored on scores; FindScores derives them from the events table (the most
+-- recent 'public.scores' write whose payload scoreid matches). Seed data
+-- inserted via SQL bypasses the app's recordEvent path, so without these rows
+-- the UI shows blank "last edited by" and the audit features cannot be
+-- exercised locally. Record one 'updated' event per new score, attributed to
+-- the system's assigned officer at the score's assessment date, matching the
+-- shape recordEvent writes (resource 'public.scores', payload carrying scoreid).
 INSERT INTO public.events (userid, action, resource, createdat, payload)
 SELECT DISTINCT ON (s.scoreid)
        uf.userid,
