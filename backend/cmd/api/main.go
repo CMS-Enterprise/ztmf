@@ -7,6 +7,7 @@ import (
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/migrations"
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/router"
+	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/tlslog"
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
 )
 
@@ -44,7 +45,8 @@ func main() {
 				tls.TLS_AES_128_GCM_SHA256,
 				tls.TLS_AES_256_GCM_SHA384,
 			},
-			MinVersion: tls.VersionTLS13,
+			MinVersion:       tls.VersionTLS13,
+			VerifyConnection: tlslog.VerifyConnection,
 		}
 		log.Fatal("Failed to start server:", server.ListenAndServeTLS("", ""))
 
