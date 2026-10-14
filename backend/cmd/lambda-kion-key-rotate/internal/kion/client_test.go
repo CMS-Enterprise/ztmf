@@ -1,9 +1,11 @@
 package kion
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -117,5 +119,35 @@ func TestRotate_MissingDataKeyInResponse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing data.key") {
 		t.Errorf("expected missing-data-key error, got %v", err)
+	}
+}
+
+// TestNewClient_LogsTLSGroup checks the client logs the key exchange group of
+// its TLS handshake with Kion (ztmf-misc#378).
+func TestNewClient_LogsTLSGroup(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"key":"new-key-xyz"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	var out bytes.Buffer
+	writer, flags := log.Writer(), log.Flags()
+	log.SetOutput(&out)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(writer)
+		log.SetFlags(flags)
+	})
+
+	c := NewClient(srv.URL)
+	// trust the test server's certificate without touching the hook
+	c.httpClient.Transport.(*http.Transport).TLSClientConfig.RootCAs =
+		srv.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+
+	if _, err := c.Rotate(context.Background(), "current-key-abc"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), "tls handshake: hop=kion version=TLS 1.3 group=") {
+		t.Fatalf("missing handshake log line, got %q", out.String())
 	}
 }
