@@ -19,7 +19,7 @@ variable "entra_enabled" {
 }
 
 variable "cloudfront_minimum_protocol_version" {
-  description = "Viewer security policy on the CloudFront distribution, which sets the lowest TLS version a browser can use. TLSv1.3_2025 refuses TLS 1.2, so only TLS 1.3 is offered, which is where CloudFront's hybrid post-quantum key exchange is available. Clients still choose the key exchange. Set per environment in tfvars so the change can be held in dev before impl and prod. Context: ztmf-misc#379."
+  description = "Viewer security policy on the CloudFront distribution, which sets the lowest TLS version a browser can use. TLSv1.3_2025 refuses TLS 1.2, so only TLS 1.3 is offered, which is where CloudFront's hybrid post-quantum key exchange is available. Clients still choose the key exchange. Set per environment in tfvars so the change can be held in dev before impl and prod."
   type        = string
   default     = "TLSv1.2_2021"
 }

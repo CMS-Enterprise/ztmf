@@ -19,7 +19,7 @@ entra_enabled = true
 # replaces the subscription, so an edit here means confirming again.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
-# TLS 1.3 only at the CloudFront edge (ztmf-misc#379). Held in dev for at least
+# TLS 1.3 only at the CloudFront edge. Held in dev for at least
 # a week; impl and prod keep the variable's default until then.
 cloudfront_minimum_protocol_version = "TLSv1.3_2025"
 
