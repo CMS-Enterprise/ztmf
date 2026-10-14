@@ -19,7 +19,7 @@ variable "entra_enabled" {
 }
 
 variable "alb_ssl_policy" {
-  description = "Security policy on the internal ALB's HTTPS listener. It also decides the policy the ALB uses for its backend connections (the API targets and the OIDC token calls to Okta and Entra), so a post-quantum listener policy is what makes the ALB to API hop hybrid. Set per environment in tfvars so a policy change can be checked in dev before impl and prod. Context: ztmf-misc#377."
+  description = "Security policy on the internal ALB's HTTPS listener. It also decides the policy the ALB uses for its backend connections (the API targets), so a post-quantum listener policy is what makes the ALB to API hop hybrid. Set per environment in tfvars so a policy change can be checked in dev before impl and prod."
   type        = string
   default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }

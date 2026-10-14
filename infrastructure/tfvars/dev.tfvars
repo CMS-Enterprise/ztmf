@@ -19,7 +19,7 @@ entra_enabled = true
 # replaces the subscription, so an edit here means confirming again.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
-# Post-quantum FIPS policy on the internal ALB listener (ztmf-misc#377). Its
+# Post-quantum FIPS policy on the internal ALB listener. Its
 # backend policy offers hybrid ML-KEM to the API targets. Dev first; impl and
 # prod keep the variable's default until dev shows hop=alb on a hybrid group.
 alb_ssl_policy = "ELBSecurityPolicy-TLS13-1-2-Res-FIPS-PQ-2025-09"
