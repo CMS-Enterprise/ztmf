@@ -289,7 +289,7 @@ resource "aws_cloudfront_distribution" "ztmf" {
     # cloudfront_default_certificate = true
     acm_certificate_arn      = local.ztmf_acm_certificate_arn
     ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    minimum_protocol_version = var.cloudfront_minimum_protocol_version
   }
 
   // Assert the value above rather than trusting the literal to survive future
