@@ -45,8 +45,8 @@ resource "aws_iam_policy" "ztmf_kion_key_rotate_logging" {
           "logs:PutLogEvents"
         ]
         Resource = [
-          "arn:aws:logs:${data.aws_region.current.id}:${local.account_id}:log-group:/aws/lambda/ztmf-kion-key-rotate-${var.environment}",
-          "arn:aws:logs:${data.aws_region.current.id}:${local.account_id}:log-group:/aws/lambda/ztmf-kion-key-rotate-${var.environment}:*"
+          "arn:aws:logs:${data.aws_region.current.region}:${local.account_id}:log-group:/aws/lambda/ztmf-kion-key-rotate-${var.environment}",
+          "arn:aws:logs:${data.aws_region.current.region}:${local.account_id}:log-group:/aws/lambda/ztmf-kion-key-rotate-${var.environment}:*"
         ]
       }
     ]
@@ -76,7 +76,7 @@ resource "aws_iam_policy" "ztmf_kion_key_rotate_secrets" {
         # the previous wildcard could have granted cross-account access
         # if resource-based policies were ever added elsewhere.
         Resource = [
-          "arn:aws:secretsmanager:${data.aws_region.current.id}:${local.account_id}:secret:ztmf_kion_${var.environment}-*"
+          "arn:aws:secretsmanager:${data.aws_region.current.region}:${local.account_id}:secret:ztmf_kion_${var.environment}-*"
         ]
       },
       {
