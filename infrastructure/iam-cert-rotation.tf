@@ -48,8 +48,8 @@ resource "aws_iam_policy" "cert_rotation_lambda_logging" {
           "logs:PutLogEvents"
         ]
         Resource = [
-          "arn:aws:logs:${data.aws_region.current.id}:${local.account_id}:log-group:/aws/lambda/ztmf-cert-rotation-${var.environment}",
-          "arn:aws:logs:${data.aws_region.current.id}:${local.account_id}:log-group:/aws/lambda/ztmf-cert-rotation-${var.environment}:*"
+          "arn:aws:logs:${data.aws_region.current.region}:${local.account_id}:log-group:/aws/lambda/ztmf-cert-rotation-${var.environment}",
+          "arn:aws:logs:${data.aws_region.current.region}:${local.account_id}:log-group:/aws/lambda/ztmf-cert-rotation-${var.environment}:*"
         ]
       }
     ]
