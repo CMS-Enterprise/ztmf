@@ -99,7 +99,7 @@ resource "aws_lb_listener" "ztmf_api_https" {
   load_balancer_arn = aws_lb.ztmf_api.arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  ssl_policy        = var.alb_ssl_policy
   certificate_arn   = local.ztmf_acm_certificate_arn
 
   default_action {
