@@ -18,6 +18,12 @@ variable "entra_enabled" {
   default     = false
 }
 
+variable "cloudfront_minimum_protocol_version" {
+  description = "Viewer security policy on the CloudFront distribution, which sets the lowest TLS version a browser can use. TLSv1.3_2025 refuses TLS 1.2, so only TLS 1.3 is offered, which is where CloudFront's hybrid post-quantum key exchange is available. Clients still choose the key exchange. Set per environment in tfvars so the change can be held in dev before impl and prod."
+  type        = string
+  default     = "TLSv1.2_2021"
+}
+
 variable "alarm_notification_email" {
   description = "Email subscribed to the ztmf-alarms SNS topic for login/OIDC alerting. Empty (default) creates the topic and alarms without a subscription so they can land before a destination is finalized; set per-environment in tfvars. For a Slack/PagerDuty endpoint, swap the subscription protocol in monitoring-login-auth.tf."
   type        = string
