@@ -292,13 +292,18 @@ resource "aws_cloudfront_distribution" "ztmf" {
     minimum_protocol_version = var.cloudfront_minimum_protocol_version
   }
 
-  // Assert the value above rather than trusting the literal to survive future
-  // edits. The postcondition evaluates against refreshed state, so it also
-  // catches an out-of-band change, not just a bad diff.
+  // Assert price_class and the viewer TLS minimum rather than trusting the
+  // config to survive future edits. Postconditions evaluate against refreshed
+  // state, so they also catch an out-of-band change (a console edit during the
+  // ztmf-misc#379 hold week, for example), not just a bad diff.
   lifecycle {
     postcondition {
       condition     = self.price_class == "PriceClass_All"
       error_message = "CloudFront price_class must be PriceClass_All."
+    }
+    postcondition {
+      condition     = self.viewer_certificate[0].minimum_protocol_version == var.cloudfront_minimum_protocol_version
+      error_message = "CloudFront minimum_protocol_version must match var.cloudfront_minimum_protocol_version."
     }
   }
 }
