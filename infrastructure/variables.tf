@@ -24,6 +24,12 @@ variable "cloudfront_minimum_protocol_version" {
   default     = "TLSv1.2_2021"
 }
 
+variable "alb_ssl_policy" {
+  description = "Security policy on the internal ALB's HTTPS listener. It also decides the policy the ALB uses for its backend connections (the API targets and the OIDC token calls to Okta and Entra), so a post-quantum listener policy is what makes the ALB to API hop hybrid. Set per environment in tfvars so a policy change can be checked in dev before impl and prod. Context: ztmf-misc#377."
+  type        = string
+  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}
+
 variable "alarm_notification_email" {
   description = "Email subscribed to the ztmf-alarms SNS topic for login/OIDC alerting. Empty (default) creates the topic and alarms without a subscription so they can land before a destination is finalized; set per-environment in tfvars. For a Slack/PagerDuty endpoint, swap the subscription protocol in monitoring-login-auth.tf."
   type        = string
