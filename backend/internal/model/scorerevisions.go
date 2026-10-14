@@ -367,7 +367,10 @@ func FindScoreRevisions(ctx context.Context, score *Score, policy ScoreUndoPolic
 	// waits for a second: at maxConns concurrent readers the pool is fully
 	// held by waiters and nothing can complete. copyPreviousScores resolves its
 	// data call before taking a connection for the same reason.
-	callOpen := score.dataCallOpen(ctx)
+	callOpen, err := score.dataCallOpen(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	conn, err := db.Conn(ctx)
 	if err != nil {
@@ -418,9 +421,14 @@ func FindScoreRevisions(ctx context.Context, score *Score, policy ScoreUndoPolic
 
 // dataCallOpen reports whether this score's cycle still accepts writes for the
 // caller. Mirrors validateDeadline's rule, including the admin bypass, so the
-// undoable flag cannot promise something the undo would then refuse.
-func (s *Score) dataCallOpen(ctx context.Context) bool {
-	return s.validateDeadline(ctx) == nil
+// undoable flag cannot promise something the undo would then refuse. Any other
+// failure is returned rather than reported as a closed call.
+func (s *Score) dataCallOpen(ctx context.Context) (bool, error) {
+	err := s.validateDeadline(ctx)
+	if errors.Is(err, ErrPastDeadline) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // UndoScoreRevision reverts an answer to the value its head revision replaced,
