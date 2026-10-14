@@ -29,6 +29,14 @@ var (
 	// machine-readable code so the FE can branch to "an administrator must handle
 	// this user" copy rather than string-matching (#467).
 	ErrDelegateRequiresAdmin = errors.New("this user must be added by an administrator")
+	// ErrRevisionConflict is returned when an undo names a head revision that is
+	// no longer the head: someone else changed this answer between the caller
+	// loading its history and submitting the undo (ztmf-misc#391). Mapped to 409
+	// in the controller's sanitizeErr - the first 409 in this API.
+	//
+	// Deliberately not folded into ErrNotUnique, which is 400 today and pinned
+	// there by Emberfall for duplicate system acronyms and OpDiv names.
+	ErrRevisionConflict = errors.New("this answer changed since you loaded it")
 )
 
 type InvalidInputError struct {
