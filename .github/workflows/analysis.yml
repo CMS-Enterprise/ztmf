@@ -55,20 +55,20 @@ jobs:
       # dropping it removes a third-party action from the supply chain.
       #
       # The Go version is pinned to one this staticcheck release can read, not
-      # "stable". Staticcheck needs a newer Go than the go.mod floor (v0.8.1
-      # requires 1.26), and setup-go v6+ sets GOTOOLCHAIN=local so the module's
-      # version would not auto-upgrade to satisfy it. But a floating "stable"
-      # broke lint on every run when Go 1.27.2 shipped: v0.8.1 cannot decode its
-      # export data ("export data version 5 is greater than maximum supported
-      # version 4"). Move this pin and the staticcheck version together.
+      # "stable". It must be at least the go.mod version, because setup-go v6+
+      # sets GOTOOLCHAIN=local and will not download a newer toolchain. A
+      # floating "stable" broke lint on every run when Go 1.27.2 shipped:
+      # staticcheck v0.8.1 could not decode its export data ("export data
+      # version 5 is greater than maximum supported version 4"); v0.8.2 can.
+      # Move this pin, the go.mod version and the staticcheck version together.
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.3"
           cache-dependency-path: backend/go.sum
 
       - name: Install Staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
 
       # The problem matcher turns staticcheck's text output into PR annotations,
       # the same way the composite did.
