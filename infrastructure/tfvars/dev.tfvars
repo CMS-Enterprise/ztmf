@@ -19,6 +19,10 @@ entra_enabled = true
 # replaces the subscription, so an edit here means confirming again.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
+# TLS 1.3 only at the CloudFront edge. Held in dev for at least
+# a week; impl and prod keep the variable's default until then.
+cloudfront_minimum_protocol_version = "TLSv1.3_2025"
+
 # TLS cert rotation Lambda
 # ACM ARN sourced from SSM Parameter Store /ztmf/dev/cert-rotation/acm-arn
 enable_cert_rotation_lambda = true
