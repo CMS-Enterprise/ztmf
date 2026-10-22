@@ -17,6 +17,11 @@ name: Orchestration PR
 # ztmf/api-pr and records it in ztmf_api_test_tag, the API image a ztmf-ui PR
 # environment runs (ztmf-misc#343).
 #
+# A PR labelled pr-env:cognito gets a Cognito sign-in with seeded test users
+# instead of CMS Okta, for demos to people without CMS accounts. The label is
+# read when a run starts, so add it before opening the PR or push after adding
+# it.
+#
 # The manual equivalent of every step is in infrastructure/pr-env/README.md.
 
 on:
@@ -155,11 +160,20 @@ jobs:
         env:
           API_TAG: ${{ needs.build.outputs.api_tag }}
           UI_TAG: ${{ steps.ui.outputs.ui_tag }}
+          AUTH_PROVIDER: ${{ contains(github.event.pull_request.labels.*.name, 'pr-env:cognito') && 'cognito' || 'okta' }}
+          # The Cognito test users' shared password, when the repo secret is
+          # set; empty makes the root generate one. Passed as TF_VAR_ so it
+          # never appears on a command line.
+          TF_VAR_cognito_password: ${{ secrets.PR_ENV_DEMO_PASSWORD }}
         run: |
           terraform -chdir="$TF_ROOT" apply -input=false -no-color -auto-approve \
             -var repo=ztmf -var "pr_number=$PR_NUMBER" \
-            -var "api_image_tag=$API_TAG" -var "ui_image_tag=$UI_TAG"
+            -var "api_image_tag=$API_TAG" -var "ui_image_tag=$UI_TAG" \
+            -var "auth_provider=$AUTH_PROVIDER"
           echo "url=$(terraform -chdir="$TF_ROOT" output -raw url)" >> "$GITHUB_OUTPUT"
+          echo "auth=$AUTH_PROVIDER" >> "$GITHUB_OUTPUT"
+          echo "cognito_users=$(terraform -chdir="$TF_ROOT" output -json cognito_users | jq -r 'join(", ")')" >> "$GITHUB_OUTPUT"
+          echo "cognito_password_parameter=$(terraform -chdir="$TF_ROOT" output -raw cognito_password_parameter 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
 
       # One comment per PR, edited in place on every push; the deployment
       # history under the environment carries the per-push record.
@@ -170,13 +184,27 @@ jobs:
           API_TAG: ${{ needs.build.outputs.api_tag }}
           UI_TAG: ${{ steps.ui.outputs.ui_tag }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTH: ${{ steps.apply.outputs.auth }}
+          COGNITO_USERS: ${{ steps.apply.outputs.cognito_users }}
+          COGNITO_PASSWORD_PARAMETER: ${{ steps.apply.outputs.cognito_password_parameter }}
+          HAS_DEMO_PASSWORD: ${{ secrets.PR_ENV_DEMO_PASSWORD != '' }}
         run: |
           marker='<!-- pr-env-url -->'
+          if [ "$AUTH" = "cognito" ]; then
+            if [ "$HAS_DEMO_PASSWORD" = "true" ]; then
+              password_from="the PR_ENV_DEMO_PASSWORD repo secret (also in the SSM SecureString \`$COGNITO_PASSWORD_PARAMETER\`)"
+            else
+              password_from="the SSM SecureString \`$COGNITO_PASSWORD_PARAMETER\`"
+            fi
+            sign_in="Sign in with a Cognito test user, one per seeded role: $COGNITO_USERS. They share one password, set by $password_from. Use a separate private window per role: signing out in the app does not end the Cognito session."
+          else
+            sign_in="Sign in with CMS credentials; the app then runs as the seeded test admin."
+          fi
           cat > comment.md <<EOF
           $marker
           PR environment: $URL
 
-          API image \`$API_TAG\`, frontend image \`$UI_TAG\`, for commit ${HEAD_SHA:0:7} (the API image is built from the PR merged with main, so its tag carries the merge SHA, the same way the dev deploy tags images) at $(date -u +%Y-%m-%dT%H:%MZ). Rebuilt on every push and removed when the PR closes. Sign in with CMS credentials; the app then runs as the seeded test admin.
+          API image \`$API_TAG\`, frontend image \`$UI_TAG\`, for commit ${HEAD_SHA:0:7} (the API image is built from the PR merged with main, so its tag carries the merge SHA, the same way the dev deploy tags images) at $(date -u +%Y-%m-%dT%H:%MZ). Rebuilt on every push and removed when the PR closes. $sign_in
           EOF
           existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
             --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
