@@ -41,3 +41,26 @@ variable "postgres_image" {
   type        = string
   default     = "public.ecr.aws/docker/library/postgres:16-alpine"
 }
+
+variable "auth_provider" {
+  description = "Who signs people in at the ALB: okta (dev's CMS Okta client, the default) or cognito (a per-environment Cognito user pool holding test users, for demos to people without CMS accounts). The workflow picks cognito when the PR carries the pr-env:cognito label."
+  type        = string
+  default     = "okta"
+  validation {
+    condition     = contains(["okta", "cognito"], var.auth_provider)
+    error_message = "auth_provider must be okta or cognito."
+  }
+}
+
+variable "cognito_users" {
+  description = "Seeded empire users given a Cognito login when auth_provider is cognito, one per role. Each must exist, not deleted, in _test_data_empire.sql: the API signs a person in as the users row matching their email."
+  type        = list(string)
+  default = [
+    "Grand.Moff@DeathStar.Empire",        // OWNER
+    "Emperor.Palpatine@coruscant.empire", // HHS_READONLY_ADMIN
+    "Opdiv.Admin@empire.test",            // OPDIV_ADMIN
+    "Opdiv.Readonly@empire.test",         // OPDIV_READONLY_ADMIN
+    "Admiral.Piett@executor.empire",      // ISSO
+    "Delegate.User@nowhere.xyz",          // SYSTEM_DELEGATE
+  ]
+}

@@ -3,6 +3,11 @@ locals {
   path_prefix = "/pr/${var.repo}/${var.pr_number}"
   url         = "https://dev.ztmf.cms.gov${local.path_prefix}/"
 
+  // The ALB's OAuth redirect on the dev host, shared with dev's own login rules.
+  idp_response_url = "https://dev.ztmf.cms.gov/oauth2/idpresponse"
+
+  cognito = var.auth_provider == "cognito"
+
   // Priority bands keep PR rules clear of the dev root's 1-4 and of each other
   // across repos (ALB max is 50000).
   listener_priority = (var.repo == "ztmf" ? 10000 : 20000) + var.pr_number

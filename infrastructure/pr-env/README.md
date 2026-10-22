@@ -18,11 +18,23 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 `repo` is `ztmf` or `ui` and picks the URL path and the ALB priority band (10000+n or 20000+n), so ztmf#123 and ui#123 coexist. `api_image_tag` names an image in `ztmf/api-pr`, either the PR's own `pr-ztmf-<n>-<sha>` or the `main-<sha>` test-target build a ui PR runs; every image there carries the empire seed, and the root rejects anything else. `ui_image_tag` is an image in `ztmf/ui` from the ztmf-ui Dockerfile, `pr-ui-<n>-<sha>` or `ui-<sha>`. The environment authenticates at the ALB with the dev Okta client, then the frontend uses a bearer token for `test_user_email` (default Grand Moff Tarkin) minted inside the task from the per-environment HS256 secret.
 
+## Cognito sign-in for demos
+
+`-var auth_provider=cognito` swaps the Okta login for a Cognito user pool owned by this environment (`cognito.tf`), so people without CMS accounts can sign in. The workflow sets it when the PR carries the `pr-env:cognito` label. In this mode:
+
+- The pool holds one test user per entry in `cognito_users` (default: one seeded user per role), sharing one password stored in the SSM SecureString named by `terraform output cognito_password_parameter`. Nobody can sign themselves up.
+- The API reads the ALB's `x-amzn-oidc-data` header instead of the frontend's bearer token, verifies it against the ALB's regional key, pins the issuer to this pool (`AUTH_OKTA_ISSUER`), and resolves the person by email to their seeded `users` row and role.
+- The frontend signs its built-in `config.js` token with its own key, which the API does not hold, so that token cannot authenticate.
+- The ALB session lasts 7 days under a cookie named for the environment, apart from dev's Okta session on the same host.
+- Signing out in the app does not end the Cognito session. Switch roles with a separate private window per user.
+
+Demo PRs that must outlive the reaper's idle TTL also carry `pr-env:keep` (see below).
+
 Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
 
 ## Reaper and fleet alarm
 
-Teardown on PR close is the primary cleanup. `scripts/pr-env-reaper.sh`, run nightly at 07:00 UTC by `.github/workflows/pr-env-reaper.yml` (ztmf-misc#344), is the backstop for both repos: it destroys any `pr/<repo>/<n>` environment whose PR is closed or has had no deploy for 7 days (the TTL; the next push rebuilds it and the PR gets a comment saying so), deletes that PR's images, and retires its `pr-<repo>-<n>` GitHub Environment. It also retires any `pr-*` environment whose PR is closed, and reports what it cannot fix: a destroy that failed twice, a `pr-*` ECS service with no state key, and an open PR's state key with no running service. Findings or a failed run go to one tracking issue in ztmf-misc titled "pr-env reaper: orphaned environments or a failed run".
+Teardown on PR close is the primary cleanup. `scripts/pr-env-reaper.sh`, run nightly at 07:00 UTC by `.github/workflows/pr-env-reaper.yml` (ztmf-misc#344), is the backstop for both repos: it destroys any `pr/<repo>/<n>` environment whose PR is closed or has had no deploy for 7 days (the TTL; the next push rebuilds it and the PR gets a comment saying so; a PR labelled `pr-env:keep` is exempt from the TTL and reaped only when it closes), deletes that PR's images, and retires its `pr-<repo>-<n>` GitHub Environment. It also retires any `pr-*` environment whose PR is closed, and reports what it cannot fix: a destroy that failed twice, a `pr-*` ECS service with no state key, and an open PR's state key with no running service. Findings or a failed run go to one tracking issue in ztmf-misc titled "pr-env reaper: orphaned environments or a failed run".
 
 Preview a run from a workstation, changing nothing:
 
