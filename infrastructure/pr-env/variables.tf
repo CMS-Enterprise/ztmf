@@ -64,3 +64,22 @@ variable "cognito_users" {
     "Delegate.User@nowhere.xyz",          // SYSTEM_DELEGATE
   ]
 }
+
+variable "cognito_password" {
+  description = "Shared password for the Cognito test users. The workflow passes the PR_ENV_DEMO_PASSWORD repo secret, so a demo password is known without dev account access and survives rebuilds. Empty means generate one per environment. Either way it is also stored in SSM."
+  type        = string
+  default     = ""
+  sensitive   = true
+  // The pool's password policy, checked here so a weak secret fails the plan
+  // with a clear message rather than the user create.
+  validation {
+    condition = var.cognito_password == "" || (
+      length(var.cognito_password) >= 16
+      && can(regex("[a-z]", var.cognito_password))
+      && can(regex("[A-Z]", var.cognito_password))
+      && can(regex("[0-9]", var.cognito_password))
+      && can(regex("[^A-Za-z0-9]", var.cognito_password))
+    )
+    error_message = "cognito_password must be empty or at least 16 characters with a lowercase letter, an uppercase letter, a number, and a symbol."
+  }
+}

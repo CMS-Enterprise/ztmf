@@ -22,7 +22,7 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 `-var auth_provider=cognito` swaps the Okta login for a Cognito user pool owned by this environment (`cognito.tf`), so people without CMS accounts can sign in. The workflow sets it when the PR carries the `pr-env:cognito` label. In this mode:
 
-- The pool holds one test user per entry in `cognito_users` (default: one seeded user per role), sharing one password stored in the SSM SecureString named by `terraform output cognito_password_parameter`. Nobody can sign themselves up.
+- The pool holds one test user per entry in `cognito_users` (default: one seeded user per role), sharing one password. The workflow sets it from the `PR_ENV_DEMO_PASSWORD` repo secret (`cognito_password`; at least 16 characters with a lowercase letter, an uppercase letter, a number, and a symbol), so the people running a demo know it without dev account access; with the secret unset the root generates one. Either way it is stored in the SSM SecureString named by `terraform output cognito_password_parameter`. Nobody can sign themselves up.
 - The API reads the ALB's `x-amzn-oidc-data` header instead of the frontend's bearer token, verifies it against the ALB's regional key, pins the issuer to this pool (`AUTH_OKTA_ISSUER`), and resolves the person by email to their seeded `users` row and role.
 - The frontend signs its built-in `config.js` token with its own key, which the API does not hold, so that token cannot authenticate.
 - The ALB session lasts 7 days under a cookie named for the environment, apart from dev's Okta session on the same host.

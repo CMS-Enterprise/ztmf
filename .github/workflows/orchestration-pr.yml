@@ -161,6 +161,10 @@ jobs:
           API_TAG: ${{ needs.build.outputs.api_tag }}
           UI_TAG: ${{ steps.ui.outputs.ui_tag }}
           AUTH_PROVIDER: ${{ contains(github.event.pull_request.labels.*.name, 'pr-env:cognito') && 'cognito' || 'okta' }}
+          # The Cognito test users' shared password, when the repo secret is
+          # set; empty makes the root generate one. Passed as TF_VAR_ so it
+          # never appears on a command line.
+          TF_VAR_cognito_password: ${{ secrets.PR_ENV_DEMO_PASSWORD }}
         run: |
           terraform -chdir="$TF_ROOT" apply -input=false -no-color -auto-approve \
             -var repo=ztmf -var "pr_number=$PR_NUMBER" \
@@ -183,10 +187,16 @@ jobs:
           AUTH: ${{ steps.apply.outputs.auth }}
           COGNITO_USERS: ${{ steps.apply.outputs.cognito_users }}
           COGNITO_PASSWORD_PARAMETER: ${{ steps.apply.outputs.cognito_password_parameter }}
+          HAS_DEMO_PASSWORD: ${{ secrets.PR_ENV_DEMO_PASSWORD != '' }}
         run: |
           marker='<!-- pr-env-url -->'
           if [ "$AUTH" = "cognito" ]; then
-            sign_in="Sign in with a Cognito test user, one per seeded role: $COGNITO_USERS. They share one password, in the SSM SecureString \`$COGNITO_PASSWORD_PARAMETER\`. Use a separate private window per role: signing out in the app does not end the Cognito session."
+            if [ "$HAS_DEMO_PASSWORD" = "true" ]; then
+              password_from="the PR_ENV_DEMO_PASSWORD repo secret (also in the SSM SecureString \`$COGNITO_PASSWORD_PARAMETER\`)"
+            else
+              password_from="the SSM SecureString \`$COGNITO_PASSWORD_PARAMETER\`"
+            fi
+            sign_in="Sign in with a Cognito test user, one per seeded role: $COGNITO_USERS. They share one password, set by $password_from. Use a separate private window per role: signing out in the app does not end the Cognito session."
           else
             sign_in="Sign in with CMS credentials; the app then runs as the seeded test admin."
           fi

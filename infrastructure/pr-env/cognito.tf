@@ -69,10 +69,11 @@ resource "aws_cognito_user_pool_client" "env" {
   explicit_auth_flows                  = ["ALLOW_REFRESH_TOKEN_AUTH"]
 }
 
-// One shared password for the environment's test users, readable from SSM by
-// whoever runs the demo. The users hold synthetic data only.
+// One shared password for the environment's test users: the cognito_password
+// variable when set (the workflow passes a repo secret), else generated here.
+// Either way it is readable from SSM. The users hold synthetic data only.
 resource "random_password" "cognito_users" {
-  count            = local.cognito ? 1 : 0
+  count            = local.cognito && var.cognito_password == "" ? 1 : 0
   length           = 24
   special          = true
   override_special = "!#%*-_=+"
@@ -86,7 +87,7 @@ resource "aws_ssm_parameter" "cognito_password" {
   count = local.cognito ? 1 : 0
   name  = "/ztmf/pr/${var.repo}/${var.pr_number}/cognito-password"
   type  = "SecureString"
-  value = random_password.cognito_users[0].result
+  value = local.cognito_password
 }
 
 resource "aws_cognito_user" "demo" {
@@ -100,7 +101,7 @@ resource "aws_cognito_user" "demo" {
   }
 
   // A permanent password, so the first sign-in is not a forced reset.
-  password       = random_password.cognito_users[0].result
+  password       = local.cognito_password
   message_action = "SUPPRESS"
 }
 

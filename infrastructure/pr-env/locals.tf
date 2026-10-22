@@ -7,6 +7,9 @@ locals {
   idp_response_url = "https://dev.ztmf.cms.gov/oauth2/idpresponse"
 
   cognito = var.auth_provider == "cognito"
+  cognito_password = (
+    var.cognito_password != "" ? var.cognito_password : one(random_password.cognito_users[*].result)
+  )
 
   // Priority bands keep PR rules clear of the dev root's 1-4 and of each other
   // across repos (ALB max is 50000).
