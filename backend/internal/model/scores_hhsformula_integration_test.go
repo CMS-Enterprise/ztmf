@@ -12,9 +12,9 @@ import (
 // TestPillarScoreHHSFormulaIntegration recomputes every pillar score the
 // aggregate returns from the raw answers and checks it against the HHS
 // scorecard formula (ztmf-misc#433): the average of the 1-4 answers times
-// 1.25, an unanswered question counting as 1, and a pillar with no answers at
-// all pinned to 1.0 (Not Assessed). The system score must stay the plain
-// average of its pillar scores.
+// 1.25, an unanswered question counting as 1, so a pillar with nothing
+// answered scores 1.25. The system score must stay the plain average of its
+// pillar scores.
 //
 // Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
 // `go test -short`.
@@ -42,6 +42,9 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 		JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
 		JOIN datacenterenvironments d ON d.datacenterenvironment = fs.datacenterenvironment
 		WHERE d.scoring_key = f.datacenterenvironment
+		  -- 2 or 4 only: with one unanswered sibling these separate the HHS
+		  -- formula from the old +1 shift and from skipping blanks.
+		  AND fo.score IN (2, 4)
 		  AND NOT EXISTS (SELECT 1 FROM reducedpillarscopes r
 		                  WHERE r.scoring_key = d.scoring_key AND r.pillarid = q.pillarid
 		                    AND r.effective_datacallid <= s.datacallid)
@@ -120,10 +123,7 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 			case answered < expected:
 				partial++
 			}
-			want := 1.0
-			if answered > 0 {
-				want = total / float64(expected) * 1.25
-			}
+			want := total / float64(expected) * 1.25
 			assert.InDelta(t, want, p.Score, 1e-9,
 				"pillar %s for system %d / datacall %d: %d of %d answered",
 				p.Pillar, a.FismaSystemID, a.DataCallID, answered, expected)

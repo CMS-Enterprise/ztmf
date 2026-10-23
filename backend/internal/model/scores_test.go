@@ -14,16 +14,15 @@ import (
 //	Advanced     >= 3.1
 //	Initial      >= 2.1
 //	Traditional  >= 1.01
-//	Not Assessed everything below 1.01 (a pillar with no answers is pinned
-//	             at exactly 1.0; any answered pillar scores at least 1.25
-//	             under the x1.25 formula; 1.01 is the floor for Traditional)
+//	Not Assessed everything below 1.01 (no computed score reaches it: an
+//	             unanswered question counts as 1, so the lowest pillar is 1.25)
 func TestTier(t *testing.T) {
 	tests := []struct {
 		score float64
 		want  string
 	}{
 		// Not Assessed: the score rounds to less than 1.01.
-		// (A pillar with zero answers is pinned at exactly 1.0.)
+		// (Unreachable from the aggregate, whose floor is 1.25.)
 		{0.0, "Not Assessed"},
 		{0.99, "Not Assessed"},
 		{1.0, "Not Assessed"},
