@@ -58,7 +58,7 @@ func purgeIntegrationTestRows(t *testing.T) {
 
 // TestFindScoresAggregateIntegration runs the real SQL against the
 // configured database and verifies the response shape and per-row
-// invariants. Catches SQL math regressions (wrong +1 shift, wrong AVG
+// invariants. Catches SQL math regressions (wrong x1.25 scaling, wrong AVG
 // window, wrong COALESCE behavior) that unit tests over pure Go cannot
 // see.
 //
