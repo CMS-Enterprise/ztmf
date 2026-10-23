@@ -14,17 +14,16 @@ import (
 //	Advanced     >= 3.1
 //	Initial      >= 2.1
 //	Traditional  >= 1.01
-//	Not Assessed everything below 1.01 (a pillar of all-unanswered rows lands
-//	             at exactly 1.0 under the +1 shift aggregation; 1.01 is the
-//	             intentional floor for Traditional)
+//	Not Assessed everything below 1.01 (a pillar with no answers is pinned
+//	             at exactly 1.0; any answered pillar scores at least 1.25
+//	             under the x1.25 formula; 1.01 is the floor for Traditional)
 func TestTier(t *testing.T) {
 	tests := []struct {
 		score float64
 		want  string
 	}{
 		// Not Assessed: the score rounds to less than 1.01.
-		// (A pillar with zero answers lands at exactly 1.0 under the
-		// +1 shift aggregation.)
+		// (A pillar with zero answers is pinned at exactly 1.0.)
 		{0.0, "Not Assessed"},
 		{0.99, "Not Assessed"},
 		{1.0, "Not Assessed"},
@@ -34,9 +33,8 @@ func TestTier(t *testing.T) {
 		// 1.005 is intentionally not tested: the float64 representation
 		// of "1.005" is 1.00499...8, just below the half-way point, so
 		// math.Round produces 100 not 101. Real aggregations never land
-		// at exactly 1.005 (the +1 shift over integer answers can't
-		// produce it), and the only way to hit it is a hand-crafted
-		// float literal.
+		// at exactly 1.005 (the lowest answered pillar is 1.25), and
+		// the only way to hit it is a hand-crafted float literal.
 		{1.009, "Traditional"},
 		{1.01, "Traditional"},
 		{1.5, "Traditional"},
