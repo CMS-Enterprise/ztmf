@@ -124,6 +124,13 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 				partial++
 			}
 			want := total / float64(expected) * 1.25
+			wantTier := Tier(want)
+			if answered == 0 {
+				wantTier = "Not Assessed"
+			}
+			assert.Equal(t, wantTier, p.Tier,
+				"pillar %s tier for system %d / datacall %d: %d answered",
+				p.Pillar, a.FismaSystemID, a.DataCallID, answered)
 			assert.InDelta(t, want, p.Score, 1e-9,
 				"pillar %s for system %d / datacall %d: %d of %d answered",
 				p.Pillar, a.FismaSystemID, a.DataCallID, answered, expected)

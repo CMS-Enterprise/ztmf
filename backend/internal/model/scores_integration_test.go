@@ -98,9 +98,18 @@ func TestFindScoresAggregateIntegration(t *testing.T) {
 			// The tier predicate is the single source of truth. Either
 			// SQL and Go agree, or this test fails and surfaces the
 			// drift immediately.
-			assert.Equal(t, Tier(a.SystemScore), a.SystemTier,
-				"systemtier matches Tier(systemscore) for system %d / datacall %d",
-				a.FismaSystemID, a.DataCallID)
+			// Not Assessed comes from the answer count (tierFor), and
+			// only ever sits at the 1.25 floor; otherwise the tier is
+			// Tier(score).
+			if a.SystemTier == "Not Assessed" {
+				assert.InDelta(t, 1.25, a.SystemScore, 1e-9,
+					"a Not Assessed system sits at the floor: system %d / datacall %d",
+					a.FismaSystemID, a.DataCallID)
+			} else {
+				assert.Equal(t, Tier(a.SystemScore), a.SystemTier,
+					"systemtier matches Tier(systemscore) for system %d / datacall %d",
+					a.FismaSystemID, a.DataCallID)
+			}
 
 			require.NotEmpty(t, a.PillarScores,
 				"include_pillars=true must return pillar entries for system %d / datacall %d",
@@ -113,8 +122,13 @@ func TestFindScoresAggregateIntegration(t *testing.T) {
 					"pillar %s score in HHS range: %v", p.Pillar, p.Score)
 				assert.True(t, validTiers[p.Tier],
 					"pillar %s tier in enum: %q", p.Pillar, p.Tier)
-				assert.Equal(t, Tier(p.Score), p.Tier,
-					"pillar %s tier matches Tier(score)", p.Pillar)
+				if p.Tier == "Not Assessed" {
+					assert.InDelta(t, 1.25, p.Score, 1e-9,
+						"a Not Assessed pillar %s sits at the floor", p.Pillar)
+				} else {
+					assert.Equal(t, Tier(p.Score), p.Tier,
+						"pillar %s tier matches Tier(score)", p.Pillar)
+				}
 			}
 		}
 	})
