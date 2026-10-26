@@ -68,7 +68,7 @@ const scoringNotesSheet = "How scores work"
 var scoringNotes = []string{
 	"Column I is the raw answer score: 1 Traditional, 2 Initial, 3 Advanced, 4 Optimal. A blank row is a question the system has not answered.",
 	"Dashboard pillar score = average of the pillar's answer scores x 1.25 (the HHS scorecard formula, sum x 5 / maximum). An unanswered question counts as 1.",
-	"A pillar or system with nothing answered is labeled Not Assessed.",
+	"A pillar or system with nothing answered is labeled Not Assessed, but still scores 1.25 and counts in averages.",
 	"Dashboard system score = average of the pillar scores, each pillar weighted equally.",
 	"Maturity tiers: Optimal 4.10 and up, Advanced 3.10, Initial 2.10, Traditional 1.01.",
 	"Averaging column I directly will not match the dashboard: it skips blanks, does not apply x 1.25, and weights pillars by their question count.",

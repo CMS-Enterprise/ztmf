@@ -97,6 +97,7 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 	partial, empty := 0, 0
 	for _, a := range aggs {
 		sum := 0.0
+		systemAnswered := 0
 		for _, p := range a.PillarScores {
 			var expected, answered int
 			var total float64
@@ -135,11 +136,19 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 				"pillar %s for system %d / datacall %d: %d of %d answered",
 				p.Pillar, a.FismaSystemID, a.DataCallID, answered, expected)
 			sum += p.Score
+			systemAnswered += answered
 		}
 		if len(a.PillarScores) > 0 {
 			assert.InDelta(t, sum/float64(len(a.PillarScores)), a.SystemScore, 1e-9,
 				"system score is the average of its pillars for system %d / datacall %d",
 				a.FismaSystemID, a.DataCallID)
+			wantSystemTier := Tier(a.SystemScore)
+			if systemAnswered == 0 {
+				wantSystemTier = "Not Assessed"
+			}
+			assert.Equal(t, wantSystemTier, a.SystemTier,
+				"system tier for system %d / datacall %d: %d answered",
+				a.FismaSystemID, a.DataCallID, systemAnswered)
 		}
 	}
 	assert.Positive(t, partial, "seed must include a partially answered pillar")

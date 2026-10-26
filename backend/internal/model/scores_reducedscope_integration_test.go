@@ -102,9 +102,7 @@ func TestFindScoresAggregateReducedScopeIntegration(t *testing.T) {
 			}
 			assert.InDelta(t, sum/float64(len(onAnchor.PillarScores)), onAnchor.SystemScore, 1e-9,
 				"the system score must average only the in-scope pillars")
-			if onAnchor.SystemTier != "Not Assessed" {
-				assert.Equal(t, Tier(onAnchor.SystemScore), onAnchor.SystemTier)
-			}
+			assert.Equal(t, Tier(onAnchor.SystemScore), onAnchor.SystemTier)
 		})
 	}
 }

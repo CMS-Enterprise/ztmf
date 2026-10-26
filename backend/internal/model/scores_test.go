@@ -84,6 +84,14 @@ func TestTier(t *testing.T) {
 	}
 }
 
+// TestTierFor pins that the answer count, not the score, decides Not Assessed.
+func TestTierFor(t *testing.T) {
+	assert.Equal(t, "Not Assessed", tierFor(1.25, 0), "nothing answered")
+	assert.Equal(t, "Not Assessed", tierFor(5.0, 0), "answer count wins over score")
+	assert.Equal(t, "Traditional", tierFor(1.25, 1), "answered all 1s")
+	assert.Equal(t, "Optimal", tierFor(4.10, 3))
+}
+
 // TestAggregatePillarRows verifies the Go-side grouping that runs after
 // findPillarScoresAll returns. The system score itself is computed in SQL
 // (window AVG on the carry-along system_score column on every pillar row)
@@ -97,13 +105,6 @@ func TestTier(t *testing.T) {
 //   - IncludePillars controls whether the pillar breakdown is attached
 //   - Different pillar counts per system (4 vs 6) are handled the same way,
 //     since the divisor lived in SQL via AVG() and is now pre-computed
-func TestTierFor(t *testing.T) {
-	assert.Equal(t, "Not Assessed", tierFor(1.25, 0), "nothing answered")
-	assert.Equal(t, "Not Assessed", tierFor(5.0, 0), "answer count wins over score")
-	assert.Equal(t, "Traditional", tierFor(1.25, 1), "answered all 1s")
-	assert.Equal(t, "Optimal", tierFor(4.10, 3))
-}
-
 func TestAggregatePillarRows(t *testing.T) {
 	rows := []*pillarScoreRow{
 		// System 1, datacall 36: six pillars, one Optimal and five with
@@ -185,6 +186,8 @@ func TestAggregatePillarRows(t *testing.T) {
 			assert.Empty(t, a.PillarScores, "pillarscores must be nil when not requested")
 			assert.NotEmpty(t, a.SystemTier, "system tier must still be set")
 		}
+		assert.Equal(t, "Not Assessed", aggs[2].SystemTier,
+			"an unanswered system is Not Assessed without the pillar breakdown too")
 	})
 }
 

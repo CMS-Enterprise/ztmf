@@ -610,10 +610,8 @@ type PillarScore struct {
 //	>= 3.10  -> Advanced
 //	>= 2.10  -> Initial
 //	>= 1.01  -> Traditional
-//	otherwise -> Not Assessed (no computed score reaches this: an unanswered
-//	             question counts as 1, so the lowest pillar score is 1.25;
-//	             the aggregate labels Not Assessed by answer count instead,
-//	             see tierFor).
+//	otherwise -> Not Assessed (unreachable from computed scores, whose floor
+//	             is 1.25; the aggregate uses tierFor).
 //
 // The comparison happens in integer space (score * 100 rounded to int)
 // so a system whose float64 representation is, e.g., 3.099999... but
@@ -641,7 +639,7 @@ func Tier(score float64) string {
 // tierFor labels an aggregate score. A pillar or system with nothing answered
 // is Not Assessed: its score sits at the 1.25 floor because a blank counts as
 // a 1, but calling it Traditional would claim an assessment that never
-// happened (ztmf-misc#433, Not Assessed per ztmf-misc#175).
+// happened (ztmf-misc#433).
 func tierFor(score float64, answered int32) string {
 	if answered == 0 {
 		return "Not Assessed"
@@ -888,8 +886,9 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 // findPillarScoresAll returns one row per (datacall, system, pillar) for every
 // combination matching the input filters. Pillar scores are computed by
 // enumerating every expected question for each (system, datacall, pillar)
-// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 1
-// (Traditional), averaging, and scaling by 1.25.
+// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 1,
+// averaging, and scaling by 1.25. The answered count rides along so the
+// rollup can label a pillar or system with nothing answered Not Assessed.
 //
 // The query is built as parameterized raw SQL because the derived subqueries
 // and conditional joins exceed what squirrel expresses cleanly. Filters are
@@ -970,7 +969,7 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// Partial systems still score every pillar: once a (system, datacall)
 	// pair enters the universe via any score, every pillar for that system
 	// gets enumerated through the expected CTE. Pillars where every function
-	// is unanswered score 1.25, the Traditional floor.
+	// is unanswered score the 1.25 floor and are labeled Not Assessed.
 	//
 	// The datacalls_fismasystems junction looks like the natural fit here
 	// but is misleading: per backend/internal/model/datacallsfismasystems.go,
