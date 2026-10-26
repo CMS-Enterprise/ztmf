@@ -610,8 +610,8 @@ type PillarScore struct {
 //	>= 3.10  -> Advanced
 //	>= 2.10  -> Initial
 //	>= 1.01  -> Traditional
-//	otherwise -> Not Assessed (a pillar with zero answered questions lands
-//	             at exactly 1.0 under the +1 shift aggregation).
+//	otherwise -> Not Assessed (unreachable from computed scores, whose floor
+//	             is 1.25; the aggregate uses tierFor).
 //
 // The comparison happens in integer space (score * 100 rounded to int)
 // so a system whose float64 representation is, e.g., 3.099999... but
@@ -634,6 +634,17 @@ func Tier(score float64) string {
 	default:
 		return "Not Assessed"
 	}
+}
+
+// tierFor labels an aggregate score. A pillar or system with nothing answered
+// is Not Assessed: its score sits at the 1.25 floor because a blank counts as
+// a 1, but calling it Traditional would claim an assessment that never
+// happened (ztmf-misc#433).
+func tierFor(score float64, answered int32) string {
+	if answered == 0 {
+		return "Not Assessed"
+	}
+	return Tier(score)
 }
 
 type FindScoresInput struct {
@@ -780,12 +791,16 @@ type pillarScoreRow struct {
 	Pillar        string  `db:"pillar"`
 	Score         float64 `db:"score"`
 	SystemScore   float64 `db:"system_score"`
+	// Answered counts the questions with an answer, for the pillar and for
+	// the whole system. Zero means Not Assessed whatever the score says.
+	Answered       int32 `db:"answered"`
+	SystemAnswered int32 `db:"system_answered"`
 }
 
 // FindScoresAggregate returns one ScoreAggregate per (datacall, system) pair
 // matching the input filters. Both the system score and the per-pillar scores
-// are computed on the HHS-aligned 1.0-5.0 scale via the +1 shift aggregation
-// described in ztmf-misc#175. The system score is the simple AVG of pillar
+// are computed on the HHS 1.0-5.0 scale with the HHS scorecard formula
+// (average answer x 1.25, ztmf-misc#433). The system score is the simple AVG of pillar
 // scores; the divisor follows the actual pillar count rather than being
 // hardcoded, so adding or removing a pillar does not silently change the
 // math. Pillar scores are populated on the aggregate when IncludePillars is
@@ -846,7 +861,7 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 				DataCallID:    r.DataCallID,
 				FismaSystemID: r.FismaSystemID,
 				SystemScore:   r.SystemScore,
-				SystemTier:    Tier(r.SystemScore),
+				SystemTier:    tierFor(r.SystemScore, r.SystemAnswered),
 			}
 			aggByKey[k] = agg
 			order = append(order, k)
@@ -856,7 +871,7 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 				PillarID: r.PillarID,
 				Pillar:   r.Pillar,
 				Score:    r.Score,
-				Tier:     Tier(r.Score),
+				Tier:     tierFor(r.Score, r.Answered),
 			})
 		}
 	}
@@ -871,8 +886,9 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 // findPillarScoresAll returns one row per (datacall, system, pillar) for every
 // combination matching the input filters. Pillar scores are computed by
 // enumerating every expected question for each (system, datacall, pillar)
-// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 0,
-// applying the +1 shift, and averaging.
+// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 1,
+// averaging, and scaling by 1.25. The answered count rides along so the
+// rollup can label a pillar or system with nothing answered Not Assessed.
 //
 // The query is built as parameterized raw SQL because the derived subqueries
 // and conditional joins exceed what squirrel expresses cleanly. Filters are
@@ -950,11 +966,10 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// render "No Score" tiles for systems that have not started, so a
 	// blanket cartesian over every active system would double-count.
 	//
-	// Pillar-level "Not Assessed" is still reachable for partial systems:
-	// once a (system, datacall) pair enters the universe via any score,
-	// every pillar for that system gets enumerated through the expected
-	// CTE. Pillars where every function is unanswered COALESCE to 0,
-	// shift to 1.0, average to exactly 1.0, and emit Not Assessed.
+	// Partial systems still score every pillar: once a (system, datacall)
+	// pair enters the universe via any score, every pillar for that system
+	// gets enumerated through the expected CTE. Pillars where every function
+	// is unanswered score the 1.25 floor and are labeled Not Assessed.
 	//
 	// The datacalls_fismasystems junction looks like the natural fit here
 	// but is misleading: per backend/internal/model/datacallsfismasystems.go,
@@ -1016,7 +1031,13 @@ pillar_scores AS (
         e.pillarid,
         e.pillar,
         e.ordr,
-        AVG(COALESCE(a.score, 0) + 1.0)::float8 AS pillar_score
+        -- HHS scorecard formula (ztmf-misc#433): average of the 1-4 answers
+        -- times 1.25, i.e. sum x 5 / max. An unanswered question counts as 1
+        -- (Traditional), so a pillar with nothing answered scores 1.25.
+        (AVG(COALESCE(a.score, 1)) * 1.25)::float8 AS pillar_score,
+        -- Answered count, so Go can label a pillar (or whole system) with
+        -- nothing answered Not Assessed rather than Traditional.
+        COUNT(a.score)::int AS answered
     FROM expected e
     LEFT JOIN answers a
       ON a.fismasystemid = e.fismasystemid
@@ -1030,7 +1051,9 @@ SELECT
     ps.pillarid,
     ps.pillar,
     ps.pillar_score AS score,
-    AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
+    ps.answered,
+    AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score,
+    SUM(ps.answered) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::int AS system_answered
 FROM pillar_scores ps
 ORDER BY ps.datacallid, ps.fismasystemid, ps.ordr, ps.pillarid
 `, userJoin, strings.Join(conds, " AND "))
