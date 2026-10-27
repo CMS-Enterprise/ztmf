@@ -12,12 +12,13 @@ import (
 func strptr(s string) *string { return &s }
 func intptr(i int) *int       { return &i }
 
-// TestExcelRendersNotStartedBlankVsRealZero pins the #526 distinction in the
+// TestExcelRendersNotStartedBlankVsAnswered pins the #526 distinction in the
 // output cells: a function the system never answered (nil option/score/notes)
-// renders as blank, while a function genuinely answered at score 0 renders "0".
-// The two must read differently, which is the whole point of carrying the answer
-// fields as nullable rather than coalescing an absent answer to zero.
-func TestExcelRendersNotStartedBlankVsRealZero(t *testing.T) {
+// renders as blank, while a function answered at the lowest option (score 1,
+// answers are 1-4) renders "1". The two must read differently, which is the
+// whole point of carrying the answer fields as nullable rather than coalescing
+// an absent answer to a number.
+func TestExcelRendersNotStartedBlankVsAnswered(t *testing.T) {
 	answers := []*model.Answer{
 		{ // row 2: applicable function, never answered
 			FismaAcronym:          "SYS-NOTSTARTED",
@@ -31,8 +32,8 @@ func TestExcelRendersNotStartedBlankVsRealZero(t *testing.T) {
 			Score:                 nil,
 			Notes:                 nil,
 		},
-		{ // row 3: answered at a genuine zero
-			FismaAcronym:          "SYS-ZERO",
+		{ // row 3: answered at the lowest option
+			FismaAcronym:          "SYS-LOWEST",
 			DataCenterEnvironment: "Env",
 			Pillar:                "Identity",
 			Function:              "Fn",
@@ -40,7 +41,7 @@ func TestExcelRendersNotStartedBlankVsRealZero(t *testing.T) {
 			Question:              "Q",
 			OptionDescription:     strptr("Lowest tier"),
 			OptionName:            strptr("Traditional"),
-			Score:                 intptr(0),
+			Score:                 intptr(1),
 			Notes:                 strptr("some note"),
 		},
 	}
@@ -60,10 +61,10 @@ func TestExcelRendersNotStartedBlankVsRealZero(t *testing.T) {
 	assert.Equal(t, "", get("I2"), "not-started score cell should be blank, not 0")
 	assert.Equal(t, "", get("J2"), "not-started notes cell should be blank")
 
-	// Real-zero row: the score renders 0, distinguishable from the blank above.
+	// Answered row: the score renders 1, distinguishable from the blank above.
 	assert.Equal(t, "Lowest tier", get("G3"))
 	assert.Equal(t, "Traditional", get("H3"))
-	assert.Equal(t, "0", get("I3"), "a genuine zero score must render 0, not blank")
+	assert.Equal(t, "1", get("I3"), "an answered score must render its value, not blank")
 	assert.Equal(t, "some note", get("J3"))
 }
 
