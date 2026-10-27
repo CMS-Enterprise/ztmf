@@ -79,6 +79,35 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 		}
 	})
 
+	// Writers that do not name versionid (Function.Save, FunctionOption.Save)
+	// must still land a row in its parent's version.
+	t.Run("NewRowsTakeTheirParentsVersion", func(t *testing.T) {
+		tx := begin(t)
+		v2 := insertDraftVersion(ctx, t, tx)
+		q2, _, _ := insertCatalogChain(ctx, t, tx, v2, nil)
+
+		var functionID, functionVersion, optionVersion int32
+		require.NoError(t, tx.QueryRow(ctx, `
+			INSERT INTO functions (function, datacenterenvironment, questionid, pillarid)
+			SELECT '0067 fixture', 'fixture', questionid, pillarid FROM questions WHERE questionid = $1
+			RETURNING functionid, versionid`, q2).Scan(&functionID, &functionVersion))
+		require.NoError(t, tx.QueryRow(ctx, `
+			INSERT INTO functionoptions (functionid, score, optionname) VALUES ($1, 2, 'fixture')
+			RETURNING versionid`, functionID).Scan(&optionVersion))
+		assert.Equal(t, v2, functionVersion)
+		assert.Equal(t, v2, optionVersion)
+	})
+
+	t.Run("MissingParentStillFailsOnTheFK", func(t *testing.T) {
+		tx := begin(t)
+		_, err := tx.Exec(ctx, `
+			INSERT INTO functionoptions (functionid, score, optionname)
+			VALUES ((SELECT MAX(functionid) + 1000 FROM functions), 1, 'orphan')`)
+		var pgErr *pgconn.PgError
+		require.True(t, errors.As(err, &pgErr), "got %v", err)
+		assert.Equal(t, "23503", pgErr.Code, "not a 23502 from a NULL derived version")
+	})
+
 	t.Run("OneDraftAtATime", func(t *testing.T) {
 		tx := begin(t)
 		insertDraftVersion(ctx, t, tx)
@@ -201,7 +230,7 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 			INSERT INTO functionoptions (functionid, score, optionname)
 			VALUES ((SELECT MAX(functionid) + 1000 FROM functions), 1, '0067 orphan')`)
 		require.NoError(t, err)
-		_, err = tx.Exec(ctx, `
+		tag, err := tx.Exec(ctx, `
 			INSERT INTO score_revisions (scoreid, revision_no, fismasystemid, datacallid,
 			    functionid, kind, new_functionoptionid, new_notes_is_ai_summary, new_status, userid)
 			SELECT r.scoreid, (SELECT MAX(revision_no) + 1 FROM score_revisions x WHERE x.scoreid = r.scoreid),
@@ -209,6 +238,7 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 			       'create', r.new_functionoptionid, false, r.new_status, r.userid
 			  FROM score_revisions r ORDER BY r.revisionid LIMIT 1`)
 		require.NoError(t, err)
+		require.EqualValues(t, 1, tag.RowsAffected(), "the empire seed must carry a score revision to copy")
 		_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = 'origin'`)
 		require.NoError(t, err)
 

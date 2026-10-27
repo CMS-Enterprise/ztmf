@@ -17,17 +17,11 @@ func init() {
 -- versionid. score_revisions also gains columns but is not replicated (0066).
 SET LOCAL lock_timeout = '10s';
 
--- Lock up front in the order a score save on an old task reaches these
--- tables: functionoptions (natural-key lookup, scores trigger), then
--- score_revisions, then datacalls and functions via its FKs. Any other order
--- can deadlock against a save in flight during the rolling deploy.
+-- Locked up front in score-save order so an in-flight save waits rather than deadlocks.
 LOCK TABLE public.functionoptions, public.score_revisions, public.datacalls,
            public.functions, public.questions IN ACCESS EXCLUSIVE MODE;
 
--- Rows written under session_replication_role = replica can dangle despite
--- the existing FKs (see 0060). Check before changing anything, so they fail on
--- a readable token rather than a bare 23503 or 23502 further down.
--- 'make check-questionnaire-versions' runs the same counts before deploy.
+-- Replica-mode loads can leave dangling rows (see 0060): fail readably before changing anything.
 DO $$
 DECLARE bad_functions bigint; bad_options bigint; bad_revisions bigint;
 BEGIN
@@ -87,10 +81,8 @@ ALTER TABLE public.datacalls
   ADD COLUMN IF NOT EXISTS questionnaire_versionid INT NOT NULL DEFAULT 1
     REFERENCES public.questionnaire_versions (versionid);
 
--- Lineage ids are the cross-version identity; nothing correlates by name
--- (0045's name match is the defect this replaces). A column DEFAULT cannot
--- say "my own id", so a trigger defaults it, and never rejects, so writers
--- that do not know the column keep working.
+-- Lineage ids are the cross-version identity (never names, the 0045 defect).
+-- A DEFAULT cannot say "my own id", so a trigger defaults it; it never rejects.
 CREATE OR REPLACE FUNCTION public.questions_default_root()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -152,14 +144,8 @@ ALTER TABLE public.functions
   REFERENCES public.functions (functionid, root_functionid);
 
 
--- Composite FKs: a function cannot point at another version's question, nor
--- an option at another version's function. functions.questionid is nullable
--- (the legacy band has none), and MATCH SIMPLE skips those rows.
--- UNIQUE (questionid, datacenterenvironment, versionid) is deliberately not
--- added: prod has never been probed for it, and a failing index would stop the
--- container starting. #396's publish gate enforces it for every new version,
--- but the baseline never passes that gate, so ztmf-misc#397's translation join
--- must keep its DISTINCT ON. The duplicate_editions anomaly below reports any.
+-- No row can point across a version boundary; MATCH SIMPLE skips the legacy NULL-questionid band.
+-- UNIQUE (questionid, datacenterenvironment, versionid) is deliberately absent; see the PR.
 CREATE UNIQUE INDEX IF NOT EXISTS questions_questionid_versionid_uniq
     ON public.questions (questionid, versionid);
 CREATE UNIQUE INDEX IF NOT EXISTS functions_functionid_versionid_uniq
@@ -171,18 +157,51 @@ ALTER TABLE public.functions
   FOREIGN KEY (questionid, versionid)
   REFERENCES public.questions (questionid, versionid);
 
--- CASCADE mirrors functionoptions_functionid_fkey, so deleting a function
--- still takes its options with it.
+-- A new function or option takes its parent's version, so writers that do not
+-- name versionid cannot land a row in the baseline under a draft's parent.
+-- A missing parent keeps the row's own value, so the FK reports it (23503).
+CREATE OR REPLACE FUNCTION public.functions_derive_version()
+RETURNS TRIGGER AS $$
+DECLARE parent_version int;
+BEGIN
+    SELECT q.versionid INTO parent_version FROM public.questions q WHERE q.questionid = NEW.questionid;
+    IF FOUND THEN
+        NEW.versionid := parent_version;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.functionoptions_derive_version()
+RETURNS TRIGGER AS $$
+DECLARE parent_version int;
+BEGIN
+    SELECT f.versionid INTO parent_version FROM public.functions f WHERE f.functionid = NEW.functionid;
+    IF FOUND THEN
+        NEW.versionid := parent_version;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_functions_derive_version ON public.functions;
+CREATE TRIGGER trg_functions_derive_version
+    BEFORE INSERT ON public.functions
+    FOR EACH ROW EXECUTE FUNCTION public.functions_derive_version();
+
+DROP TRIGGER IF EXISTS trg_functionoptions_derive_version ON public.functionoptions;
+CREATE TRIGGER trg_functionoptions_derive_version
+    BEFORE INSERT ON public.functionoptions
+    FOR EACH ROW EXECUTE FUNCTION public.functionoptions_derive_version();
+
+-- CASCADE mirrors functionoptions_functionid_fkey.
 ALTER TABLE public.functionoptions DROP CONSTRAINT IF EXISTS functionoptions_function_version_fkey;
 ALTER TABLE public.functionoptions
   ADD CONSTRAINT functionoptions_function_version_fkey
   FOREIGN KEY (functionid, versionid)
   REFERENCES public.functions (functionid, versionid) ON DELETE CASCADE;
 
--- score_revisions stores the version and lineage of the question it names at
--- write time. Deriving them through datacalls breaks once ztmf-misc#397
--- re-pins an open cycle. Trigger-filled because insertScoreRevision does not
--- name these columns, and a DEFAULT would record the baseline forever.
+-- Stored at write time (a re-pin breaks deriving them); trigger-filled, since a DEFAULT would record the baseline forever.
 ALTER TABLE public.score_revisions
   ADD COLUMN IF NOT EXISTS versionid INT
     REFERENCES public.questionnaire_versions (versionid),
@@ -219,10 +238,8 @@ CREATE TRIGGER trg_score_revisions_set_version
 ALTER TABLE public.score_revisions ALTER COLUMN versionid SET NOT NULL;
 ALTER TABLE public.score_revisions ALTER COLUMN root_functionid SET NOT NULL;
 
--- The failure this epic most fears is silent: a data call pinned to a version
--- its scores do not reference reads every pillar as Not Assessed with nothing
--- erroring. One definition, shared by the check below and
--- 'make check-questionnaire-versions'.
+-- Catches the silent failure: a call pinned to a version its scores do not use.
+-- Shared by the check below and 'make check-questionnaire-versions'.
 CREATE OR REPLACE FUNCTION public.questionnaire_version_anomalies()
 RETURNS TABLE (check_name text, n bigint) AS $$
     SELECT 'scores_outside_pinned_version', COUNT(*)
@@ -251,9 +268,7 @@ RETURNS TABLE (check_name text, n bigint) AS $$
             HAVING COUNT(*) > 1) d;
 $$ LANGUAGE sql STABLE;
 
--- WARNING, not EXCEPTION: Run() log.Fatals on a failed migration and tern
--- never records it, so an exception here would retry forever instead of
--- surfacing the problem. Grep deploy logs for the token.
+-- Anomalies are non-fatal (grep deploy logs for the token); orphans above are fatal by design.
 DO $$
 DECLARE a record;
 BEGIN
@@ -283,6 +298,10 @@ ALTER TABLE public.questions DROP CONSTRAINT IF EXISTS questions_root_questionid
 DROP INDEX IF EXISTS public.functions_functionid_root_uniq;
 DROP INDEX IF EXISTS public.questions_questionid_root_uniq;
 DROP FUNCTION IF EXISTS public.questionnaire_version_anomalies();
+DROP TRIGGER IF EXISTS trg_functionoptions_derive_version ON public.functionoptions;
+DROP TRIGGER IF EXISTS trg_functions_derive_version ON public.functions;
+DROP FUNCTION IF EXISTS public.functionoptions_derive_version();
+DROP FUNCTION IF EXISTS public.functions_derive_version();
 DROP TRIGGER IF EXISTS trg_score_revisions_set_version ON public.score_revisions;
 DROP FUNCTION IF EXISTS public.score_revisions_set_version();
 ALTER TABLE public.score_revisions DROP COLUMN IF EXISTS root_functionid;
