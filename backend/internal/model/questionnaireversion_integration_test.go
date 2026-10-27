@@ -476,3 +476,101 @@ func TestQuestionnaireVersionWritePathIntegration(t *testing.T) {
 		assert.Equal(t, newB, mustFindScore(t, scoreID).FunctionOptionID)
 	})
 }
+
+// Every scoreid write path must lock the data call before the score row, the
+// order the create path takes, so ztmf-misc#397's re-pin (data call row first,
+// then scores) waits for them instead of deadlocking. A stand-in re-pin holds
+// the data call FOR UPDATE; each path must then block before the score row,
+// which a third transaction proves by locking that row NOWAIT.
+func TestScoreWritesLockTheDataCallFirstIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+	purgeIntegrationTestVersions(t)
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	fx := newTxWriteFixture(t, conn, "vqlockorder")
+	var other int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT o.functionoptionid FROM functionoptions o
+		 INNER JOIN functionoptions fo ON fo.functionid = o.functionid
+		 WHERE fo.functionoptionid = $1 AND o.functionoptionid <> $1
+		 ORDER BY o.functionoptionid LIMIT 1`, fx.functionOptionID).Scan(&other))
+
+	saved, err := (&Score{FismaSystemID: fx.fismaSystemID, FunctionOptionID: fx.functionOptionID, DataCallID: fx.dataCallID}).Save(fx.editorCtx)
+	require.NoError(t, err)
+
+	paths := []struct {
+		name  string
+		setup func(t *testing.T)
+		run   func() error
+	}{
+		{"UpdateWithAChangedOption", nil, func() error {
+			_, err := (&Score{ScoreID: saved.ScoreID, FismaSystemID: fx.fismaSystemID, FunctionOptionID: other, DataCallID: fx.dataCallID}).Save(fx.editorCtx)
+			return err
+		}},
+		{"Confirm", func(t *testing.T) {
+			_, err := conn.Exec(ctx, `UPDATE scores SET status = 'not_started' WHERE scoreid = $1`, saved.ScoreID)
+			require.NoError(t, err)
+		}, func() error {
+			_, err := mustFindScore(t, saved.ScoreID).Confirm(fx.editorCtx)
+			return err
+		}},
+		{"Undo", func(t *testing.T) {
+			_, err := (&Score{ScoreID: saved.ScoreID, FismaSystemID: fx.fismaSystemID, FunctionOptionID: fx.functionOptionID, DataCallID: fx.dataCallID}).Save(fx.editorCtx)
+			require.NoError(t, err)
+		}, func() error {
+			stored := mustFindScore(t, saved.ScoreID)
+			history, err := FindScoreRevisions(fx.editorCtx, stored, writePolicy)
+			if err != nil {
+				return err
+			}
+			head := history.Head.RevisionID
+			_, err = UndoScoreRevision(fx.editorCtx, stored, &head)
+			return err
+		}},
+	}
+	for _, p := range paths {
+		t.Run(p.name, func(t *testing.T) {
+			if p.setup != nil {
+				p.setup(t)
+			}
+			repin, err := db.Conn(ctx)
+			require.NoError(t, err)
+			defer repin.Release()
+			repinTx, err := repin.Begin(ctx)
+			require.NoError(t, err)
+			defer func() { _ = repinTx.Rollback(ctx) }()
+			_, err = repinTx.Exec(ctx, `SELECT 1 FROM datacalls WHERE datacallid = $1 FOR UPDATE`, fx.dataCallID)
+			require.NoError(t, err)
+
+			done := make(chan error, 1)
+			go func() { done <- p.run() }()
+			select {
+			case err := <-done:
+				t.Fatalf("the write finished while the data call was locked: %v", err)
+			case <-time.After(300 * time.Millisecond):
+			}
+
+			probe, err := db.Conn(ctx)
+			require.NoError(t, err)
+			defer probe.Release()
+			probeTx, err := probe.Begin(ctx)
+			require.NoError(t, err)
+			_, err = probeTx.Exec(ctx, `SELECT 1 FROM scores WHERE scoreid = $1 FOR UPDATE NOWAIT`, saved.ScoreID)
+			assert.NoError(t, err, "the write must be waiting on the data call, not holding the score row")
+			require.NoError(t, probeTx.Rollback(ctx))
+
+			require.NoError(t, repinTx.Rollback(ctx))
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("the write never finished after the data call was released")
+			}
+		})
+	}
+}

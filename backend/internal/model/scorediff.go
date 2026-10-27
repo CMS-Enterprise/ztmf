@@ -120,7 +120,8 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	// one cycle still surfaces (added or removed answer), and so the same
 	// question matches across two cycles pinned to different questionnaire
 	// versions (ztmf-misc#395). The label join stays on functionid, a primary
-	// key, so it cannot fan out however many versions share a root.
+	// key, so it cannot fan out however many versions share a root, and takes
+	// the To side's row so labels read as the cycle under review words them.
 	//
 	// "Changed" compares option ids within one version but option scores across
 	// two: a forked version gives every option a new id, so comparing ids there
@@ -163,7 +164,7 @@ SELECT
 FROM from_scores f
 FULL OUTER JOIN to_scores t
   ON f.fismasystemid = t.fismasystemid AND f.root_functionid = t.root_functionid
-LEFT JOIN functions fn ON fn.functionid = COALESCE(f.functionid, t.functionid)
+LEFT JOIN functions fn ON fn.functionid = COALESCE(t.functionid, f.functionid)
 LEFT JOIN questions q  ON q.questionid  = fn.questionid
 LEFT JOIN pillars p    ON p.pillarid    = q.pillarid
 LEFT JOIN LATERAL (

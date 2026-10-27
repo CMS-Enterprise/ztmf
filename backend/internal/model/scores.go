@@ -199,6 +199,9 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 		}
 		s.ScoreID = current.ScoreID
 	} else {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
 		locked, functionID, err := lockScore(ctx, tx, s.ScoreID)
 		if err != nil {
 			return nil, err
@@ -348,6 +351,9 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	// revision_no allocated as MAX+1 with the read and the insert under one
 	// lock.
 	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
 		current, _, err := lockScore(ctx, tx, s.ScoreID)
 		if err != nil {
 			return nil, err
@@ -460,7 +466,9 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 //
 // The data call row is locked FOR SHARE until commit, so ztmf-misc#397's
 // re-pin (which updates that row) cannot commit between this check and the
-// write it guards.
+// write it guards. Every score write takes that lock before the score row -
+// here on create, through lockScoreDataCall on the scoreid paths - so a re-pin
+// that updates the data call first waits for them rather than deadlocking.
 func optionPlacement(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallID int32) (functionID int32, inVersion bool, err error) {
 	if _, err := tx.Exec(ctx, `SELECT 1 FROM datacalls WHERE datacallid = $1 FOR SHARE`, dataCallID); err != nil {
 		return 0, false, trapError(err)
@@ -478,6 +486,18 @@ func optionPlacement(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallI
 		return 0, false, trapError(err)
 	}
 	return functionID, pinned == nil || *pinned, nil
+}
+
+// lockScoreDataCall locks a score's data call FOR SHARE ahead of lockScore, the
+// order the create path already takes (optionPlacement before the natural-key
+// lock). One order on every score write is what keeps ztmf-misc#397's re-pin,
+// which updates the data call row before any score, free of deadlocks.
+func lockScoreDataCall(ctx context.Context, tx pgx.Tx, scoreID int32) error {
+	_, err := tx.Exec(ctx, `
+		SELECT 1 FROM datacalls
+		 WHERE datacallid = (SELECT datacallid FROM scores WHERE scoreid = $1)
+		   FOR SHARE`, scoreID)
+	return trapError(err)
 }
 
 // checkOptionInPinnedVersion rejects an option from a version other than the

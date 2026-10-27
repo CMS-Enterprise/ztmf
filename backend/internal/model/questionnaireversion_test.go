@@ -64,8 +64,8 @@ func TestBuildScoreDiffSQL_JoinsOnLineage(t *testing.T) {
 	sql, _ := buildScoreDiffSQL(FindScoreDiffInput{FromDataCallID: &from, ToDataCallID: &to})
 	assert.Contains(t, sql, "f.root_functionid = t.root_functionid")
 	assert.NotContains(t, sql, "AND f.functionid = t.functionid", "the cycles may pin different versions")
-	assert.Contains(t, sql, "LEFT JOIN functions fn ON fn.functionid = COALESCE(f.functionid, t.functionid)",
-		"the label join stays on the primary key so it cannot fan out")
+	assert.Contains(t, sql, "LEFT JOIN functions fn ON fn.functionid = COALESCE(t.functionid, f.functionid)",
+		"the label join stays on the primary key so it cannot fan out, and labels come from the cycle under review")
 	assert.Contains(t, sql, "ELSE f.option_score IS DISTINCT FROM t.option_score",
 		"across versions an unchanged answer has a new option id")
 }

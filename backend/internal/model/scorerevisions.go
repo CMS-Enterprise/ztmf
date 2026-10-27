@@ -472,6 +472,9 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 
 	var undoRev *ScoreRevision
 	reverted, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, score.ScoreID); err != nil {
+			return nil, err
+		}
 		current, _, err := lockScore(ctx, tx, score.ScoreID)
 		if err != nil {
 			return nil, err
