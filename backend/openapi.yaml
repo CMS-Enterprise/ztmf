@@ -132,6 +132,16 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-array_model_QuestionnaireVersion:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/model.QuestionnaireVersion'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      type: object
     controller.apiResponse-array_model_Score:
       properties:
         data:
@@ -268,6 +278,13 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-model_QuestionnaireVersion:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.QuestionnaireVersion'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_Score:
       properties:
         data:
@@ -315,6 +332,11 @@ components:
         data:
           $ref: '#/components/schemas/model.UserOpDiv'
         error:
+          type: string
+      type: object
+    controller.forkQuestionnaireVersionInput:
+      properties:
+        label:
           type: string
       type: object
     controller.idpLookupResponse:
@@ -570,6 +592,17 @@ components:
           type: integer
         questionid:
           type: integer
+        root_functionid:
+          description: |-
+            The function's identity across versions. Honoured only on create, to
+            restore a lineage (ztmf-misc#396); see Save.
+          type: integer
+        versionid:
+          description: |-
+            Taken from the function's question (ztmf-misc#394); a value sent by a
+            client is ignored.
+          readOnly: true
+          type: integer
       type: object
     model.FunctionOption:
       properties:
@@ -676,6 +709,18 @@ components:
           type: string
         questionid:
           type: integer
+        root_questionid:
+          description: |-
+            The question's identity across versions. Honoured only on create, to
+            restore a lineage a draft deleted (ztmf-misc#396); omitted, a new
+            question starts its own.
+          type: integer
+        versionid:
+          description: |-
+            The questionnaire version this row belongs to (ztmf-misc#394). Honoured
+            only on create, where it must name a draft; omitted, the open draft is
+            used. Fixed after create.
+          type: integer
       type: object
     model.QuestionViewInput:
       properties:
@@ -684,6 +729,21 @@ components:
         fismasystemid:
           type: integer
         questionid:
+          type: integer
+      type: object
+    model.QuestionnaireVersion:
+      properties:
+        createdat:
+          type: string
+        label:
+          type: string
+        parent_versionid:
+          type: integer
+        publishedat:
+          type: string
+        state:
+          type: string
+        versionid:
           type: integer
       type: object
     model.RevisionSide:
@@ -2209,6 +2269,48 @@ paths:
       tags:
       - fismasystems
   /functionoptions/{functionoptionid}:
+    delete:
+      description: Content in a published or archived version is never deleted (403,
+        code VERSION_NOT_DRAFT).
+      parameters:
+      - description: Function option ID
+        in: path
+        name: functionoptionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Delete a function option from a draft questionnaire version
+      tags:
+      - functions
     put:
       parameters:
       - description: Function ID (create)
@@ -2358,6 +2460,48 @@ paths:
       tags:
       - functions
   /functions/{functionid}:
+    delete:
+      description: Its options go with it. Content in a published or archived version
+        is never deleted (403, code VERSION_NOT_DRAFT).
+      parameters:
+      - description: Function ID
+        in: path
+        name: functionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Delete a function from a draft questionnaire version
+      tags:
+      - functions
     get:
       parameters:
       - description: Function ID
@@ -2787,6 +2931,235 @@ paths:
       summary: Enable or disable the System Delegate role for an OpDiv
       tags:
       - opdivs
+  /questionnaire-versions:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-array_model_QuestionnaireVersion'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: List questionnaire versions
+      tags:
+      - questionnaire-versions
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.forkQuestionnaireVersionInput'
+                description: Label for the draft
+                summary: body
+        description: Label for the draft
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_QuestionnaireVersion'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Fork a draft from the current published questionnaire version
+      tags:
+      - questionnaire-versions
+  /questionnaire-versions/{versionid}:
+    delete:
+      parameters:
+      - description: Questionnaire version ID
+        in: path
+        name: versionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Discard a draft questionnaire version
+      tags:
+      - questionnaire-versions
+    get:
+      parameters:
+      - description: Questionnaire version ID
+        in: path
+        name: versionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_QuestionnaireVersion'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Get a questionnaire version
+      tags:
+      - questionnaire-versions
+  /questionnaire-versions/{versionid}/archive:
+    put:
+      description: Refused for the current published version. Data calls pinned to
+        an archived version keep resolving it.
+      parameters:
+      - description: Questionnaire version ID
+        in: path
+        name: versionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_QuestionnaireVersion'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Archive a published questionnaire version
+      tags:
+      - questionnaire-versions
+  /questionnaire-versions/{versionid}/publish:
+    put:
+      description: Runs the publish gate; a 400 names the offending rows for each
+        rule that fails.
+      parameters:
+      - description: Questionnaire version ID
+        in: path
+        name: versionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_QuestionnaireVersion'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Publish a draft questionnaire version
+      tags:
+      - questionnaire-versions
   /questions:
     get:
       parameters:
@@ -2877,6 +3250,48 @@ paths:
       tags:
       - questions
   /questions/{questionid}:
+    delete:
+      description: Its functions and their options go with it. Content in a published
+        or archived version is never deleted (403, code VERSION_NOT_DRAFT).
+      parameters:
+      - description: Question ID
+        in: path
+        name: questionid
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Delete a question from a draft questionnaire version
+      tags:
+      - questions
     get:
       parameters:
       - description: Question ID

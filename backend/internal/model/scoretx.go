@@ -167,10 +167,6 @@ func writeScore(ctx context.Context, tx pgx.Tx, sqlb SqlBuilder) (*Score, error)
 // fields the next GET cannot confirm, or commit an answer with no trace of who
 // changed it.
 func insertScoreEvent(ctx context.Context, tx pgx.Tx, action string, saved *Score) error {
-	actor := UserFromContext(ctx)
-	if actor == nil {
-		return nil
-	}
 
 	// createdat is written explicitly as clock_timestamp(), NOT left to the
 	// column's CURRENT_TIMESTAMP default. CURRENT_TIMESTAMP is transaction START
@@ -189,10 +185,5 @@ func insertScoreEvent(ctx context.Context, tx pgx.Tx, action string, saved *Scor
 	// statement execution, and because the insert happens while the row lock is
 	// still held, event order now matches commit order by construction.
 	// Pinned by TestScoreConcurrentSavesAgreeWithEventLogIntegration.
-	_, err := tx.Exec(ctx,
-		"INSERT INTO events (userid, action, resource, payload, createdat) VALUES ($1, $2, $3, $4, clock_timestamp())",
-		actor.UserID, action, scoresEventResource, saved,
-	)
-
-	return trapError(err)
+	return insertCatalogEvent(ctx, tx, action, scoresEventResource, saved)
 }

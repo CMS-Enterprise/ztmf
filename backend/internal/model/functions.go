@@ -3,12 +3,15 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
-var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "ordr", "questionid", "pillarid"}
+var functionsColumns = []string{"functionid", "function", "description", "datacenterenvironment", "ordr", "questionid", "pillarid", "versionid", "root_functionid"}
 
 type Function struct {
 	FunctionID            int32  `json:"functionid"`
@@ -21,6 +24,12 @@ type Function struct {
 	QuestionID *int32 `json:"questionid,omitempty"`
 	// Derived from the function's question on write; a value sent by a client is ignored.
 	PillarID int32 `json:"pillarid" readonly:"true"`
+	// Taken from the function's question (ztmf-misc#394); a value sent by a
+	// client is ignored.
+	VersionID *int32 `json:"versionid,omitempty" readonly:"true"`
+	// The function's identity across versions. Honoured only on create, to
+	// restore a lineage (ztmf-misc#396); see Save.
+	RootFunctionID *int32 `json:"root_functionid,omitempty" db:"root_functionid"`
 }
 
 type FindFunctionsInput struct {
@@ -77,9 +86,6 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 }
 
 func (f *Function) Save(ctx context.Context) (*Function, error) {
-
-	var sqlb SqlBuilder
-
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
@@ -111,29 +117,130 @@ func (f *Function) Save(ctx context.Context) (*Function, error) {
 	}
 	f.PillarID = int32(q.PillarID)
 
+	returning := "RETURNING " + strings.Join(functionsColumns, ", ")
+
 	if f.FunctionID == 0 {
-		sqlb = stmntBuilder.
-			Insert("functions").
-			Columns(functionsColumns[1:]...).
-			Values(f.Function, f.Description, f.DataCenterEnvironment, derefInt(f.Ordr), f.QuestionID, f.PillarID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
-	} else {
-		ub := stmntBuilder.Update("functions").
-			Set("function", f.Function).
-			Set("description", f.Description).
-			Set("datacenterenvironment", f.DataCenterEnvironment).
-			Set("questionid", f.QuestionID).
-			Set("pillarid", f.PillarID)
-		// Only write ordr when the caller supplied it (see the field comment).
-		if f.Ordr != nil {
-			ub = ub.Set("ordr", *f.Ordr)
-		}
-		sqlb = ub.
-			Where("functionid=?", f.FunctionID).
-			Suffix("RETURNING " + strings.Join(functionsColumns, ", "))
+		return catalogWrite(ctx,
+			func(pgx.Tx) (int32, error) {
+				if q.VersionID == nil {
+					return 0, ErrNoReference
+				}
+				return *q.VersionID, nil
+			},
+			func(tx pgx.Tx, version int32) error { return f.checkLineage(ctx, tx, version) },
+			func(int32) SqlBuilder {
+				return stmntBuilder.
+					Insert("functions").
+					Columns("function", "description", "datacenterenvironment", "ordr", "questionid", "pillarid", "root_functionid").
+					Values(f.Function, f.Description, f.DataCenterEnvironment, derefInt(f.Ordr), f.QuestionID, questionPillar(f.QuestionID), f.RootFunctionID).
+					Suffix(returning)
+			},
+			pgx.RowToStructByName[Function], nil)
 	}
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
+	return catalogWrite(ctx,
+		func(tx pgx.Tx) (int32, error) {
+			return storedVersion(ctx, tx, `SELECT versionid FROM functions WHERE functionid = $1`, f.FunctionID)
+		},
+		func(tx pgx.Tx, _ int32) error { return f.checkLineageKept(ctx, tx) },
+		func(int32) SqlBuilder {
+			ub := stmntBuilder.Update("functions").
+				Set("function", f.Function).
+				Set("description", f.Description).
+				Set("datacenterenvironment", f.DataCenterEnvironment).
+				Set("questionid", f.QuestionID).
+				Set("pillarid", questionPillar(f.QuestionID))
+			// Only write ordr when the caller supplied it (see the field comment).
+			if f.Ordr != nil {
+				ub = ub.Set("ordr", *f.Ordr)
+			}
+			return ub.Where("functionid=?", f.FunctionID).Suffix(returning)
+		},
+		pgx.RowToStructByName[Function], nil)
+}
+
+// questionPillar derives a function's pillar from its question inside the
+// write's own statement, so a concurrent pillar change on the question cannot
+// leave the function on the old one.
+func questionPillar(questionID *int32) squirrel.Sqlizer {
+	return squirrel.Expr("(SELECT pillarid FROM questions WHERE questionid = ?)", questionID)
+}
+
+// checkLineage decides a new function's lineage (ztmf-misc#396), by the rule
+// in lineageRootsSQL: where an earlier version already answers this question
+// and environment, the new function must restore one of those lineages; where
+// none does, it starts its own and may not name one.
+func (f *Function) checkLineage(ctx context.Context, tx pgx.Tx, version int32) error {
+	rows, err := tx.Query(ctx, lineageRootsSQL("$1", "$2", "$3")+` ORDER BY 1`, f.QuestionID, f.DataCenterEnvironment, version)
+	if err != nil {
+		return trapError(err)
+	}
+	roots, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+	if err != nil {
+		return trapError(err)
+	}
+	switch {
+	case len(roots) == 0 && f.RootFunctionID == nil:
+		return nil
+	case len(roots) == 0:
+		return &InvalidInputError{data: map[string]any{"root_functionid": "no earlier version has a function for this question and environment to restore"}}
+	case f.RootFunctionID == nil || !slices.Contains(roots, *f.RootFunctionID):
+		return &InvalidInputError{data: map[string]any{"root_functionid": fmt.Sprintf("an earlier version answers this question and environment under lineage %s; send one as root_functionid to restore it", joinInt32(roots))}}
+	}
+	return checkRestoredRoot(ctx, tx, "root_functionid", "functions", "functionid", *f.RootFunctionID, version)
+}
+
+// checkLineageKept refuses an update that would move a function to a
+// different question lineage or environment: both are part of its lineage,
+// and moving one would make #395's diff and #397's translation disagree about
+// which question an answer belongs to. Delete it and add one instead.
+func (f *Function) checkLineageKept(ctx context.Context, tx pgx.Tx) error {
+	var questionMoved, environmentMoved bool
+	err := tx.QueryRow(ctx, `
+		SELECT cq.root_questionid <> nq.root_questionid, cur.datacenterenvironment <> $3
+		  FROM functions cur
+		 INNER JOIN questions cq ON cq.questionid = cur.questionid
+		 INNER JOIN questions nq ON nq.questionid = $2
+		 WHERE cur.functionid = $1`, f.FunctionID, f.QuestionID, f.DataCenterEnvironment).Scan(&questionMoved, &environmentMoved)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // a missing row or question fails on the write itself
+	}
+	if err != nil {
+		return trapError(err)
+	}
+	const why = "is part of a function's lineage; delete it and add a function instead"
+	invalid := map[string]any{}
+	if questionMoved {
+		invalid["questionid"] = "the question " + why
+	}
+	if environmentMoved {
+		invalid["datacenterenvironment"] = "the environment " + why
+	}
+	if len(invalid) > 0 {
+		return &InvalidInputError{data: invalid}
+	}
+	return nil
+}
+
+func joinInt32(s []int32) string {
+	parts := make([]string, len(s))
+	for i, v := range s {
+		parts[i] = fmt.Sprint(v)
+	}
+	return strings.Join(parts, " or ")
+}
+
+// DeleteFunction removes a function and its options from a draft
+// (ztmf-misc#396). Published content is never deleted.
+func DeleteFunction(ctx context.Context, functionID int32) error {
+	return catalogDelete(ctx, "functions",
+		`SELECT versionid FROM functions WHERE functionid = $1`,
+		`SELECT versionid FROM functions WHERE functionid = $1 FOR UPDATE`,
+		functionSnapshotSQL, functionID,
+		func(tx pgx.Tx) error {
+			_, err := deleteDraftRow(ctx, tx, "functionid", `DELETE FROM functions WHERE functionid = $1`, functionID)
+			return err
+		})
 }
 
 func (f *Function) validate() error {

@@ -100,3 +100,27 @@ func SaveFunctionOption(w http.ResponseWriter, r *http.Request) {
 	saved, err := fo.Save(r.Context())
 	respond(w, r, saved, err)
 }
+
+//	@Summary	Delete a function option from a draft questionnaire version
+//	@Description	 Content in a published or archived version is never deleted (403, code VERSION_NOT_DRAFT).
+//	@Tags		functions
+//	@Security	bearerAuth
+//	@Param		functionoptionid	path	int	true	"Function option ID"
+//	@Success	204			"No Content"
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functionoptions/{functionoptionid} [delete]
+func DeleteFunctionOption(w http.ResponseWriter, r *http.Request) {
+	if !model.UserFromContext(r.Context()).CanWriteHHSWide() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	id, ok := pathInt32(mux.Vars(r)["functionoptionid"])
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+	respond(w, r, nil, model.DeleteFunctionOption(r.Context(), id))
+}

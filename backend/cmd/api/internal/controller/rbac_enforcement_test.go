@@ -149,7 +149,7 @@ func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
 // the consequence - if a gate ever regresses, these cases reach the DB and
 // write for real against whatever DB_* env is set. They fail loudly when that
 // happens, which is the tradeoff; TestCatalogWrites_GatePrecedesDecode covers
-// the same six routes with an unparseable body and so can never write at all.
+// the same routes with an unparseable body and so can never write at all.
 
 // catalogWriteCases covers every content route in one table so a new one cannot
 // be added with a weaker gate unnoticed. PUT cases carry their path var because
@@ -208,6 +208,53 @@ var catalogWriteCases = []struct {
 		vars:    map[string]string{"functionoptionid": "1"},
 		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
 	},
+	{
+		name:    "ForkQuestionnaireVersion",
+		handler: ForkQuestionnaireVersion,
+		method:  "POST",
+		target:  "/api/v1/questionnaire-versions",
+		body:    map[string]any{"label": "rbac fixture"},
+	},
+}
+
+// catalogBodylessWriteCases are the catalog writes with no body to make
+// unparseable (ztmf-misc#396). Their path id is "0", which no handler accepts:
+// a passing gate therefore stops at 404 before the DB, and the forbidden table
+// below still proves the gate runs first.
+var catalogBodylessWriteCases = []struct {
+	name    string
+	handler func(http.ResponseWriter, *http.Request)
+	method  string
+	target  string
+	vars    map[string]string
+}{
+	{"DeleteQuestion", DeleteQuestion, "DELETE", "/api/v1/questions/0", map[string]string{"questionid": "0"}},
+	{"DeleteFunction", DeleteFunction, "DELETE", "/api/v1/functions/0", map[string]string{"functionid": "0"}},
+	{"DeleteFunctionOption", DeleteFunctionOption, "DELETE", "/api/v1/functionoptions/0", map[string]string{"functionoptionid": "0"}},
+	{"PublishQuestionnaireVersion", PublishQuestionnaireVersion, "PUT", "/api/v1/questionnaire-versions/0/publish", map[string]string{"versionid": "0"}},
+	{"ArchiveQuestionnaireVersion", ArchiveQuestionnaireVersion, "PUT", "/api/v1/questionnaire-versions/0/archive", map[string]string{"versionid": "0"}},
+	{"DiscardQuestionnaireVersion", DiscardQuestionnaireVersion, "DELETE", "/api/v1/questionnaire-versions/0", map[string]string{"versionid": "0"}},
+}
+
+func TestCatalogBodylessWrites_HHSWideOnly(t *testing.T) {
+	for _, c := range catalogBodylessWriteCases {
+		for _, u := range []*model.User{opdivAdmin, opdivReadonly, {Role: "HHS_READONLY_ADMIN"}, {Role: "ISSO"}, {Role: "SYSTEM_DELEGATE"}} {
+			t.Run(c.name+" forbidden for "+u.Role, func(t *testing.T) {
+				r := withUser(mux.SetURLVars(httptest.NewRequest(c.method, c.target, nil), c.vars), u)
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusForbidden, w.Code)
+			})
+		}
+		for _, u := range []*model.User{{Role: "OWNER"}, {Role: "HHS_ADMIN"}} {
+			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
+				r := withUser(mux.SetURLVars(httptest.NewRequest(c.method, c.target, nil), c.vars), u)
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusNotFound, w.Code)
+			})
+		}
+	}
 }
 
 func TestCatalogWrites_HHSWideOnly(t *testing.T) {

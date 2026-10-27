@@ -574,3 +574,25 @@ func TestScoreWritesLockTheDataCallFirstIntegration(t *testing.T) {
 		})
 	}
 }
+
+// newDraftQuestion opens a committed draft version holding one new question in
+// pillarID, for tests that write catalog content through the model, which
+// only accepts writes to a draft since ztmf-misc#396. The integration_test_
+// label lets purgeIntegrationTestVersions remove it.
+func newDraftQuestion(t *testing.T, pillarID int32) int32 {
+	t.Helper()
+	purgeIntegrationTestVersions(t)
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var questionID int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		WITH d AS (INSERT INTO questionnaire_versions (label) VALUES ($1) RETURNING versionid)
+		INSERT INTO questions (question, notesprompt, pillarid, versionid)
+		SELECT 'draft fixture', 'prompt', $2, versionid FROM d RETURNING questionid`,
+		integrationTestPrefix+"draftq", pillarID).Scan(&questionID))
+	t.Cleanup(func() { purgeIntegrationTestVersions(t) })
+	return questionID
+}

@@ -39,6 +39,10 @@ const (
 	// through to the generic passthrough; the FE refreshes the history drawer
 	// against the fresh head rather than retrying (ztmf-misc#392).
 	CodeRevisionConflict = "REVISION_CONFLICT"
+	// Set by the controller (sanitizeErr): a questionnaire content write
+	// targeted a published or archived version, or no draft was open
+	// (ztmf-misc#396). The fix is to fork a draft, not to change roles.
+	CodeVersionNotDraft = "VERSION_NOT_DRAFT"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a
