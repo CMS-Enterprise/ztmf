@@ -507,3 +507,13 @@ func TestDerefString(t *testing.T) {
 			"pointer to empty string is distinct from nil and must round-trip")
 	})
 }
+
+// The system score averages exact numeric pillar scores and floats once. A
+// float8 AVG sums in plan-dependent row order, so the last bit moved whenever
+// the query shape did (ztmf-misc#395).
+func TestBuildPillarScoresSQL_SystemScoreIsOrderIndependent(t *testing.T) {
+	sql, _ := buildPillarScoresSQL(FindScoresInput{})
+	assert.Contains(t, sql, "AVG(COALESCE(a.score, 1)) * 1.25 AS pillar_score_exact,")
+	assert.Contains(t, sql, "AVG(ps.pillar_score_exact) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score")
+	assert.NotContains(t, sql, "AVG(ps.pillar_score)")
+}

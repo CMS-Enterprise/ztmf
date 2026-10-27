@@ -31,14 +31,22 @@ type ScoreDiffSide struct {
 // audit trail; both are nil when no write event exists for the To score (e.g.
 // seed data, or a function answered only in the From cycle).
 type ScoreDiff struct {
-	FismaSystemID int32          `json:"fismasystemid"`
-	FunctionID    int32          `json:"functionid"`
-	Function      string         `json:"function"`
-	Question      string         `json:"question"`
-	From          *ScoreDiffSide `json:"from"`
-	To            *ScoreDiffSide `json:"to"`
-	ChangedAt     *time.Time     `json:"changed_at,omitempty"`
-	ChangedBy     *AuditRef      `json:"changed_by,omitempty"`
+	FismaSystemID int32 `json:"fismasystemid"`
+	FunctionID    int32 `json:"functionid"`
+	// The question's identity across questionnaire versions (ztmf-misc#395).
+	// functionid is the from side's when both cycles answered it, and the two
+	// differ when the cycles pin different versions.
+	RootFunctionID int32          `json:"root_functionid"`
+	Function       string         `json:"function"`
+	Question       string         `json:"question"`
+	// Carried on the row so a client can group a diff whose cycles pin
+	// different versions without mapping functionids through a questions list.
+	PillarID       *int32         `json:"pillarid"`
+	Pillar         *string        `json:"pillar"`
+	From           *ScoreDiffSide `json:"from"`
+	To             *ScoreDiffSide `json:"to"`
+	ChangedAt      *time.Time     `json:"changed_at,omitempty"`
+	ChangedBy      *AuditRef      `json:"changed_by,omitempty"`
 }
 
 type FindScoreDiffInput struct {
@@ -56,7 +64,8 @@ type FindScoreDiffInput struct {
 // for the in-scope FISMA system(s) and returns only the functions whose answer
 // differs between them, each annotated with who made the later change and when.
 //
-// "Differs" means the selected functionoption changed, the notes changed, or
+// "Differs" means the selected option changed (its id within one questionnaire
+// version, its score across two), the notes changed, or
 // the function was answered in exactly one of the two cycles. Notes are
 // compared with whitespace normalized (nil and empty treated as equal, leading
 // and trailing whitespace trimmed, internal runs collapsed) so neither a
@@ -107,8 +116,15 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	fromCTE := scoreCycleCTE(input, *input.FromDataCallID, &args, &argN)
 	toCTE := scoreCycleCTE(input, *input.ToDataCallID, &args, &argN)
 
-	// FULL OUTER JOIN on (system, function) so a function answered in only one
-	// cycle still surfaces (added or removed answer). Catalog joins are LEFT so
+	// FULL OUTER JOIN on (system, root_functionid) so a function answered in only
+	// one cycle still surfaces (added or removed answer), and so the same
+	// question matches across two cycles pinned to different questionnaire
+	// versions (ztmf-misc#395). The label join stays on functionid, a primary
+	// key, so it cannot fan out however many versions share a root.
+	//
+	// "Changed" compares option ids within one version but option scores across
+	// two: a forked version gives every option a new id, so comparing ids there
+	// would report every carried answer as changed. Catalog joins are LEFT so
 	// a row whose function/question was since deleted still returns with empty
 	// labels rather than vanishing. The events lateral keys on the To scoreid
 	// because the later write is what "who made the change" refers to; the
@@ -135,15 +151,18 @@ WITH from_scores AS (%s),
 SELECT
     COALESCE(f.fismasystemid, t.fismasystemid) AS fismasystemid,
     COALESCE(f.functionid, t.functionid)       AS functionid,
+    COALESCE(f.root_functionid, t.root_functionid) AS root_functionid,
     fn.function,
     q.question,
+    p.pillarid,
+    p.pillar,
     f.scoreid, f.functionoptionid, f.option_score, f.optionname, f.notes, f.notes_is_ai_summary,
     t.scoreid, t.functionoptionid, t.option_score, t.optionname, t.notes, t.notes_is_ai_summary,
     le.createdat,
     eu.userid, eu.fullname, eu.email, eu.role
 FROM from_scores f
 FULL OUTER JOIN to_scores t
-  ON f.fismasystemid = t.fismasystemid AND f.functionid = t.functionid
+  ON f.fismasystemid = t.fismasystemid AND f.root_functionid = t.root_functionid
 LEFT JOIN functions fn ON fn.functionid = COALESCE(f.functionid, t.functionid)
 LEFT JOIN questions q  ON q.questionid  = fn.questionid
 LEFT JOIN pillars p    ON p.pillarid    = q.pillarid
@@ -156,7 +175,9 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) le ON TRUE
 LEFT JOIN users eu ON eu.userid = le.userid
-WHERE f.functionoptionid IS DISTINCT FROM t.functionoptionid
+WHERE (CASE WHEN f.functionid = t.functionid
+            THEN f.functionoptionid IS DISTINCT FROM t.functionoptionid
+            ELSE f.option_score IS DISTINCT FROM t.option_score END)
    OR btrim(regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g'))
       IS DISTINCT FROM
       btrim(regexp_replace(COALESCE(t.notes, ''), '\s+', ' ', 'g'))
@@ -197,10 +218,11 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 	})
 
 	return fmt.Sprintf(`
-    SELECT s.scoreid, s.fismasystemid, fo.functionid, s.functionoptionid,
+    SELECT s.scoreid, s.fismasystemid, fo.functionid, rf.root_functionid, s.functionoptionid,
            fo.score AS option_score, fo.optionname, s.notes, s.notes_is_ai_summary
     FROM scores s
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+    INNER JOIN functions rf ON rf.functionid = fo.functionid
     %s
     WHERE %s`, userJoin, strings.Join(conds, " AND "))
 }
@@ -233,7 +255,7 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 	)
 
 	if err := row.Scan(
-		&d.FismaSystemID, &d.FunctionID, &fn, &qn,
+		&d.FismaSystemID, &d.FunctionID, &d.RootFunctionID, &fn, &qn, &d.PillarID, &d.Pillar,
 		&fScoreID, &fFOID, &fOptScore, &fOptName, &fNotes, &fAISummary,
 		&tScoreID, &tFOID, &tOptScore, &tOptName, &tNotes, &tAISummary,
 		&at, &uID, &uName, &uEmail, &uRole,

@@ -27,12 +27,20 @@ type FindFunctionsInput struct {
 	QuestionID            *int32 `schema:"questionid"`
 	PillarID              *int32
 	DataCenterEnvironment *string
+	// Catalog version to list; nil means the newest published version.
+	VersionID *int32 `schema:"versionid"`
 }
 
 func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, error) {
 	sqlb := stmntBuilder.
 		Select(functionsColumns...).
 		From("functions")
+
+	if i.VersionID != nil {
+		sqlb = sqlb.Where("versionid=?", *i.VersionID)
+	} else {
+		sqlb = sqlb.Where(currentQuestionnaireVersionSQL("versionid"))
+	}
 
 	if i.QuestionID != nil {
 		sqlb = sqlb.Where("questionid=?", *i.QuestionID)

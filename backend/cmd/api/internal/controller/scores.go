@@ -183,6 +183,7 @@ func guardScoreWrite(ctx context.Context, user *model.User, fismaSystemID int32)
 //	@Security	bearerAuth
 //	@Param		scoreid	path		int	true	"Score ID"
 //	@Success	200		{object}	apiResponse[model.Score]
+//	@Failure	400		{object}	apiResponse[any]
 //	@Failure	403		{object}	apiResponse[any]
 //	@Failure	404		{object}	apiResponse[any]
 //	@Failure	500		{object}	apiResponse[any]
