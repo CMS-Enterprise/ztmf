@@ -11,6 +11,10 @@ ecs_service_task_count = 1
 # that can only do TLS 1.2 gets a handshake failure.
 cloudfront_minimum_protocol_version = "TLSv1.3_2025"
 
+# Post-quantum FIPS policy on the internal ALB listener. Its backend policy
+# offers hybrid ML-KEM to the API targets; dev shows hop=alb on X25519MLKEM768.
+alb_ssl_policy = "ELBSecurityPolicy-TLS13-1-2-Res-FIPS-PQ-2025-09"
+
 # Kion rotation: impl has no ztmf_kion_impl secret yet; keep schedule off
 kion_rotate_schedule_enabled = false
 
