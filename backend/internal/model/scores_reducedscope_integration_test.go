@@ -27,6 +27,40 @@ func findSystemIDByAcronym(ctx context.Context, t *testing.T, acronym string) (i
 	return id, true
 }
 
+// inScopeAnsweredCount counts a system's answers for a data call the way the
+// aggregate's answered column does (buildPillarScoresSQL): every expected
+// function for the system's scoring key, reduced pillar scope applied, LEFT
+// JOINed to answers that resolve to a real option. The -1 unanswered sentinel
+// has no functionoptions row, so it drops out of the inner join and does not
+// count.
+func inScopeAnsweredCount(ctx context.Context, t *testing.T, systemID, dataCallID int32) int {
+	t.Helper()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT COUNT(a.score)
+		FROM fismasystems fs
+		JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		JOIN functions f ON f.datacenterenvironment = dce.scoring_key
+		JOIN questions q ON q.questionid = f.questionid
+		JOIN pillars p   ON p.pillarid   = q.pillarid
+		LEFT JOIN (
+		    SELECT s.fismasystemid, s.datacallid, fo.functionid, fo.score
+		    FROM scores s
+		    JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		) a ON a.fismasystemid = fs.fismasystemid
+		   AND a.datacallid    = $2
+		   AND a.functionid    = f.functionid
+		WHERE fs.fismasystemid = $1
+		  AND `+reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "$2"),
+		systemID, dataCallID,
+	).Scan(&n))
+	return n
+}
+
 // TestFindScoresAggregateReducedScopeIntegration pins ztmf#545's scoring
 // contract in real Postgres: from the seeded anchor cycle onward a reduced
 // system carries no pillar score for the excluded pillars and its system score
@@ -102,14 +136,18 @@ func TestFindScoresAggregateReducedScopeIntegration(t *testing.T) {
 			}
 			assert.InDelta(t, sum/float64(len(onAnchor.PillarScores)), onAnchor.SystemScore, 1e-9,
 				"the system score must average only the in-scope pillars")
-			// Not Assessed comes from the answer count (tierFor), and only
-			// ever sits at the 1.25 floor; otherwise the tier is
-			// Tier(score).
+			// Not Assessed comes from the answer count (tierFor), not the
+			// score: a system answering option 1 everywhere also scores 1.25.
+			// So prove the label against the in-scope answer count.
+			answered := inScopeAnsweredCount(ctx, t, systemID, anchor)
 			if onAnchor.SystemTier == "Not Assessed" {
+				assert.Zero(t, answered, "a Not Assessed system has no in-scope answers")
 				assert.InDelta(t, 1.25, onAnchor.SystemScore, 1e-9,
 					"a Not Assessed system sits at the floor")
 			} else {
+				assert.Positive(t, answered, "a system with a maturity tier has in-scope answers")
 				assert.Equal(t, Tier(onAnchor.SystemScore), onAnchor.SystemTier)
+				assert.NotEqual(t, "Not Assessed", onAnchor.SystemTier)
 			}
 		})
 	}
