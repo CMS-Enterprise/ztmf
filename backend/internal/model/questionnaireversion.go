@@ -19,7 +19,7 @@ import (
 // doubled denominator is silent.
 //
 // Pinning functions.versionid alone is sufficient: the composite FKs from
-// migration 0067 mean the questions and functionoptions rows a function joins
+// migration 0068 mean the questions and functionoptions rows a function joins
 // to are in the same version.
 //
 // The version is one of three independent axes. functions.datacenterenvironment
