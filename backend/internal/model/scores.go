@@ -165,6 +165,9 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 		// This is the ztmf#491 fix - a caller that does not know the existing
 		// scoreid (a bulk write that did not read current state, a client that
 		// lost the id) used to insert a second answer, and would now take a 400.
+		if err := checkOptionInPinnedVersion(ctx, tx, s.FunctionOptionID, s.DataCallID); err != nil {
+			return nil, err
+		}
 		var err error
 		current, err = lockScoreByNaturalKey(ctx, tx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
 		if errors.Is(err, ErrNoData) {
@@ -196,6 +199,9 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 		}
 		s.ScoreID = current.ScoreID
 	} else {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
 		locked, functionID, err := lockScore(ctx, tx, s.ScoreID)
 		if err != nil {
 			return nil, err
@@ -216,9 +222,14 @@ func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
 		// Skipped on the hot path: an unchanged option is necessarily the same
 		// question, so the questionnaire's Next-click PUT pays nothing.
 		if current.FunctionOptionID != s.FunctionOptionID {
-			optionFunctionID, err := functionIDOfOption(ctx, tx, s.FunctionOptionID)
+			// Version first: another version's copy of this same question is
+			// also "a different functionid", and the version is the real reason.
+			optionFunctionID, inVersion, err := optionPlacement(ctx, tx, s.FunctionOptionID, current.DataCallID)
 			if err != nil {
 				return nil, err
+			}
+			if !inVersion {
+				return nil, errOptionOutsidePinnedVersion()
 			}
 			if optionFunctionID != 0 && optionFunctionID != functionID {
 				return nil, errOptionAnswersDifferentQuestion()
@@ -340,8 +351,15 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	// revision_no allocated as MAX+1 with the read and the insert under one
 	// lock.
 	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
 		current, _, err := lockScore(ctx, tx, s.ScoreID)
 		if err != nil {
+			return nil, err
+		}
+		// Confirming endorses the stored option, so it must be this cycle's.
+		if err := checkOptionInPinnedVersion(ctx, tx, current.FunctionOptionID, current.DataCallID); err != nil {
 			return nil, err
 		}
 
@@ -437,26 +455,71 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	return current, nil
 }
 
-// functionIDOfOption returns the question a functionoption answers, or 0 when
-// the option does not exist.
+// optionPlacement is what a score write needs to know about an option: the
+// question it answers, and whether it belongs to the questionnaire version the
+// data call is pinned to (ztmf-misc#395). One query, not two.
 //
-// Save treats an unknown option as answering the same question, deliberately:
-// rejecting it there would turn the existing 400 ErrNoReference (raised by the
-// trigger as 23503 when the write lands) into a less accurate "wrong question"
-// error. Let the write proceed and fail on the real reason.
-func functionIDOfOption(ctx context.Context, tx pgx.Tx, functionOptionID int32) (int32, error) {
-	var functionID int32
-	err := tx.QueryRow(ctx,
-		`SELECT functionid FROM functionoptions WHERE functionoptionid = $1`, functionOptionID,
-	).Scan(&functionID)
+// An unknown option reports functionID 0 and in-version, deliberately: Save
+// lets the write proceed and fail on the real reason (the trigger raises 23503,
+// which is the existing 400 ErrNoReference) rather than a less accurate one.
+// An unknown data call likewise reports in-version and fails on its FK.
+//
+// The data call row is locked FOR SHARE until commit, so ztmf-misc#397's
+// re-pin (which updates that row) cannot commit between this check and the
+// write it guards. Every score write takes that lock before the score row -
+// here on create, through lockScoreDataCall on the scoreid paths - so a re-pin
+// that updates the data call first waits for them rather than deadlocking.
+func optionPlacement(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallID int32) (functionID int32, inVersion bool, err error) {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM datacalls WHERE datacallid = $1 FOR SHARE`, dataCallID); err != nil {
+		return 0, false, trapError(err)
+	}
+	var pinned *bool
+	err = tx.QueryRow(ctx, `
+		SELECT fo.functionid, `+questionnaireVersionSQL("fo.versionid", "$2")+`
+		  FROM functionoptions fo
+		 WHERE fo.functionoptionid = $1`, functionOptionID, dataCallID,
+	).Scan(&functionID, &pinned)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
+		return 0, true, nil
 	}
 	if err != nil {
-		return 0, trapError(err)
+		return 0, false, trapError(err)
 	}
+	return functionID, pinned == nil || *pinned, nil
+}
 
-	return functionID, nil
+// lockScoreDataCall locks a score's data call FOR SHARE ahead of lockScore, the
+// order the create path already takes (optionPlacement before the natural-key
+// lock). One order on every score write is what keeps ztmf-misc#397's re-pin,
+// which updates the data call row before any score, free of deadlocks.
+func lockScoreDataCall(ctx context.Context, tx pgx.Tx, scoreID int32) error {
+	_, err := tx.Exec(ctx, `
+		SELECT 1 FROM datacalls
+		 WHERE datacallid = (SELECT datacallid FROM scores WHERE scoreid = $1)
+		   FOR SHARE`, scoreID)
+	return trapError(err)
+}
+
+// checkOptionInPinnedVersion rejects an option from a version other than the
+// data call's pin. A draft or older version's option has its own functionid,
+// so it would land as a second answer to the same question that 0061's index
+// cannot see and the read paths would then hide. It is also what keeps a
+// draft's options unanswerable, which ztmf-misc#396's draft DELETE relies on.
+func checkOptionInPinnedVersion(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallID int32) error {
+	_, inVersion, err := optionPlacement(ctx, tx, functionOptionID, dataCallID)
+	if err != nil {
+		return err
+	}
+	if !inVersion {
+		return errOptionOutsidePinnedVersion()
+	}
+	return nil
+}
+
+func errOptionOutsidePinnedVersion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different questionnaire version than this data call",
+	}}
 }
 
 // errOptionAnswersDifferentQuestion is the 400 for an update whose option
@@ -951,6 +1014,11 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// pillar, so closed calls are untouched.
 	conds = append(conds, reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "sp.datacallid"))
 
+	// Each (system, data call) pair enumerates its own cycle's catalog
+	// (ztmf-misc#395), through the pair's own dc row, so a retroactive
+	// recompute of a closed cycle uses the version that cycle was answered in.
+	conds = append(conds, pinnedVersionJoinSQL("f.versionid", "dc"))
+
 	var userJoin string
 	if input.UserID != nil {
 		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = fs.fismasystemid AND ufs.userid = $%d", argN)
@@ -978,16 +1046,13 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// junction is empty for live data calls that have thousands of score
 	// rows. Using it as the universe filter returns nothing.
 	//
-	// Question catalog drift is intentionally not handled. Functions are
-	// keyed by datacenterenvironment, not by datacall. A retroactive
-	// recompute of a closed historical cycle uses the current question set
-	// for that environment, which matches the legacy AVG-over-scored-rows
-	// behavior (it only averaged whatever functionoptions were referenced
-	// in the scores table). If question versioning becomes a real
-	// requirement, both paths would need the same treatment.
+	// Question catalog drift is handled by the version pin above: expected
+	// enumerates the functions of the pair's own questionnaire version, so a
+	// closed cycle rescored later reproduces its original numbers.
 	//
-	// Both pillar score and system score are computed in Postgres so the
-	// float math is consistent. System score is AVG of pillar scores
+	// Both pillar score and system score are computed in Postgres, in exact
+	// numeric until the final cast, so the result does not depend on the
+	// order rows reach the window. System score is AVG of pillar scores
 	// (equal weighting per the locked plan); the divisor follows the
 	// actual pillar count via the inner AVG, so adding or removing a
 	// pillar does not silently shift the math. system_score is carried on
@@ -1034,7 +1099,8 @@ pillar_scores AS (
         -- HHS scorecard formula (ztmf-misc#433): average of the 1-4 answers
         -- times 1.25, i.e. sum x 5 / max. An unanswered question counts as 1
         -- (Traditional), so a pillar with nothing answered scores 1.25.
-        (AVG(COALESCE(a.score, 1)) * 1.25)::float8 AS pillar_score,
+        -- Kept as exact numeric for the system average below; floated only for output.
+        AVG(COALESCE(a.score, 1)) * 1.25 AS pillar_score_exact,
         -- Answered count, so Go can label a pillar (or whole system) with
         -- nothing answered Not Assessed rather than Traditional.
         COUNT(a.score)::int AS answered
@@ -1050,9 +1116,11 @@ SELECT
     ps.fismasystemid,
     ps.pillarid,
     ps.pillar,
-    ps.pillar_score AS score,
+    ps.pillar_score_exact::float8 AS score,
     ps.answered,
-    AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score,
+    -- Averaged in numeric, then floated: a float8 AVG sums in plan-dependent
+    -- row order, so any query-shape change moved the last bit (ztmf-misc#395).
+    AVG(ps.pillar_score_exact) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score,
     SUM(ps.answered) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::int AS system_answered
 FROM pillar_scores ps
 ORDER BY ps.datacallid, ps.fismasystemid, ps.ordr, ps.pillarid
