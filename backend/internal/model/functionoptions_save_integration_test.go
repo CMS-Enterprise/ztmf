@@ -27,7 +27,8 @@ func TestFunctionOptionSaveIntegration(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	questionID := int32(8004)
+	// Catalog writes land only in a draft (ztmf-misc#396).
+	questionID := newDraftQuestion(t, 2)
 
 	newFixtureFunction := func(t *testing.T, name string) int32 {
 		t.Helper()

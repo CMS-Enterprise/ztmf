@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"unicode/utf8"
 
@@ -83,44 +84,66 @@ func FindFunctionOptionByID(ctx context.Context, functionOptionID int32) (*Funct
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[FunctionOption])
 }
 
-// Save creates or updates one answer choice (ztmf-misc#398). Before this the
-// table had no write path at all, though the options are the 1-4 scoring scale
-// every answer points at, so changing the scale meant hand-written SQL.
-//
-// There is deliberately no Delete. scores.functionoptionid REFERENCES this
-// table with NO ACTION, so deleting an option an answer points at fails on the
-// FK rather than orphaning the answer - but an option nothing references yet
-// can be deleted, and until the catalog is versioned that is a permanent,
-// unversioned, unlogged mutation with no draft to do it in. ztmf-misc#396 adds
-// DELETE once a draft version exists that cannot be pinned by a data call, and
-// carries the acceptance criterion for it. Do not add it here.
+// Save creates or updates one answer choice (ztmf-misc#398), in a draft
+// version only (ztmf-misc#396). The option's version is its function's.
 func (fo *FunctionOption) Save(ctx context.Context) (*FunctionOption, error) {
-
-	var sqlb SqlBuilder
-
 	if err := fo.validate(); err != nil {
 		return nil, err
 	}
-
-	returning := strings.Join(functionOptionWriteColumns, ", ")
+	returning := "RETURNING " + strings.Join(functionOptionWriteColumns, ", ")
 
 	if fo.FunctionOptionID == 0 {
-		sqlb = stmntBuilder.
-			Insert("functionoptions").
-			Columns(functionOptionWriteColumns[1:]...).
-			Values(fo.FunctionID, fo.Score, fo.OptionName, fo.Description).
-			Suffix("RETURNING " + returning)
-	} else {
-		sqlb = stmntBuilder.Update("functionoptions").
-			Set("functionid", fo.FunctionID).
-			Set("score", fo.Score).
-			Set("optionname", fo.OptionName).
-			Set("description", fo.Description).
-			Where("functionoptionid=?", fo.FunctionOptionID).
-			Suffix("RETURNING " + returning)
+		return catalogWrite(ctx,
+			func(tx pgx.Tx) (int32, error) {
+				version, err := storedVersion(ctx, tx, `SELECT versionid FROM functions WHERE functionid = $1`, fo.FunctionID)
+				if errors.Is(err, ErrNoData) {
+					return 0, ErrNoReference
+				}
+				return version, err
+			},
+			nil,
+			func(int32) SqlBuilder {
+				return stmntBuilder.
+					Insert("functionoptions").
+					Columns(functionOptionWriteColumns[1:]...).
+					Values(fo.FunctionID, fo.Score, fo.OptionName, fo.Description).
+					Suffix(returning)
+			},
+			pgx.RowToStructByName[FunctionOption], nil)
 	}
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByName[FunctionOption])
+	return catalogWrite(ctx,
+		func(tx pgx.Tx) (int32, error) {
+			return storedVersion(ctx, tx, `SELECT versionid FROM functionoptions WHERE functionoptionid = $1`, fo.FunctionOptionID)
+		},
+		nil,
+		func(int32) SqlBuilder {
+			return stmntBuilder.Update("functionoptions").
+				Set("functionid", fo.FunctionID).
+				Set("score", fo.Score).
+				Set("optionname", fo.OptionName).
+				Set("description", fo.Description).
+				Where("functionoptionid=?", fo.FunctionOptionID).
+				Suffix(returning)
+		},
+		pgx.RowToStructByName[FunctionOption], nil)
+}
+
+// DeleteFunctionOption removes an option from a draft (ztmf-misc#396), the
+// delete #398 deferred. Safe because no score can reference a draft option,
+// which rests on two guards: no data call pins a draft (#397 must refuse a
+// draft pin at create and re-pin) and #395's write check refuses an option
+// outside the call's pin. A published option is never deleted, which is also
+// what keeps undo's prev_functionoptionid resolvable.
+func DeleteFunctionOption(ctx context.Context, functionOptionID int32) error {
+	return catalogDelete(ctx, "functionoptions",
+		`SELECT versionid FROM functionoptions WHERE functionoptionid = $1`,
+		`SELECT versionid FROM functionoptions WHERE functionoptionid = $1 FOR UPDATE`,
+		optionSnapshotSQL, functionOptionID,
+		func(tx pgx.Tx) error {
+			_, err := deleteDraftRow(ctx, tx, "functionoptionid", `DELETE FROM functionoptions WHERE functionoptionid = $1`, functionOptionID)
+			return err
+		})
 }
 
 // maxOptionNameLen and maxOptionDescriptionLen mirror functionoptions'

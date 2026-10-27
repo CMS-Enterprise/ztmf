@@ -14,7 +14,7 @@ import (
 // out of agreement. Editing the question's own pillar still leaves dependent
 // functions stale until they are next saved; that path is not covered here.
 //
-// Fixtures come from the empire seed: question 8004 is in pillar 2 (Applications).
+// The fixture question is a draft question in pillar 2 (Applications).
 // The fixtures use the "AWS" environment, which no seeded system maps to, so a
 // fixture is never visible to a questionnaire while the test runs. Requires DB_*
 // env vars pointing at a seeded ZTMF database. Skipped under `go test -short`.
@@ -24,7 +24,8 @@ func TestFunctionPillarDeriveIntegration(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	questionID := int32(8004) // pillar 2
+	// A draft question in pillar 2: catalog writes land only in a draft (ztmf-misc#396).
+	questionID := newDraftQuestion(t, 2)
 	fixtureOrdr := 99
 
 	t.Run("InsertIgnoresCallerPillar", func(t *testing.T) {

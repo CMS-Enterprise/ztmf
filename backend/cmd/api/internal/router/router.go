@@ -83,6 +83,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.SaveFunctionOption).Methods("POST")
 	router.HandleFunc("/api/v1/functionoptions/{functionoptionid:[0-9]+}", controller.SaveFunctionOption).Methods("PUT")
+	router.HandleFunc("/api/v1/functionoptions/{functionoptionid:[0-9]+}", controller.DeleteFunctionOption).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
 	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
@@ -125,11 +126,21 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.GetQuestionByID).Methods("GET")
 	router.HandleFunc("/api/v1/questions", controller.SaveQuestion).Methods("POST")
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
+	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.DeleteQuestion).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/functions", controller.ListFunctions).Methods("GET")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionByID).Methods("GET")
 	router.HandleFunc("/api/v1/functions", controller.SaveFunction).Methods("POST")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.DeleteFunction).Methods("DELETE")
+
+	// Questionnaire version lifecycle (ztmf-misc#396).
+	router.HandleFunc("/api/v1/questionnaire-versions", controller.ListQuestionnaireVersions).Methods("GET")
+	router.HandleFunc("/api/v1/questionnaire-versions", controller.ForkQuestionnaireVersion).Methods("POST")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}", controller.GetQuestionnaireVersion).Methods("GET")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}", controller.DiscardQuestionnaireVersion).Methods("DELETE")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}/publish", controller.PublishQuestionnaireVersion).Methods("PUT")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}/archive", controller.ArchiveQuestionnaireVersion).Methods("PUT")
 
 	router.HandleFunc("/api/v1/datacenterenvironments", controller.ListDataCenterEnvironments).Methods("GET")
 

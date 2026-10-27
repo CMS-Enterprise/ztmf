@@ -37,6 +37,11 @@ var (
 	// Deliberately not folded into ErrNotUnique, which is 400 today and pinned
 	// there by Emberfall for duplicate system acronyms and OpDiv names.
 	ErrRevisionConflict = errors.New("this answer changed since you loaded it")
+	// ErrVersionNotDraft is returned for a questionnaire content write outside a
+	// draft version: the target is published or archived, or no draft is open
+	// to receive a new question (ztmf-misc#396). Mapped to 403 with a code, so a
+	// client can tell "fork a draft first" from a role problem.
+	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version; fork one with POST /questionnaire-versions")
 )
 
 type InvalidInputError struct {

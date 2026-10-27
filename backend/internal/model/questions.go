@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var questionsColumns = []string{"questionid", "question", "notesprompt", "ordr", "pillarid"}
+var questionsColumns = []string{"questionid", "question", "notesprompt", "ordr", "pillarid", "versionid", "root_questionid"}
 
 // Question represents a record from the questions table
 type Question struct {
@@ -18,40 +18,98 @@ type Question struct {
 	// value; a rank cannot be reset to null.
 	Ordr        *int      `json:"order"`
 	PillarID    int       `json:"pillarid"`
-	Pillar      *Pillar   `json:"pillar,omitempty"`
+	// The questionnaire version this row belongs to (ztmf-misc#394). Honoured
+	// only on create, where it must name a draft; omitted, the open draft is
+	// used. Fixed after create.
+	VersionID *int32 `json:"versionid,omitempty"`
+	// The question's identity across versions. Honoured only on create, to
+	// restore a lineage a draft deleted (ztmf-misc#396); omitted, a new
+	// question starts its own.
+	RootQuestionID *int32  `json:"root_questionid,omitempty" db:"root_questionid"`
+	Pillar         *Pillar `json:"pillar,omitempty"`
 	Function    *Function `json:"function,omitempty"`
 }
 
 func (q *Question) Save(ctx context.Context) (*Question, error) {
-
-	var sqlb SqlBuilder
-
 	if err := q.validate(); err != nil {
 		return nil, err
 	}
+	returning := "RETURNING " + strings.Join(questionsColumns, ", ")
 
 	if q.QuestionID == 0 {
-		sqlb = stmntBuilder.
-			Insert("questions").
-			Columns(questionsColumns[1:]...).
-			Values(q.Question, q.NotesPrompt, derefInt(q.Ordr), q.PillarID).
-			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
-	} else {
-		ub := stmntBuilder.Update("questions").
-			Set("question", q.Question).
-			Set("notesprompt", q.NotesPrompt).
-			Set("pillarid", q.PillarID)
-		// Only write ordr when the caller supplied it (see the field comment).
-		if q.Ordr != nil {
-			ub = ub.Set("ordr", *q.Ordr)
-		}
-		sqlb = ub.
-			Where("questionid=?", q.QuestionID).
-			Suffix("RETURNING " + strings.Join(questionsColumns, ", "))
+		return catalogWrite(ctx,
+			func(tx pgx.Tx) (int32, error) {
+				if q.VersionID != nil {
+					return *q.VersionID, nil
+				}
+				return openDraftVersionID(ctx, tx)
+			},
+			func(tx pgx.Tx, version int32) error {
+				if q.RootQuestionID == nil {
+					return nil
+				}
+				return checkRestoredRoot(ctx, tx, "root_questionid", "questions", "questionid", *q.RootQuestionID, version)
+			},
+			func(version int32) SqlBuilder {
+				return stmntBuilder.
+					Insert("questions").
+					Columns("question", "notesprompt", "ordr", "pillarid", "versionid", "root_questionid").
+					Values(q.Question, q.NotesPrompt, derefInt(q.Ordr), q.PillarID, version, q.RootQuestionID).
+					Suffix(returning)
+			},
+			pgx.RowToStructByNameLax[Question], nil)
 	}
 
-	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Question])
+	return catalogWrite(ctx,
+		func(tx pgx.Tx) (int32, error) {
+			return storedVersion(ctx, tx, `SELECT versionid FROM questions WHERE questionid = $1`, q.QuestionID)
+		},
+		nil,
+		func(int32) SqlBuilder {
+			ub := stmntBuilder.Update("questions").
+				Set("question", q.Question).
+				Set("notesprompt", q.NotesPrompt).
+				Set("pillarid", q.PillarID)
+			// Only write ordr when the caller supplied it (see the field comment).
+			if q.Ordr != nil {
+				ub = ub.Set("ordr", *q.Ordr)
+			}
+			return ub.Where("questionid=?", q.QuestionID).Suffix(returning)
+		},
+		pgx.RowToStructByNameLax[Question],
+		// A function's pillar is its question's (Function.Save derives it), so a
+		// pillar change carries to the question's functions rather than leaving
+		// them for the publish gate to refuse.
+		func(tx pgx.Tx, saved *Question) error {
+			rows, err := tx.Query(ctx, `UPDATE functions SET pillarid = $1 WHERE questionid = $2 AND pillarid <> $1 RETURNING functionid`, saved.PillarID, saved.QuestionID)
+			if err != nil {
+				return trapError(err)
+			}
+			moved, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+			if err != nil || len(moved) == 0 {
+				return trapError(err)
+			}
+			return insertCatalogEvent(ctx, tx, eventActionUpdated, "functions",
+				map[string]any{"questionid": saved.QuestionID, "pillarid": saved.PillarID, "functionids": moved})
+		})
+}
 
+// DeleteQuestion removes a question, and its functions and their options, from
+// a draft (ztmf-misc#396). Published content is never deleted. The question
+// row is locked before its functions, the same order a pillar change takes.
+func DeleteQuestion(ctx context.Context, questionID int32) error {
+	return catalogDelete(ctx, "questions",
+		`SELECT versionid FROM questions WHERE questionid = $1`,
+		`SELECT versionid FROM questions WHERE questionid = $1 FOR UPDATE`,
+		questionSnapshotSQL, questionID,
+		func(tx pgx.Tx) error {
+			// functions.questionid does not cascade; options cascade from functions.
+			if _, err := deleteDraftRow(ctx, tx, "questionid", `DELETE FROM functions WHERE questionid = $1`, questionID); err != nil {
+				return err
+			}
+			_, err := deleteDraftRow(ctx, tx, "questionid", `DELETE FROM questions WHERE questionid = $1`, questionID)
+			return err
+		})
 }
 
 // validate rejects a question the questions table would not accept, or would
