@@ -69,7 +69,7 @@ help:
 	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
 	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
 	@echo "  make db-forward-<env> Port-forward Aurora:5432 to localhost:15433 (local psql)"
-	@echo "  make check-questionnaire-versions  Version integrity check after 0067 (PG* env vars)"
+	@echo "  make check-questionnaire-versions  Version integrity check after 0068 (PG* env vars)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev-setup                           # Full dev environment setup"
@@ -503,8 +503,8 @@ db-forward-dev:
 db-forward-prod:
 	@./scripts/db-tunnel.sh prod --forward 15433
 
-# Questionnaire version integrity (ztmf-misc#394). Before 0067 deploys it runs
-# the orphan counts that would stop 0067 starting (ZTMF394_ORPHANED_CATALOG);
+# Questionnaire version integrity (ztmf-misc#394). Before 0068 deploys it runs
+# the orphan counts that would stop 0068 starting (ZTMF394_ORPHANED_CATALOG);
 # after, it also runs the QUESTIONNAIRE_VERSION_ANOMALY checks. Run it before
 # deploying and again before promoting onward, e.g. with `make db-forward-dev`
 # open (psql prompts for the password):

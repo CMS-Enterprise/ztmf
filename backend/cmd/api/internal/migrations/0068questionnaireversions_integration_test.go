@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestQuestionnaireVersionsMigrationIntegration pins migration 0067 against the
-// migrated, empire-seeded database. 0067 ran before the seed loaded, so the
+// TestQuestionnaireVersionsMigrationIntegration pins migration 0068 against the
+// migrated, empire-seeded database. 0068 ran before the seed loaded, so the
 // seeded rows prove the triggers; RoundTrip re-runs down and up over them to
 // prove the backfill. Each subtest rolls back its own transaction.
 //
@@ -72,7 +72,7 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 				q2, _, _ := insertCatalogChain(ctx, t, tx, v2, &q1)
 				_, err := tx.Exec(ctx, `
 					INSERT INTO questions (question, notesprompt, pillarid, versionid, root_questionid)
-					VALUES ('0067 fixture', '', (SELECT MIN(pillarid) FROM pillars), $1, $2)`,
+					VALUES ('0068 fixture', '', (SELECT MIN(pillarid) FROM pillars), $1, $2)`,
 					v2, rootOf(q1, q2))
 				assertSQLError(t, err, "23503", "questions_root_questionid_fkey")
 			})
@@ -89,7 +89,7 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 		var functionID, functionVersion, optionVersion int32
 		require.NoError(t, tx.QueryRow(ctx, `
 			INSERT INTO functions (function, datacenterenvironment, questionid, pillarid)
-			SELECT '0067 fixture', 'fixture', questionid, pillarid FROM questions WHERE questionid = $1
+			SELECT '0068 fixture', 'fixture', questionid, pillarid FROM questions WHERE questionid = $1
 			RETURNING functionid, versionid`, q2).Scan(&functionID, &functionVersion))
 		require.NoError(t, tx.QueryRow(ctx, `
 			INSERT INTO functionoptions (functionid, score, optionname) VALUES ($1, 2, 'fixture')
@@ -223,12 +223,12 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 		// One dangling row of each kind the guard counts.
 		_, err = tx.Exec(ctx, `
 			INSERT INTO functions (function, datacenterenvironment, questionid, pillarid)
-			VALUES ('0067 orphan', 'fixture', (SELECT MAX(questionid) + 1000 FROM questions),
+			VALUES ('0068 orphan', 'fixture', (SELECT MAX(questionid) + 1000 FROM questions),
 			        (SELECT MIN(pillarid) FROM pillars))`)
 		require.NoError(t, err)
 		_, err = tx.Exec(ctx, `
 			INSERT INTO functionoptions (functionid, score, optionname)
-			VALUES ((SELECT MAX(functionid) + 1000 FROM functions), 1, '0067 orphan')`)
+			VALUES ((SELECT MAX(functionid) + 1000 FROM functions), 1, '0068 orphan')`)
 		require.NoError(t, err)
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO score_revisions (scoreid, revision_no, fismasystemid, datacallid,
@@ -254,7 +254,7 @@ func TestQuestionnaireVersionsMigrationIntegration(t *testing.T) {
 		_, err := tx.Exec(ctx, down)
 		require.NoError(t, err)
 		_, err = tx.Exec(ctx, up)
-		require.NoError(t, err, "0067 must apply over a populated catalog")
+		require.NoError(t, err, "0068 must apply over a populated catalog")
 		assertBaselineOnly(ctx, t, tx)
 	})
 }
@@ -300,7 +300,7 @@ func insertDraftVersion(ctx context.Context, t *testing.T, tx pgx.Tx) int32 {
 	var v int32
 	require.NoError(t, tx.QueryRow(ctx, `
 		INSERT INTO questionnaire_versions (label, state, parent_versionid)
-		VALUES ('0067 fixture', 'draft', 1) RETURNING versionid`).Scan(&v))
+		VALUES ('0068 fixture', 'draft', 1) RETURNING versionid`).Scan(&v))
 	return v
 }
 
@@ -309,11 +309,11 @@ func insertCatalogChain(ctx context.Context, t *testing.T, tx pgx.Tx, version in
 	t.Helper()
 	require.NoError(t, tx.QueryRow(ctx, `
 		INSERT INTO questions (question, notesprompt, pillarid, versionid, root_questionid)
-		VALUES ('0067 fixture', '', (SELECT MIN(pillarid) FROM pillars), $1, $2)
+		VALUES ('0068 fixture', '', (SELECT MIN(pillarid) FROM pillars), $1, $2)
 		RETURNING questionid`, version, rootQuestionID).Scan(&questionID))
 	require.NoError(t, tx.QueryRow(ctx, `
 		INSERT INTO functions (function, datacenterenvironment, questionid, pillarid, versionid)
-		SELECT '0067 fixture', 'fixture', $1, pillarid, $2 FROM questions WHERE questionid = $1
+		SELECT '0068 fixture', 'fixture', $1, pillarid, $2 FROM questions WHERE questionid = $1
 		RETURNING functionid`, questionID, version).Scan(&functionID))
 	require.NoError(t, tx.QueryRow(ctx, `
 		INSERT INTO functionoptions (functionid, score, optionname, versionid)
