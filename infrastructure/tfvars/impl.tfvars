@@ -7,6 +7,9 @@ environment            = "impl"
 domain_name_prefix     = "impl."
 ecs_service_task_count = 1
 
+# TLS 1.3 only at the CloudFront edge, after a week in dev. A client
+# that can only do TLS 1.2 gets a handshake failure.
+cloudfront_minimum_protocol_version = "TLSv1.3_2025"
 
 # Kion rotation: impl has no ztmf_kion_impl secret yet; keep schedule off
 kion_rotate_schedule_enabled = false
