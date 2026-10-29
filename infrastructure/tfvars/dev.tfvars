@@ -19,13 +19,13 @@ entra_enabled = true
 # replaces the subscription, so an edit here means confirming again.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
-# TLS 1.3 only at the CloudFront edge. Held in dev for at least
-# a week; impl and prod keep the variable's default until then.
+# TLS 1.3 only at the CloudFront edge. Dev went first and held for
+# a week before impl and prod were set the same way.
 cloudfront_minimum_protocol_version = "TLSv1.3_2025"
 
 # Post-quantum FIPS policy on the internal ALB listener. Its
-# backend policy offers hybrid ML-KEM to the API targets. Dev first; impl and
-# prod keep the variable's default until dev shows hop=alb on a hybrid group.
+# backend policy offers hybrid ML-KEM to the API targets. Dev went first and
+# showed hop=alb on X25519MLKEM768 before impl and prod were set the same way.
 alb_ssl_policy = "ELBSecurityPolicy-TLS13-1-2-Res-FIPS-PQ-2025-09"
 
 # TLS cert rotation Lambda
