@@ -1,6 +1,7 @@
 package spreadsheet
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
@@ -64,4 +65,23 @@ func TestExcelRendersNotStartedBlankVsRealZero(t *testing.T) {
 	assert.Equal(t, "Traditional", get("H3"))
 	assert.Equal(t, "0", get("I3"), "a genuine zero score must render 0, not blank")
 	assert.Equal(t, "some note", get("J3"))
+}
+
+// TestExcelLabelsScoreAndExplainsFormula pins the ztmf-misc#383 ask: the raw
+// answer column says it is on the 1-4 scale, and a second sheet states how the
+// dashboard builds its scores from it.
+func TestExcelLabelsScoreAndExplainsFormula(t *testing.T) {
+	f, err := Excel(nil)
+	require.NoError(t, err)
+
+	header, err := f.GetCellValue("Sheet1", "I1")
+	require.NoError(t, err)
+	assert.Equal(t, "Answer Score (1-4)", header)
+
+	assert.Contains(t, f.GetSheetList(), scoringNotesSheet)
+	for i, note := range scoringNotes {
+		got, err := f.GetCellValue(scoringNotesSheet, fmt.Sprintf("A%d", i+1))
+		require.NoError(t, err)
+		assert.Equal(t, note, got)
+	}
 }

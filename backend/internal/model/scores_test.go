@@ -14,17 +14,15 @@ import (
 //	Advanced     >= 3.1
 //	Initial      >= 2.1
 //	Traditional  >= 1.01
-//	Not Assessed everything below 1.01 (a pillar of all-unanswered rows lands
-//	             at exactly 1.0 under the +1 shift aggregation; 1.01 is the
-//	             intentional floor for Traditional)
+//	Not Assessed everything below 1.01 (no computed score reaches it: an
+//	             unanswered question counts as 1, so the lowest pillar is 1.25)
 func TestTier(t *testing.T) {
 	tests := []struct {
 		score float64
 		want  string
 	}{
 		// Not Assessed: the score rounds to less than 1.01.
-		// (A pillar with zero answers lands at exactly 1.0 under the
-		// +1 shift aggregation.)
+		// (Unreachable from the aggregate, whose floor is 1.25.)
 		{0.0, "Not Assessed"},
 		{0.99, "Not Assessed"},
 		{1.0, "Not Assessed"},
@@ -34,9 +32,8 @@ func TestTier(t *testing.T) {
 		// 1.005 is intentionally not tested: the float64 representation
 		// of "1.005" is 1.00499...8, just below the half-way point, so
 		// math.Round produces 100 not 101. Real aggregations never land
-		// at exactly 1.005 (the +1 shift over integer answers can't
-		// produce it), and the only way to hit it is a hand-crafted
-		// float literal.
+		// at exactly 1.005 (the lowest answered pillar is 1.25), and
+		// the only way to hit it is a hand-crafted float literal.
 		{1.009, "Traditional"},
 		{1.01, "Traditional"},
 		{1.5, "Traditional"},
@@ -87,6 +84,14 @@ func TestTier(t *testing.T) {
 	}
 }
 
+// TestTierFor pins that the answer count, not the score, decides Not Assessed.
+func TestTierFor(t *testing.T) {
+	assert.Equal(t, "Not Assessed", tierFor(1.25, 0), "nothing answered")
+	assert.Equal(t, "Not Assessed", tierFor(5.0, 0), "answer count wins over score")
+	assert.Equal(t, "Traditional", tierFor(1.25, 1), "answered all 1s")
+	assert.Equal(t, "Optimal", tierFor(4.10, 3))
+}
+
 // TestAggregatePillarRows verifies the Go-side grouping that runs after
 // findPillarScoresAll returns. The system score itself is computed in SQL
 // (window AVG on the carry-along system_score column on every pillar row)
@@ -102,46 +107,49 @@ func TestTier(t *testing.T) {
 //     since the divisor lived in SQL via AVG() and is now pre-computed
 func TestAggregatePillarRows(t *testing.T) {
 	rows := []*pillarScoreRow{
-		// System 1, datacall 36: six pillars, one Optimal and five
-		// Not-Assessed. SQL window AVG produced systemScore = 10/6.
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 10.0 / 6.0},
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 2, Pillar: "Applications", Score: 1.0, SystemScore: 10.0 / 6.0},
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 3, Pillar: "Networks", Score: 1.0, SystemScore: 10.0 / 6.0},
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 4, Pillar: "Data", Score: 1.0, SystemScore: 10.0 / 6.0},
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 5, Pillar: "CrossCutting", Score: 1.0, SystemScore: 10.0 / 6.0},
-		{DataCallID: 36, FismaSystemID: 1, PillarID: 6, Pillar: "Identity", Score: 1.0, SystemScore: 10.0 / 6.0},
+		// System 1, datacall 36: six pillars, one Optimal and five with
+		// nothing answered (1.25 floor, Not Assessed). systemScore = 11.25/6.
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 11.25 / 6.0, Answered: 1, SystemAnswered: 1},
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 2, Pillar: "Applications", Score: 1.25, SystemScore: 11.25 / 6.0, Answered: 0, SystemAnswered: 1},
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 3, Pillar: "Networks", Score: 1.25, SystemScore: 11.25 / 6.0, Answered: 0, SystemAnswered: 1},
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 4, Pillar: "Data", Score: 1.25, SystemScore: 11.25 / 6.0, Answered: 0, SystemAnswered: 1},
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 5, Pillar: "CrossCutting", Score: 1.25, SystemScore: 11.25 / 6.0, Answered: 0, SystemAnswered: 1},
+		{DataCallID: 36, FismaSystemID: 1, PillarID: 6, Pillar: "Identity", Score: 1.25, SystemScore: 11.25 / 6.0, Answered: 0, SystemAnswered: 1},
 		// System 2, datacall 36: all six pillars at Optimal, systemScore 5.0
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 5.0},
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 2, Pillar: "Applications", Score: 5.0, SystemScore: 5.0},
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 3, Pillar: "Networks", Score: 5.0, SystemScore: 5.0},
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 4, Pillar: "Data", Score: 5.0, SystemScore: 5.0},
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 5, Pillar: "CrossCutting", Score: 5.0, SystemScore: 5.0},
-		{DataCallID: 36, FismaSystemID: 2, PillarID: 6, Pillar: "Identity", Score: 5.0, SystemScore: 5.0},
-		// System 3, datacall 36: all six pillars at 1.0 (zero answers
-		// everywhere), systemScore 1.0
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 1, Pillar: "Devices", Score: 1.0, SystemScore: 1.0},
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 2, Pillar: "Applications", Score: 1.0, SystemScore: 1.0},
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 3, Pillar: "Networks", Score: 1.0, SystemScore: 1.0},
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 4, Pillar: "Data", Score: 1.0, SystemScore: 1.0},
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 5, Pillar: "CrossCutting", Score: 1.0, SystemScore: 1.0},
-		{DataCallID: 36, FismaSystemID: 3, PillarID: 6, Pillar: "Identity", Score: 1.0, SystemScore: 1.0},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 2, Pillar: "Applications", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 3, Pillar: "Networks", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 4, Pillar: "Data", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 5, Pillar: "CrossCutting", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		{DataCallID: 36, FismaSystemID: 2, PillarID: 6, Pillar: "Identity", Score: 5.0, SystemScore: 5.0, Answered: 1, SystemAnswered: 6},
+		// System 3, datacall 36: nothing answered anywhere, so every pillar
+		// sits at the 1.25 floor and the system is Not Assessed.
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 1, Pillar: "Devices", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 2, Pillar: "Applications", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 3, Pillar: "Networks", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 4, Pillar: "Data", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 5, Pillar: "CrossCutting", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
+		{DataCallID: 36, FismaSystemID: 3, PillarID: 6, Pillar: "Identity", Score: 1.25, SystemScore: 1.25, Answered: 0, SystemAnswered: 0},
 		// System 4, datacall 3: only four pillars present (simulating a
 		// prior cycle that used fewer pillars). SQL AVG(5.0+4.0+3.0+2.0)/4
 		// = 3.5. Asserting on the carry-along value pins that SQL is the
 		// source of truth.
-		{DataCallID: 3, FismaSystemID: 4, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 3.5},
-		{DataCallID: 3, FismaSystemID: 4, PillarID: 2, Pillar: "Applications", Score: 4.0, SystemScore: 3.5},
-		{DataCallID: 3, FismaSystemID: 4, PillarID: 3, Pillar: "Networks", Score: 3.0, SystemScore: 3.5},
-		{DataCallID: 3, FismaSystemID: 4, PillarID: 4, Pillar: "Data", Score: 2.0, SystemScore: 3.5},
+		{DataCallID: 3, FismaSystemID: 4, PillarID: 1, Pillar: "Devices", Score: 5.0, SystemScore: 3.5, Answered: 1, SystemAnswered: 4},
+		{DataCallID: 3, FismaSystemID: 4, PillarID: 2, Pillar: "Applications", Score: 4.0, SystemScore: 3.5, Answered: 1, SystemAnswered: 4},
+		{DataCallID: 3, FismaSystemID: 4, PillarID: 3, Pillar: "Networks", Score: 3.0, SystemScore: 3.5, Answered: 1, SystemAnswered: 4},
+		{DataCallID: 3, FismaSystemID: 4, PillarID: 4, Pillar: "Data", Score: 2.0, SystemScore: 3.5, Answered: 1, SystemAnswered: 4},
+		// System 5, datacall 3: one pillar answered all 1s. Same 1.25 score as
+		// an empty pillar, but it was assessed, so it is Traditional.
+		{DataCallID: 3, FismaSystemID: 5, PillarID: 1, Pillar: "Devices", Score: 1.25, SystemScore: 1.25, Answered: 7, SystemAnswered: 7},
 	}
 
 	t.Run("IncludePillars true", func(t *testing.T) {
 		aggs := aggregatePillarRows(rows, true)
-		if assert.Len(t, aggs, 4) {
-			// System 1 (Traditional 5/6 + Optimal 1/6)
+		if assert.Len(t, aggs, 5) {
+			// System 1 (one Optimal pillar, five unanswered)
 			assert.Equal(t, int32(36), aggs[0].DataCallID)
 			assert.Equal(t, int32(1), aggs[0].FismaSystemID)
-			assert.InDelta(t, 10.0/6.0, aggs[0].SystemScore, 1e-9)
+			assert.InDelta(t, 11.25/6.0, aggs[0].SystemScore, 1e-9)
 			assert.Equal(t, "Traditional", aggs[0].SystemTier)
 			assert.Len(t, aggs[0].PillarScores, 6)
 			assert.Equal(t, "Optimal", aggs[0].PillarScores[0].Tier)
@@ -152,7 +160,7 @@ func TestAggregatePillarRows(t *testing.T) {
 			assert.Equal(t, "Optimal", aggs[1].SystemTier)
 
 			// System 3 (all unanswered)
-			assert.Equal(t, 1.0, aggs[2].SystemScore)
+			assert.Equal(t, 1.25, aggs[2].SystemScore)
 			assert.Equal(t, "Not Assessed", aggs[2].SystemTier)
 			for _, p := range aggs[2].PillarScores {
 				assert.Equal(t, "Not Assessed", p.Tier, "pillar %s", p.Pillar)
@@ -163,16 +171,23 @@ func TestAggregatePillarRows(t *testing.T) {
 			assert.Equal(t, 3.5, aggs[3].SystemScore)
 			assert.Equal(t, "Advanced", aggs[3].SystemTier)
 			assert.Len(t, aggs[3].PillarScores, 4)
+
+			// System 5 (answered all 1s: same score as empty, but assessed)
+			assert.Equal(t, 1.25, aggs[4].SystemScore)
+			assert.Equal(t, "Traditional", aggs[4].SystemTier)
+			assert.Equal(t, "Traditional", aggs[4].PillarScores[0].Tier)
 		}
 	})
 
 	t.Run("IncludePillars false", func(t *testing.T) {
 		aggs := aggregatePillarRows(rows, false)
-		assert.Len(t, aggs, 4)
+		assert.Len(t, aggs, 5)
 		for _, a := range aggs {
 			assert.Empty(t, a.PillarScores, "pillarscores must be nil when not requested")
 			assert.NotEmpty(t, a.SystemTier, "system tier must still be set")
 		}
+		assert.Equal(t, "Not Assessed", aggs[2].SystemTier,
+			"an unanswered system is Not Assessed without the pillar breakdown too")
 	})
 }
 
