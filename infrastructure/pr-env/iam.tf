@@ -6,7 +6,8 @@ module "task_execution" {
 }
 
 // Container `secrets` resolve through the execution role: only this
-// environment's two parameters, plus decrypt on the SSM default key.
+// environment's parameters (two, or three with the UI's own key in cognito
+// mode), plus decrypt on the SSM default key.
 resource "aws_iam_role_policy" "task_execution_secrets" {
   name = "prEnvSecrets"
   role = module.task_execution.role_id
@@ -16,7 +17,7 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
       {
         Effect   = "Allow"
         Action   = ["ssm:GetParameters"]
-        Resource = [aws_ssm_parameter.hs256.arn, aws_ssm_parameter.db_password.arn]
+        Resource = concat([aws_ssm_parameter.hs256.arn, aws_ssm_parameter.db_password.arn], aws_ssm_parameter.ui_hs256[*].arn)
       },
       {
         Effect   = "Allow"

@@ -8,7 +8,8 @@
 #   - PR closed: destroy the pr-env root (one retry), remove the state object,
 #     delete the PR's images, retire its GitHub Environment.
 #   - PR open but idle (no deployment for TTL_DAYS): the same, plus a comment
-#     on the PR saying the next push rebuilds it.
+#     on the PR saying the next push rebuilds it. A PR labelled pr-env:keep
+#     (a demo environment) is never reaped as idle, only when it closes.
 # Then sweep pr-* GitHub Environments in both repos whose PR is closed, and
 # audit for orphans: a pr-* ECS service with no state key, a state key whose
 # destroy failed, and an open PR's state key with no running service. Each
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 TTL_DAYS="${TTL_DAYS:-7}"
+KEEP_LABEL="${KEEP_LABEL:-pr-env:keep}"
 STATE_BUCKET="${STATE_BUCKET:-ztmf-terraform-state-use1-dev}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 CLUSTER="${CLUSTER:-ztmf}"
@@ -146,8 +148,15 @@ for key in $keys; do
     last=$(gh api "repos/$ghr/pulls/$n" --jq .updated_at)
   fi
   if [[ "$last" < "$cutoff" ]]; then
-    reap "$repo" "$n" "idle since $last"
-    continue
+    # Read into a variable first: under pipefail, grep -q closing the pipe
+    # early can fail gh with SIGPIPE and turn a match into a miss.
+    labels=$(gh api "repos/$ghr/pulls/$n" --jq '.labels[].name')
+    if grep -qxF "$KEEP_LABEL" <<< "$labels"; then
+      log "not reaping idle pr-$repo-$n: labelled $KEEP_LABEL"
+    else
+      reap "$repo" "$n" "idle since $last"
+      continue
+    fi
   fi
   if ! echo "$services" | grep -qx "pr-$repo-$n"; then
     finding "\`pr/$repo/$n\` ($ghr#$n, open): state exists but no pr-$repo-$n ECS service is running; the last deploy likely failed partway."
