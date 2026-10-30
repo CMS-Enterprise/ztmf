@@ -1707,8 +1707,9 @@ tests:
             - functionoptionid: 4
               score: 4
 
-  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400, not a
-  # CHECK violation - there is no CHECK on this column.
+  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400 from
+  # validate, returned before the DB CHECK (functionoptions_score_check) is
+  # reached.
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: POST
     headers:
