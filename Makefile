@@ -30,7 +30,7 @@ EMBERFALL_CHECKSUMS_URL := https://github.com/aquia-inc/emberfall/releases/downl
 # `make install-emberfall EMBERFALL_BIN_DIR=/usr/local/bin`.
 EMBERFALL_BIN_DIR ?= $(HOME)/.local/bin
 
-.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi lint-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full install-emberfall full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod
+.PHONY: dev-setup dev-up dev-down dev-logs generate-jwt generate-openapi lint-openapi clean help test-empire-data test test-unit test-integration test-coverage test-coverage-view test-coverage-text test-build test-e2e test-full install-emberfall full-stack-up full-stack-down frontend-env db-shell-dev db-shell-prod db-forward-dev db-forward-prod check-questionnaire-versions
 
 # Default target
 help:
@@ -69,6 +69,7 @@ help:
 	@echo "Aurora access (replaces EC2 bastion, requires aws-vault / SSO):"
 	@echo "  make db-shell-<env>   Drop a shell in an ops Fargate task (run psql inside)"
 	@echo "  make db-forward-<env> Port-forward Aurora:5432 to localhost:15433 (local psql)"
+	@echo "  make check-questionnaire-versions  Version integrity check after 0068 (PG* env vars)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make dev-setup                           # Full dev environment setup"
@@ -501,3 +502,15 @@ db-forward-dev:
 
 db-forward-prod:
 	@./scripts/db-tunnel.sh prod --forward 15433
+
+# Questionnaire version integrity (ztmf-misc#394). Before 0068 deploys it runs
+# the orphan counts that would stop 0068 starting (ZTMF394_ORPHANED_CATALOG);
+# after, it also runs the QUESTIONNAIRE_VERSION_ANOMALY checks. Run it before
+# deploying and again before promoting onward, e.g. with `make db-forward-dev`
+# open (psql prompts for the password):
+#     PGHOST=localhost PGPORT=15433 PGDATABASE=ztmf PGUSER=<user> make check-questionnaire-versions
+check-questionnaire-versions:
+	@test -n "$$PGHOST" || { echo "Set PGHOST, PGPORT, PGDATABASE and PGUSER for the target database"; exit 2; }
+	@out=$$(psql -X -v ON_ERROR_STOP=1 -tA -F ' ' -f backend/docs/check-questionnaire-versions.sql) || exit 1; \
+	if [ -n "$$out" ]; then echo "❌ Questionnaire version integrity"; echo "$$out"; exit 1; fi; \
+	echo "✅ No questionnaire version anomalies"
