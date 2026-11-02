@@ -325,15 +325,24 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 
 	err = decoder.Decode(&findScoresInput, r.URL.Query())
 
-	// Same tier scoping as ListScores, applied AFTER decode. This endpoint's
-	// self-scope default is the assigned-systems list, not UserID.
-	if findScoresInput.ApplyTier(user) {
-		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
-	}
+	scopeScoresAggregateInput(user, &findScoresInput)
 
 	if err == nil {
 		aggregate, err = model.FindScoresAggregate(r.Context(), findScoresInput)
 	}
 
 	respond(w, r, aggregate, err)
+}
+
+// scopeScoresAggregateInput applies the caller's tier to the aggregate query
+// input. Same tier scoping as ListScores, applied AFTER decode so a client
+// cannot widen scope via query params, except that this endpoint's self-scope
+// is the assigned-systems list rather than a UserID join. ScopeToSystems marks
+// that list as a restriction, so a caller with no assigned systems gets no rows
+// instead of an unfiltered aggregate. Extracted so the role matrix is
+// unit-testable without a database.
+func scopeScoresAggregateInput(user *model.User, input *model.FindScoresInput) {
+	if input.ApplyTier(user) {
+		input.ScopeToSystems(user.AssignedFismaSystems)
+	}
 }

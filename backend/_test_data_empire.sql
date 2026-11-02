@@ -98,6 +98,13 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
 
+-- ISSO with no assigned systems, for the self-scope E2E cases: every scores
+-- list endpoint must return an empty list for this user, never every system's
+-- rows. Deliberately left out of users_fismasystems and users_opdivs below.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('0ddba11a-0000-4000-8000-000000000000', 'Unassigned.Isso@nowhere.xyz', 'Unassigned ISSO Test User', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
+
 -- System Delegate fixture (#455): contractor/support-staff tier, system-scoped
 -- like ISSO but answers-only (barred from target maturity). Assigned to Death Star
 -- (1001), which is enrolled in the open Audit cycle so E2E can exercise score writes.

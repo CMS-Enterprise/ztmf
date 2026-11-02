@@ -34,9 +34,15 @@ var validTiers = map[string]bool{
 // pattern is unambiguous.
 const integrationTestPrefix = "integration_test_"
 
+// hhsFormulaFixtureName names the unanswered question and function
+// TestPillarScoreHHSFormulaIntegration adds to a seeded pillar. A killed run
+// skips its t.Cleanup, so the purge below removes them by this name.
+const hhsFormulaFixtureName = "ztmf-misc#433 fixture"
+
 // purgeIntegrationTestRows wipes any datacalls (and their cascaded
 // scores via FK ON DELETE CASCADE) whose name carries the integration
-// test prefix. Run at the start of each integration test as a defensive
+// test prefix, plus the HHS formula test's fixture function and question.
+// Run at the start of each integration test as a defensive
 // belt-and-suspenders against cleanup that failed to run on a previous
 // invocation. Cheap.
 func purgeIntegrationTestRows(t *testing.T) {
@@ -53,6 +59,15 @@ func purgeIntegrationTestRows(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("purge: delete: %v", err)
+	}
+	// Functions first: functions.questionid references the question.
+	for _, sql := range []string{
+		`DELETE FROM functions WHERE function = $1`,
+		`DELETE FROM questions WHERE question = $1`,
+	} {
+		if _, err := conn.Exec(ctx, sql, hhsFormulaFixtureName); err != nil {
+			t.Fatalf("purge: %s: %v", sql, err)
+		}
 	}
 }
 
