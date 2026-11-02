@@ -116,7 +116,8 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 		if err != nil {
 			return nil, trapError(err)
 		}
-		if !deadline.After(time.Now()) {
+		// validateDeadline's boundary: the deadline instant itself is still open.
+		if time.Now().After(deadline) {
 			return nil, ErrPastDeadline
 		}
 

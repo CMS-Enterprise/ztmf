@@ -76,6 +76,11 @@ func (d *DataCall) create(ctx context.Context) (*DataCall, error) {
 	res, err := scoreTx(ctx, func(tx pgx.Tx) (*DataCall, error) {
 		version := d.QuestionnaireVersionID
 		if version == 0 {
+			// Shared with other creates; waits out a publish or archive so the
+			// newest published version cannot change between this read and its lock.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared($1)`, lifecycleLockKey); err != nil {
+				return nil, trapError(err)
+			}
 			var current *int32
 			if err := tx.QueryRow(ctx, `SELECT MAX(versionid) FROM questionnaire_versions WHERE state = 'published'`).Scan(&current); err != nil {
 				return nil, trapError(err)
