@@ -712,12 +712,15 @@ func tierFor(score float64, answered int32) string {
 
 type FindScoresInput struct {
 	input
-	FismaSystemID  *int32   `schema:"fismasystemid"`
-	FismaSystemIDs []*int32 `schema:"-"`
-	DataCallID     *int32   `schema:"datacallid"`
-	UserID         *string  `schema:"-"`
-	IncludePillars *bool    `schema:"include_pillars"`
+	FismaSystemID  *int32  `schema:"fismasystemid"`
+	DataCallID     *int32  `schema:"datacallid"`
+	UserID         *string `schema:"-"`
+	IncludePillars *bool   `schema:"include_pillars"`
 	OpDivScope
+	// SystemScope is the assigned-systems self-scope /scores/aggregate uses in
+	// place of UserID. Set it with ScopeToSystems so an empty assignment list
+	// fails closed instead of reading as "no filter".
+	SystemScope
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
@@ -738,6 +741,13 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	if input.FismaSystemID != nil {
 		sqlb = sqlb.Where("scores.fismasystemid=?", *input.FismaSystemID)
+	}
+
+	// Assigned-systems scope (fail-closed). ListScores self-scopes by UserID and
+	// never sets this, but honoring it here means an input scoped with
+	// ScopeToSystems cannot read unfiltered through this path either.
+	if f := input.SystemWhere("scores.fismasystemid"); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	if input.DataCallID != nil {
@@ -868,15 +878,13 @@ type pillarScoreRow struct {
 // hardcoded, so adding or removing a pillar does not silently change the
 // math. Pillar scores are populated on the aggregate when IncludePillars is
 // true.
+//
+// A requested FismaSystemID is applied as its own equality predicate in
+// buildPillarScoresSQL. It is deliberately not copied into the assigned-systems
+// list: that list is the caller's authorization scope, and filling an empty one
+// from the query string would turn "assigned to nothing" into "assigned to
+// whatever was asked for".
 func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {
-	// Convert single FismaSystemID to FismaSystemIDs array if needed so the
-	// scoping rules below see a consistent shape. This mirrors prior behavior
-	// so an admin requesting a specific system still flows through the same
-	// IN-list path that ISSOs use for their assigned-system scope.
-	if input.FismaSystemID != nil && len(input.FismaSystemIDs) == 0 {
-		input.FismaSystemIDs = []*int32{input.FismaSystemID}
-	}
-
 	pillarRows, err := findPillarScoresAll(ctx, input)
 	if err != nil {
 		return nil, err
@@ -989,15 +997,9 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 		argN++
 	}
 
-	if len(input.FismaSystemIDs) > 0 {
-		placeholders := make([]string, len(input.FismaSystemIDs))
-		for i, id := range input.FismaSystemIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argN)
-			args = append(args, id)
-			argN++
-		}
-		conds = append(conds, fmt.Sprintf("fs.fismasystemid IN (%s)", strings.Join(placeholders, ",")))
-	}
+	// Assigned-systems scope (fail-closed): a self-scoped caller with no
+	// assigned systems matches no rows rather than every row.
+	input.AppendRawSystemFilter(&conds, &args, &argN, "fs.fismasystemid")
 
 	// OpDiv scope (fail-closed) on the expected CTE, which already joins
 	// fismasystems as fs.
