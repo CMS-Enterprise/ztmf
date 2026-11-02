@@ -23,6 +23,8 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 		t.Skip("Skipping database integration test")
 	}
 
+	purgeIntegrationTestRows(t)
+
 	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	require.NoError(t, err)
@@ -39,15 +41,16 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 		JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 		JOIN functions f ON f.functionid = fo.functionid
 		JOIN questions q ON q.questionid = f.questionid
+		JOIN pillars p ON p.pillarid = q.pillarid
 		JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
 		JOIN datacenterenvironments d ON d.datacenterenvironment = fs.datacenterenvironment
 		WHERE d.scoring_key = f.datacenterenvironment
 		  -- 2 or 4 only: with one unanswered sibling these separate the HHS
 		  -- formula from the old +1 shift and from skipping blanks.
 		  AND fo.score IN (2, 4)
-		  AND NOT EXISTS (SELECT 1 FROM reducedpillarscopes r
-		                  WHERE r.scoring_key = d.scoring_key AND r.pillarid = q.pillarid
-		                    AND r.effective_datacallid <= s.datacallid)
+		  -- The same reduced-scope rule the aggregate applies, so the
+		  -- fixture never picks a pillar the aggregate drops.
+		  AND `+reducedPillarScopeSQL("d.scoring_key", "p.pillar", "s.datacallid")+`
 		  AND (SELECT COUNT(*) FROM functions f2 JOIN questions q2 ON q2.questionid = f2.questionid
 		       WHERE f2.datacenterenvironment = d.scoring_key AND q2.pillarid = q.pillarid) = 1
 		ORDER BY s.scoreid LIMIT 1`,
@@ -56,16 +59,16 @@ func TestPillarScoreHHSFormulaIntegration(t *testing.T) {
 
 	var questionID, functionID int32
 	require.NoError(t, conn.QueryRow(ctx,
-		`INSERT INTO questions (question, notesprompt, pillarid) VALUES ('ztmf-misc#433 fixture', '', $1)
-		 RETURNING questionid`, pillarID,
+		`INSERT INTO questions (question, notesprompt, pillarid) VALUES ($1, '', $2)
+		 RETURNING questionid`, hhsFormulaFixtureName, pillarID,
 	).Scan(&questionID))
 	t.Cleanup(func() {
 		deleteFixtureRow(t, `DELETE FROM questions WHERE questionid = $1`, questionID)
 	})
 	require.NoError(t, conn.QueryRow(ctx,
 		`INSERT INTO functions (function, datacenterenvironment, questionid, pillarid)
-		 VALUES ('ztmf-misc#433 fixture', $1, $2, $3) RETURNING functionid`,
-		scoringKey, questionID, pillarID,
+		 VALUES ($1, $2, $3, $4) RETURNING functionid`,
+		hhsFormulaFixtureName, scoringKey, questionID, pillarID,
 	).Scan(&functionID))
 	// Registered after the question's cleanup, so it runs first.
 	t.Cleanup(func() {
