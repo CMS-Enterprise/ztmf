@@ -18,9 +18,16 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 `repo` is `ztmf` or `ui` and picks the URL path and the ALB priority band (10000+n or 20000+n), so ztmf#123 and ui#123 coexist. `api_image_tag` names an image in `ztmf/api-pr`, either the PR's own `pr-ztmf-<n>-<sha>` or the `main-<sha>` test-target build a ui PR runs; every image there carries the empire seed, and the root rejects anything else. `ui_image_tag` is an image in `ztmf/ui` from the ztmf-ui Dockerfile, `pr-ui-<n>-<sha>` or `ui-<sha>`. The environment authenticates at the ALB with the dev Okta client, then the frontend uses a bearer token for `test_user_email` (default Grand Moff Tarkin) minted inside the task from the per-environment HS256 secret.
 
-Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
+Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container ui --interactive --command sh` (or `postgres`) or from the `/ztmf/pr-<repo>-<n>` log group. The `api` image is distroless and has no shell, so pass a binary directly as `--command` there.
 
-The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), and has 2048 MiB instead of 1024 as headroom for the sensor process running inside each container. Check a live environment's sensor with ECS Exec: `/tmp/CrowdStrike/rootfs/bin/falconctl -g --aid` prints an agent ID once it is connected. That works in `api`; `ui` and `postgres` are Alpine (musl) images, so run the glibc binary through the sensor's own loader there: `/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid`.
+The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), and has 2048 MiB instead of 1024 as headroom for the sensor process running inside each container. Check a live environment's sensor with ECS Exec. This prints an agent ID once the sensor is connected, and works in all three containers (`--container api`, `ui` or `postgres`):
+
+```bash
+aws ecs execute-command --cluster ztmf --task <id> --container api --interactive \
+  --command "/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid"
+```
+
+It goes through the sensor's bundled loader because `ui` and `postgres` are Alpine (musl) images, where running `falconctl` directly fails with "no such file".
 
 ## Reaper and fleet alarm
 

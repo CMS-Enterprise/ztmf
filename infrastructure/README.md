@@ -171,6 +171,12 @@ the task at start, not the plan. The sensor image is pinned once, as the
 every task to a new sensor version. Each root's `falcon_image` is only an
 override and defaults to null.
 
+To check a sensor, open `make db-shell-<env>` and run
+`/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid`
+in the `ops` container; it prints an agent ID once connected. The `ztmf_api`
+service has no ECS Exec, so check its hosts in the Falcon console, and its
+task's `falcon-init` log stream for sensor install errors.
+
 ### Seeding `cert-rotation/acm-arn` for a new environment
 
 This is a hard prereq for stand-up of any new ZTMF environment. Run once per
