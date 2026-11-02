@@ -41,3 +41,15 @@ variable "postgres_image" {
   type        = string
   default     = "public.ecr.aws/docker/library/postgres:16-alpine"
 }
+
+variable "falcon_enabled" {
+  description = "Run the CrowdStrike Falcon container sensor in every container of the task (ztmf-misc#437). Needs the dev account's /crowdstrike/falconctl-opts/ztmf SecureString. When false the task definition is exactly as before."
+  type        = bool
+  default     = true
+}
+
+variable "falcon_image" {
+  description = "Pinned Falcon container sensor image, kept in step with the dev root's falcon_image."
+  type        = string
+  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container:7.40.0-7903"
+}

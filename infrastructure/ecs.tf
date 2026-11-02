@@ -39,6 +39,35 @@ resource "aws_iam_role_policy" "ztmf_api_task_execution_entra" {
   })
 }
 
+// CrowdStrike Falcon sensor (ztmf-misc#437). FALCONCTL_OPTS (CID,
+// provisioning token, tags) lives in a SecureString created outside Terraform,
+// one per cluster. The ARN is built from its name rather than read with a data
+// source, so the value never lands in state.
+locals {
+  falconctl_opts_arn = "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.region}:${local.account_id}:parameter/crowdstrike/falconctl-opts/${local.ztmf_name}"
+}
+
+// Container `secrets` resolve through the execution role. The parameter uses
+// the aws/ssm default key, so no kms:Decrypt grant is needed.
+resource "aws_iam_role_policy" "falcon_task_execution" {
+  for_each = var.falcon_enabled ? {
+    api = module.api_task_execution.role_id
+    ops = module.ops_task_execution.role_id
+  } : {}
+  name = "falconSensorOpts"
+  role = each.value
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["ssm:GetParameters"]
+        Effect   = "Allow"
+        Resource = [local.falconctl_opts_arn]
+      },
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ztmf_api_task" {
   name = "taskExecutionPermissions"
   role = module.api_task.role_id
@@ -77,7 +106,28 @@ resource "aws_ecs_task_definition" "ztmf_api" {
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
-  memory                   = 512
+  // The sensor's init container holds 512 MiB while it runs.
+  memory                = var.falcon_enabled ? 1024 : 512
+  container_definitions = module.falcon_api.container_definitions
+
+  dynamic "volume" {
+    for_each = module.falcon_api.volume_names
+    content {
+      name = volume.value
+    }
+  }
+}
+
+module "falcon_api" {
+  source             = "./modules/falcon-sensor"
+  enabled            = var.falcon_enabled
+  image              = var.falcon_image
+  falconctl_opts_arn = local.falconctl_opts_arn
+  // distroless image with no ENTRYPOINT: the binary becomes the wrapped
+  // entrypoint and there is no command, so it still runs with no arguments.
+  entrypoints = {
+    ztmfapi = { entry_point = ["/usr/local/bin/ztmfapi"] }
+  }
   container_definitions = jsonencode([
     {
       name             = "ztmfapi"
@@ -285,7 +335,26 @@ resource "aws_ecs_task_definition" "ztmf_ops" {
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
-  memory                   = 512
+  memory                   = var.falcon_enabled ? 1024 : 512
+  container_definitions    = module.falcon_ops.container_definitions
+
+  dynamic "volume" {
+    for_each = module.falcon_ops.volume_names
+    content {
+      name = volume.value
+    }
+  }
+}
+
+module "falcon_ops" {
+  source             = "./modules/falcon-sensor"
+  enabled            = var.falcon_enabled
+  image              = var.falcon_image
+  falconctl_opts_arn = local.falconctl_opts_arn
+  // Image CMD is ["sleep", "infinity"] with no ENTRYPOINT (backend/ops/Dockerfile).
+  entrypoints = {
+    ztmfops = { entry_point = ["/bin/sleep"], command = ["infinity"] }
+  }
   container_definitions = jsonencode([
     {
       name      = "ztmfops"
@@ -336,5 +405,19 @@ resource "aws_security_group" "ztmf_ops_task" {
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.ztmf_db.id]
+  }
+
+  // The Falcon sensor image comes from CMS Artifactory (shared-services
+  // network) and the sensor reports to the CrowdStrike cloud through NAT, so
+  // the ops task needs general 443 egress like the api task already has.
+  dynamic "egress" {
+    for_each = var.falcon_enabled ? [1] : []
+    content {
+      description = "HTTPS for the Falcon sensor image and CrowdStrike cloud"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
 }

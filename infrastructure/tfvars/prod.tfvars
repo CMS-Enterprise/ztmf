@@ -32,3 +32,6 @@ alb_ssl_policy = "ELBSecurityPolicy-TLS13-1-2-Res-FIPS-PQ-2025-09"
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "prod"
 cert_rotation_domain        = "ztmf.cms.gov"
+
+# CrowdStrike Falcon container sensor (ztmf-misc#437). Off until dev is verified.
+falcon_enabled = false

@@ -53,3 +53,15 @@ variable "pr_env_max_environments" {
   type        = number
   default     = 10
 }
+
+variable "falcon_enabled" {
+  description = "Run the CrowdStrike Falcon container sensor in every ztmf ECS task (api and ops). Adds the init container, wraps each container's entrypoint, raises task memory, lets the ops task reach the sensor image and the CrowdStrike cloud over 443, and grants the execution roles read on the FALCONCTL_OPTS parameter. That SSM SecureString, /crowdstrike/falconctl-opts/<cluster>, is created out of band and must exist before this is turned on. When false the task definitions are exactly as before."
+  type        = bool
+  default     = false
+}
+
+variable "falcon_image" {
+  description = "Pinned Falcon container sensor image. Bump deliberately; the init container copies the sensor from it on every task start."
+  type        = string
+  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container:7.40.0-7903"
+}

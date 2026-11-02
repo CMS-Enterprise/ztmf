@@ -20,6 +20,8 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
 
+The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), which is why it has 2048 MiB instead of 1024. Check a live environment's sensor with ECS Exec: `/tmp/CrowdStrike/rootfs/bin/falconctl -g --aid` prints an agent ID once it is connected.
+
 ## Reaper and fleet alarm
 
 Teardown on PR close is the primary cleanup. `scripts/pr-env-reaper.sh`, run nightly at 07:00 UTC by `.github/workflows/pr-env-reaper.yml` (ztmf-misc#344), is the backstop for both repos: it destroys any `pr/<repo>/<n>` environment whose PR is closed or has had no deploy for 7 days (the TTL; the next push rebuilds it and the PR gets a comment saying so), deletes that PR's images, and retires its `pr-<repo>-<n>` GitHub Environment. It also retires any `pr-*` environment whose PR is closed, and reports what it cannot fix: a destroy that failed twice, a `pr-*` ECS service with no state key, and an open PR's state key with no running service. Findings or a failed run go to one tracking issue in ztmf-misc titled "pr-env reaper: orphaned environments or a failed run".

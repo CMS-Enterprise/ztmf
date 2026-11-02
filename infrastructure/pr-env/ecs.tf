@@ -34,9 +34,34 @@ resource "aws_ecs_task_definition" "env" {
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 512
-  memory                   = 1024
-  execution_role_arn       = module.task_execution.role_arn
-  task_role_arn            = module.task.role_arn
+  // The sensor's init container holds 512 MiB while it runs.
+  memory             = var.falcon_enabled ? 2048 : 1024
+  execution_role_arn = module.task_execution.role_arn
+  task_role_arn      = module.task.role_arn
+
+  container_definitions = module.falcon.container_definitions
+
+  dynamic "volume" {
+    for_each = module.falcon.volume_names
+    content {
+      name = volume.value
+    }
+  }
+}
+
+// Each container's image entrypoint and command, set explicitly for the sensor
+// wrapper: postgres and nginx keep their official ENTRYPOINT/CMD, and the API
+// image (distroless) has no ENTRYPOINT, so its binary becomes the entrypoint.
+module "falcon" {
+  source             = "../modules/falcon-sensor"
+  enabled            = var.falcon_enabled
+  image              = var.falcon_image
+  falconctl_opts_arn = local.falconctl_opts_arn
+  entrypoints = {
+    postgres = { entry_point = ["/usr/local/bin/docker-entrypoint.sh"], command = ["postgres"] }
+    api      = { entry_point = ["/usr/local/bin/ztmfapi"] }
+    ui       = { entry_point = ["/docker-entrypoint.sh"], command = ["nginx", "-g", "daemon off;"] }
+  }
 
   container_definitions = jsonencode([
     {

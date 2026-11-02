@@ -152,6 +152,20 @@ with a data source error rather than just blocking a single resource.
 | ------------------------------------------- | -------- | -------------------------------------------------------- | ------------------------------------------ |
 | `/ztmf/<env>/cert-rotation/acm-arn`         | `String` | CloudFront viewer cert, internal ALB listener, cert-rotation Lambda | **Yes** when `enable_cert_rotation_lambda = true` |
 | `/ztmf/<env>/ops/image-tag` (`ztmf_ops_tag`) | `String` | `ztmf_ops` ECS task definition                           | Yes (auto-managed by ops-image workflow)   |
+| `/crowdstrike/falconctl-opts/<cluster>`     | `SecureString` | Falcon sensor in the `ztmf_api` and `ztmf_ops` tasks (`FALCONCTL_OPTS`) | When `falcon_enabled = true`; see below |
+
+### CrowdStrike Falcon sensor
+
+With `falcon_enabled = true`, every ECS task (`ztmf_api`, `ztmf_ops`, and the
+per-PR environments) runs the Falcon container sensor through
+`modules/falcon-sensor`: an init container copies the sensor from
+`falcon_image` into a shared volume, and every other container starts through
+the sensor's entrypoint wrapper. `/crowdstrike/falconctl-opts/<cluster>`
+(`<cluster>` is `ztmf` or `ztmf-impl`) holds the CID, provisioning token and
+tags, and is created by hand outside Terraform. Terraform never reads it; it
+only builds the ARN for the containers' `secrets` and the execution roles, so
+a missing parameter fails the task at start, not the plan. To move to a new
+sensor version, bump `falcon_image` in both roots.
 
 ### Seeding `cert-rotation/acm-arn` for a new environment
 

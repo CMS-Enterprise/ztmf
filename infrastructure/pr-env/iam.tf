@@ -55,3 +55,21 @@ resource "aws_iam_role_policy" "task_exec_channel" {
     ]
   })
 }
+
+// FALCONCTL_OPTS for the Falcon sensor. The parameter uses the aws/ssm default
+// key; the decrypt grant above already covers it either way.
+resource "aws_iam_role_policy" "task_execution_falcon" {
+  count = var.falcon_enabled ? 1 : 0
+  name  = "falconSensorOpts"
+  role  = module.task_execution.role_id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameters"]
+        Resource = [local.falconctl_opts_arn]
+      },
+    ]
+  })
+}

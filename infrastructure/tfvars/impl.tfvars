@@ -30,3 +30,6 @@ kion_rotate_schedule_enabled = false
 enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "impl"
 cert_rotation_domain        = "impl.ztmf.cms.gov"
+
+# CrowdStrike Falcon container sensor in every ECS task (ztmf-misc#437).
+falcon_enabled = true
