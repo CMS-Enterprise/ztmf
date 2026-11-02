@@ -49,7 +49,7 @@ variable "falcon_enabled" {
 }
 
 variable "falcon_image" {
-  description = "Pinned Falcon container sensor image, kept in step with the dev root's falcon_image."
+  description = "Override for the Falcon container sensor image. Null takes the version pinned in ../modules/falcon-sensor."
   type        = string
-  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container:7.40.0-7903"
+  default     = null
 }

@@ -61,7 +61,7 @@ variable "falcon_enabled" {
 }
 
 variable "falcon_image" {
-  description = "Pinned Falcon container sensor image. Bump deliberately; the init container copies the sensor from it on every task start."
+  description = "Override for the Falcon container sensor image. Null takes the version pinned in modules/falcon-sensor, the one place to bump it for every task."
   type        = string
-  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container:7.40.0-7903"
+  default     = null
 }

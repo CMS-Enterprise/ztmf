@@ -8,8 +8,8 @@ output "container_definitions" {
   }
 
   precondition {
-    condition     = !contains([for c in local.containers : c.name], local.init_container_name)
-    error_message = "crowdstrike-falcon-init-container is reserved for the sensor."
+    condition     = !var.enabled || length(local.drifted) == 0
+    error_message = "entrypoints disagrees with the container's own entryPoint or command for: ${join(", ", local.drifted)}. Update both together."
   }
 }
 

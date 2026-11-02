@@ -20,7 +20,7 @@ locals {
   api_port = 8080
 
   log_config = {
-    for name in ["postgres", "api", "ui"] : name => {
+    for name in ["postgres", "api", "ui", "falcon-init"] : name => {
       logDriver = "awslogs"
       options = {
         "awslogs-group"         = "/ztmf/${local.env_name}"

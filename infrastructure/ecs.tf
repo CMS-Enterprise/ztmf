@@ -106,7 +106,7 @@ resource "aws_ecs_task_definition" "ztmf_api" {
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
-  // The sensor's init container holds 512 MiB while it runs.
+  // Headroom for the sensor process that runs inside the container.
   memory                = var.falcon_enabled ? 1024 : 512
   container_definitions = module.falcon_api.container_definitions
 
@@ -123,6 +123,14 @@ module "falcon_api" {
   enabled            = var.falcon_enabled
   image              = var.falcon_image
   falconctl_opts_arn = local.falconctl_opts_arn
+  init_log_configuration = {
+    logDriver = "awslogs"
+    options = {
+      "awslogs-group"         = aws_cloudwatch_log_group.ztmf_api.name
+      "awslogs-region"        = "us-east-1"
+      "awslogs-stream-prefix" = "falcon-init"
+    }
+  }
   // distroless image with no ENTRYPOINT: the binary becomes the wrapped
   // entrypoint and there is no command, so it still runs with no arguments.
   entrypoints = {
@@ -264,6 +272,10 @@ resource "aws_ecs_service" "ztmf_api" {
     security_groups  = [aws_security_group.ztmf_api_task.id]
   }
   wait_for_steady_state = true
+
+  // The execution role must be able to read FALCONCTL_OPTS before the new
+  // task definition rolls out.
+  depends_on = [aws_iam_role_policy.falcon_task_execution]
 }
 
 # On-demand ops task (replaces the EC2 bastion). Operators launch via
@@ -335,8 +347,9 @@ resource "aws_ecs_task_definition" "ztmf_ops" {
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
-  memory                   = var.falcon_enabled ? 1024 : 512
-  container_definitions    = module.falcon_ops.container_definitions
+  // Headroom for the sensor process that runs inside the container.
+  memory                = var.falcon_enabled ? 1024 : 512
+  container_definitions = module.falcon_ops.container_definitions
 
   dynamic "volume" {
     for_each = module.falcon_ops.volume_names
@@ -351,9 +364,19 @@ module "falcon_ops" {
   enabled            = var.falcon_enabled
   image              = var.falcon_image
   falconctl_opts_arn = local.falconctl_opts_arn
+  init_log_configuration = {
+    logDriver = "awslogs"
+    options = {
+      "awslogs-group"         = aws_cloudwatch_log_group.ztmf_ops.name
+      "awslogs-region"        = "us-east-1"
+      "awslogs-stream-prefix" = "falcon-init"
+    }
+  }
   // Image CMD is ["sleep", "infinity"] with no ENTRYPOINT (backend/ops/Dockerfile).
+  // In wolfi-base, sleep is a busybox applet, so start busybox itself rather
+  // than the /bin/sleep symlink, which depends on argv[0] surviving the wrapper.
   entrypoints = {
-    ztmfops = { entry_point = ["/bin/sleep"], command = ["infinity"] }
+    ztmfops = { entry_point = ["/usr/bin/busybox"], command = ["sleep", "infinity"] }
   }
   container_definitions = jsonencode([
     {

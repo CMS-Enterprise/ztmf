@@ -20,7 +20,7 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
 
-The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), which is why it has 2048 MiB instead of 1024. Check a live environment's sensor with ECS Exec: `/tmp/CrowdStrike/rootfs/bin/falconctl -g --aid` prints an agent ID once it is connected.
+The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), and has 2048 MiB instead of 1024 as headroom for the sensor process running inside each container. Check a live environment's sensor with ECS Exec: `/tmp/CrowdStrike/rootfs/bin/falconctl -g --aid` prints an agent ID once it is connected.
 
 ## Reaper and fleet alarm
 
