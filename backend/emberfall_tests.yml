@@ -662,6 +662,97 @@ tests:
       headers:
         content-type: "application/json"
 
+  # Questionnaire version pin (ztmf-misc#397). The call above took the newest
+  # published version, the baseline. A PUT naming another version is not a
+  # re-pin: it succeeds and the pin stays where it was.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedDataCallData
+        questionnaire_versionid: 999999
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionnaire_versionid: 1
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "FY2100 missing version"
+        deadline: "2100-03-31T17:59:59Z"
+        questionnaire_versionid: 999999
+    expect:
+      status: 400
+
+  # A re-pin changes what every OpDiv answers, so it is HHS-wide.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 403
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 999999
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/datacalls/999999/questionnaire-version
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 404
+
+  # The version it already has: a no-op, the call back with nothing moved.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionnaire_versionid: 1
+            translated: 0
+            dropped: 0
+
   # FISMA Systems Endpoints
   - id: createFismaSystem
     url: http://localhost:8080/api/v1/fismasystems

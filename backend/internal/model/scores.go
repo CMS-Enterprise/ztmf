@@ -1157,6 +1157,27 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		return 0, err
 	}
 	defer conn.Release()
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Both calls FOR SHARE, the lock every score write takes first, so a
+	// re-pin of either (ztmf-misc#397) waits for the copy: the versions read
+	// here are the versions the copied rows land in.
+	var sourceVersion, targetVersion int32
+	if err = tx.QueryRow(ctx, `
+		SELECT MAX(questionnaire_versionid) FILTER (WHERE datacallid = $1),
+		       MAX(questionnaire_versionid) FILTER (WHERE datacallid = $2)
+		  FROM (SELECT datacallid, questionnaire_versionid FROM datacalls
+		         WHERE datacallid IN ($1, $2) ORDER BY datacallid FOR SHARE) dc`,
+		prevDataCall.DataCallID, dataCallID).Scan(&sourceVersion, &targetVersion); err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+	translate := sourceVersion != targetVersion
 
 	// Three counts, because one number can no longer tell a healthy rollover from
 	// a damaged one now that the copy deduplicates. candidates is every row in the
@@ -1174,81 +1195,129 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
 		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 		 WHERE s.datacallid = $1`
-	if err = conn.QueryRow(ctx, countSQL, prevDataCall.DataCallID).Scan(&candidates, &resolvable, &expected); err != nil {
+	if err = tx.QueryRow(ctx, countSQL, prevDataCall.DataCallID).Scan(&candidates, &resolvable, &expected); err != nil {
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
 		return 0, err
 	}
 
-	// Copy the previous scores into the new cycle, rewriting datacallid to the
-	// latest. INNER JOIN the FK parents so a score whose fismasystem or
-	// functionoption no longer resolves is silently dropped instead of aborting
-	// the entire batch - the all-or-nothing INSERT...SELECT was the ztmf#411
-	// foot-gun where a single bad row emptied the whole rollover.
-	//
-	// status is seeded as the 'not_started' literal (ztmf#435): the answer value
-	// carries forward in functionoptionid, but its review state for THIS cycle is
-	// reset, so a carried-over-but-untouched answer reads as not updated - the
-	// semantic the events lateral used to derive from "no event exists"
-	// (ztmf#299). The literal is a selected column so it lands in the same
-	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
-	//
-	// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
-	// value has one definition. Safe to interpolate: the constant is
-	// package-owned, never request input.
-	//
-	// It stays a selected literal rather than becoming a bind parameter: an
-	// untyped $n in a SELECT list feeding an INSERT...SELECT hits a type-inference
-	// trap where Postgres resolves the placeholder to text and the column
-	// comparison fails at runtime.
-	//
-	// DISTINCT ON (fismasystemid, functionid) guarantees one answer per question.
-	// Migration 0061 now makes a duplicated source cycle unreachable through
-	// ordinary writes, but this stays: without it a single stale duplicate - a
-	// restore from a pre-cleanup backup, a bulk load run with the index dropped -
-	// aborts this whole INSERT...SELECT with 23505 and the entire annual rollover
-	// emits nothing. That is the ztmf#411 all-or-nothing foot-gun the INNER JOINs
-	// above defuse, reopened on a different error class. The ORDER BY must lead
-	// with the same two expressions for DISTINCT ON to be legal; the rest picks
-	// the winner.
-	//
-	// status outranks scoreid, and the order matters. scoreid is creation order,
-	// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so
-	// the highest scoreid is not the freshest answer. Duplicates arrive as a bulk
-	// copy with arbitrary relative ordering, and the ISSO then answers one of the
-	// pair; on scoreid alone the untouched twin can outrank it and the real answer
-	// for the cycle is silently discarded. 'done' means a human saved this answer
-	// during the source cycle and 'not_started' means it was carried and never
-	// touched, so preferring done keeps the answer that was actually given.
-	prevScoresSqlb := squirrel.
-		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
-		Options("DISTINCT ON (s.fismasystemid, fo.functionid)").
-		From("scores s").
-		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
-		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").
-		Where("s.datacallid=?", prevDataCall.DataCallID).
-		OrderBy("s.fismasystemid", "fo.functionid", fmt.Sprintf("(s.status = '%s') DESC", scoreStatusDone), "s.scoreid DESC")
+	// Across versions, an answer to a question the new version removed, or
+	// whose option score it no longer offers, is deliberately left behind.
+	// That is content removal, not damage, so it is counted apart: copied is
+	// held to what translates, and the rest gets its own token rather than
+	// firing the ROLLOVER_ANOMALY alarm on every legitimate version bump.
+	translatable := expected
+	if translate {
+		if err = tx.QueryRow(ctx, `
+			SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid))
+			  FROM scores s
+			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
+			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+			  `+versionTranslationJoinSQL("$2")+`
+			 WHERE s.datacallid = $1`, prevDataCall.DataCallID, targetVersion).Scan(&translatable); err != nil {
+			log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
+			return 0, err
+		}
+	}
 
-	sqlb := squirrel.
-		Insert("scores").
-		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-		Select(prevScoresSqlb).
-		PlaceholderFormat(squirrel.Dollar)
-
-	sql, args, _ := sqlb.ToSql()
-
-	tag, err := conn.Exec(ctx, sql, args...)
+	sql, args := rolloverSQL(prevDataCall.DataCallID, dataCallID, sourceVersion, targetVersion)
+	tag, err := tx.Exec(ctx, sql, args...)
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
 	if err != nil {
-		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, translatable, err)
 		return 0, err
 	}
 
 	copied := tag.RowsAffected()
-	if copied < expected || resolvable < candidates {
+	if copied < translatable || resolvable < candidates {
 		// Either an under-copy, or previous-cycle rows the JOINs dropped because
 		// their FK parents no longer resolve. Both warrant an operator signal.
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d candidates=%d unresolvable=%d deduped=%d err=<none>",
-			dataCallID, expected, copied, candidates, candidates-resolvable, resolvable-expected)
+			dataCallID, translatable, copied, candidates, candidates-resolvable, resolvable-expected)
+	}
+	if translatable < expected {
+		log.Printf("VERSION_TRANSLATION_DROPPED datacall=%d from_version=%d to_version=%d dropped=%d",
+			dataCallID, sourceVersion, targetVersion, expected-translatable)
 	}
 
 	return copied, nil
+}
+
+// rolloverSQL is copyPreviousScores' INSERT..SELECT. Between calls pinned to
+// one version it is the statement the rollover has always run, byte for byte.
+// Across versions each answer moves through versionTranslationJoinSQL, and an
+// answer with no counterpart drops out of the join.
+//
+// It INNER JOINs the FK parents so a score whose fismasystem or functionoption
+// no longer resolves is silently dropped instead of aborting the entire batch -
+// the all-or-nothing INSERT...SELECT was the ztmf#411 foot-gun where a single
+// bad row emptied the whole rollover.
+//
+// status is seeded as the 'not_started' literal (ztmf#435): the answer value
+// carries forward in functionoptionid, but its review state for THIS cycle is
+// reset, so a carried-over-but-untouched answer reads as not updated - the
+// semantic the events lateral used to derive from "no event exists"
+// (ztmf#299). The literal is a selected column so it lands in the same
+// INSERT...SELECT as the copy, keeping the reset atomic with the row.
+//
+// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
+// value has one definition. Safe to interpolate: the constant is
+// package-owned, never request input.
+//
+// It stays a selected literal rather than becoming a bind parameter: an
+// untyped $n in a SELECT list feeding an INSERT...SELECT hits a type-inference
+// trap where Postgres resolves the placeholder to text and the column
+// comparison fails at runtime.
+//
+// DISTINCT ON guarantees one answer per question. Migration 0061 now makes a
+// duplicated source cycle unreachable through ordinary writes, but this stays:
+// without it a single stale duplicate - a restore from a pre-cleanup backup, a
+// bulk load run with the index dropped - aborts this whole INSERT...SELECT with
+// 23505 and the entire annual rollover emits nothing. That is the ztmf#411
+// all-or-nothing foot-gun the INNER JOINs defuse, reopened on a different error
+// class. The key is the question in the namespace the row lands in: the source
+// function within a version, its lineage across versions, which names exactly
+// one target function. The ORDER BY must lead with the same two expressions
+// for DISTINCT ON to be legal; the rest picks the winner.
+//
+// status outranks scoreid, and the order matters. scoreid is creation order,
+// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so
+// the highest scoreid is not the freshest answer. Duplicates arrive as a bulk
+// copy with arbitrary relative ordering, and the ISSO then answers one of the
+// pair; on scoreid alone the untouched twin can outrank it and the real answer
+// for the cycle is silently discarded. 'done' means a human saved this answer
+// during the source cycle and 'not_started' means it was carried and never
+// touched, so preferring done keeps the answer that was actually given.
+func rolloverSQL(prevDataCallID, dataCallID, sourceVersion, targetVersion int32) (string, []any) {
+	translate := sourceVersion != targetVersion
+	option, question := "s.functionoptionid", "fo.functionid"
+	if translate {
+		option, question = "tfo.functionoptionid", "f.root_functionid"
+	}
+
+	prevScoresSqlb := squirrel.
+		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", option, fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
+		Options(fmt.Sprintf("DISTINCT ON (s.fismasystemid, %s)", question)).
+		From("scores s").
+		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
+		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid")
+	if translate {
+		prevScoresSqlb = prevScoresSqlb.JoinClause(versionTranslationJoinSQL("?"), targetVersion)
+	}
+	prevScoresSqlb = prevScoresSqlb.
+		Where("s.datacallid=?", prevDataCallID).
+		OrderBy("s.fismasystemid", question, fmt.Sprintf("(s.status = '%s') DESC", scoreStatusDone), "s.scoreid DESC")
+	if translate {
+		// v1 can repeat a score within a function; either option scores alike.
+		prevScoresSqlb = prevScoresSqlb.OrderBy("tfo.functionoptionid")
+	}
+
+	sql, args, _ := squirrel.
+		Insert("scores").
+		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
+		Select(prevScoresSqlb).
+		PlaceholderFormat(squirrel.Dollar).
+		ToSql()
+	return sql, args
 }

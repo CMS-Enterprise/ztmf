@@ -9,39 +9,45 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var dataCallColumns = []string{"datacallid", "datacall", "datecreated", "deadline"}
+var (
+	dataCallColumns    = []string{"datacallid", "datacall", "datecreated", "deadline", "questionnaire_versionid"}
+	dataCallColumnList = strings.Join(dataCallColumns, ", ")
+)
 
 type DataCall struct {
 	DataCallID  int32     `json:"datacallid"`
 	DataCall    string    `json:"datacall"`
 	DateCreated time.Time `json:"datecreated"`
 	Deadline    time.Time `json:"deadline"`
+	// The questionnaire version the call answers (ztmf-misc#397). Chosen at
+	// create, newest published unless named; changed only through
+	// PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+	QuestionnaireVersionID int32 `json:"questionnaire_versionid" db:"questionnaire_versionid"`
 }
 
 func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
-
-	var sqlb SqlBuilder
 
 	// if valid, err := d.isValid(); !valid {
 	// 	return err
 	// }
 
+	var (
+		dataCall *DataCall
+		err      error
+	)
 	if d.DataCallID == 0 {
-		sqlb = stmntBuilder.
-			Insert("datacalls").
-			Columns("datacall", "deadline").
-			Values(d.DataCall, d.Deadline).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
+		dataCall, err = d.create(ctx)
 	} else {
-		sqlb = stmntBuilder.
+		// The pin is not set here, whatever the body says: moving a call to
+		// another version has to translate its answers, which only
+		// PUT /datacalls/{id}/questionnaire-version does.
+		dataCall, err = queryRow(ctx, stmntBuilder.
 			Update("datacalls").
 			Set("datacall", d.DataCall).
 			Set("deadline", d.Deadline).
 			Where("datacallid=?", d.DataCallID).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
+			Suffix("RETURNING "+dataCallColumnList), pgx.RowToStructByName[DataCall])
 	}
-
-	dataCall, err := queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +66,42 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	}
 
 	return dataCall, nil
+}
+
+// create inserts a call pinned to the version it names, or to the newest
+// published one. The version is held FOR SHARE until commit, so it cannot be
+// archived under a call that is about to pin it.
+func (d *DataCall) create(ctx context.Context) (*DataCall, error) {
+	sqlb := stmntBuilder.Insert("datacalls").Columns("datacall", "deadline", "questionnaire_versionid")
+	res, err := scoreTx(ctx, func(tx pgx.Tx) (*DataCall, error) {
+		version := d.QuestionnaireVersionID
+		if version == 0 {
+			var current *int32
+			if err := tx.QueryRow(ctx, `SELECT MAX(versionid) FROM questionnaire_versions WHERE state = 'published'`).Scan(&current); err != nil {
+				return nil, trapError(err)
+			}
+			if current == nil {
+				return nil, &InvalidInputError{data: map[string]any{"questionnaire_versionid": "no questionnaire version is published"}}
+			}
+			version = *current
+		}
+		if err := lockPinnableVersion(ctx, tx, version); err != nil {
+			return nil, err
+		}
+		sqlb = sqlb.Values(d.DataCall, d.Deadline, version).Suffix("RETURNING " + dataCallColumnList)
+		sql, args, _ := sqlb.ToSql()
+		rows, err := tx.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, trapError(err)
+		}
+		row, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[DataCall])
+		return &row, trapError(err)
+	})
+	if err != nil {
+		return nil, err
+	}
+	recordEvent(ctx, sqlb, *res)
+	return res, nil
 }
 
 func FindDataCalls(ctx context.Context) ([]*DataCall, error) {

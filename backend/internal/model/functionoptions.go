@@ -131,8 +131,8 @@ func (fo *FunctionOption) Save(ctx context.Context) (*FunctionOption, error) {
 
 // DeleteFunctionOption removes an option from a draft (ztmf-misc#396), the
 // delete #398 deferred. Safe because no score can reference a draft option,
-// which rests on two guards: no data call pins a draft (#397 must refuse a
-// draft pin at create and re-pin) and #395's write check refuses an option
+// which rests on two guards: no data call pins a draft (#397's
+// lockPinnableVersion, at create and re-pin) and #395's write check refuses an option
 // outside the call's pin. A published option is never deleted, which is also
 // what keeps undo's prev_functionoptionid resolvable.
 func DeleteFunctionOption(ctx context.Context, functionOptionID int32) error {

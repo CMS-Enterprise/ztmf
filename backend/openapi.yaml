@@ -236,6 +236,13 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-model_DataCallRepin:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.DataCallRepin'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_EventsPage:
       properties:
         data:
@@ -349,6 +356,11 @@ components:
         access_expires_at:
           type: string
       type: object
+    controller.repinDataCallInput:
+      properties:
+        questionnaire_versionid:
+          type: integer
+      type: object
     controller.setUserOpDivsInput:
       properties:
         opdiv_ids:
@@ -383,6 +395,33 @@ components:
           type: string
         deadline:
           type: string
+        questionnaire_versionid:
+          description: |-
+            The questionnaire version the call answers (ztmf-misc#397). Chosen at
+            create, newest published unless named; changed only through
+            PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+          type: integer
+      type: object
+    model.DataCallRepin:
+      properties:
+        datacall:
+          type: string
+        datacallid:
+          type: integer
+        datecreated:
+          type: string
+        deadline:
+          type: string
+        dropped:
+          type: integer
+        questionnaire_versionid:
+          description: |-
+            The questionnaire version the call answers (ztmf-misc#397). Chosen at
+            create, newest published unless named; changed only through
+            PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+          type: integer
+        translated:
+          type: integer
       type: object
     model.DataCenterEnvironment:
       properties:
@@ -1385,6 +1424,73 @@ paths:
       security:
       - bearerAuth: []
       summary: Mark a FISMA system as having completed a data call
+      tags:
+      - datacalls
+  /datacalls/{datacallid}/questionnaire-version:
+    put:
+      description: Answers move by function lineage and option score. Until anyone
+        has answered this cycle, answers with no counterpart are dropped; after that,
+        every answer must carry over or the re-pin is a 409 VERSION_NOT_TRANSLATABLE.
+        Translated answers that have history gain a translate revision, which undo
+        refuses. Refused for a draft or archived version and after the deadline.
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.repinDataCallInput'
+                description: Target version
+                summary: body
+        description: Target version
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCallRepin'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Pin a data call to another questionnaire version
       tags:
       - datacalls
   /datacalls/latest:
