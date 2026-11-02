@@ -19,6 +19,14 @@ entra_enabled = true
 # but have no destination, which is the state prod was in with this unset.
 alarm_notification_email = "ISPGZeroTrust@cms.hhs.gov"
 
+# TLS 1.3 only at the CloudFront edge, after a week in dev. A client
+# that can only do TLS 1.2 gets a handshake failure.
+cloudfront_minimum_protocol_version = "TLSv1.3_2025"
+
+# Post-quantum FIPS policy on the internal ALB listener. Its backend policy
+# offers hybrid ML-KEM to the API targets; dev shows hop=alb on X25519MLKEM768.
+alb_ssl_policy = "ELBSecurityPolicy-TLS13-1-2-Res-FIPS-PQ-2025-09"
+
 # TLS cert rotation Lambda
 # ACM ARN sourced from SSM Parameter Store /ztmf/prod/cert-rotation/acm-arn
 enable_cert_rotation_lambda = true
