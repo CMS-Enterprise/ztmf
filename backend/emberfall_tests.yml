@@ -22,6 +22,12 @@ opDivAdminHeaders: &opDivAdminHeaders
 opDivReadonlyHeaders: &opDivReadonlyHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
 
+# ISSO with no assigned systems (Unassigned.Isso@nowhere.xyz). Every scores list
+# endpoint must return an empty list for this user. Email claim
+# unassigned.isso@nowhere.xyz.
+unassignedIssoHeaders: &unassignedIssoHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InVuYXNzaWduZWQuaXNzb0Bub3doZXJlLnh5eiJ9.96VzdFLsJpx7LLmngNtgCZqgabLIDFzWle2hxNuxf7Q"
+
 # System Delegate (#455): contractor/support-staff, system-scoped like ISSO but
 # answers-only. Assigned to Death Star (1001) only. Email claim
 # delegate.user@nowhere.xyz. Must 403 on target maturity even for 1001.
@@ -3530,6 +3536,45 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        text: "{\"data\":[]}"
+
+  # An ISSO with no assigned systems reads nothing from the scores list
+  # endpoints: an empty list, not every system's rows, including when a
+  # specific system is requested.
+  - url: http://localhost:8080/api/v1/scores/aggregate
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores?fismasystemid=1001
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores/progress?datacallid=4
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
       body:
         text: "{\"data\":[]}"
 
