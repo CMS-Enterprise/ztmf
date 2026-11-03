@@ -201,14 +201,18 @@ func TestQuestionnaireVersionRegressionBarIntegration(t *testing.T) {
 				INSERT INTO scores (fismasystemid, functionoptionid, datacallid, status, last_updated_at)
 				SELECT s.fismasystemid, ofo.functionoptionid, s.datacallid, 'done', '2099-01-01T00:00:00Z'
 				  FROM scores s
+				 INNER JOIN functionoptions cur ON cur.functionoptionid = s.functionoptionid
 				 INNER JOIN functions nf ON nf.functionid = s.functionid
 				 INNER JOIN functions ofn ON ofn.root_functionid = nf.root_functionid AND ofn.versionid = 1
-				 INNER JOIN functionoptions ofo ON ofo.functionid = ofn.functionid
+				 INNER JOIN functionoptions ofo ON ofo.functionid = ofn.functionid AND ofo.score <> cur.score
 				 WHERE s.datacallid = $1
 				 ORDER BY s.scoreid, ofo.score DESC LIMIT 1
 				RETURNING scoreid`, twin).Scan(&strayID))
 			assert.Equal(t, progress(src), progress(twin), "counts and lastupdatedat ignore an out-of-version answer")
 			assert.Equal(t, before, aggregate(twin))
+			diff, err = FindScoreDiff(ctx, FindScoreDiffInput{FromDataCallID: &src, ToDataCallID: &twin})
+			require.NoError(t, err)
+			assert.Empty(t, diff, "nor does it surface as a change in the diff")
 			_, err = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, strayID)
 			require.NoError(t, err)
 
@@ -230,6 +234,9 @@ func TestQuestionnaireVersionRegressionBarIntegration(t *testing.T) {
 			assert.Equal(t, changedRoot, diff[0].RootFunctionID)
 			assert.NotEqual(t, diff[0].From.Score, diff[0].To.Score, "a real change is a different score, not just a new id")
 			assert.NotNil(t, diff[0].Pillar, "rows carry their pillar for grouping across versions")
+			var idVersion int32
+			require.NoError(t, conn.QueryRow(ctx, `SELECT versionid FROM functions WHERE functionid = $1`, diff[0].FunctionID).Scan(&idVersion))
+			assert.Equal(t, v, idVersion, "functionid is the To side's, like the labels")
 		})
 	}
 }
