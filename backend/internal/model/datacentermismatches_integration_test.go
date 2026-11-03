@@ -106,7 +106,8 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 
 		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{empireID}}})
 		require.NoError(t, err)
-		require.NotEmpty(t, rows, "EMPIRE-scoped admin should see the Shield Gen mismatch")
+		require.NotNil(t, findMismatchBySystemID(rows, 1003), "EMPIRE-scoped admin should see the Shield Gen mismatch")
+		require.NotNil(t, findMismatchBySystemID(rows, 3006), "EMPIRE-scoped admin should see the demo portfolio's TACT-HOLO mismatch")
 		for _, r := range rows {
 			if assert.NotNil(t, r.OpDivID) {
 				assert.Equal(t, empireID, *r.OpDivID)

@@ -39,8 +39,8 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	// copyPreviousScores resolves "previous" via findPreviousDataCall, which
 	// returns the datacall with the furthest deadline other than the target (it
 	// is only ever called on the newest cycle, so "latest, excluding me" is the
-	// real previous). The seed carries a far-future cycle (the 2099 "Audit Fields
-	// Smoke Cycle", datacallid 5), so the synthetic cycle must sit ABOVE every
+	// real previous). The seed carries a far-out open cycle (datacallid 5, "FY2027
+	// Imperial Zero Trust Data Call", due about 200 days after load), so the synthetic cycle must sit ABOVE every
 	// existing deadline: newDC must be the global latest and prevDC the next one
 	// down, or findPreviousDataCall(newDC) rolls a seed datacall forward instead
 	// of our marker. Anchor both deadlines above the current max. Prefixed names
@@ -579,8 +579,9 @@ func saasScopeFixture(ctx context.Context, t *testing.T, cms bool) (systemID, in
 }
 
 // reducedScopeAnchorAndPriorDataCalls returns the earliest seeded anchor call
-// (where the reduced scope starts, per the reducedpillarscopes table) and one
-// with a strictly earlier deadline.
+// (where the SaaS reduced scope starts, per the reducedpillarscopes table) and
+// one with a strictly earlier deadline. Filtered to the SaaS key so a rule added
+// for another scoring key cannot move the anchor these tests assert against.
 func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anchor, prior int32, ok bool) {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -590,7 +591,7 @@ func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anc
 	var anchorDeadline time.Time
 	err = conn.QueryRow(ctx, `
 		SELECT dc.datacallid, dc.deadline FROM datacalls dc
-		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes)
+		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes WHERE scoring_key = 'SaaS')
 		 ORDER BY dc.deadline ASC, dc.datacallid ASC LIMIT 1
 	`).Scan(&anchor, &anchorDeadline)
 	if err != nil {

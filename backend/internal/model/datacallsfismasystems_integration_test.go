@@ -36,7 +36,7 @@ func TestFindFismaSystemDataCallsOrderIntegration(t *testing.T) {
 	const systemID = int32(1001) // Death Star: stable empire-seed system with existing junction rows
 
 	// The "current" cycle: created a while ago, deadline far out (beats the
-	// empire seed's furthest-out 2099 cycle so it must sort first overall).
+	// empire seed's furthest-out cycle (call 5) so it must sort first overall).
 	var currentID int32
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline)
