@@ -355,6 +355,59 @@ func TestDataCallRepinWaitsForScoreWritesIntegration(t *testing.T) {
 	}
 }
 
+// A system marking the call complete while a re-pin starts: the re-pin waits
+// for it through the completion's FK check, then counts the system as touched
+// and refuses, rather than dropping its answers.
+func TestDataCallRepinWaitsForCompletionIntegration(t *testing.T) {
+	ctx, conn := versionTestSetup(t)
+	dc := openCallWithAnswers(t, ctx, conn, "repin_wait_complete", "2100-01-01")
+	root, score, _ := mostAnswered(t, ctx, conn, dc)
+	missing := forkIdenticalVersion(t, conn)
+	withoutOption(t, ctx, conn, missing, root, score)
+	var system int32
+	require.NoError(t, conn.QueryRow(ctx, `SELECT MIN(fismasystemid) FROM scores WHERE datacallid = $1`, dc).Scan(&system))
+
+	complete, err := db.Conn(context.Background())
+	require.NoError(t, err)
+	defer complete.Release()
+	completeTx, err := complete.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = completeTx.Rollback(ctx) }()
+	// What DataCallFismaSystem.Save runs, held open.
+	_, err = completeTx.Exec(ctx, `INSERT INTO datacalls_fismasystems (datacallid, fismasystemid) VALUES ($1, $2)`, dc, system)
+	require.NoError(t, err)
+	var completePID int32
+	require.NoError(t, completeTx.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&completePID))
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := RepinDataCall(ctx, dc, missing)
+		done <- err
+	}()
+	// Wait until the re-pin is blocked on the completion, or has finished
+	// without waiting (the defect), before letting the completion commit.
+	require.Eventually(t, func() bool {
+		select {
+		case err := <-done:
+			done <- err
+			return true
+		default:
+		}
+		var blocked bool
+		_ = conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+			 WHERE $1 = ANY(pg_blocking_pids(pid)))`, completePID).Scan(&blocked)
+		return blocked
+	}, 10*time.Second, 20*time.Millisecond)
+	require.NoError(t, completeTx.Commit(ctx))
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, ErrVersionNotTranslatable, "the completion is counted, so its answers are not dropped")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the re-pin never finished after the completion committed")
+	}
+}
+
 func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 	ctx, conn := versionTestSetup(t)
 	// Each subtest makes its own source call: a fork's cleanup purges every

@@ -107,11 +107,14 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 		// The data call first: every score write holds it FOR SHARE before its
 		// score row (#395's lockScoreDataCall), so this waits out saves in
 		// flight and blocks new ones before any score is read. Rewriting
-		// scores before this lock would deadlock against them.
+		// scores before this lock would deadlock against them. FOR UPDATE, not
+		// NO KEY: it also conflicts with the FK check of any insert referencing
+		// the call, such as a system marking it complete, which the preflight
+		// counts as touched.
 		var from int32
 		var deadline time.Time
 		err := tx.QueryRow(ctx, `
-			SELECT questionnaire_versionid, deadline FROM datacalls WHERE datacallid = $1 FOR NO KEY UPDATE`,
+			SELECT questionnaire_versionid, deadline FROM datacalls WHERE datacallid = $1 FOR UPDATE`,
 			dataCallID).Scan(&from, &deadline)
 		if err != nil {
 			return nil, trapError(err)
