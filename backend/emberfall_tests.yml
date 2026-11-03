@@ -35,8 +35,9 @@ delegateHeaders: &delegateHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImRlbGVnYXRlLnVzZXJAbm93aGVyZS54eXoifQ.yo5KvkCAnmcBbTGRNQZEfnaE8uXSe8zfgmofOiaL_rU"
 
 # Data definitions using YAML anchors.
-# The deadline is intentionally far-future — beyond the empire seed's
-# furthest-out call (the open FY2027 call, 2099-12-31) — so this
+# The deadline is intentionally far-future - beyond the empire seed's
+# furthest-out call (the open FY2027 call 5, whose deadline is load-relative,
+# about 200 days out, so it never expires) - so this
 # test-created call is the one GET /datacalls/latest returns. As of #393,
 # "latest"/"current" is the max-deadline call, not the max datacallid.
 dataCallData: &dataCallData
@@ -2091,8 +2092,8 @@ tests:
   # commonHeaders maps to test.user@nowhere.xyz (the OWNER fixture); the
   # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
   # Both saves target datacallid=5 ("FY2027 Imperial Zero Trust Data Call"), seeded in
-  # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
-  # trip the past-deadline guard on the ISSO path. (Admin bypasses the
+  # _test_data_empire.sql with a load-relative deadline (about 200 days out) so
+  # validate() does not trip the past-deadline guard on the ISSO path. (Admin bypasses the
   # guard, but routing both paths through the same fixture keeps the
   # regression honest if the admin bypass is ever tightened.)
   #
@@ -2988,7 +2989,7 @@ tests:
     expect:
       status: 404
 
-  # Wrong-data-center report (issue #239). Two rows at this point in the run:
+  # Wrong-data-center report (issue #239). Three rows at this point in the run:
   #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
   #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
   #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
@@ -2996,6 +2997,8 @@ tests:
   #     system to "Other" mid-suite, so by now it reports - proving the report
   #     tracks live system edits. The fresh-seed "matching row is excluded"
   #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
+  #   - TACT-HOLO (3006, EMPIRE, active; demo portfolio): its record names a
+  #     different data center on purpose.
   # Still excluded here: the Death Star (1001) mismatches but is decommissioned,
   # and RB-1 (1005) mismatches but REBELLION is not insights_enabled (gated).
   - url: http://localhost:8080/api/v1/datacentermismatches
@@ -3050,6 +3053,26 @@ tests:
             - fismasystemid: 1003
             - fismasystemid: 1002
             - fismasystemid: 3006
+
+  # The EMPIRE-only OpDiv admin sees the same three rows: all three systems are
+  # EMPIRE, and nothing outside EMPIRE reports (RB-1 is also gated).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              fismaacronym: "SLD-GEN"
+            - fismasystemid: 1002
+              fismaacronym: "SSD-EX"
+            - fismasystemid: 3006
+              fismaacronym: "TACT-HOLO"
 
   # ZTMF Insights (issue #416). /insights is a LIST endpoint: scope and the
   # OpDiv gate yield an empty array (200), never 403/404. Array bodies assert
@@ -4079,8 +4102,9 @@ tests:
 
   # ==========================================================================
   # Reduced pillar scope (ztmf#545 / ztmf-misc#289). MOCK-SAAS (2016) is the
-  # seeded SaaS fixture; 104 is the FY26 fixture cycle the seeded rule anchors
-  # on; 103 is the prior full-set cycle. The questionnaire endpoint serves the
+  # seeded SaaS fixture; 104 ('FY2026 Sector Readiness Census') is the FY26
+  # fixture cycle the SaaS rule row in _test_data_empire.sql anchors on; 103 is
+  # the prior full-set cycle. The questionnaire endpoint serves the
   # reduced set only when asked for an in-scope cycle, and the aggregate stops
   # scoring the excluded pillars from the anchor cycle onward.
   #
@@ -4216,7 +4240,7 @@ tests:
   # ---------------------------------------------------------------------------
   # Answer history and undo (ztmf-misc#391)
   #
-  # datacallid 5 ("FY2027 Imperial Zero Trust Data Call", deadline 2099) for the same reason
+  # datacallid 5 ("FY2027 Imperial Zero Trust Data Call", deadline about 200 days out) for the same reason
   # every other write case uses it: datacall 104's deadline has passed, so a
   # non-admin write there trips ErrPastDeadline.
   #
@@ -4557,3 +4581,33 @@ tests:
         <<: *fismaSystemData
     expect:
       status: 403
+
+  # The aggregate for the open call, read by the EMPIRE-only OpDiv admin, lists
+  # exactly the EMPIRE systems that have answers on it: out-of-scope systems
+  # (REBELLION 1005 and 3017, COMPNOR 3011) are absent, and the list is exact so
+  # a scope regression that leaks one system fails. The Executor (1002) is not
+  # listed because the OWNER PUT earlier in the run moved it to the 'Other' data
+  # center, which has no questionnaire to score against. 1001 and 1003 appear
+  # because earlier cases write answers to them on this call. 3007 (decommissioned)
+  # and 3010 (new in FY27, nothing answered yet) have no answers on this call.
+  - url: http://localhost:8080/api/v1/scores/aggregate?datacallid=5
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+            - fismasystemid: 1003
+            - fismasystemid: 3001
+            - fismasystemid: 3002
+            - fismasystemid: 3003
+            - fismasystemid: 3004
+            - fismasystemid: 3005
+            - fismasystemid: 3006
+            - fismasystemid: 3008
+            - fismasystemid: 3009
