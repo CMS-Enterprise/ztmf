@@ -41,7 +41,7 @@ var (
 	// draft version: the target is published or archived, or no draft is open
 	// to receive a new question (ztmf-misc#396). Mapped to 403 with a code, so a
 	// client can tell "fork a draft first" from a role problem.
-	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version; fork one with POST /questionnaire-versions")
+	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version")
 )
 
 type InvalidInputError struct {
