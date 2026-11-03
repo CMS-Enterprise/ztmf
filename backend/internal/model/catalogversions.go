@@ -18,7 +18,9 @@ import (
 //
 // Lock order, everywhere: the lifecycle lock (lifecycle operations only), then
 // the version row, then content rows. Content writers take the version FOR
-// SHARE; publish and discard take it FOR UPDATE.
+// SHARE. Publish and archive take it FOR NO KEY UPDATE, which excludes them
+// without blocking the FK checks score saves make on a published row; discard
+// deletes the row, so it takes FOR UPDATE up front.
 
 const (
 	versionStateDraft     = "draft"
@@ -141,11 +143,11 @@ func ForkQuestionnaireVersion(ctx context.Context, label string) (*Questionnaire
 }
 
 // PublishQuestionnaireVersion makes a draft the current version once it passes
-// the publish gate. FOR UPDATE on the version row waits for any content write
+// the publish gate. FOR NO KEY UPDATE on the version row waits for any content write
 // in flight (they hold it FOR SHARE) and refuses those that follow. There is
 // no unpublish, which is why the gate also refuses an empty catalog.
 func PublishQuestionnaireVersion(ctx context.Context, versionID int32) (*QuestionnaireVersion, error) {
-	return versionTransition(ctx, versionID, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
+	return versionTransition(ctx, versionID, noKeyUpdate, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
 		if state != versionStateDraft {
 			return nil, &InvalidInputError{data: map[string]any{"state": "only a draft can be published; this version is " + state}}
 		}
@@ -162,7 +164,7 @@ func PublishQuestionnaireVersion(ctx context.Context, versionID int32) (*Questio
 // current. Data calls already pinned to it keep resolving it: reads follow the
 // pin, not the state.
 func ArchiveQuestionnaireVersion(ctx context.Context, versionID int32) (*QuestionnaireVersion, error) {
-	return versionTransition(ctx, versionID, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
+	return versionTransition(ctx, versionID, noKeyUpdate, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
 		if state != versionStatePublished {
 			return nil, &InvalidInputError{data: map[string]any{"state": "only a published version can be archived; this version is " + state}}
 		}
@@ -185,7 +187,7 @@ func ArchiveQuestionnaireVersion(ctx context.Context, versionID int32) (*Questio
 // no score can reference a draft's options (#395's write check). The contents
 // are snapshotted into the audit trail before they go.
 func DiscardQuestionnaireVersion(ctx context.Context, versionID int32) error {
-	_, err := versionTransition(ctx, versionID, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
+	_, err := versionTransition(ctx, versionID, "FOR UPDATE", func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
 		if state != versionStateDraft {
 			return nil, &InvalidInputError{data: map[string]any{"state": "only a draft can be discarded; this version is " + state}}
 		}
@@ -213,10 +215,13 @@ func DiscardQuestionnaireVersion(ctx context.Context, versionID int32) error {
 	return err
 }
 
+// noKeyUpdate is publish's and archive's lock on the version row.
+const noKeyUpdate = "FOR NO KEY UPDATE"
+
 // versionTransition is the shared frame of publish, archive and discard: the
-// lifecycle lock, the version row FOR UPDATE, the change, and its event in
+// lifecycle lock, the version row in lockMode, the change, and its event in
 // the same transaction.
-func versionTransition(ctx context.Context, versionID int32, change func(pgx.Tx, string) (*QuestionnaireVersion, error)) (*QuestionnaireVersion, error) {
+func versionTransition(ctx context.Context, versionID int32, lockMode string, change func(pgx.Tx, string) (*QuestionnaireVersion, error)) (*QuestionnaireVersion, error) {
 	if !isValidIntID(versionID) {
 		return nil, ErrNoData
 	}
@@ -224,7 +229,7 @@ func versionTransition(ctx context.Context, versionID int32, change func(pgx.Tx,
 		if err := lockLifecycle(ctx, tx); err != nil {
 			return nil, err
 		}
-		state, err := lockVersion(ctx, tx, versionID, "FOR UPDATE")
+		state, err := lockVersion(ctx, tx, versionID, lockMode)
 		if err != nil {
 			return nil, err
 		}
@@ -358,16 +363,19 @@ func lockVersion(ctx context.Context, tx pgx.Tx, versionID int32, mode string) (
 // (discarded meanwhile, or never) is not an open draft either.
 func lockDraftVersion(ctx context.Context, tx pgx.Tx, versionID int32) error {
 	state, err := lockVersion(ctx, tx, versionID, "FOR SHARE")
-	if errors.Is(err, ErrNoData) {
-		return ErrVersionNotDraft
+	if errors.Is(err, ErrNoData) || (err == nil && state != versionStateDraft) {
+		return notDraftError(ctx, tx)
 	}
+	return err
+}
+
+// notDraftError names the remedy: the open draft's id, or a fork if none is open.
+func notDraftError(ctx context.Context, tx pgx.Tx) error {
+	draft, err := openDraftVersionID(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if state != versionStateDraft {
-		return ErrVersionNotDraft
-	}
-	return nil
+	return fmt.Errorf("%w; version %d is the open draft", ErrVersionNotDraft, draft)
 }
 
 // openDraftVersionID is the version a new question lands in when the request
@@ -376,7 +384,7 @@ func openDraftVersionID(ctx context.Context, tx pgx.Tx) (int32, error) {
 	var v int32
 	err := tx.QueryRow(ctx, `SELECT versionid FROM questionnaire_versions WHERE state = 'draft'`).Scan(&v)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, ErrVersionNotDraft
+		return 0, fmt.Errorf("%w; fork one with POST /questionnaire-versions", ErrVersionNotDraft)
 	}
 	return v, trapError(err)
 }

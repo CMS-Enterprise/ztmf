@@ -144,6 +144,7 @@ func TestQuestionnaireVersionContentWritesIntegration(t *testing.T) {
 	t.Run("BaselineIsReadOnly", func(t *testing.T) {
 		_, err := (&Question{QuestionID: 8001, Question: "q", NotesPrompt: "p", PillarID: 1}).Save(ctx)
 		assert.ErrorIs(t, err, ErrVersionNotDraft)
+		assert.ErrorContains(t, err, "fork one with POST /questionnaire-versions", "no draft is open to point at")
 		_, err = (&FunctionOption{FunctionOptionID: 1, FunctionID: 7001, Score: 1, OptionName: "Traditional", Description: "d"}).Save(ctx)
 		assert.ErrorIs(t, err, ErrVersionNotDraft)
 		assert.ErrorIs(t, DeleteFunctionOption(ctx, 1), ErrVersionNotDraft,
@@ -151,6 +152,7 @@ func TestQuestionnaireVersionContentWritesIntegration(t *testing.T) {
 		assert.ErrorIs(t, DeleteQuestion(ctx, 8001), ErrVersionNotDraft)
 		_, err = (&Question{Question: "q", NotesPrompt: "p", PillarID: 1}).Save(ctx)
 		assert.ErrorIs(t, err, ErrVersionNotDraft, "with no draft open, a new question has nowhere to go")
+		assert.ErrorContains(t, err, "fork one with POST /questionnaire-versions")
 
 		// Aimed at a published version, the version is the reason given, not the
 		// lineage: the draft check runs before any content check.
@@ -161,6 +163,12 @@ func TestQuestionnaireVersionContentWritesIntegration(t *testing.T) {
 
 	draft, err := ForkQuestionnaireVersion(ctx, integrationTestPrefix+"content")
 	require.NoError(t, err)
+
+	t.Run("RefusalNamesTheOpenDraft", func(t *testing.T) {
+		_, err := (&Question{QuestionID: 8001, Question: "q", NotesPrompt: "p", PillarID: 1}).Save(ctx)
+		assert.ErrorIs(t, err, ErrVersionNotDraft)
+		assert.ErrorContains(t, err, fmt.Sprintf("version %d is the open draft", draft.VersionID))
+	})
 
 	t.Run("NewQuestionLandsInTheOpenDraft", func(t *testing.T) {
 		q, err := (&Question{Question: "new", NotesPrompt: "p", PillarID: 1}).Save(ctx)

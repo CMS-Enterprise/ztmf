@@ -861,6 +861,9 @@ components:
         function:
           type: string
         functionid:
+          description: |-
+            The To side's when both cycles answered it, matching the labels; the two
+            sides differ when the cycles pin different versions.
           type: integer
         pillar:
           type: string
@@ -872,10 +875,7 @@ components:
         question:
           type: string
         root_functionid:
-          description: |-
-            The question's identity across questionnaire versions (ztmf-misc#395).
-            functionid is the from side's when both cycles answered it, and the two
-            differ when the cycles pin different versions.
+          description: The question's identity across questionnaire versions (ztmf-misc#395).
           type: integer
         to:
           $ref: '#/components/schemas/model.ScoreDiffSide'

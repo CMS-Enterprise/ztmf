@@ -32,21 +32,21 @@ type ScoreDiffSide struct {
 // seed data, or a function answered only in the From cycle).
 type ScoreDiff struct {
 	FismaSystemID int32 `json:"fismasystemid"`
-	FunctionID    int32 `json:"functionid"`
+	// The To side's when both cycles answered it, matching the labels; the two
+	// sides differ when the cycles pin different versions.
+	FunctionID int32 `json:"functionid"`
 	// The question's identity across questionnaire versions (ztmf-misc#395).
-	// functionid is the from side's when both cycles answered it, and the two
-	// differ when the cycles pin different versions.
-	RootFunctionID int32          `json:"root_functionid"`
-	Function       string         `json:"function"`
-	Question       string         `json:"question"`
+	RootFunctionID int32  `json:"root_functionid"`
+	Function       string `json:"function"`
+	Question       string `json:"question"`
 	// Carried on the row so a client can group a diff whose cycles pin
 	// different versions without mapping functionids through a questions list.
-	PillarID       *int32         `json:"pillarid"`
-	Pillar         *string        `json:"pillar"`
-	From           *ScoreDiffSide `json:"from"`
-	To             *ScoreDiffSide `json:"to"`
-	ChangedAt      *time.Time     `json:"changed_at,omitempty"`
-	ChangedBy      *AuditRef      `json:"changed_by,omitempty"`
+	PillarID  *int32         `json:"pillarid"`
+	Pillar    *string        `json:"pillar"`
+	From      *ScoreDiffSide `json:"from"`
+	To        *ScoreDiffSide `json:"to"`
+	ChangedAt *time.Time     `json:"changed_at,omitempty"`
+	ChangedBy *AuditRef      `json:"changed_by,omitempty"`
 }
 
 type FindScoreDiffInput struct {
@@ -151,7 +151,7 @@ WITH from_scores AS (%s),
      to_scores AS (%s)
 SELECT
     COALESCE(f.fismasystemid, t.fismasystemid) AS fismasystemid,
-    COALESCE(f.functionid, t.functionid)       AS functionid,
+    COALESCE(t.functionid, f.functionid)       AS functionid,
     COALESCE(f.root_functionid, t.root_functionid) AS root_functionid,
     fn.function,
     q.question,
@@ -202,7 +202,10 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 		*argN++
 	}
 
-	conds := []string{fmt.Sprintf("s.datacallid = $%d", *argN)}
+	// The cycle's own version only, as every other read; a row stored outside
+	// it would otherwise match a second time on root_functionid.
+	dc := fmt.Sprintf("$%d", *argN)
+	conds := []string{"s.datacallid = " + dc, questionnaireVersionSQL("rf.versionid", dc)}
 	*args = append(*args, dataCallID)
 	*argN++
 

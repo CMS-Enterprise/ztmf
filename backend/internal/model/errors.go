@@ -41,7 +41,7 @@ var (
 	// draft version: the target is published or archived, or no draft is open
 	// to receive a new question (ztmf-misc#396). Mapped to 403 with a code, so a
 	// client can tell "fork a draft first" from a role problem.
-	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version; fork one with POST /questionnaire-versions")
+	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version")
 	// ErrVersionNotTranslatable refuses a re-pin that would drop answers people
 	// have already given this cycle (ztmf-misc#397). Mapped to 409 with a code:
 	// the call is valid, the change waits for the next data call.

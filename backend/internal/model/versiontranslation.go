@@ -186,7 +186,7 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 // lockPinnableVersion holds a version FOR SHARE and requires it published: a
 // draft can be edited or discarded under a pin (#396's draft DELETE relies on
 // no call pinning one), and an archived version is retired. Lock order is the
-// lifecycle's: an archive takes the row FOR UPDATE and so waits for the pin.
+// lifecycle's: an archive takes the row FOR NO KEY UPDATE and so waits for the pin.
 func lockPinnableVersion(ctx context.Context, tx pgx.Tx, versionID int32) error {
 	if versionID == 0 {
 		return &InvalidInputError{data: map[string]any{"questionnaire_versionid": "required"}}
