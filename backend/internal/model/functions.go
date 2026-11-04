@@ -46,7 +46,7 @@ func FindFunctions(ctx context.Context, i FindFunctionsInput) ([]*Function, erro
 		From("functions")
 
 	if i.VersionID != nil {
-		sqlb = sqlb.Where("versionid=?", *i.VersionID)
+		sqlb = hideDrafts(ctx, sqlb.Where("versionid=?", *i.VersionID), "versionid")
 	} else {
 		sqlb = sqlb.Where(currentQuestionnaireVersionSQL("versionid"))
 	}
@@ -81,6 +81,7 @@ func FindFunctionByID(ctx context.Context, functionID int32) (*Function, error) 
 		Select(functionsColumns...).
 		From("functions").
 		Where("functionid=?", functionID)
+	sqlb = hideDrafts(ctx, sqlb, "versionid")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByName[Function])
 }

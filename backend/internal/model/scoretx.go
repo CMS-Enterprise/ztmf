@@ -167,23 +167,9 @@ func writeScore(ctx context.Context, tx pgx.Tx, sqlb SqlBuilder) (*Score, error)
 // fields the next GET cannot confirm, or commit an answer with no trace of who
 // changed it.
 func insertScoreEvent(ctx context.Context, tx pgx.Tx, action string, saved *Score) error {
-
-	// createdat is written explicitly as clock_timestamp(), NOT left to the
-	// column's CURRENT_TIMESTAMP default. CURRENT_TIMESTAMP is transaction START
-	// time in Postgres, and this event is now written inside the write's
-	// transaction - one that may have sat waiting on lockScore's FOR UPDATE.
-	//
-	// Concretely: writer A begins, blocks on the lock; writer B begins later,
-	// takes the lock, writes and commits; A then proceeds and commits last, so
-	// scores holds A's answer - but A's event carries the EARLIER timestamp and
-	// B's looks newest. All four audit readers order by createdat DESC, so
-	// last_edited_by would name the writer whose answer was overwritten.
-	//
-	// This ordering used to be incidentally correct: recordEvent ran after the
-	// score had committed, in its own short transaction, so start time was
-	// effectively insert time. clock_timestamp() is the actual wall clock at
-	// statement execution, and because the insert happens while the row lock is
-	// still held, event order now matches commit order by construction.
+	// insertCatalogEvent stamps createdat with clock_timestamp(), not the
+	// transaction start: a save that waited on lockScore commits after a later
+	// one, so only the wall clock keeps event order matching commit order.
 	// Pinned by TestScoreConcurrentSavesAgreeWithEventLogIntegration.
 	return insertCatalogEvent(ctx, tx, action, scoresEventResource, saved)
 }

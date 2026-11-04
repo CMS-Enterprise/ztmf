@@ -146,12 +146,16 @@ func ForkQuestionnaireVersion(ctx context.Context, label string) (*Questionnaire
 // the publish gate. FOR NO KEY UPDATE on the version row waits for any content write
 // in flight (they hold it FOR SHARE) and refuses those that follow. There is
 // no unpublish, which is why the gate also refuses an empty catalog.
-func PublishQuestionnaireVersion(ctx context.Context, versionID int32) (*QuestionnaireVersion, error) {
+// dropped must name every parent lineage the draft leaves out (checkDroppedLineages).
+func PublishQuestionnaireVersion(ctx context.Context, versionID int32, dropped []int32) (*QuestionnaireVersion, error) {
 	return versionTransition(ctx, versionID, noKeyUpdate, func(tx pgx.Tx, state string) (*QuestionnaireVersion, error) {
 		if state != versionStateDraft {
 			return nil, &InvalidInputError{data: map[string]any{"state": "only a draft can be published; this version is " + state}}
 		}
 		if err := checkPublishGate(ctx, tx, versionID); err != nil {
+			return nil, err
+		}
+		if err := checkDroppedLineages(ctx, tx, versionID, dropped); err != nil {
 			return nil, err
 		}
 		return scanVersion(tx.QueryRow(ctx, `
@@ -308,6 +312,58 @@ var publishRules = []publishRule{
 
 var gateLineageRoots = lineageRootsSQL("f.questionid", "f.datacenterenvironment", "f.versionid")
 
+// DroppedLineage is a parent function lineage a draft leaves out. Answers on it
+// stop carrying forward once a call pins the draft, so publish names them.
+type DroppedLineage struct {
+	RootFunctionID        int32  `json:"root_functionid"`
+	Question              string `json:"question"`
+	DataCenterEnvironment string `json:"datacenterenvironment"`
+}
+
+// droppedLineagesSQL lists the lineages of draft $1's parent with no function
+// in the draft. Question-less functions are left out, as the fork leaves them.
+const droppedLineagesSQL = `
+	SELECT pf.root_functionid, pq.question, pf.datacenterenvironment
+	  FROM questionnaire_versions v
+	 INNER JOIN functions pf ON pf.versionid = v.parent_versionid
+	 INNER JOIN questions pq ON pq.questionid = pf.questionid
+	 WHERE v.versionid = $1
+	   AND NOT EXISTS (SELECT 1 FROM functions df WHERE df.versionid = $1 AND df.root_functionid = pf.root_functionid)
+	 ORDER BY pf.root_functionid`
+
+// checkDroppedLineages refuses a publish unless confirmed names exactly the
+// lineages the draft drops, so a question deleted and re-created without its
+// root_questionid cannot quietly end its answers' carry-forward.
+func checkDroppedLineages(ctx context.Context, tx pgx.Tx, versionID int32, confirmed []int32) error {
+	rows, err := tx.Query(ctx, droppedLineagesSQL, versionID)
+	if err != nil {
+		return trapError(err)
+	}
+	dropped, err := pgx.CollectRows(rows, pgx.RowToStructByPos[DroppedLineage])
+	if err != nil {
+		return trapError(err)
+	}
+	want := make(map[int32]bool, len(dropped))
+	for _, d := range dropped {
+		want[d.RootFunctionID] = true
+	}
+	got := make(map[int32]bool, len(confirmed))
+	for _, id := range confirmed {
+		got[id] = true
+	}
+	same := len(got) == len(want)
+	for id := range got {
+		same = same && want[id]
+	}
+	if same {
+		return nil
+	}
+	return &InvalidInputError{data: map[string]any{"dropped_root_functionids": map[string]any{
+		"message":  "dropped_root_functionids must list exactly the parent version's answer lineages this draft leaves out; restore any left out by mistake (root_questionid, root_functionid)",
+		"lineages": dropped,
+	}}}
+}
+
 // maxReportedIDs keeps a 400 body readable when a rule fails on many rows.
 const maxReportedIDs = 20
 
@@ -363,7 +419,10 @@ func lockVersion(ctx context.Context, tx pgx.Tx, versionID int32, mode string) (
 // (discarded meanwhile, or never) is not an open draft either.
 func lockDraftVersion(ctx context.Context, tx pgx.Tx, versionID int32) error {
 	state, err := lockVersion(ctx, tx, versionID, "FOR SHARE")
-	if errors.Is(err, ErrNoData) || (err == nil && state != versionStateDraft) {
+	if errors.Is(err, ErrNoData) {
+		return &InvalidInputError{data: map[string]any{"versionid": fmt.Sprintf("version %d does not exist", versionID)}}
+	}
+	if err == nil && state != versionStateDraft {
 		return notDraftError(ctx, tx)
 	}
 	return err
