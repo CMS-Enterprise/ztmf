@@ -316,7 +316,7 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	// Insert two datacalls so copyPreviousScores' "previous is the next call
 	// back" logic finds the right one. findPreviousDataCall now orders by
 	// deadline (see datacalls.go), so both deadlines must beat every seed
-	// datacall (the empire seed's furthest-out is 2099-12-31) with newDC later
+	// datacall (the empire seed's furthest-out is call 5, about 200 days after load) with newDC later
 	// than prevDC; then prevDC is the unambiguous previous relative to newDC.
 	// datecreated no longer affects the ordering. Each row gets a unique
 	// nano-precision suffix so reruns don't collide on the UNIQUE(datacall)
@@ -809,7 +809,7 @@ func TestFindLatestDataCallByDeadlineIntegration(t *testing.T) {
 
 	// Insert the further-out deadline FIRST so it gets the LOWER datacallid.
 	// Both deadlines beat every seed datacall (empire seed's furthest-out is
-	// 2099-12-31), so this call is the global latest by deadline.
+	// call 5, about 200 days after load), so this call is the global latest by deadline.
 	var laterDeadlineID int32
 	err = conn.QueryRow(ctx, `
 		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
@@ -846,8 +846,8 @@ func boolPtr(b bool) *bool { return &b }
 // sweep cleans it up) if none exists in seed data. Shared by the audit
 // field tests below so each one does not redo the discovery dance.
 //
-// In the default empire seed this resolves to datacallid=5 ("Audit
-// Fields Smoke Cycle", deadline 2099-12-31), which is also the cycle
+// In the default empire seed this resolves to datacallid=5 ("FY2027
+// Imperial Zero Trust Data Call", deadline about 200 days after load), which is also the cycle
 // the emberfall audit-fields block writes to. That is intentional
 // reuse, not a fixture collision: scores written by these integration
 // tests carry their own scoreid and are cleaned up by the per-test
