@@ -1999,6 +1999,21 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
     (3023, 'B583B0EC-5DBF-430C-8E97-1A22398D01F9', 'NR-CITIZEN-ID', 'New Republic Unified Citizen Identity', NULL, 'IIB', 'SEN', 'Senate Services', NULL, 'Imperial-Fleet', 'kaydel.connix@example.com', 'kaydel.connix@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'IIB' AND active), TRUE, 'High', 'General Support System', TRUE, ARRAY['IaaS', 'PaaS']::text[], 'Amazon Web Services', 'Agency', 'GOCO', 'Amilyn Holdo', 'amilyn.holdo@example.com', FALSE, 'Kaydel Connix', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.')
 ON CONFLICT DO NOTHING;
 
+-- FIPS impact level on the original fixture systems, so every system in the seed
+-- carries one (the demo systems above set theirs inline). The four with Insights
+-- records match the level those records report. Only fills a NULL, so a reload
+-- never overwrites a value someone set in the app.
+UPDATE public.fismasystems f SET fips = v.fips
+FROM (VALUES
+    (1001, 'High'), (1002, 'High'), (1003, 'Moderate'), (1004, 'Moderate'),
+    (1005, 'Low'), (1006, 'Low'),
+    (1101, 'High'), (1102, 'High'), (1103, 'High'), (1104, 'Moderate'),
+    (1105, 'Moderate'), (1106, 'High'), (1107, 'Moderate'), (1108, 'High'),
+    (1109, 'Low'), (1110, 'Moderate'),
+    (2016, 'Low'), (2017, 'Low')
+) AS v(fismasystemid, fips)
+WHERE f.fismasystemid = v.fismasystemid AND f.fips IS NULL;
+
 INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES
     ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', 3001),
     ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3001),
