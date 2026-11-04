@@ -18,7 +18,9 @@ backend/lambda
 .vscode/
 CLAUDE.md
 AGENTS.md
-.claude/
+# Shared Claude Code skills are committed; everything else under .claude/ stays local
+.claude/*
+!.claude/skills/
 
 # Per-worktree git hooks (not shared)
 .githooks/
