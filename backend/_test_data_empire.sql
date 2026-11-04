@@ -206,10 +206,10 @@ INSERT INTO public.pillars VALUES (6, 'Identity', 1) ON CONFLICT DO NOTHING;
 -- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
 -- as tiebreak; #393), so the open FY2027 cycle below wins via its far-future
 -- deadline. IDs stay chronological for readability only.
-INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z', 2022) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z', 2023) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 2024) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z', 2025) ON CONFLICT DO NOTHING;
 -- The open FY2027 cycle. Its deadline is computed at load time (about 200 days
 -- out) so it never expires, however long a seeded volume lives: ISSO writes need
 -- a non-expired datacall so validate() does not trip the deadline guard, and it
@@ -221,14 +221,14 @@ INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01
 -- the audit-fields block; if you reorder or renumber this row, update the
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
-INSERT INTO public.datacalls VALUES (5, 'FY2027 Imperial Zero Trust Data Call', '2026-10-01T00:00:00Z', now() + interval '200 days') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (5, 'FY2027 Imperial Zero Trust Data Call', '2026-10-01T00:00:00Z', now() + interval '200 days', 2027) ON CONFLICT DO NOTHING;
 -- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
 -- outside the app - its scores are seeded below with NO events rows, so every
 -- answer keeps status 'not_started' and carries no editor/timestamp. This is
 -- the shape that makes a closed call read 0/N under the "updated" lens while
 -- QuestionsAnswered still reports it complete; keep it event-free on purpose
 -- so that behavior stays reproducible locally.
-INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z', 2020) ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
@@ -1220,10 +1220,10 @@ DELETE FROM public.fismasystems WHERE fismaacronym LIKE 'MOCK-%';
 
 -- The 3 historical HHS-style data calls. Named like the rest of the fixture's calls
 -- (four-digit year first), distinct from calls 1-7 so the picker has no look-alike rows.
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
- (101,'FY2023 Sector Readiness Census','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00'),
- (102,'FY2024 Sector Readiness Census','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00'),
- (103,'FY2025 Sector Readiness Census','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00');
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+ (101,'FY2023 Sector Readiness Census','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00',2023),
+ (102,'FY2024 Sector Readiness Census','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00',2024),
+ (103,'FY2025 Sector Readiness Census','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00',2025);
 
 -- NEW mock systems across the sister divisions.
 -- Faithful HHS-inventory null pattern: fismasubsystem/component/group*/
@@ -1265,8 +1265,8 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 -- for every other test. Only MOCK-SAAS maps to scoring_key 'SaaS', so no existing
 -- fixture changes behaviour.
 -- ---------------------------------------------------------------------------
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
- (104,'FY2026 Sector Readiness Census','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00')
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+ (104,'FY2026 Sector Readiness Census','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00',2026)
 ON CONFLICT DO NOTHING;
 
 -- The seeded reduced-scope rule (ztmf#545), anchored at the fixture FY26 cycle.
@@ -1895,12 +1895,12 @@ CREATE TEMP TABLE demo_seed_gate AS
 -- created above) and the E2E suite writes answers to it; this converges the name and creation
 -- date on volumes that still hold the old 'Audit Fields Smoke Cycle'.
 UPDATE public.datacalls
-   SET datacall = 'FY2027 Imperial Zero Trust Data Call', datecreated = '2026-10-01T00:00:00+00:00'
+   SET datacall = 'FY2027 Imperial Zero Trust Data Call', datecreated = '2026-10-01T00:00:00+00:00', fiscal_year = 2027
  WHERE datacallid = 5 AND datacall = 'Audit Fields Smoke Cycle';
 
 -- FY2026 data call (id 7): the closed year between FY2025 and the open FY2027 call.
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
-    (7, 'FY2026 Imperial Zero Trust Data Call', '2026-06-01T12:00:00+00:00', '2026-09-30T04:00:00+00:00')
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+    (7, 'FY2026 Imperial Zero Trust Data Call', '2026-06-01T12:00:00+00:00', '2026-09-30T04:00:00+00:00', 2026)
 ON CONFLICT DO NOTHING;
 
 -- Demo users: OpDiv admins and read-only admins, ISSMs, ISSOs, system delegates (access
@@ -2650,7 +2650,7 @@ SELECT v.userid, v.action, v.resource, v.createdat, v.payload FROM (VALUES
     ('abfcd7c1-1b9b-402a-8852-71010e58a068'::uuid, 'created', 'users_fismasystems', '2026-05-01T14:00:00+00:00'::timestamptz, '{"userid": "456e7bd8-a04c-47cc-87db-c867eb142f50", "fismasystemid": 3009}'::jsonb),
     ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'created', 'users_fismasystems', '2026-06-19T14:00:00+00:00'::timestamptz, '{"userid": "666714f0-0195-4d51-8b31-248596ad67c1", "fismasystemid": 3003}'::jsonb),
     ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'created', 'users_fismasystems', '2026-06-21T14:00:00+00:00'::timestamptz, '{"userid": "ec376891-6528-4138-8160-c8150019f2ea", "fismasystemid": 3005}'::jsonb),
-    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'::uuid, 'created', 'datacalls', '2026-10-01T00:00:00+00:00'::timestamptz, (SELECT jsonb_build_object('datacall', datacall, 'deadline', deadline, 'datacallid', datacallid, 'datecreated', datecreated) FROM public.datacalls WHERE datacallid = 5)),
+    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'::uuid, 'created', 'datacalls', '2026-10-01T00:00:00+00:00'::timestamptz, (SELECT jsonb_build_object('datacall', datacall, 'deadline', deadline, 'datacallid', datacallid, 'datecreated', datecreated, 'fiscal_year', fiscal_year, 'cadence', cadence) FROM public.datacalls WHERE datacallid = 5)),
     ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:04:00-04:00'::timestamptz, '{"notes": "Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.", "scoreid": 20307, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785013200, "functionoptionid": 93}'::jsonb),
     ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:06:00-04:00'::timestamptz, '{"notes": "Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.", "scoreid": 20308, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785006000, "functionoptionid": 72}'::jsonb),
     ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:21:00-04:00'::timestamptz, '{"notes": "Fully software-defined network; every connection is authorized per request.", "scoreid": 20309, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785186000, "functionoptionid": 81}'::jsonb),

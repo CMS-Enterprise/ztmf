@@ -39,8 +39,8 @@ func TestFindFismaSystemDataCallsOrderIntegration(t *testing.T) {
 	// empire seed's furthest-out cycle (call 5) so it must sort first overall).
 	var currentID int32
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW() - INTERVAL '30 days', '2102-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW() - INTERVAL '30 days', '2102-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%scurrent_%d", integrationTestPrefix, suffix)).Scan(&currentID)
 	require.NoError(t, err)
@@ -50,8 +50,8 @@ func TestFindFismaSystemDataCallsOrderIntegration(t *testing.T) {
 	// wrongly sorts to the top of the system's list.
 	var backfilledID int32
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2019-12-31T23:59:59Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2019-12-31T23:59:59Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sbackfilled_%d", integrationTestPrefix, suffix)).Scan(&backfilledID)
 	require.NoError(t, err)

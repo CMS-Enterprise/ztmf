@@ -353,7 +353,18 @@ components:
       type: object
     model.DataCall:
       properties:
+        cadence:
+          description: Defaults to annual on create; omitted on update keeps the stored
+            cadence.
+          enum:
+          - annual
+          - quarterly
+          example: annual
+          type: string
         datacall:
+          description: |-
+            Free-text title. Nothing parses it; the fiscal year and cadence are
+            separate fields.
           type: string
         datacallid:
           type: integer
@@ -361,6 +372,14 @@ components:
           type: string
         deadline:
           type: string
+        fiscal_year:
+          description: |-
+            Four-digit fiscal year. Required on create; omitted on update keeps the
+            stored year.
+          example: 2026
+          maximum: 2999
+          minimum: 2000
+          type: integer
       type: object
     model.DataCenterEnvironment:
       properties:
@@ -1084,6 +1103,9 @@ paths:
       tags:
       - datacalls
     post:
+      description: The name (datacall) is a free-text title. fiscal_year is required
+        on create and cadence defaults to "annual". On update, an omitted fiscal_year
+        or cadence keeps the stored value.
       parameters:
       - description: Data call ID (for update)
         in: path
@@ -1165,6 +1187,9 @@ paths:
       tags:
       - datacalls
     put:
+      description: The name (datacall) is a free-text title. fiscal_year is required
+        on create and cadence defaults to "annual". On update, an omitted fiscal_year
+        or cadence keeps the stored value.
       parameters:
       - description: Data call ID (for update)
         in: path

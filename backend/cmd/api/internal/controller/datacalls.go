@@ -130,6 +130,7 @@ func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
 }
 
 //	@Summary	Create or update a data call
+//	@Description	The name (datacall) is a free-text title. fiscal_year is required on create and cadence defaults to "annual". On update, an omitted fiscal_year or cadence keeps the stored value.
 //	@Tags		datacalls
 //	@Accept		json
 //	@Produce	json

@@ -30,8 +30,8 @@ func newTxWriteFixture(t *testing.T, conn *pgxpool.Conn, name string) txWriteFix
 
 	var dc int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%s%s_%d", integrationTestPrefix, name, time.Now().UnixNano())).Scan(&dc))
 

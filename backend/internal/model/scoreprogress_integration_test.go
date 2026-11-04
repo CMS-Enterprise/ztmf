@@ -55,15 +55,15 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), prevDeadline).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), newDeadline).Scan(&newDC)
 	require.NoError(t, err)
@@ -237,8 +237,8 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 	var dc int32
 	suffix := time.Now().UnixNano()
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '90 days')
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '90 days', 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sinapplicable_%d", integrationTestPrefix, suffix)).Scan(&dc)
 	require.NoError(t, err)
@@ -317,15 +317,15 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
 	require.NoError(t, err)

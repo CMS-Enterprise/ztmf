@@ -43,10 +43,19 @@ delegateHeaders: &delegateHeaders
 dataCallData: &dataCallData
   datacall: "FY2100 ZTM"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
 
+# The create body leaves cadence out, so the response carries the default.
+createdDataCallData: &createdDataCallData
+  <<: *dataCallData
+  cadence: "annual"
+
+# The name is a free-text title; the year and cadence are their own fields.
 updatedDataCallData: &updatedDataCallData
-  datacall: "FY2100 ZTM"
+  datacall: "Zero Trust Data Call 2100"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
+  cadence: "quarterly"
 
 fismaSystemData: &fismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
@@ -608,7 +617,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: http://localhost:8080/api/v1/datacalls/latest
     method: GET
@@ -621,7 +630,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: GET
@@ -634,7 +643,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: PUT
@@ -659,7 +668,98 @@ tests:
         json:
           data:
             <<: *updatedDataCallData
-  
+
+  # An update that leaves fiscal_year and cadence out keeps the stored values,
+  # so a title-only edit cannot reset a quarterly call to annual.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # fiscal_year is required on create, and both fields are validated on create
+  # and update. None of these writes a row, so the latest call is unchanged.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "No fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 0
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Two-digit fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 26
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 26
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Unknown cadence"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+        cadence: "monthly"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            cadence: "monthly"
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        cadence: "monthly"
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:
