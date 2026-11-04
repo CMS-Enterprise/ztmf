@@ -9,7 +9,8 @@
 #     delete the PR's images, retire its GitHub Environment.
 #   - PR open but idle (no deployment for TTL_DAYS): the same, plus a comment
 #     on the PR saying the next push rebuilds it. A PR labelled pr-env:keep
-#     (a demo environment) is never reaped as idle, only when it closes.
+#     (a demo environment) gets KEEP_TTL_DAYS instead, so the label stretches
+#     the idle limit rather than lifting it: a forgotten demo still goes.
 # Then sweep pr-* GitHub Environments in both repos whose PR is closed, and
 # audit for orphans: a pr-* ECS service with no state key, a state key whose
 # destroy failed, and an open PR's state key with no running service. Each
@@ -40,6 +41,7 @@ done
 
 TTL_DAYS="${TTL_DAYS:-7}"
 KEEP_LABEL="${KEEP_LABEL:-pr-env:keep}"
+KEEP_TTL_DAYS="${KEEP_TTL_DAYS:-15}"
 STATE_BUCKET="${STATE_BUCKET:-ztmf-terraform-state-use1-dev}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 CLUSTER="${CLUSTER:-ztmf}"
@@ -54,10 +56,13 @@ run() {
   if $DRY_RUN; then log "  [dry-run] $*"; else "$@"; fi
 }
 
-# ISO-8601 UTC strings compare lexicographically, so the cutoff is a string.
-if cutoff=$(date -u -d "-${TTL_DAYS} days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null); then :; else
-  cutoff=$(date -u -v-"${TTL_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
-fi
+# ISO-8601 UTC strings compare lexicographically, so a cutoff is a string.
+# GNU date first (CI), then BSD date (a run by hand on macOS).
+days_ago() {
+  date -u -d "-$1 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"$1"d +%Y-%m-%dT%H:%M:%SZ
+}
+cutoff=$(days_ago "$TTL_DAYS")
+keep_cutoff=$(days_ago "$KEEP_TTL_DAYS")
 
 gh_repo() { case "$1" in ztmf) echo "$OWNER/ztmf" ;; ui) echo "$OWNER/ztmf-ui" ;; esac; }
 ecr_repo() { case "$1" in ztmf) echo "ztmf/api-pr" ;; ui) echo "ztmf/ui" ;; esac; }
@@ -111,8 +116,12 @@ retire_github_env() {
   run gh api -X DELETE "repos/$ghr/environments/$env"
 }
 
+# For an idle reap, the fourth argument is the idle limit that applied (a kept
+# PR is reaped at KEEP_TTL_DAYS, not TTL_DAYS) and the fifth is the timestamp
+# idleness was measured from, so the PR comment states both rather than
+# implying the PR sat exactly the limit (a missed nightly run makes it longer).
 reap() {
-  local repo="$1" n="$2" reason="$3" ghr
+  local repo="$1" n="$2" reason="$3" days="${4:-$TTL_DAYS}" since="${5:-}" ghr
   ghr=$(gh_repo "$repo")
   log "reaping pr-$repo-$n ($reason)"
   if ! destroy_env "$repo" "$n"; then
@@ -123,7 +132,7 @@ reap() {
   retire_github_env "$ghr" "pr-$repo-$n" || finding "\`pr/$repo/$n\`: destroyed, but retiring the pr-$repo-$n GitHub Environment in $ghr failed."
   if [[ "$reason" == idle* ]]; then
     run gh api "repos/$ghr/issues/$n/comments" \
-      -f body="This PR's environment was removed by the nightly reaper after ${TTL_DAYS} days without a deploy. The next push to the PR rebuilds it." >/dev/null \
+      -f body="This PR's environment was removed by the nightly reaper: idle since ${since%%T*}, past the ${days}-day limit. The next push to the PR rebuilds it." >/dev/null \
       || finding "\`pr/$repo/$n\`: reaped as idle, but the comment on $ghr#$n failed."
   fi
 }
@@ -138,25 +147,27 @@ for key in $keys; do
   repo=$(echo "$key" | cut -d/ -f2)
   n=$(echo "$key" | cut -d/ -f3)
   ghr=$(gh_repo "$repo")
-  state=$(gh api "repos/$ghr/pulls/$n" --jq .state)
-  if [[ "$state" == "closed" ]]; then
+  # One read of the PR for everything this loop needs from it.
+  pr=$(gh api "repos/$ghr/pulls/$n" --jq '{state, updated_at, labels: [.labels[].name]}')
+  if [[ "$(jq -r .state <<< "$pr")" == "closed" ]]; then
     reap "$repo" "$n" "PR closed"
     continue
   fi
   last=$(gh api "repos/$ghr/deployments?environment=pr-$repo-$n&per_page=1" --jq '.[0].created_at // empty')
   if [[ -z "$last" ]]; then
-    last=$(gh api "repos/$ghr/pulls/$n" --jq .updated_at)
+    last=$(jq -r .updated_at <<< "$pr")
   fi
-  if [[ "$last" < "$cutoff" ]]; then
-    # Read into a variable first: under pipefail, grep -q closing the pipe
-    # early can fail gh with SIGPIPE and turn a match into a miss.
-    labels=$(gh api "repos/$ghr/pulls/$n" --jq '.labels[].name')
-    if grep -qxF "$KEEP_LABEL" <<< "$labels"; then
-      log "not reaping idle pr-$repo-$n: labelled $KEEP_LABEL"
-    else
-      reap "$repo" "$n" "idle since $last"
-      continue
-    fi
+  kept=false
+  if jq -e --arg l "$KEEP_LABEL" 'any(.labels[]; . == $l)' <<< "$pr" >/dev/null; then
+    kept=true
+  fi
+  if $kept; then limit=$keep_cutoff; days=$KEEP_TTL_DAYS; else limit=$cutoff; days=$TTL_DAYS; fi
+  if [[ "$last" < "$limit" ]]; then
+    reap "$repo" "$n" "idle since $last" "$days" "$last"
+    continue
+  fi
+  if $kept && [[ "$last" < "$cutoff" ]]; then
+    log "not reaping idle pr-$repo-$n yet: labelled $KEEP_LABEL, reaped after $KEEP_TTL_DAYS days without a deploy"
   fi
   if ! echo "$services" | grep -qx "pr-$repo-$n"; then
     finding "\`pr/$repo/$n\` ($ghr#$n, open): state exists but no pr-$repo-$n ECS service is running; the last deploy likely failed partway."

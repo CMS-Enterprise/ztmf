@@ -28,13 +28,13 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 - The ALB session lasts 7 days under a cookie named for the environment, apart from dev's Okta session on the same host.
 - Signing out in the app does not end the Cognito session. Switch roles with a separate private window per user.
 
-Demo PRs that must outlive the reaper's idle TTL also carry `pr-env:keep` (see below).
+Demo PRs that must sit idle longer than the reaper's 7-day TTL also carry `pr-env:keep`, which stretches it to 15 days (see below).
 
 Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
 
 ## Reaper and fleet alarm
 
-Teardown on PR close is the primary cleanup. `scripts/pr-env-reaper.sh`, run nightly at 07:00 UTC by `.github/workflows/pr-env-reaper.yml` (ztmf-misc#344), is the backstop for both repos: it destroys any `pr/<repo>/<n>` environment whose PR is closed or has had no deploy for 7 days (the TTL; the next push rebuilds it and the PR gets a comment saying so; a PR labelled `pr-env:keep` is exempt from the TTL and reaped only when it closes), deletes that PR's images, and retires its `pr-<repo>-<n>` GitHub Environment. It also retires any `pr-*` environment whose PR is closed, and reports what it cannot fix: a destroy that failed twice, a `pr-*` ECS service with no state key, and an open PR's state key with no running service. Findings or a failed run go to one tracking issue in ztmf-misc titled "pr-env reaper: orphaned environments or a failed run".
+Teardown on PR close is the primary cleanup. `scripts/pr-env-reaper.sh`, run nightly at 07:00 UTC by `.github/workflows/pr-env-reaper.yml` (ztmf-misc#344), is the backstop for both repos: it destroys any `pr/<repo>/<n>` environment whose PR is closed or has had no deploy for 7 days (the TTL; the next push rebuilds it and the PR gets a comment saying so; a PR labelled `pr-env:keep` gets 15 days instead of 7, so a forgotten demo still goes; both limits are set in the workflow as `TTL_DAYS` and `KEEP_TTL_DAYS`), deletes that PR's images, and retires its `pr-<repo>-<n>` GitHub Environment. It also retires any `pr-*` environment whose PR is closed, and reports what it cannot fix: a destroy that failed twice, a `pr-*` ECS service with no state key, and an open PR's state key with no running service. Findings or a failed run go to one tracking issue in ztmf-misc titled "pr-env reaper: orphaned environments or a failed run".
 
 Preview a run from a workstation, changing nothing:
 
