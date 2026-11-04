@@ -759,6 +759,36 @@ tests:
     expect:
       status: 400
 
+  # Titles are unique ignoring case: the UI resolves questionnaire deep links
+  # by title case-insensitively, so a title that differs from an existing one
+  # only by case is rejected the same way an exact duplicate is (400, not
+  # unique). Neither write creates a row.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "ZERO TRUST data call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:

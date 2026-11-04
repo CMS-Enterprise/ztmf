@@ -16,7 +16,8 @@ import (
 // TestDataCallsFiscalYearIntegration pins migration 0070: the backfill reads
 // the fiscal year and cadence out of each existing name, fails and lists the
 // rows it cannot read instead of guessing, is a no-op on retry, and the CHECKs
-// hold afterwards. tern ran 0070 against the seed's data calls already, so the
+// hold afterwards. It also pins the title index: titles that differ only by
+// case fail the migration with a listing, and the index rejects them after. tern ran 0070 against the seed's data calls already, so the
 // test runs down, loads its own names, and runs up again, all inside a
 // transaction that is always rolled back.
 //
@@ -41,6 +42,7 @@ func TestDataCallsFiscalYearIntegration(t *testing.T) {
 	_, err = tx.Exec(ctx, down)
 	require.NoError(t, err)
 	assert.Equal(t, 0, fiscalYearColumnCount(t, ctx, tx), "down must drop both columns")
+	assert.Equal(t, 0, titleIndexCount(t, ctx, tx), "down must drop the title index")
 
 	// The seed carries names the backfill cannot read (it inserts after
 	// migrations and sets the columns itself), so give every existing row a
@@ -101,9 +103,36 @@ func TestDataCallsFiscalYearIntegration(t *testing.T) {
 	}
 	require.NoError(t, sp.Rollback(ctx))
 
+	// Titles that differ only by case make up fail, and the error lists every
+	// row in each group. Both names parse, so only the title check can trip.
+	sp, err = tx.Begin(ctx)
+	require.NoError(t, err)
+	var dupes []string
+	for _, name := range []string{"FY2027 Data Call", "FY2027 DATA CALL", "fy2027 data call"} {
+		var id int32
+		require.NoError(t, sp.QueryRow(ctx, `
+			INSERT INTO datacalls (datacall, datecreated, deadline)
+			VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+			RETURNING datacallid
+		`, name).Scan(&id))
+		dupes = append(dupes, fmt.Sprintf("%d '%s'", id, name))
+	}
+	_, err = sp.Exec(ctx, up)
+	pgErr = nil
+	require.True(t, errors.As(err, &pgErr), "expected a Postgres error from up, got %v", err)
+	assert.Contains(t, pgErr.Message, "DATACALL_TITLE_CASE_DUPLICATES")
+	for _, d := range dupes {
+		assert.Contains(t, pgErr.Message, d, "the error must list every row in a case-only group")
+	}
+	for name, id := range ids {
+		assert.NotContains(t, pgErr.Message, fmt.Sprintf("%d '%s'", id, name), "a distinct title must not be listed")
+	}
+	require.NoError(t, sp.Rollback(ctx))
+
 	_, err = tx.Exec(ctx, up)
 	require.NoError(t, err)
 	assert.Equal(t, 2, fiscalYearColumnCount(t, ctx, tx))
+	assert.Equal(t, 1, titleIndexCount(t, ctx, tx), "up must create the title index")
 
 	for name, w := range cases {
 		var year int32
@@ -144,6 +173,8 @@ func TestDataCallsFiscalYearIntegration(t *testing.T) {
 	requireViolation(t, write(`INSERT INTO datacalls (datacall, deadline) VALUES ('no year', NOW())`), "23502", "")
 	requireViolation(t, write(`INSERT INTO datacalls (datacall, deadline, fiscal_year) VALUES ('two digit', NOW(), 26)`), "23514", "datacalls_fiscal_year_check")
 	requireViolation(t, write(`INSERT INTO datacalls (datacall, deadline, fiscal_year, cadence) VALUES ('monthly', NOW(), 2026, 'monthly')`), "23514", "datacalls_cadence_check")
+	requireViolation(t, write(`INSERT INTO datacalls (datacall, deadline, fiscal_year) VALUES ('fy2027 zero trust DATA CALL', NOW(), 2027)`), "23505", "datacalls_datacall_lower_key")
+	requireViolation(t, write(`UPDATE datacalls SET datacall = 'fy25 ztm' WHERE datacallid = $1`, ids["FY2026 ZTM"]), "23505", "datacalls_datacall_lower_key")
 
 	var cadence string
 	require.NoError(t, tx.QueryRow(ctx, `
@@ -155,6 +186,18 @@ func TestDataCallsFiscalYearIntegration(t *testing.T) {
 	_, err = tx.Exec(ctx, down)
 	require.NoError(t, err)
 	assert.Equal(t, 0, fiscalYearColumnCount(t, ctx, tx), "down must drop both columns")
+	assert.Equal(t, 0, titleIndexCount(t, ctx, tx), "down must drop the title index")
+}
+
+func titleIndexCount(t *testing.T, ctx context.Context, tx pgx.Tx) int {
+	t.Helper()
+	var n int
+	require.NoError(t, tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM pg_indexes
+		WHERE schemaname = 'public' AND tablename = 'datacalls'
+		  AND indexname = 'datacalls_datacall_lower_key'
+	`).Scan(&n))
+	return n
 }
 
 func fiscalYearColumnCount(t *testing.T, ctx context.Context, tx pgx.Tx) int {

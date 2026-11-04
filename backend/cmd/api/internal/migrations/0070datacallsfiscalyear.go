@@ -4,11 +4,16 @@ package migrations
 // numbers migrations by registration (file name) order, so a gap is harmless.
 func init() {
 	appendMigration(
-		"store fiscal_year and cadence on datacalls",
+		"store fiscal_year and cadence on datacalls; titles unique ignoring case",
 		`
 -- A data call's fiscal year and cadence used to live only in its name
 -- ("FY## ZTM", "FY## Q#"), and readers parsed them out. Store them as columns
 -- so the name can be a free-text title.
+--
+-- Free-text titles are no longer upper-cased by the UI, and the UI resolves
+-- questionnaire deep links by title case-insensitively. Two titles that differ
+-- only by case would make a link open the wrong call, so titles are unique on
+-- lower(datacall). datacall_key (exact-match UNIQUE) stays as it is.
 --
 -- Backfill rule, applied to the trimmed, upper-cased name:
 --   fiscal_year: a leading FY + 2 or 4 digits not followed by another digit.
@@ -82,8 +87,32 @@ BEGIN
             CHECK (cadence IN ('annual', 'quarterly'));
     END IF;
 END $$;
+
+-- Existing titles that differ only by case would make the index build fail
+-- with a bare 23505 naming one pair. List every such row instead.
+DO $$
+DECLARE
+    dupes text;
+BEGIN
+    SELECT string_agg(format('%s %L', datacallid, datacall), ', ' ORDER BY lower(datacall), datacallid)
+      INTO dupes
+      FROM public.datacalls
+     WHERE lower(datacall) IN (SELECT lower(datacall)
+                                 FROM public.datacalls
+                                GROUP BY 1
+                               HAVING count(*) > 1);
+
+    IF dupes IS NOT NULL THEN
+        RAISE EXCEPTION 'DATACALL_TITLE_CASE_DUPLICATES: these data call titles differ only by case (datacallid name): %. Rename them so no two match ignoring case and redeploy.', dupes;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS datacalls_datacall_lower_key
+    ON public.datacalls (lower(datacall));
 `,
 		`
+DROP INDEX IF EXISTS public.datacalls_datacall_lower_key;
+
 ALTER TABLE public.datacalls
     DROP COLUMN IF EXISTS cadence,
     DROP COLUMN IF EXISTS fiscal_year;
