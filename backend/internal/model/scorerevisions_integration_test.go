@@ -119,8 +119,8 @@ func TestScoreRevisionsRecordedOnWriteIntegration(t *testing.T) {
 	// conn.Exec that never enters the revision path.
 	var nextDC int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-06-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-06-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%srevrollover_%d", integrationTestPrefix, fx.dataCallID)).Scan(&nextDC))
 
