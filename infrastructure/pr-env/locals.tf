@@ -10,12 +10,17 @@ locals {
   api_image = "${data.aws_ecr_repository.api.repository_url}:${var.api_image_tag}"
   ui_image  = "${data.aws_ecr_repository.ui.repository_url}:${var.ui_image_tag}"
 
+  // CrowdStrike Falcon sensor options (CID, provisioning token, tags), one
+  // SecureString per cluster created outside Terraform. Built from the name so
+  // the value never lands in state.
+  falconctl_opts_arn = "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/crowdstrike/falconctl-opts/${data.aws_ecs_cluster.ztmf.cluster_name}"
+
   // The API listens on plain HTTP inside the task; nginx terminates TLS for the
   // target group and proxies to it over localhost (awsvpc shares the namespace).
   api_port = 8080
 
   log_config = {
-    for name in ["postgres", "api", "ui"] : name => {
+    for name in ["postgres", "api", "ui", "falcon-init"] : name => {
       logDriver = "awslogs"
       options = {
         "awslogs-group"         = "/ztmf/${local.env_name}"

@@ -152,6 +152,30 @@ with a data source error rather than just blocking a single resource.
 | ------------------------------------------- | -------- | -------------------------------------------------------- | ------------------------------------------ |
 | `/ztmf/<env>/cert-rotation/acm-arn`         | `String` | CloudFront viewer cert, internal ALB listener, cert-rotation Lambda | **Yes** when `enable_cert_rotation_lambda = true` |
 | `/ztmf/<env>/ops/image-tag` (`ztmf_ops_tag`) | `String` | `ztmf_ops` ECS task definition                           | Yes (auto-managed by ops-image workflow)   |
+| `/crowdstrike/falconctl-opts/<cluster>`     | `SecureString` | Falcon sensor (`FALCONCTL_OPTS`) in the `ztmf_api` and `ztmf_ops` tasks, and in dev also every per-PR preview task (`ztmf` cluster) | When `falcon_enabled = true` (pr-env: on by default); see below |
+
+### CrowdStrike Falcon sensor
+
+With `falcon_enabled = true`, every ECS task (`ztmf_api`, `ztmf_ops`, and the
+per-PR environments) runs the Falcon container sensor through
+`modules/falcon-sensor`: an init container copies the sensor into a shared
+volume, and every other container starts through the sensor's entrypoint
+wrapper. Task memory doubles while it is on, as headroom for the sensor process
+that now runs inside each container. `/crowdstrike/falconctl-opts/<cluster>`
+(`<cluster>` is `ztmf` or `ztmf-impl`; the dev `ztmf` one also feeds every
+per-PR preview task) holds the CID, provisioning token and tags, and is created
+by hand outside Terraform. Terraform never reads it; it only builds the ARN for
+the containers' `secrets` and the execution roles, so a missing parameter fails
+the task at start, not the plan. The sensor image is pinned once, as the
+`image` default in `modules/falcon-sensor/variables.tf`; bump it there to move
+every task to a new sensor version. Each root's `falcon_image` is only an
+override and defaults to null.
+
+To check a sensor, open `make db-shell-<env>` and run
+`/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid`
+in the `ops` container; it prints an agent ID once connected. The `ztmf_api`
+service has no ECS Exec, so check its hosts in the Falcon console, and its
+task's `falcon-init` log stream for sensor install errors.
 
 ### Seeding `cert-rotation/acm-arn` for a new environment
 
