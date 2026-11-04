@@ -163,8 +163,10 @@ jobs:
           AUTH_PROVIDER: ${{ contains(github.event.pull_request.labels.*.name, 'pr-env:cognito') && 'cognito' || 'okta' }}
           # The Cognito test users' shared password, when the repo secret is
           # set; empty makes the root generate one. Passed as TF_VAR_ so it
-          # never appears on a command line.
-          TF_VAR_cognito_password: ${{ secrets.PR_ENV_DEMO_PASSWORD }}
+          # never appears on a command line. Only Cognito PRs get it: the
+          # variable's validation runs on every apply, so a secret that fails
+          # the password policy would otherwise break Okta PRs too.
+          TF_VAR_cognito_password: ${{ contains(github.event.pull_request.labels.*.name, 'pr-env:cognito') && secrets.PR_ENV_DEMO_PASSWORD || '' }}
         run: |
           terraform -chdir="$TF_ROOT" apply -input=false -no-color -auto-approve \
             -var repo=ztmf -var "pr_number=$PR_NUMBER" \
