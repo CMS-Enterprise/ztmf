@@ -385,6 +385,63 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 		"copyPreviousScores must carry the marker (system, functionoption) into the new datacall")
 }
 
+// The new call is committed before its rollover runs, so an answer can land in
+// between. It keeps its place and the rest of the copy still lands.
+func TestCopyPreviousScoresKeepsAnAnswerSavedFirstIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+	purgeIntegrationTestRows(t)
+	defer purgeIntegrationTestRows(t)
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	var prevDC, newDC int32
+	suffix := time.Now().UnixNano()
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026) RETURNING datacallid`,
+		fmt.Sprintf("%sraceprev_%d", integrationTestPrefix, suffix)).Scan(&prevDC))
+	require.NoError(t, conn.QueryRow(ctx, `
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz, 2026) RETURNING datacallid`,
+		fmt.Sprintf("%sracenew_%d", integrationTestPrefix, suffix)).Scan(&newDC))
+
+	// Two answers on one system under different functions in the previous call.
+	var system, first, second, saved int32
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT fs.fismasystemid, a.functionoptionid, b.functionoptionid, a2.functionoptionid
+		  FROM fismasystems fs
+		  JOIN functionoptions a ON TRUE
+		  JOIN functionoptions a2 ON a2.functionid = a.functionid AND a2.functionoptionid <> a.functionoptionid
+		  JOIN functionoptions b ON b.functionid <> a.functionid AND b.versionid = a.versionid
+		 WHERE a.versionid = 1
+		 ORDER BY fs.fismasystemid, a.functionoptionid, b.functionoptionid, a2.functionoptionid LIMIT 1`).Scan(&system, &first, &second, &saved))
+	_, err = conn.Exec(ctx, `INSERT INTO scores (fismasystemid, functionoptionid, datacallid) VALUES ($1, $2, $3), ($1, $4, $3)`,
+		system, first, prevDC, second)
+	require.NoError(t, err)
+	// The ISSO answers the first question in the new call before the copy runs.
+	_, err = conn.Exec(ctx, `INSERT INTO scores (fismasystemid, functionoptionid, datacallid) VALUES ($1, $2, $3)`, system, saved, newDC)
+	require.NoError(t, err)
+
+	copied, err := copyPreviousScores(ctx, newDC)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, copied, "the other answer still carries over")
+
+	var options []int32
+	rows, err := conn.Query(ctx, `SELECT functionoptionid FROM scores WHERE datacallid = $1 ORDER BY functionoptionid`, newDC)
+	require.NoError(t, err)
+	for rows.Next() {
+		var o int32
+		require.NoError(t, rows.Scan(&o))
+		options = append(options, o)
+	}
+	require.NoError(t, rows.Err())
+	assert.ElementsMatch(t, []int32{saved, second}, options, "the saved answer wins over the carried one")
+}
+
 // TestCopyPreviousScoresEmptyPreviousIntegration covers the benign zero-row
 // rollover: a previous cycle that exists but holds no scores. This must be
 // handled cleanly - copied == 0, no error, and NO ROLLOVER_ANOMALY - so it is

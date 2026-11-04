@@ -30,29 +30,28 @@ func versionTranslationJoinSQL(targetExpr string) string {
   JOIN functionoptions tfo ON tfo.functionid = tf.functionid AND tfo.score = fo.score`, targetExpr)
 }
 
-// repinMapSQL pairs each answer in data call $1 that translates into version $2
-// with its option there.
+// repinMapSQL fills repin_map, built once per re-pin and read by every step
+// after it, with each answer in data call $1 that translates into version $2
+// and its option there. An answer with no row is one the re-pin drops.
 var repinMapSQL = `
-	SELECT DISTINCT ON (s.scoreid) s.scoreid, tfo.functionoptionid AS to_option, tfo.functionid AS to_function
+	INSERT INTO repin_map (scoreid, to_option, to_function)
+	SELECT DISTINCT ON (s.scoreid) s.scoreid, tfo.functionoptionid, tfo.functionid
 	  FROM scores s
 	  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 	  ` + versionTranslationJoinSQL("$2") + `
 	 WHERE s.datacallid = $1
 	 ORDER BY s.scoreid, tfo.functionoptionid`
 
-// repinPreflightSQL counts the call's answers, those that translate, and those
-// a person has touched this cycle: saved (done), with any recorded history, or
-// on a system that has marked the call complete.
+// repinPreflightSQL counts the answers the re-pin would drop that a person has
+// touched this cycle: saved (done), with any recorded history, or on a system
+// that has marked the call complete.
 var repinPreflightSQL = `
-	WITH m AS (` + repinMapSQL + `)
-	SELECT COUNT(*), COUNT(m.scoreid),
-	       COUNT(*) FILTER (WHERE s.status = '` + scoreStatusDone + `'
+	SELECT COUNT(*) FILTER (WHERE s.status = '` + scoreStatusDone + `'
 	                           OR EXISTS (SELECT 1 FROM score_revisions r WHERE r.scoreid = s.scoreid)
 	                           OR EXISTS (SELECT 1 FROM datacalls_fismasystems c
 	                                       WHERE c.datacallid = s.datacallid AND c.fismasystemid = s.fismasystemid))
 	  FROM scores s
-	  LEFT JOIN m ON m.scoreid = s.scoreid
-	 WHERE s.datacallid = $1`
+	 WHERE s.datacallid = $1 AND NOT EXISTS (SELECT 1 FROM repin_map m WHERE m.scoreid = s.scoreid)`
 
 // repinRevisionsSQL appends a translate revision to every translated answer
 // that already has history. Without it the head would name an option the
@@ -60,7 +59,6 @@ var repinPreflightSQL = `
 // functionid is the target function, so #394's trigger records the target
 // version. Notes and status are unchanged, so both sides carry them.
 var repinRevisionsSQL = `
-	WITH m AS (` + repinMapSQL + `)
 	INSERT INTO score_revisions (
 		scoreid, revision_no, fismasystemid, datacallid, functionid, kind,
 		prev_functionoptionid, prev_notes, prev_notes_is_ai_summary, prev_status,
@@ -69,8 +67,8 @@ var repinRevisionsSQL = `
 	SELECT s.scoreid, h.revision_no + 1, s.fismasystemid, s.datacallid, m.to_function, '` + revisionKindTranslate + `',
 	       s.functionoptionid, s.notes, s.notes_is_ai_summary, s.status,
 	       m.to_option, s.notes, s.notes_is_ai_summary, s.status,
-	       $3, clock_timestamp()
-	  FROM m
+	       $1, clock_timestamp()
+	  FROM repin_map m
 	  JOIN scores s ON s.scoreid = m.scoreid
 	  JOIN LATERAL (SELECT MAX(r.revision_no) AS revision_no FROM score_revisions r WHERE r.scoreid = s.scoreid) h
 	    ON h.revision_no IS NOT NULL`
@@ -79,8 +77,7 @@ var repinRevisionsSQL = `
 // trg_scores_set_functionid re-derives functionid; last_updated_at is left
 // alone, since a re-pin is not an in-app edit.
 var repinRewriteSQL = `
-	WITH m AS (` + repinMapSQL + `)
-	UPDATE scores s SET functionoptionid = m.to_option FROM m WHERE s.scoreid = m.scoreid`
+	UPDATE scores s SET functionoptionid = m.to_option FROM repin_map m WHERE s.scoreid = m.scoreid`
 
 // DataCallRepin is a data call after a re-pin, with what happened to its
 // answers.
@@ -91,10 +88,10 @@ type DataCallRepin struct {
 }
 
 // RepinDataCall moves an open data call to another published questionnaire
-// version. Answers move by lineage and score, so a call nobody has answered in
-// yet can take any version, dropping answers to questions the target removed;
-// once anyone has, every answer must translate, or the change waits for the
-// next cycle (409). A structural remap of given answers has no cheap inverse.
+// version. Answers move by lineage and score. One with no counterpart in the
+// target is dropped if nobody has touched it this cycle; if anyone has, the
+// change waits for the next cycle (409). A structural remap of given answers has
+// no cheap inverse.
 func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallRepin, error) {
 	if !isValidIntID(dataCallID) {
 		return nil, ErrNoData
@@ -119,10 +116,6 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 		if err != nil {
 			return nil, trapError(err)
 		}
-		// validateDeadline's boundary: the deadline instant itself is still open.
-		if time.Now().After(deadline) {
-			return nil, ErrPastDeadline
-		}
 
 		var res DataCallRepin
 		pin := func(sql string, args ...any) error {
@@ -139,35 +132,47 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 		if err := lockPinnableVersion(ctx, tx, versionID); err != nil {
 			return nil, err
 		}
+		// Unlike a score write, which an admin may make after the deadline, a
+		// re-pin is refused for everyone, so a closed cycle keeps its version. To
+		// correct one: extend the deadline, re-pin, restore it. validateDeadline's
+		// boundary: the deadline instant itself is still open.
+		if time.Now().After(deadline) {
+			return nil, ErrPastDeadline
+		}
 
-		var total, translatable, touched int64
-		if err := tx.QueryRow(ctx, repinPreflightSQL, dataCallID, versionID).Scan(&total, &translatable, &touched); err != nil {
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE repin_map (scoreid INT PRIMARY KEY, to_option INT, to_function INT) ON COMMIT DROP`); err != nil {
 			return nil, trapError(err)
 		}
-		if translatable < total && touched > 0 {
-			return nil, fmt.Errorf("%w: %d of %d answers have no counterpart in version %d",
-				ErrVersionNotTranslatable, total-translatable, total, versionID)
+		if _, err := tx.Exec(ctx, repinMapSQL, dataCallID, versionID); err != nil {
+			return nil, trapError(err)
+		}
+		var touched int64
+		if err := tx.QueryRow(ctx, repinPreflightSQL, dataCallID).Scan(&touched); err != nil {
+			return nil, trapError(err)
+		}
+		if touched > 0 {
+			return nil, fmt.Errorf("%w: %d answers given this cycle have no counterpart in version %d",
+				ErrVersionNotTranslatable, touched, versionID)
 		}
 		if err := pin(`UPDATE datacalls SET questionnaire_versionid = $2 WHERE datacallid = $1 RETURNING `+dataCallColumnList,
 			dataCallID, versionID); err != nil {
 			return nil, err
 		}
 
-		if _, err := tx.Exec(ctx, repinRevisionsSQL, dataCallID, versionID, actor.UserID); err != nil {
+		if _, err := tx.Exec(ctx, repinRevisionsSQL, actor.UserID); err != nil {
 			return nil, trapError(err)
 		}
-		tag, err := tx.Exec(ctx, repinRewriteSQL, dataCallID, versionID)
+		tag, err := tx.Exec(ctx, repinRewriteSQL)
 		if err != nil {
 			return nil, trapError(err)
 		}
 		res.Translated = tag.RowsAffected()
-		// Only reached when nobody has touched an answer (the preflight), so
-		// what goes is carried-forward rows, as a rollover into this version
-		// would have left them out.
+		// The preflight let these through only because nobody touched them: they
+		// are carried-forward rows a rollover into this version would have left out.
 		tag, err = tx.Exec(ctx, `
-			DELETE FROM scores s USING functionoptions fo
-			 WHERE fo.functionoptionid = s.functionoptionid AND s.datacallid = $1 AND fo.versionid <> $2`,
-			dataCallID, versionID)
+			DELETE FROM scores s
+			 WHERE s.datacallid = $1 AND NOT EXISTS (SELECT 1 FROM repin_map m WHERE m.scoreid = s.scoreid)`,
+			dataCallID)
 		if err != nil {
 			return nil, trapError(err)
 		}

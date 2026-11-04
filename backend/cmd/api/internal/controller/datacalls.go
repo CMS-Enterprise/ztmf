@@ -196,7 +196,7 @@ type repinDataCallInput struct {
 // checked before the body is read.
 //
 //	@Summary		Pin a data call to another questionnaire version
-//	@Description	Answers move by function lineage and option score. Until anyone has answered this cycle, answers with no counterpart are dropped; after that, every answer must carry over or the re-pin is a 409 VERSION_NOT_TRANSLATABLE. Translated answers that have history gain a translate revision, which undo refuses. Refused for a draft or archived version and after the deadline.
+//	@Description	Answers move by function lineage and option score. An answer with no counterpart is dropped if nobody has touched it this cycle (saved it, edited it, or marked its system complete); if anyone has, the re-pin is a 409 VERSION_NOT_TRANSLATABLE. Translated answers that have history gain a translate revision, which undo refuses. Refused for a draft, archived or missing version (400) and, for everyone, after the deadline (403).
 //	@Tags			datacalls
 //	@Accept			json
 //	@Produce		json

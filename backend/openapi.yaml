@@ -1500,11 +1500,12 @@ paths:
       - datacalls
   /datacalls/{datacallid}/questionnaire-version:
     put:
-      description: Answers move by function lineage and option score. Until anyone
-        has answered this cycle, answers with no counterpart are dropped; after that,
-        every answer must carry over or the re-pin is a 409 VERSION_NOT_TRANSLATABLE.
+      description: Answers move by function lineage and option score. An answer with
+        no counterpart is dropped if nobody has touched it this cycle (saved it, edited
+        it, or marked its system complete); if anyone has, the re-pin is a 409 VERSION_NOT_TRANSLATABLE.
         Translated answers that have history gain a translate revision, which undo
-        refuses. Refused for a draft or archived version and after the deadline.
+        refuses. Refused for a draft, archived or missing version (400) and, for everyone,
+        after the deadline (403).
       parameters:
       - description: Data call ID
         in: path

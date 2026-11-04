@@ -1221,7 +1221,7 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		}
 	}
 
-	sql, args := rolloverSQL(prevDataCall.DataCallID, dataCallID, sourceVersion, targetVersion)
+	sql, args := rolloverSQL(prevDataCall.DataCallID, dataCallID, targetVersion, translate)
 	tag, err := tx.Exec(ctx, sql, args...)
 	if err == nil {
 		err = tx.Commit(ctx)
@@ -1247,9 +1247,11 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 }
 
 // rolloverSQL is copyPreviousScores' INSERT..SELECT. Between calls pinned to
-// one version it is the statement the rollover has always run, byte for byte.
-// Across versions each answer moves through versionTranslationJoinSQL, and an
-// answer with no counterpart drops out of the join.
+// one version it is the statement the rollover has always run, plus ON CONFLICT:
+// the new call is committed before this runs, so an answer saved in between
+// keeps its place instead of failing the whole copy (it still counts as an
+// under-copy below). Across versions each answer moves through
+// versionTranslationJoinSQL, and an answer with no counterpart drops out.
 //
 // It INNER JOINs the FK parents so a score whose fismasystem or functionoption
 // no longer resolves is silently dropped instead of aborting the entire batch -
@@ -1291,8 +1293,7 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 // for the cycle is silently discarded. 'done' means a human saved this answer
 // during the source cycle and 'not_started' means it was carried and never
 // touched, so preferring done keeps the answer that was actually given.
-func rolloverSQL(prevDataCallID, dataCallID, sourceVersion, targetVersion int32) (string, []any) {
-	translate := sourceVersion != targetVersion
+func rolloverSQL(prevDataCallID, dataCallID, targetVersion int32, translate bool) (string, []any) {
 	option, question := "s.functionoptionid", "fo.functionid"
 	if translate {
 		option, question = "tfo.functionoptionid", "f.root_functionid"
@@ -1319,6 +1320,7 @@ func rolloverSQL(prevDataCallID, dataCallID, sourceVersion, targetVersion int32)
 		Insert("scores").
 		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
 		Select(prevScoresSqlb).
+		Suffix("ON CONFLICT DO NOTHING").
 		PlaceholderFormat(squirrel.Dollar).
 		ToSql()
 	return sql, args

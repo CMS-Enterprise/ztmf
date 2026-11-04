@@ -51,6 +51,18 @@ func mostAnswered(t *testing.T, ctx context.Context, conn *pgxpool.Conn, dc int3
 	return root, score, answers
 }
 
+// answerOn returns an answer in dc on the (lineage, score) option, and its system.
+func answerOn(t *testing.T, ctx context.Context, conn *pgxpool.Conn, dc, root, score int32) (scoreID, system int32) {
+	t.Helper()
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT s.scoreid, s.fismasystemid FROM scores s
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		  JOIN functions f ON f.functionid = fo.functionid
+		 WHERE s.datacallid = $1 AND f.root_functionid = $2 AND fo.score = $3
+		 ORDER BY s.scoreid LIMIT 1`, dc, root, score).Scan(&scoreID, &system))
+	return scoreID, system
+}
+
 // withoutOption drops a (lineage, score) option from a published fork, as
 // though the version had been published without it.
 func withoutOption(t *testing.T, ctx context.Context, conn *pgxpool.Conn, v, root, score int32) {
@@ -263,9 +275,26 @@ func TestDataCallRepinIntegration(t *testing.T) {
 		assert.Equal(t, 1, events, "the re-pin is audited")
 	})
 
+	t.Run("GivenAnswersThatTranslateDoNotBlockDrops", func(t *testing.T) {
+		dc := openCallWithAnswers(t, ctx, conn, "repin_given_kept", "2100-01-01")
+		// Every answer is given except those on the option the target removed.
+		_, err := conn.Exec(ctx, `
+			UPDATE scores s SET status = 'done' FROM functionoptions fo, functions f
+			 WHERE fo.functionoptionid = s.functionoptionid AND f.functionid = fo.functionid
+			   AND s.datacallid = $1 AND NOT (f.root_functionid = $2 AND fo.score = $3)`, dc, root, score)
+		require.NoError(t, err)
+		before := readCallState(t, ctx, conn, dc)
+
+		res, err := RepinDataCall(ctx, dc, missing)
+		require.NoError(t, err, "only untouched answers lack a counterpart")
+		assert.EqualValues(t, lost, res.Dropped)
+		assert.Len(t, readCallState(t, ctx, conn, dc).rows, len(before.rows)-int(lost))
+	})
+
 	t.Run("GivenAnswersThatDoNotTranslateAre409", func(t *testing.T) {
 		dc := openCallWithAnswers(t, ctx, conn, "repin_conflict", "2100-01-01")
-		_, err := conn.Exec(ctx, `UPDATE scores SET status = 'done' WHERE scoreid = (SELECT MIN(scoreid) FROM scores WHERE datacallid = $1)`, dc)
+		given, _ := answerOn(t, ctx, conn, dc, root, score)
+		_, err := conn.Exec(ctx, `UPDATE scores SET status = 'done' WHERE scoreid = $1`, given)
 		require.NoError(t, err)
 		before := readCallState(t, ctx, conn, dc)
 
@@ -277,9 +306,8 @@ func TestDataCallRepinIntegration(t *testing.T) {
 
 	t.Run("ASystemMarkedCompleteIsTouched", func(t *testing.T) {
 		dc := openCallWithAnswers(t, ctx, conn, "repin_complete", "2100-01-01")
-		_, err := conn.Exec(ctx, `
-			INSERT INTO datacalls_fismasystems (datacallid, fismasystemid)
-			SELECT $1, MIN(fismasystemid) FROM scores WHERE datacallid = $1`, dc)
+		_, system := answerOn(t, ctx, conn, dc, root, score)
+		_, err := conn.Exec(ctx, `INSERT INTO datacalls_fismasystems (datacallid, fismasystemid) VALUES ($1, $2)`, dc, system)
 		require.NoError(t, err)
 		before := readCallState(t, ctx, conn, dc)
 
@@ -313,6 +341,8 @@ func TestDataCallRepinIntegration(t *testing.T) {
 		closed := openCallWithAnswers(t, ctx, conn, "repin_closed", "2000-01-01")
 		_, err = RepinDataCall(ctx, closed, identical)
 		assert.ErrorIs(t, err, ErrPastDeadline)
+		_, err = RepinDataCall(ctx, closed, 0)
+		requireInvalidOn(t, err, "questionnaire_versionid") // a bad version is a 400 before the deadline's 403
 
 		res, err := RepinDataCall(ctx, dc, 1)
 		require.NoError(t, err, "the version it already has is a no-op")
@@ -365,8 +395,7 @@ func TestDataCallRepinWaitsForCompletionIntegration(t *testing.T) {
 	root, score, _ := mostAnswered(t, ctx, conn, dc)
 	missing := forkIdenticalVersion(t, conn)
 	withoutOption(t, ctx, conn, missing, root, score)
-	var system int32
-	require.NoError(t, conn.QueryRow(ctx, `SELECT MIN(fismasystemid) FROM scores WHERE datacallid = $1`, dc).Scan(&system))
+	_, system := answerOn(t, ctx, conn, dc, root, score)
 
 	complete, err := db.Conn(context.Background())
 	require.NoError(t, err)
