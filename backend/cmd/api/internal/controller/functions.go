@@ -113,3 +113,27 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, f, nil)
 
 }
+
+//	@Summary	Delete a function from a draft questionnaire version
+//	@Description	Its options go with it. Content in a published or archived version is never deleted (403, code VERSION_NOT_DRAFT).
+//	@Tags		functions
+//	@Security	bearerAuth
+//	@Param		functionid	path	int	true	"Function ID"
+//	@Success	204			"No Content"
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functions/{functionid} [delete]
+func DeleteFunction(w http.ResponseWriter, r *http.Request) {
+	if !model.UserFromContext(r.Context()).CanWriteHHSWide() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	id, ok := pathInt32(mux.Vars(r)["functionid"])
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+	respond(w, r, nil, model.DeleteFunction(r.Context(), id))
+}
