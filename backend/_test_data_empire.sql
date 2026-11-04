@@ -107,7 +107,7 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
 
 -- System Delegate fixture (#455): contractor/support-staff tier, system-scoped
 -- like ISSO but answers-only (barred from target maturity). Assigned to Death Star
--- (1001), which is enrolled in the open Audit cycle so E2E can exercise score writes.
+-- (1001), which is enrolled in the open FY2027 cycle so E2E can exercise score writes.
 -- v4-conforming UUID so it satisfies isValidUUID when used as a path param.
 INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('55555555-5555-4555-8555-555555555555', 'Delegate.User@nowhere.xyz', 'System Delegate Test User', 'SYSTEM_DELEGATE', 'okta')
@@ -204,19 +204,24 @@ INSERT INTO public.pillars VALUES (6, 'Identity', 1) ON CONFLICT DO NOTHING;
 
 -- Test DataCalls (Imperial Audits)
 -- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
--- as tiebreak; #393), so the open Audit cycle below wins via its far-future
+-- as tiebreak; #393), so the open FY2027 cycle below wins via its far-future
 -- deadline. IDs stay chronological for readability only.
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z', 2022) ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z', 2023) ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 2024) ON CONFLICT DO NOTHING;
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z', 2025) ON CONFLICT DO NOTHING;
--- Future-deadline cycle used by audit-field smoke tests (ISSO writes need
--- a non-expired datacall so validate() does not trip the deadline guard).
+-- The open FY2027 cycle. Its deadline is computed at load time (about 200 days
+-- out) so it never expires, however long a seeded volume lives: ISSO writes need
+-- a non-expired datacall so validate() does not trip the deadline guard, and it
+-- must stay the latest by deadline (every other seeded call is earlier; the E2E
+-- suite creates its own 'FY2100 ZTM' call later and expects that one to win).
+-- It is also the demo portfolio's in-progress year (see the demo portfolio
+-- section at the end of this file).
 -- NOTE: backend/emberfall_tests.yml references datacallid=5 literally in
 -- the audit-fields block; if you reorder or renumber this row, update the
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z', 2026) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (5, 'FY2027 Imperial Zero Trust Data Call', '2026-10-01T00:00:00Z', now() + interval '200 days', 2027) ON CONFLICT DO NOTHING;
 -- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
 -- outside the app - its scores are seeded below with NO events rows, so every
 -- answer keeps status 'not_started' and carries no editor/timestamp. This is
@@ -391,11 +396,11 @@ INSERT INTO public.datacalls_fismasystems VALUES (3, 1002) ON CONFLICT DO NOTHIN
 INSERT INTO public.datacalls_fismasystems VALUES (4, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2025 assessment
 INSERT INTO public.datacalls_fismasystems VALUES (4, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in FY2025 assessment
 INSERT INTO public.datacalls_fismasystems VALUES (4, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2025 assessment
--- Enroll systems 1001-1003 in the open Audit cycle so Emberfall score tests
+-- Enroll systems 1001-1003 in the open FY2027 cycle so Emberfall score tests
 -- (createScoreForAudit, issoCreateScoreOwnSystem) can write against datacall 5.
-INSERT INTO public.datacalls_fismasystems VALUES (5, 1001) ON CONFLICT DO NOTHING; -- DS-1 in Audit Smoke Cycle
-INSERT INTO public.datacalls_fismasystems VALUES (5, 1002) ON CONFLICT DO NOTHING; -- Executor in Audit Smoke Cycle
-INSERT INTO public.datacalls_fismasystems VALUES (5, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in Audit Smoke Cycle
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1001) ON CONFLICT DO NOTHING; -- DS-1 in FY2027 cycle
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1002) ON CONFLICT DO NOTHING; -- Executor in FY2027 cycle
+INSERT INTO public.datacalls_fismasystems VALUES (5, 1003) ON CONFLICT DO NOTHING; -- Shield Gen in FY2027 cycle
 
 -- Imperial Zero Trust Questionnaire (Full Coverage)
 
@@ -997,7 +1002,7 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------
 -- Answer history fixture (ztmf-misc#391 / #392)
 --
--- One answered question on datacall 5 (the open Audit Fields Smoke Cycle) that
+-- One answered question on datacall 5 (the open FY2027 cycle) that
 -- already carries revisions, so the questionnaire's history drawer has
 -- something to render for the 508 scan and for local review. Nothing else
 -- seeds score_revisions: the table is append-only, written only by the app's
@@ -1021,7 +1026,7 @@ ON CONFLICT DO NOTHING;
 -- omitted because it is GENERATED ALWAYS AS IDENTITY.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid, status)
-    VALUES (9040, 1002, '2026-02-02 00:00:00+00', 'Fleet identity now standardized on biometric credentials', 21, 5, 'done')
+    VALUES (9040, 1002, '2026-10-06 14:00:00+00', 'Fleet identity now standardized on biometric credentials', 21, 5, 'done')
     ON CONFLICT DO NOTHING;
 
 INSERT INTO public.score_revisions (
@@ -1033,27 +1038,45 @@ INSERT INTO public.score_revisions (
       (9040, 1, 1002, 5, 7006, 'create',
        NULL, NULL, NULL, NULL,
        20, 'Officers still verified by hand at the bridge', FALSE, 'done',
-       '11111111-1111-1111-1111-111111111111', '2026-02-01 00:00:00+00'),
+       '11111111-1111-1111-1111-111111111111', '2026-10-05 13:00:00+00'),
       (9040, 2, 1002, 5, 7006, 'update',
        20, 'Officers still verified by hand at the bridge', FALSE, 'done',
        21, 'Fleet identity now standardized on biometric credentials', FALSE, 'done',
-       '11111111-1111-1111-1111-111111111111', '2026-02-02 00:00:00+00')
+       '11111111-1111-1111-1111-111111111111', '2026-10-06 14:00:00+00')
     ON CONFLICT DO NOTHING;
 
 -- The audit caption the history link hangs off reads events, not revisions, so
 -- without this the "Last edited by ..." footer returns null and the drawer has
--- no trigger. The bulk events insert below is scoped to scoreid >= 9100, which
--- deliberately excludes this fixture.
+-- no trigger. The bulk events insert below is scoped to the generated history
+-- scores, which deliberately excludes this fixture. Dated inside the open
+-- FY2027 window (the call opened 2026-10-01). Guarded so a reload does not add
+-- a second copy.
 INSERT INTO public.events (userid, action, resource, createdat, payload)
-    VALUES ('11111111-1111-1111-1111-111111111111', 'updated', 'public.scores',
-            '2026-02-02 00:00:00+00',
+    SELECT '11111111-1111-1111-1111-111111111111', 'created', 'public.scores',
+            '2026-10-05 13:00:00+00',
+            jsonb_build_object(
+                'scoreid', 9040,
+                'fismasystemid', 1002,
+                'functionoptionid', 20,
+                'datacallid', 5,
+                'notes', 'Officers still verified by hand at the bridge'
+            )
+     WHERE NOT EXISTS (SELECT 1 FROM public.events e
+                        WHERE e.resource = 'public.scores' AND (e.payload->>'scoreid')::int = 9040
+                          AND e.action = 'created');
+INSERT INTO public.events (userid, action, resource, createdat, payload)
+    SELECT '11111111-1111-1111-1111-111111111111', 'updated', 'public.scores',
+            '2026-10-06 14:00:00+00',
             jsonb_build_object(
                 'scoreid', 9040,
                 'fismasystemid', 1002,
                 'functionoptionid', 21,
                 'datacallid', 5,
                 'notes', 'Fleet identity now standardized on biometric credentials'
-            ));
+            )
+     WHERE NOT EXISTS (SELECT 1 FROM public.events e
+                        WHERE e.resource = 'public.scores' AND (e.payload->>'scoreid')::int = 9040
+                          AND e.action = 'updated');
 
 -- Audit trail for the seeded scores. last_edited_at / last_edited_by are NOT
 -- stored on scores; FindScores derives them from the events table (the most
@@ -1078,7 +1101,14 @@ SELECT DISTINCT ON (s.scoreid)
        )
   FROM public.scores s
   JOIN public.users_fismasystems uf ON uf.fismasystemid = s.fismasystemid
- WHERE s.scoreid >= 9100
+ WHERE s.scoreid >= 9100 AND s.scoreid < 20000
+   -- The generated history above (calls 1-4) only. Bounding by call keeps the
+   -- HHS-style census scores (101-104) event-free as on a first load, and the
+   -- id bound keeps the demo portfolio (20001+) out; the NOT EXISTS makes a
+   -- reload of the file add nothing.
+   AND s.datacallid BETWEEN 1 AND 4
+   AND NOT EXISTS (SELECT 1 FROM public.events e
+                    WHERE e.resource = 'public.scores' AND (e.payload->>'scoreid')::int = s.scoreid)
  ORDER BY s.scoreid, uf.userid;
 
 -- Import provenance for the FY2020 archives cycle (datacallid 6): a service
@@ -1101,7 +1131,10 @@ SELECT '00000000-0000-4000-8000-000000000001', 'imported', 'public.scores',
                           'functionoptionid', s.functionoptionid,
                           'datacallid', s.datacallid, 'notes', s.notes)
   FROM public.scores s
- WHERE s.datacallid = 6;
+ WHERE s.datacallid = 6
+   AND NOT EXISTS (SELECT 1 FROM public.events e
+                    WHERE e.resource = 'public.scores' AND e.action = 'imported'
+                      AND (e.payload->>'scoreid')::int = s.scoreid);
 
 -- Seed scores.status to match the just-seeded audit trail (ztmf#435). This
 -- runs after migrations, so the migration's one-time backfill has already
@@ -1120,7 +1153,8 @@ SELECT '00000000-0000-4000-8000-000000000001', 'imported', 'public.scores',
 -- literals and backfilling stored rows, not a rename.
 UPDATE public.scores s
 SET status = 'done'
-WHERE EXISTS (
+WHERE s.scoreid < 20000  -- the demo portfolio (20001+) sets its own status
+  AND EXISTS (
     SELECT 1
     FROM public.events e
     WHERE e.resource = 'public.scores'
@@ -1137,7 +1171,8 @@ UPDATE public.scores s
          WHERE resource = 'public.scores'
            AND action IN ('created', 'updated')
          GROUP BY 1) e
- WHERE e.scoreid = s.scoreid;
+ WHERE e.scoreid = s.scoreid
+   AND s.scoreid < 20000;  -- the demo portfolio (20001+) sets its own last_updated_at
 
 -- Reset every SERIAL sequence to its current table max. Use
 -- pg_get_serial_sequence() so the right name is resolved at runtime: some
@@ -1173,8 +1208,8 @@ END $$;
 -- ============================================================
 -- 02_hhs_mock_layer.sql  (GENERATED by generator/gen_empire_addon.py)
 -- Adds a mock HHS-onboarding layer ON TOP of the Empire test fixture.
--- Idempotent: re-running replaces only its own data (the FY2x ZTM
--- datacalls and MOCK-* systems); never touches existing fixture rows.
+-- Idempotent: re-running replaces only its own data (the four Sector
+-- Readiness Census datacalls, 101-104, and MOCK-* systems); never touches existing fixture rows.
 -- Prereq: 01_hhs_schema_delta.sql applied.
 -- ============================================================
 BEGIN;
@@ -1183,11 +1218,12 @@ BEGIN;
 DELETE FROM public.datacalls WHERE datacallid IN (101, 102, 103, 104);
 DELETE FROM public.fismasystems WHERE fismaacronym LIKE 'MOCK-%';
 
--- The 3 historical HHS data calls
+-- The 3 historical HHS-style data calls. Named like the rest of the fixture's calls
+-- (four-digit year first), distinct from calls 1-7 so the picker has no look-alike rows.
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
- (101,'FY23 ZTM','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00',2023),
- (102,'FY24 ZTM','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00',2024),
- (103,'FY25 ZTM','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00',2025);
+ (101,'FY2023 Sector Readiness Census','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00',2023),
+ (102,'FY2024 Sector Readiness Census','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00',2024),
+ (103,'FY2025 Sector Readiness Census','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00',2025);
 
 -- NEW mock systems across the sister divisions.
 -- Faithful HHS-inventory null pattern: fismasubsystem/component/group*/
@@ -1222,13 +1258,15 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 -- Imperial fixtures provide neither, so every behavioural test for it skipped in
 -- CI and only the SQL-shape assertions ran. This gives them something to execute
 -- against. The 'SaaS' mapping row itself comes from migration 0045, not here.
+-- Call 104 keeps its 'FY2026' name prefix: migration 0057 seeds its rule from a
+-- call named that way, so anything that still matches by name finds this one.
 --
--- Deadline sits below the 2099 Audit cycle, so "latest by deadline" is unchanged
+-- Deadline sits below the open FY2027 cycle (call 5), so "latest by deadline" is unchanged
 -- for every other test. Only MOCK-SAAS maps to scoring_key 'SaaS', so no existing
 -- fixture changes behaviour.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
- (104,'FY26 ZTM','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00',2026)
+ (104,'FY2026 Sector Readiness Census','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00',2026)
 ON CONFLICT DO NOTHING;
 
 -- The seeded reduced-scope rule (ztmf#545), anchored at the fixture FY26 cycle.
@@ -1310,9 +1348,27 @@ SELECT setval(pg_get_serial_sequence('public.functions','functionid'),
 SELECT setval(pg_get_serial_sequence('public.functionoptions','functionoptionid'),
               (SELECT MAX(functionoptionid) FROM public.functionoptions));
 
--- FY23/24/25 ZTM scores: for the NEW systems AND the existing Empire systems.
+-- The demo portfolio near the end of this file writes scoreids 20001-20399 explicitly.
+-- This census block takes serial ids, so if the sequence has been advanced into that
+-- range (a reload after a partial run, say) census rows would take demo ids and the
+-- demo rows would then drop silently under ON CONFLICT DO NOTHING. Step the sequence
+-- past the reserved range when, and only when, it sits inside it.
+DO $$
+DECLARE
+    seq_name text := pg_get_serial_sequence('public.scores', 'scoreid');
+    cur bigint;
+BEGIN
+    IF seq_name IS NOT NULL THEN
+        EXECUTE format('SELECT last_value FROM %s', seq_name) INTO cur;
+        IF cur BETWEEN 20000 AND 20398 THEN
+            PERFORM setval(seq_name, 20399);
+        END IF;
+    END IF;
+END $$;
+
+-- FY2023/24/25 Sector Readiness Census scores: for the NEW systems AND the existing Empire systems.
 -- An existing system (e.g. the Death Star) now carries two series: its
--- Imperial Security Review scores and its HHS ZTM history — datacallid is
+-- Imperial Security Review scores and its HHS-style census history — datacallid is
 -- what tells the instruments apart. Notes are never empty; long notes carry
 -- notes_is_ai_summary = TRUE.
 INSERT INTO public.scores (fismasystemid, datecalculated, notes, functionoptionid, datacallid, notes_is_ai_summary) VALUES
@@ -1792,4 +1848,951 @@ INSERT INTO public.datacalls_fismasystems (datacallid, fismasystemid) VALUES
  (101,1110),
  (102,1110),
  (103,1110) ON CONFLICT DO NOTHING;
+COMMIT;
+
+-- ============================================================================
+-- DEMO PORTFOLIO (dev/demo fixture)
+-- ============================================================================
+-- Realistic portfolio data for product demos and day-to-day dev work, layered
+-- on top of the fixture above. It adds rows: systems 1001-1006, the 20xx mock
+-- layer, the existing users and their assignments, and data calls 1-6 and
+-- 101-104 keep their ids, roles and behaviour. All fictional. The only edits to
+-- existing fixtures are call 5's name and load-relative deadline (below), the
+-- dates of the Executor history fixture (moved into call 5's window), and the id
+-- bounds on the older events and status blocks so a reload cannot touch this
+-- section.
+--
+-- Ids: systems 3001-3023, scores 20001-20399 (reserved; the census block above steps the sequence past it), score_revisions 1000+, data call 7.
+--
+-- Opdiv.Admin@empire.test (EMPIRE grant only) lands on the EMPIRE systems below:
+-- part-way through FY2027, one fully answered new system, one not started, one
+-- decommissioned, answer history with an undo, delegates (one expired) and
+-- Insights. Other OpDivs get a few systems each with a distinct story, so the
+-- OpDiv-scoped negative cases have more to refuse.
+--
+--   23 systems:
+--     EMPIRE     10 systems
+--     COMPNOR     3 systems
+--     INAV        3 systems
+--     IGOV        2 systems
+--     REBELLION   2 systems
+--     IIB         1 systems
+--     ILOG        1 systems
+--     ISRV        1 systems
+--   38 new users, one or more per role
+--   378 answers, 61 answer-history revisions, 51 completion marks
+--   12 Insights rows, 9 enrichment rows, 136 events
+--
+-- Reload safety: every INSERT is ON CONFLICT DO NOTHING except events, which are
+-- gated on system 3001 not existing yet.
+-- ============================================================================
+BEGIN;
+
+CREATE TEMP TABLE demo_seed_gate AS
+    SELECT NOT EXISTS (SELECT 1 FROM public.fismasystems WHERE fismasystemid = 3001) AS fresh;
+
+-- Data call 5 is the open FY2027 call. Its deadline is load-relative (see where the call is
+-- created above) and the E2E suite writes answers to it; this converges the name and creation
+-- date on volumes that still hold the old 'Audit Fields Smoke Cycle'.
+UPDATE public.datacalls
+   SET datacall = 'FY2027 Imperial Zero Trust Data Call', datecreated = '2026-10-01T00:00:00+00:00', fiscal_year = 2027
+ WHERE datacallid = 5 AND datacall = 'Audit Fields Smoke Cycle';
+
+-- FY2026 data call (id 7): the closed year between FY2025 and the open FY2027 call.
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+    (7, 'FY2026 Imperial Zero Trust Data Call', '2026-06-01T12:00:00+00:00', '2026-09-30T04:00:00+00:00', 2026)
+ON CONFLICT DO NOTHING;
+
+-- Demo users: OpDiv admins and read-only admins, ISSMs, ISSOs, system delegates (access
+-- expires; PD-9 has lapsed) and one soft-deleted former ISSO. Fixture logins are not touched.
+INSERT INTO public.users (userid, email, fullname, role, deleted, identity_provider, access_expires_at) VALUES
+    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b', 'mas.amedda@example.com', 'Mas Amedda', 'HHS_ADMIN', FALSE, 'entra', NULL),
+    ('b6b46343-f22d-4f1b-832b-85b69f732f7d', 'tc14@example.com', 'TC-14', 'HHS_READONLY_ADMIN', FALSE, 'okta', NULL),
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9', 'ardus.kaine@example.com', 'Ardus Kaine', 'OPDIV_ADMIN', FALSE, 'okta', NULL),
+    ('5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97', 'yoda@example.com', 'Yoda', 'OPDIV_ADMIN', FALSE, 'entra', NULL),
+    ('127c0974-35bc-40d0-82dd-55c4a536a3b0', 'padme.amidala@example.com', 'Padme Amidala', 'OPDIV_ADMIN', FALSE, 'okta', NULL),
+    ('f3728fee-57eb-497b-8b42-b2898ff18f90', 'lando.calrissian@example.com', 'Lando Calrissian', 'OPDIV_ADMIN', FALSE, 'okta', NULL),
+    ('db2b9477-e54e-4ec6-811d-bb827d72783d', 'wedge.antilles@example.com', 'Wedge Antilles', 'OPDIV_ADMIN', FALSE, 'entra', NULL),
+    ('321cdf05-4676-4c20-8137-3d9b028118f1', 'jabba.desilijic.tiure@example.com', 'Jabba Desilijic Tiure', 'OPDIV_ADMIN', FALSE, 'okta', NULL),
+    ('77969813-1f95-4e2f-8434-ac3d303b1012', 'zaarin@example.com', 'Grand Admiral Zaarin', 'OPDIV_ADMIN', FALSE, 'entra', NULL),
+    ('99573e43-3fad-4d22-8a1f-4ea35668180a', 'amilyn.holdo@example.com', 'Amilyn Holdo', 'OPDIV_ADMIN', FALSE, 'okta', NULL),
+    ('0ea66708-67ce-4d6c-83a3-7edfb370666d', 'delian.mors@example.com', 'Delian Mors', 'OPDIV_READONLY_ADMIN', FALSE, 'okta', NULL),
+    ('cbcf9a86-1b38-44ff-8751-74d3d1463d75', 'jocasta.nu@example.com', 'Jocasta Nu', 'OPDIV_READONLY_ADMIN', FALSE, 'entra', NULL),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', 'evaan.verlaine@example.com', 'Evaan Verlaine', 'ISSM', FALSE, 'okta', NULL),
+    ('df7a39c7-97c9-45f1-801f-f6e5b71a1ef1', 'mace.windu@example.com', 'Mace Windu', 'ISSM', FALSE, 'entra', NULL),
+    ('1e46e0f1-23e2-48e1-8c75-aece4405bc48', 'quarsh.panaka@example.com', 'Quarsh Panaka', 'ISSM', FALSE, 'okta', NULL),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', 'cassio.tagge@example.com', 'Cassio Tagge', 'ISSO', FALSE, 'okta', NULL),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db', 'han.solo@example.com', 'Han Solo', 'ISSO', FALSE, 'okta', NULL),
+    ('a9b665b2-f46a-4d53-8148-8cb68820d06d', 'chewbacca@example.com', 'Chewbacca', 'ISSO', FALSE, 'okta', NULL),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', 'conan.motti@example.com', 'Conan Motti', 'ISSO', FALSE, 'okta', NULL),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c', 'dedra.meero@example.com', 'Dedra Meero', 'ISSO', FALSE, 'okta', NULL),
+    ('49654e9e-ba3d-46d4-85d4-785385681993', 'ciena.ree@example.com', 'Ciena Ree', 'ISSO', FALSE, 'okta', NULL),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1', 'obiwan.kenobi@example.com', 'Obi-Wan Kenobi', 'ISSO', FALSE, 'entra', NULL),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac', 'plo.koon@example.com', 'Plo Koon', 'ISSO', FALSE, 'entra', NULL),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb', 'sabe@example.com', 'Sabe', 'ISSO', FALSE, 'okta', NULL),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974', 'lobot@example.com', 'Lobot', 'ISSO', FALSE, 'okta', NULL),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e', 'galen.erso@example.com', 'Galen Erso', 'ISSO', FALSE, 'entra', NULL),
+    ('23b009de-21be-43c8-88c4-02f43b6a606c', 'watto@example.com', 'Watto', 'ISSO', FALSE, 'okta', NULL),
+    ('8d1f43ff-ce3f-4aa4-84f4-fcd38e032117', 'cody.cc2224@example.com', 'CC-2224 Cody', 'ISSO', FALSE, 'entra', NULL),
+    ('df09ca08-0432-47e7-8598-65435a488bf5', 'rae.sloane@example.com', 'Rae Sloane', 'ISSO', FALSE, 'okta', NULL),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0', 'enric.pryde@example.com', 'Enric Pryde', 'ISSO', FALSE, 'entra', NULL),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068', 'tiaan.jerjerrod@example.com', 'Tiaan Jerjerrod', 'ISSO', FALSE, 'okta', NULL),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22', 'kaydel.connix@example.com', 'Kaydel Connix', 'ISSO', FALSE, 'okta', NULL),
+    ('662df81f-0995-4030-8b22-64288c8d2748', 'snap.wexley@example.com', 'Snap Wexley', 'ISSO', FALSE, 'okta', NULL),
+    ('01d27b89-884b-4310-830b-ddd074c81258', 'thane.kyrell@example.com', 'Thane Kyrell', 'ISSO', TRUE, 'okta', NULL),
+    ('26c1487a-c42c-4ec6-8093-1a456a532045', 'tk421@example.com', 'TK-421', 'SYSTEM_DELEGATE', FALSE, 'okta', now() + interval '330 days'),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50', 'ra7@example.com', 'RA-7', 'SYSTEM_DELEGATE', FALSE, 'okta', now() + interval '120 days'),
+    ('666714f0-0195-4d51-8b31-248596ad67c1', 'ito@example.com', 'IT-O', 'SYSTEM_DELEGATE', FALSE, 'okta', now() + interval '240 days'),
+    ('ec376891-6528-4138-8160-c8150019f2ea', 'pd9@example.com', 'PD-9 Probe Droid', 'SYSTEM_DELEGATE', FALSE, 'okta', now() - interval '30 days')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.users_opdivs (userid, opdiv_id, granted_at, granted_by) VALUES
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('127c0974-35bc-40d0-82dd-55c4a536a3b0', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IGOV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('f3728fee-57eb-497b-8b42-b2898ff18f90', (SELECT opdiv_id FROM public.opdivs WHERE code = 'ILOG' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('db2b9477-e54e-4ec6-811d-bb827d72783d', (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('321cdf05-4676-4c20-8137-3d9b028118f1', (SELECT opdiv_id FROM public.opdivs WHERE code = 'ISRV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('77969813-1f95-4e2f-8434-ac3d303b1012', (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('99573e43-3fad-4d22-8a1f-4ea35668180a', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IIB' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('0ea66708-67ce-4d6c-83a3-7edfb370666d', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('0ea66708-67ce-4d6c-83a3-7edfb370666d', (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('cbcf9a86-1b38-44ff-8751-74d3d1463d75', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('26c1487a-c42c-4ec6-8093-1a456a532045', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('666714f0-0195-4d51-8b31-248596ad67c1', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('ec376891-6528-4138-8160-c8150019f2ea', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('01d27b89-884b-4310-830b-ddd074c81258', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('49654e9e-ba3d-46d4-85d4-785385681993', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('662df81f-0995-4030-8b22-64288c8d2748', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('df7a39c7-97c9-45f1-801f-f6e5b71a1ef1', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('8d1f43ff-ce3f-4aa4-84f4-fcd38e032117', (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IGOV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('1e46e0f1-23e2-48e1-8c75-aece4405bc48', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IGOV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974', (SELECT opdiv_id FROM public.opdivs WHERE code = 'ILOG' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db', (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('a9b665b2-f46a-4d53-8148-8cb68820d06d', (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e', (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('23b009de-21be-43c8-88c4-02f43b6a606c', (SELECT opdiv_id FROM public.opdivs WHERE code = 'ISRV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('df09ca08-0432-47e7-8598-65435a488bf5', (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0', (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IIB' AND active), '2024-05-01T12:00:00+00:00', 'd347be4d-1fb4-40fe-8f93-b1c6ea0ef69b')
+ON CONFLICT DO NOTHING;
+
+-- Demo systems. EMPIRE: shield, fleet, informant and medical systems part-way through FY27,
+-- DS2-WATCH (new in FY27, fully answered), LOYALTY-BEACON (new in FY27, not started),
+-- ALDERAAN-COMMS (decommissioned), TACT-HOLO (its record names a different data center,
+-- so it shows on the data center mismatch report). Elsewhere: a declining system,
+-- decommissioned and reactivated systems, and one with unconfirmed carried-forward answers.
+INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismaname, fismasubsystem, component, groupacronym, groupname, divisionname, datacenterenvironment, datacallcontact, issoemail, decommissioned, decommissioned_date, decommissioned_by, decommissioned_notes, sdl_sync_enabled, reactivated_by, reactivated_date, reactivation_notes, opdiv_id, hva, fips, system_type, cloud_system, cloud_service_model, cloud_vendor, system_operator, goco_coco_gogo, system_owner, system_owner_email, legacy, isso_name, target_maturity_tier, target_maturity_justification) VALUES
+    (3001, 'B54686A7-0F5F-4713-8358-053A47C20992', 'SHIELD-GRID', 'Imperial Planetary Shield Grid Control', NULL, 'EMPIRE', 'PDEF', 'Planetary Defense Command', NULL, 'Ground-Assault', 'evaan.verlaine@example.com', 'cassio.tagge@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), TRUE, 'High', 'General Support System', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Maximilian Veers', 'maximilian.veers@example.com', FALSE, 'Cassio Tagge', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3002, '8A0D9B2E-21B3-495F-8A4E-615F47DCEA8D', 'TIE-NAV', 'TIE Fighter Navigation Computer Update Service', NULL, 'EMPIRE', 'STARFLT', 'Starfleet Command', NULL, 'Imperial-Fleet', 'evaan.verlaine@example.com', 'cassio.tagge@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), FALSE, 'Moderate', 'Major Application', TRUE, ARRAY['IaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Cassio Tagge', 'cassio.tagge@example.com', FALSE, 'Cassio Tagge', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3003, 'BFBBB0EC-9C28-499F-8D52-2EECD215DCB6', 'INFORMANT-NET', 'ISB Informant Network Intelligence Exchange', NULL, 'EMPIRE', 'INTEL', 'Imperial Informant Network', NULL, 'Space-Station', 'evaan.verlaine@example.com', 'dedra.meero@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['IaaS', 'PaaS']::text[], 'Microsoft Azure Government', 'Agency', 'GOCO', 'Wullf Yularen', 'wullf.yularen@example.com', FALSE, 'Dedra Meero', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3004, 'DEA6B3BB-0097-47C5-8F93-51FE75ADA548', 'MUSTER-PT', 'Fleet Muster Point Coordination', NULL, 'EMPIRE', 'STARFLT', 'Starfleet Command', NULL, 'Surveillance-Net', 'dedra.meero@example.com', 'dedra.meero@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), FALSE, 'Moderate', 'Minor Application', TRUE, ARRAY['SaaS']::text[], 'HoloNet Cloud Services', 'Contractor', 'COCO', 'Cassio Tagge', 'cassio.tagge@example.com', FALSE, 'Dedra Meero', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3005, 'EA51B503-E764-49F5-803A-217412527ECD', 'MED-FX7', 'FX-7 Medical Droid Patient Records', NULL, 'EMPIRE', 'PDEF', 'Planetary Defense Command', NULL, 'Imperial-Fleet', 'evaan.verlaine@example.com', 'conan.motti@example.com', FALSE, '2025-02-10T15:00:00+00:00', 'd152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9', 'Patient records platform retired pending a vendor security reassessment.', FALSE, 'd152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9', '2026-01-14T15:00:00+00:00', 'Vendor reassessment passed; the platform is back in service on the same account.', (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['PaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Maximilian Veers', 'maximilian.veers@example.com', FALSE, 'Conan Motti', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3006, 'E5753E47-A5EA-4CBF-8D94-0E6EA0FFFBBA', 'TACT-HOLO', 'Death Star Tactical Hologram Briefing System', NULL, 'EMPIRE', 'STARFLT', 'Starfleet Command', NULL, 'Forest-Moon', 'conan.motti@example.com', 'conan.motti@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), FALSE, 'Low', 'Minor Standalone', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Cassio Tagge', 'cassio.tagge@example.com', TRUE, 'Conan Motti', 'Initial', 'Legacy platform scheduled for replacement; investment goes to the successor system.'),
+    (3007, '87D4432F-7CB6-4E1B-8FDB-BADBA2002B04', 'ALDERAAN-COMMS', 'Alderaan Garrison Communications Relay', NULL, 'EMPIRE', 'INTEL', 'Imperial Informant Network', NULL, 'Ground-Assault', 'thane.kyrell@example.com', 'thane.kyrell@example.com', TRUE, '2024-11-04T15:00:00+00:00', 'd152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9', 'Host planet destroyed during a station test. Relay retired; message archive moved to INFORMANT-NET.', FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), TRUE, 'High', 'General Support System', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Wilhuff Tarkin', 'wilhuff.tarkin@example.com', TRUE, 'Thane Kyrell', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3008, '194FEF6C-2372-4029-86C7-0FEE0144E3E4', 'RECRUIT-PORTAL', 'Imperial Recruitment and Personnel Onboarding', NULL, 'EMPIRE', 'PDEF', 'Planetary Defense Command', NULL, 'Surveillance-Net', 'ciena.ree@example.com', 'ciena.ree@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), FALSE, 'Moderate', 'Minor Application', TRUE, ARRAY['SaaS']::text[], 'HoloNet Cloud Services', 'Contractor', 'COCO', 'Maximilian Veers', 'maximilian.veers@example.com', FALSE, 'Ciena Ree', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3009, '567B5E6B-593A-4BD9-8868-50BF043315EE', 'DS2-WATCH', 'Death Star II Early Warning Array', NULL, 'EMPIRE', 'INTEL', 'Imperial Informant Network', NULL, 'Imperial-Fleet', 'tiaan.jerjerrod@example.com', 'tiaan.jerjerrod@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['IaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Wullf Yularen', 'wullf.yularen@example.com', FALSE, 'Tiaan Jerjerrod', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3010, '025E3073-949B-4CA0-85D3-4FB9AA6B2EAD', 'LOYALTY-BEACON', 'Imperial Loyalty Beacon Network', NULL, 'EMPIRE', 'STARFLT', 'Starfleet Command', NULL, 'Surveillance-Net', 'snap.wexley@example.com', 'snap.wexley@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'EMPIRE' AND active), FALSE, 'Moderate', 'Minor Application', TRUE, ARRAY['SaaS']::text[], 'HoloNet Cloud Services', 'Contractor', 'COCO', 'Cassio Tagge', 'cassio.tagge@example.com', FALSE, 'Snap Wexley', NULL, NULL),
+    (3011, '0F571383-A3F7-45C9-858B-1B9F18221D6D', 'HOLOCRON', 'Holocron Knowledge Repository', NULL, 'COMPNOR', 'ARCH', 'Jedi Archives', NULL, 'Ground-Assault', 'mace.windu@example.com', 'obiwan.kenobi@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), TRUE, 'High', 'Major Application', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Jocasta Nu', 'jocasta.nu@example.com', FALSE, 'Obi-Wan Kenobi', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3012, '55013732-0663-4AE1-8F30-227C155A5A3D', 'COUNCIL-VOTE', 'High Council Deliberation and Voting Portal', NULL, 'COMPNOR', 'CNCL', 'High Council Secretariat', NULL, 'Imperial-Fleet', 'mace.windu@example.com', 'plo.koon@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['PaaS']::text[], 'Amazon Web Services', 'Agency', 'GOCO', 'Mace Windu', 'mace.windu@example.com', FALSE, 'Plo Koon', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3013, '137280FF-B8F8-4EE0-8EC3-4547A1F70E16', 'CLONE-DIRECTIVE', 'Clone Contingency Order Registry', NULL, 'COMPNOR', 'CNCL', 'High Council Secretariat', NULL, 'Shipyard-RnD', 'cody.cc2224@example.com', 'cody.cc2224@example.com', TRUE, '2025-11-12T15:00:00+00:00', '5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97', 'Retired after review found an undocumented override command. Contingency orders now require two council approvals in COUNCIL-VOTE.', FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'COMPNOR' AND active), TRUE, 'High', 'Major Application', FALSE, NULL, NULL, 'Contractor', 'GOCO', 'Sheev Palpatine', 'sheev.palpatine@example.com', TRUE, 'CC-2224 Cody', 'Initial', 'Legacy platform scheduled for replacement; investment goes to the successor system.'),
+    (3014, 'ACFBCF35-CB1C-4745-8332-CB3DB22A80B1', 'THEED-PALACE', 'Theed Palace Physical Security Management', NULL, 'IGOV', 'PAL', 'Theed Palace Security', NULL, 'Shipyard-RnD', 'quarsh.panaka@example.com', 'sabe@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'IGOV' AND active), FALSE, 'Moderate', 'General Support System', FALSE, NULL, NULL, 'Contractor', 'GOCO', 'Quarsh Panaka', 'quarsh.panaka@example.com', FALSE, 'Sabe', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3015, '4FA36265-8754-4738-802A-836A5457F0C6', 'SENATE-BRIEF', 'Galactic Senate Delegation Briefing Book', NULL, 'IGOV', 'PAL', 'Theed Palace Security', NULL, 'Space-Station', 'sabe@example.com', 'sabe@example.com', FALSE, '2025-07-09T15:00:00+00:00', '127c0974-35bc-40d0-82dd-55c4a536a3b0', 'Senate delegation suspended; briefing book retired.', FALSE, '127c0974-35bc-40d0-82dd-55c4a536a3b0', '2026-03-18T15:00:00+00:00', 'Delegation restored to the Senate. Briefing book brought back on the same platform.', (SELECT opdiv_id FROM public.opdivs WHERE code = 'IGOV' AND active), FALSE, 'Moderate', 'Minor Application', TRUE, ARRAY['PaaS']::text[], 'Microsoft Azure Government', 'Agency', 'GOCO', 'Sio Bibble', 'sio.bibble@example.com', FALSE, 'Sabe', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3016, 'D2444561-3699-4554-87F7-D1B74ACEAB02', 'CLOUDCAR-ATC', 'Cloud Car Air Traffic Control', NULL, 'ILOG', 'WING', 'Wing Guard', NULL, 'Imperial-Fleet', 'lobot@example.com', 'lobot@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'ILOG' AND active), TRUE, 'High', 'General Support System', TRUE, ARRAY['IaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Lando Calrissian', 'lando.calrissian@example.com', FALSE, 'Lobot', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3017, 'E9C3B29C-EEE7-48FA-8C22-36AE41D76B3B', 'YT1300-DIAG', 'YT-1300 Diagnostics and Hyperdrive Telemetry', NULL, 'REBELLION', 'YARD', 'Shipyards', NULL, 'Imperial-Fleet', 'han.solo@example.com', 'han.solo@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), FALSE, 'Moderate', 'Major Application', TRUE, ARRAY['IaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Han Solo', 'han.solo@example.com', FALSE, 'Han Solo', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3018, 'D81C6390-D3CA-4001-8EF7-1C71B15C79AB', 'DESIGN-VAULT', 'Starship Blueprint Design Vault', NULL, 'REBELLION', 'DSGN', 'Starship Design Bureau', NULL, 'Imperial-Fleet', 'galen.erso@example.com', 'galen.erso@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'REBELLION' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['IaaS', 'PaaS']::text[], 'Amazon Web Services', 'Agency', 'GOCO', 'Wedge Antilles', 'wedge.antilles@example.com', FALSE, 'Galen Erso', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.'),
+    (3019, '15B35A95-D877-48D1-8A7F-3D256F542265', 'PODRACE-BET', 'Boonta Eve Podrace Wagering Platform', NULL, 'ISRV', 'CUST', 'Customs and Tariffs', NULL, 'Imperial-Fleet', 'watto@example.com', 'watto@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'ISRV' AND active), FALSE, 'Moderate', 'Major Application', TRUE, ARRAY['IaaS']::text[], 'Amazon Web Services', 'Contractor', 'COCO', 'Watto', 'watto@example.com', FALSE, 'Watto', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3020, '6A58919E-58A7-4804-8901-05B6083EF3AC', 'TIE-FLEET', 'TIE Fighter Fleet Maintenance Records', NULL, 'INAV', 'LGCY', 'Legacy Fleet Support', NULL, 'Ground-Assault', 'rae.sloane@example.com', 'rae.sloane@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), FALSE, 'Moderate', 'General Support System', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Rae Sloane', 'rae.sloane@example.com', TRUE, 'Rae Sloane', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3021, 'A3069919-CE61-4F18-80CC-C2FDA731C445', 'TROOPER-HR', 'Stormtrooper Personnel and Marksmanship Records', NULL, 'INAV', 'LGCY', 'Legacy Fleet Support', NULL, 'Ground-Assault', 'rae.sloane@example.com', 'rae.sloane@example.com', TRUE, '2026-02-03T15:00:00+00:00', '77969813-1f95-4e2f-8434-ac3d303b1012', 'Consolidated into IMP-CENSUS. Marksmanship data was not migrated.', FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), FALSE, 'Moderate', 'Major Application', FALSE, NULL, NULL, 'Agency', 'GOGO', 'Rae Sloane', 'rae.sloane@example.com', TRUE, 'Rae Sloane', 'Initial', 'Legacy platform scheduled for replacement; investment goes to the successor system.'),
+    (3022, 'AB102364-D4F1-4B04-804C-5EAD22FE9E89', 'IMP-CENSUS', 'Imperial Census and Identity Registry', NULL, 'INAV', 'RECS', 'Imperial Records', NULL, 'Space-Station', 'enric.pryde@example.com', 'enric.pryde@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'INAV' AND active), TRUE, 'High', 'Major Application', TRUE, ARRAY['IaaS']::text[], 'Microsoft Azure Government', 'Agency', 'GOCO', 'Enric Pryde', 'enric.pryde@example.com', FALSE, 'Enric Pryde', 'Advanced', 'Advanced across all pillars is the realistic target with the current budget and staff.'),
+    (3023, 'B583B0EC-5DBF-430C-8E97-1A22398D01F9', 'NR-CITIZEN-ID', 'New Republic Unified Citizen Identity', NULL, 'IIB', 'SEN', 'Senate Services', NULL, 'Imperial-Fleet', 'kaydel.connix@example.com', 'kaydel.connix@example.com', FALSE, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, (SELECT opdiv_id FROM public.opdivs WHERE code = 'IIB' AND active), TRUE, 'High', 'General Support System', TRUE, ARRAY['IaaS', 'PaaS']::text[], 'Amazon Web Services', 'Agency', 'GOCO', 'Amilyn Holdo', 'amilyn.holdo@example.com', FALSE, 'Kaydel Connix', 'Optimal', 'Mission-critical system; leadership has funded the work to reach Optimal.')
+ON CONFLICT DO NOTHING;
+
+-- FIPS impact level on the original fixture systems, so every system in the seed
+-- carries one (the demo systems above set theirs inline). The four with Insights
+-- records match the level those records report. Only fills a NULL, so a reload
+-- never overwrites a value someone set in the app.
+UPDATE public.fismasystems f SET fips = v.fips
+FROM (VALUES
+    (1001, 'High'), (1002, 'High'), (1003, 'Moderate'), (1004, 'Moderate'),
+    (1005, 'Low'), (1006, 'Low'),
+    (1101, 'High'), (1102, 'High'), (1103, 'High'), (1104, 'Moderate'),
+    (1105, 'Moderate'), (1106, 'High'), (1107, 'Moderate'), (1108, 'High'),
+    (1109, 'Low'), (1110, 'Moderate'),
+    (2016, 'Low'), (2017, 'Low')
+) AS v(fismasystemid, fips)
+WHERE f.fismasystemid = v.fismasystemid AND f.fips IS NULL;
+
+-- The same systems record HVA as No. The questionnaire's FIPS baseline only shows
+-- for a confirmed non-HVA, since an unrecorded HVA is unknown, so without this the
+-- Low and Moderate fixture systems would show no baseline. Only fills a NULL.
+UPDATE public.fismasystems SET hva = FALSE
+WHERE hva IS NULL
+  AND fismasystemid IN (1001, 1002, 1003, 1004, 1005, 1006,
+                        1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108, 1109, 1110,
+                        2016, 2017);
+
+INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', 3001),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3001),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', 3002),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', 3002),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3002),
+    ('26c1487a-c42c-4ec6-8093-1a456a532045', 3002),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c', 3003),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3003),
+    ('666714f0-0195-4d51-8b31-248596ad67c1', 3003),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c', 3004),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', 3005),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3005),
+    ('ec376891-6528-4138-8160-c8150019f2ea', 3005),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', 3006),
+    ('01d27b89-884b-4310-830b-ddd074c81258', 3007),
+    ('49654e9e-ba3d-46d4-85d4-785385681993', 3008),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068', 3009),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50', 3009),
+    ('662df81f-0995-4030-8b22-64288c8d2748', 3010),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1', 3011),
+    ('df7a39c7-97c9-45f1-801f-f6e5b71a1ef1', 3011),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac', 3012),
+    ('df7a39c7-97c9-45f1-801f-f6e5b71a1ef1', 3012),
+    ('8d1f43ff-ce3f-4aa4-84f4-fcd38e032117', 3013),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb', 3014),
+    ('1e46e0f1-23e2-48e1-8c75-aece4405bc48', 3014),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb', 3015),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974', 3016),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db', 3017),
+    ('a9b665b2-f46a-4d53-8148-8cb68820d06d', 3017),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e', 3018),
+    ('23b009de-21be-43c8-88c4-02f43b6a606c', 3019),
+    ('df09ca08-0432-47e7-8598-65435a488bf5', 3020),
+    ('df09ca08-0432-47e7-8598-65435a488bf5', 3021),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0', 3022),
+    ('df09ca08-0432-47e7-8598-65435a488bf5', 3022),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22', 3023),
+    -- Admiral.Piett (the ISSO login) also sees the three Imperial Navy systems, so that
+    -- seat opens to the full ISSO story and not just the Executor.
+    ('22222222-2222-2222-2222-222222222222', 3020),
+    ('22222222-2222-2222-2222-222222222222', 3021),
+    ('22222222-2222-2222-2222-222222222222', 3022),
+    -- Delegate.User (the delegate login) is also a delegate on TIE-NAV, which has the
+    -- undo history and the part-worked FY2027 call. No users_opdivs grant: the
+    -- Emberfall suite pins this user's assignedopdivids as empty, and a system
+    -- assignment is enough to read and answer the system.
+    ('55555555-5555-4555-8555-555555555555', 3002)
+ON CONFLICT DO NOTHING;
+
+-- The twelve HHS OpDivs the migrations seed have no systems in this fixture, so they
+-- would list next to the Empire ones in the OpDiv pages and pickers. Hide them for the
+-- demo. The guard leaves any of them that does carry a system active, so a reload
+-- never hides an OpDiv someone has since put a system on. HHS itself (the parent) and
+-- CMS stay active: each has a mock system.
+UPDATE public.opdivs o SET active = FALSE
+WHERE o.code IN ('ACF', 'ACL', 'AHRQ', 'ARPA-H', 'ASPR', 'ATSDR', 'CDC', 'FDA', 'HRSA', 'IHS', 'NIH', 'SAMHSA')
+  AND o.active
+  AND NOT EXISTS (SELECT 1 FROM public.fismasystems f WHERE f.opdiv_id = o.opdiv_id);
+
+-- Answers. Closed years carry done answers; FY2027 (call 5) is the rollover copy of FY2026
+-- (not_started) with some systems worked through. Every answer has a note.
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid, status, functionid, last_updated_at) VALUES
+    (20001, 3001, '2024-01-28T13:00:00+00:00', 'Single sign-on through the Imperial identity hub with conditional access by sector and clearance.', 92, 3, 'done', 7024, '2024-01-28T13:00:00+00:00'),
+    (20002, 3001, '2024-04-08T18:00:00+00:00', 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', 71, 3, 'done', 7019, '2024-04-08T18:00:00+00:00'),
+    (20003, 3001, '2024-03-19T16:00:00+00:00', 'Micro-segmentation around SHIELD-GRID with encrypted traffic everywhere inside the base.', 80, 3, 'done', 7021, '2024-03-19T16:00:00+00:00'),
+    (20004, 3001, '2024-03-06T16:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins.', 75, 3, 'done', 7020, '2024-03-06T16:00:00+00:00'),
+    (20005, 3001, '2024-01-28T14:00:00+00:00', 'Access to sensitive records limited by role but not monitored.', 83, 3, 'done', 7022, '2024-01-28T14:00:00+00:00'),
+    (20006, 3001, '2024-03-13T16:00:00+00:00', 'Some playbooks automated; most response steps are still manual.', 87, 3, 'done', 7023, '2024-03-13T16:00:00+00:00'),
+    (20007, 3001, '2025-01-25T15:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates.', 92, 4, 'done', 7024, '2025-01-25T15:00:00+00:00'),
+    (20008, 3001, '2025-03-18T21:00:00+00:00', 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', 72, 4, 'done', 7019, '2025-03-18T21:00:00+00:00'),
+    (20009, 3001, '2025-03-03T18:00:00+00:00', 'Network policy defined as code and deployed through the standard pipeline.', 80, 4, 'done', 7021, '2025-03-03T18:00:00+00:00'),
+    (20010, 3001, '2025-02-06T20:00:00+00:00', 'Workloads rebuilt from approved images; no direct changes in production.', 76, 4, 'done', 7020, '2025-02-06T20:00:00+00:00'),
+    (20011, 3001, '2025-02-09T20:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress.', 83, 4, 'done', 7022, '2025-02-09T20:00:00+00:00'),
+    (20012, 3001, '2025-02-28T13:00:00+00:00', 'Policies enforced consistently across all environments through central tooling.', 88, 4, 'done', 7023, '2025-02-28T13:00:00+00:00'),
+    (20013, 3001, '2026-07-29T20:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly.', 92, 7, 'done', 7024, '2026-07-29T20:00:00+00:00'),
+    (20014, 3001, '2026-07-22T13:00:00+00:00', 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', 72, 7, 'done', 7019, '2026-07-22T13:00:00+00:00'),
+    (20015, 3001, '2026-08-22T15:00:00+00:00', 'All internal and external traffic encrypted and inspected, with automated response.', 81, 7, 'done', 7021, '2026-08-22T15:00:00+00:00'),
+    (20016, 3001, '2026-07-08T19:00:00+00:00', 'Security testing built into the pipeline; critical findings block a release.', 76, 7, 'done', 7020, '2026-07-08T19:00:00+00:00'),
+    (20017, 3001, '2026-07-22T18:00:00+00:00', 'Access to sensitive records limited by role but not monitored.', 83, 7, 'done', 7022, '2026-07-22T18:00:00+00:00'),
+    (20018, 3001, '2026-06-29T18:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer.', 88, 7, 'done', 7023, '2026-06-29T18:00:00+00:00'),
+    (20019, 3002, '2024-02-13T20:00:00+00:00', 'Access granted by verbal approval from the duty officer and noted on a datapad.', 20, 3, 'done', 7006, '2024-02-13T20:00:00+00:00'),
+    (20020, 3002, '2024-01-29T21:00:00+00:00', 'No endpoint protection on hangar terminals; patching happens after something breaks.', 1, 3, 'done', 7001, '2024-01-29T21:00:00+00:00'),
+    (20021, 3002, '2024-04-08T20:00:00+00:00', 'Base network split into hangar, command and civilian segments.', 10, 3, 'done', 7003, '2024-04-08T20:00:00+00:00'),
+    (20022, 3002, '2024-02-12T18:00:00+00:00', 'Access to TIE-NAV brokered through the identity hub with per-request checks.', 7, 3, 'done', 7002, '2024-02-12T18:00:00+00:00'),
+    (20023, 3002, '2024-02-24T19:00:00+00:00', 'Data is not categorized; everything is treated as general crew information.', 13, 3, 'done', 7004, '2024-02-24T19:00:00+00:00'),
+    (20024, 3002, '2024-02-11T13:00:00+00:00', 'Policy enforcement covers command systems but not outposts.', 17, 3, 'done', 7005, '2024-02-11T13:00:00+00:00'),
+    (20025, 3002, '2025-01-12T13:00:00+00:00', 'Role-based access for pilots and technicians; quarterly access reviews in progress.', 21, 4, 'done', 7006, '2025-01-12T13:00:00+00:00'),
+    (20026, 3002, '2025-02-26T21:00:00+00:00', 'Devices are checked when they connect, but compliance is not re-checked afterwards.', 2, 4, 'done', 7001, '2025-02-26T21:00:00+00:00'),
+    (20027, 3002, '2025-02-23T16:00:00+00:00', 'Traffic monitoring alerts the duty officer to unusual hyperspace relay activity.', 11, 4, 'done', 7003, '2025-02-23T16:00:00+00:00'),
+    (20028, 3002, '2025-02-09T13:00:00+00:00', 'Access to TIE-NAV brokered through the identity hub with per-request checks.', 7, 4, 'done', 7002, '2025-02-09T13:00:00+00:00'),
+    (20029, 3002, '2025-01-20T14:00:00+00:00', 'Backups are unencrypted holocrons stored on site.', 13, 4, 'done', 7004, '2025-01-20T14:00:00+00:00'),
+    (20030, 3002, '2025-01-25T16:00:00+00:00', 'Logs for TIE-NAV collected centrally; review is manual.', 17, 4, 'done', 7005, '2025-01-25T16:00:00+00:00'),
+    (20031, 3002, '2026-08-31T21:00:00+00:00', 'Accounts federated to the Imperial directory, but removal on reassignment is manual and slow.', 21, 7, 'done', 7006, '2026-08-31T21:00:00+00:00'),
+    (20032, 3002, '2026-06-13T17:00:00+00:00', 'Devices are checked when they connect, but compliance is not re-checked afterwards.', 2, 7, 'done', 7001, '2026-06-13T17:00:00+00:00'),
+    (20033, 3002, '2026-06-18T21:00:00+00:00', 'Micro-segmentation around TIE-NAV with encrypted traffic everywhere inside the base.', 11, 7, 'done', 7003, '2026-06-18T21:00:00+00:00'),
+    (20034, 3002, '2026-09-04T21:00:00+00:00', 'Access to TIE-NAV brokered through the identity hub with per-request checks.', 7, 7, 'done', 7002, '2026-09-04T21:00:00+00:00'),
+    (20035, 3002, '2026-07-02T17:00:00+00:00', 'Data is not categorized; everything is treated as general crew information.', 13, 7, 'done', 7004, '2026-07-02T17:00:00+00:00'),
+    (20036, 3002, '2026-07-03T14:00:00+00:00', 'Common response playbooks automated end to end.', 18, 7, 'done', 7005, '2026-07-03T14:00:00+00:00'),
+    (20037, 3003, '2024-02-13T13:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the INFORMANT-NET owner, Wullf Yularen.', 45, 3, 'done', 7012, '2024-02-13T13:00:00+00:00'),
+    (20038, 3003, '2024-01-16T17:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked.', 25, 3, 'done', 7007, '2024-01-16T17:00:00+00:00'),
+    (20039, 3003, '2024-03-16T15:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year.', 33, 3, 'done', 7009, '2024-03-16T15:00:00+00:00'),
+    (20040, 3003, '2024-03-27T13:00:00+00:00', 'Immutable workloads with continuous authorization and runtime protection.', 31, 3, 'done', 7008, '2024-03-27T13:00:00+00:00'),
+    (20041, 3003, '2024-02-16T19:00:00+00:00', 'Data lifecycle fully automated, from creation to secure destruction.', 39, 3, 'done', 7010, '2024-02-16T19:00:00+00:00'),
+    (20042, 3003, '2024-02-14T20:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the INFORMANT-NET owner, Wullf Yularen.', 41, 3, 'done', 7011, '2024-02-14T20:00:00+00:00'),
+    (20043, 3003, '2025-01-26T19:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed.', 46, 4, 'done', 7012, '2025-01-26T19:00:00+00:00'),
+    (20044, 3003, '2025-01-31T13:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly.', 26, 4, 'done', 7007, '2025-01-31T13:00:00+00:00'),
+    (20045, 3003, '2025-03-22T19:00:00+00:00', 'Traffic to command is encrypted; some internal droid traffic is still in the clear.', 33, 4, 'done', 7009, '2025-03-22T19:00:00+00:00'),
+    (20046, 3003, '2025-03-17T14:00:00+00:00', 'All application access is policy-driven and evaluated on every request.', 31, 4, 'done', 7008, '2025-03-17T14:00:00+00:00'),
+    (20047, 3003, '2025-03-07T17:00:00+00:00', 'Data lifecycle fully automated, from creation to secure destruction.', 39, 4, 'done', 7010, '2025-03-07T17:00:00+00:00'),
+    (20048, 3003, '2025-03-08T17:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the INFORMANT-NET owner, Wullf Yularen.', 41, 4, 'done', 7011, '2025-03-08T17:00:00+00:00'),
+    (20049, 3003, '2026-08-31T15:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed.', 46, 7, 'done', 7012, '2026-08-31T15:00:00+00:00'),
+    (20050, 3003, '2026-07-29T20:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console.', 26, 7, 'done', 7007, '2026-07-29T20:00:00+00:00'),
+    (20051, 3003, '2026-09-02T21:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year.', 33, 7, 'done', 7009, '2026-09-02T21:00:00+00:00'),
+    (20052, 3003, '2026-06-19T20:00:00+00:00', 'All application access is policy-driven and evaluated on every request.', 31, 7, 'done', 7008, '2026-06-19T20:00:00+00:00'),
+    (20053, 3003, '2026-06-18T14:00:00+00:00', 'Continuous monitoring across the full data lifecycle with automated response.', 39, 7, 'done', 7010, '2026-06-18T14:00:00+00:00'),
+    (20054, 3003, '2026-08-14T21:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.', 41, 7, 'done', 7011, '2026-08-14T21:00:00+00:00'),
+    (20055, 3004, '2024-01-30T13:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the MUSTER-PT owner, Cassio Tagge.', 116, 3, 'done', 7030, '2024-01-30T13:00:00+00:00'),
+    (20056, 3004, '2024-03-20T16:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically.', 96, 3, 'done', 7025, '2024-03-20T16:00:00+00:00'),
+    (20057, 3004, '2024-02-23T18:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the MUSTER-PT owner, Cassio Tagge.', 103, 3, 'done', 7027, '2024-02-23T18:00:00+00:00'),
+    (20058, 3004, '2024-01-12T18:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog.', 99, 3, 'done', 7026, '2024-01-12T18:00:00+00:00'),
+    (20059, 3004, '2024-04-08T14:00:00+00:00', 'No inventory of the data MUSTER-PT holds; archive tapes kept in a locker.', 106, 3, 'done', 7028, '2024-04-08T14:00:00+00:00'),
+    (20060, 3004, '2024-01-11T17:00:00+00:00', 'Incident response depends on whoever is on watch.', 110, 3, 'done', 7029, '2024-01-11T17:00:00+00:00'),
+    (20061, 3004, '2025-02-07T14:00:00+00:00', 'Single sign-on through the Imperial identity hub with conditional access by sector and clearance. Tracked by the MUSTER-PT owner, Cassio Tagge.', 116, 4, 'done', 7030, '2025-02-07T14:00:00+00:00'),
+    (20062, 3004, '2025-02-02T14:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically.', 96, 4, 'done', 7025, '2025-02-02T14:00:00+00:00'),
+    (20063, 3004, '2025-01-24T20:00:00+00:00', 'Micro-segmentation around MUSTER-PT with encrypted traffic everywhere inside the base.', 104, 4, 'done', 7027, '2025-01-24T20:00:00+00:00'),
+    (20064, 3004, '2025-01-22T16:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog.', 99, 4, 'done', 7026, '2025-01-22T16:00:00+00:00'),
+    (20065, 3004, '2025-02-09T21:00:00+00:00', 'No inventory of the data MUSTER-PT holds; archive tapes kept in a locker.', 106, 4, 'done', 7028, '2025-02-09T21:00:00+00:00'),
+    (20066, 3004, '2025-02-12T20:00:00+00:00', 'Incident response depends on whoever is on watch.', 110, 4, 'done', 7029, '2025-02-12T20:00:00+00:00'),
+    (20067, 3004, '2026-09-09T20:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the MUSTER-PT owner, Cassio Tagge.', 116, 7, 'done', 7030, '2026-09-09T20:00:00+00:00'),
+    (20068, 3004, '2026-07-30T12:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically.', 96, 7, 'done', 7025, '2026-07-30T12:00:00+00:00'),
+    (20069, 3004, '2026-08-08T13:00:00+00:00', 'Micro-segmentation around MUSTER-PT with encrypted traffic everywhere inside the base.', 104, 7, 'done', 7027, '2026-08-08T13:00:00+00:00'),
+    (20070, 3004, '2026-07-08T15:00:00+00:00', 'Configuration changes are reviewed but deployed by hand.', 99, 7, 'done', 7026, '2026-07-08T15:00:00+00:00'),
+    (20071, 3004, '2026-08-11T13:00:00+00:00', 'No inventory of the data MUSTER-PT holds; archive tapes kept in a locker.', 106, 7, 'done', 7028, '2026-08-11T13:00:00+00:00'),
+    (20072, 3004, '2026-06-17T20:00:00+00:00', 'Logs for MUSTER-PT collected centrally; review is manual.', 111, 7, 'done', 7029, '2026-06-17T20:00:00+00:00'),
+    (20073, 3005, '2024-01-17T19:00:00+00:00', 'MFA enforced for all crew with code cylinder plus PIN; service droids still use static keys.', 21, 3, 'done', 7006, '2024-01-17T19:00:00+00:00'),
+    (20074, 3005, '2024-01-17T19:00:00+00:00', 'Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.', 1, 3, 'done', 7001, '2024-01-17T19:00:00+00:00'),
+    (20075, 3005, '2024-04-09T14:00:00+00:00', 'Micro-segmentation around MED-FX7 with encrypted traffic everywhere inside the base.', 11, 3, 'done', 7003, '2024-04-09T14:00:00+00:00'),
+    (20076, 3005, '2024-03-04T18:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the MED-FX7 owner, Maximilian Veers.', 6, 3, 'done', 7002, '2024-03-04T18:00:00+00:00'),
+    (20077, 3005, '2024-03-10T17:00:00+00:00', 'No inventory of the data MED-FX7 holds; archive tapes kept in a locker.', 13, 3, 'done', 7004, '2024-03-10T17:00:00+00:00'),
+    (20078, 3005, '2024-03-11T17:00:00+00:00', 'Logs for MED-FX7 collected centrally; review is manual.', 17, 3, 'done', 7005, '2024-03-11T17:00:00+00:00'),
+    (20079, 3005, '2026-08-26T12:00:00+00:00', 'MFA enforced for all crew with code cylinder plus PIN; service droids still use static keys.', 21, 7, 'done', 7006, '2026-08-26T12:00:00+00:00'),
+    (20080, 3005, '2026-06-30T20:00:00+00:00', 'Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.', 1, 7, 'done', 7001, '2026-06-30T20:00:00+00:00'),
+    (20081, 3005, '2026-07-09T15:00:00+00:00', 'Micro-segmentation around MED-FX7 with encrypted traffic everywhere inside the base.', 11, 7, 'done', 7003, '2026-07-09T15:00:00+00:00'),
+    (20082, 3005, '2026-07-19T14:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the MED-FX7 owner, Maximilian Veers.', 6, 7, 'done', 7002, '2026-07-19T14:00:00+00:00'),
+    (20083, 3005, '2026-08-22T14:00:00+00:00', 'No inventory of the data MED-FX7 holds; archive tapes kept in a locker.', 13, 7, 'done', 7004, '2026-08-22T14:00:00+00:00'),
+    (20084, 3005, '2026-08-07T16:00:00+00:00', 'Logs for MED-FX7 collected centrally; review is manual.', 17, 7, 'done', 7005, '2026-08-07T16:00:00+00:00'),
+    (20085, 3006, '2024-03-06T13:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the TACT-HOLO owner, Cassio Tagge.', 68, 3, 'done', 7018, '2024-03-06T13:00:00+00:00'),
+    (20086, 3006, '2024-03-12T18:00:00+00:00', 'Personal comlinks connect to the TACT-HOLO network without checks.', 47, 3, 'done', 7013, '2024-03-12T18:00:00+00:00'),
+    (20087, 3006, '2024-04-08T13:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the TACT-HOLO owner, Cassio Tagge.', 56, 3, 'done', 7015, '2024-04-08T13:00:00+00:00'),
+    (20088, 3006, '2024-04-02T17:00:00+00:00', 'Access to TACT-HOLO brokered through the identity hub with per-request checks.', 53, 3, 'done', 7014, '2024-04-02T17:00:00+00:00'),
+    (20089, 3006, '2024-01-21T21:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand.', 60, 3, 'done', 7016, '2024-01-21T21:00:00+00:00'),
+    (20090, 3006, '2024-03-21T19:00:00+00:00', 'Logs for TACT-HOLO collected centrally; review is manual.', 63, 3, 'done', 7017, '2024-03-21T19:00:00+00:00'),
+    (20091, 3006, '2025-02-24T13:00:00+00:00', 'Single sign-on through the Imperial identity hub with conditional access by sector and clearance. Tracked by the TACT-HOLO owner, Cassio Tagge.', 68, 4, 'done', 7018, '2025-02-24T13:00:00+00:00'),
+    (20092, 3006, '2025-03-10T14:00:00+00:00', 'Personal comlinks connect to the TACT-HOLO network without checks.', 47, 4, 'done', 7013, '2025-03-10T14:00:00+00:00'),
+    (20093, 3006, '2025-01-19T15:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the TACT-HOLO owner, Cassio Tagge.', 56, 4, 'done', 7015, '2025-01-19T15:00:00+00:00'),
+    (20094, 3006, '2025-01-06T19:00:00+00:00', 'Access to TACT-HOLO brokered through the identity hub with per-request checks.', 53, 4, 'done', 7014, '2025-01-06T19:00:00+00:00'),
+    (20095, 3006, '2025-03-17T20:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand.', 60, 4, 'done', 7016, '2025-03-17T20:00:00+00:00'),
+    (20096, 3006, '2025-03-16T13:00:00+00:00', 'Logs for TACT-HOLO collected centrally; review is manual.', 63, 4, 'done', 7017, '2025-03-16T13:00:00+00:00'),
+    (20097, 3006, '2026-06-25T14:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TACT-HOLO owner, Cassio Tagge.', 68, 7, 'done', 7018, '2026-06-25T14:00:00+00:00'),
+    (20098, 3006, '2026-06-22T15:00:00+00:00', 'Personal comlinks connect to the TACT-HOLO network without checks.', 47, 7, 'done', 7013, '2026-06-22T15:00:00+00:00'),
+    (20099, 3006, '2026-08-16T19:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year. Tracked by the TACT-HOLO owner, Cassio Tagge.', 56, 7, 'done', 7015, '2026-08-16T19:00:00+00:00'),
+    (20100, 3006, '2026-07-07T19:00:00+00:00', 'Application security monitoring is automated and feeds incident response directly.', 54, 7, 'done', 7014, '2026-07-07T19:00:00+00:00'),
+    (20101, 3006, '2026-07-01T21:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand.', 60, 7, 'done', 7016, '2026-07-01T21:00:00+00:00'),
+    (20102, 3006, '2026-08-04T13:00:00+00:00', 'Logs for TACT-HOLO collected centrally; review is manual.', 63, 7, 'done', 7017, '2026-08-04T13:00:00+00:00'),
+    (20103, 3007, '2024-01-14T18:00:00+00:00', 'Accounts federated to the Imperial directory, but removal on reassignment is manual and slow. Tracked by the ALDERAAN-COMMS owner, Wilhuff Tarkin.', 91, 3, 'done', 7024, '2024-01-14T18:00:00+00:00'),
+    (20104, 3007, '2024-01-14T17:00:00+00:00', 'Endpoint protection on most consoles; patches applied monthly by hand.', 71, 3, 'done', 7019, '2024-01-14T17:00:00+00:00'),
+    (20105, 3007, '2024-02-06T19:00:00+00:00', 'Micro-segmentation around ALDERAAN-COMMS with encrypted traffic everywhere inside the base.', 80, 3, 'done', 7021, '2024-02-06T19:00:00+00:00'),
+    (20106, 3007, '2024-03-04T13:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the ALDERAAN-COMMS owner, Wilhuff Tarkin.', 75, 3, 'done', 7020, '2024-03-04T13:00:00+00:00'),
+    (20107, 3007, '2024-03-18T20:00:00+00:00', 'All data encrypted at rest and in transit, with keys managed centrally.', 84, 3, 'done', 7022, '2024-03-18T20:00:00+00:00'),
+    (20108, 3007, '2024-02-11T13:00:00+00:00', 'Logs for ALDERAAN-COMMS collected centrally; review is manual.', 87, 3, 'done', 7023, '2024-02-11T13:00:00+00:00'),
+    (20109, 3008, '2025-03-02T17:00:00+00:00', 'Identity signals feed the threat watch in real time and access adapts automatically.', 117, 4, 'done', 7030, '2025-03-02T17:00:00+00:00'),
+    (20110, 3008, '2025-01-21T13:00:00+00:00', 'Endpoint protection on most consoles; patches applied monthly by hand. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 95, 4, 'done', 7025, '2025-01-21T13:00:00+00:00'),
+    (20111, 3008, '2025-02-04T17:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 103, 4, 'done', 7027, '2025-02-04T17:00:00+00:00'),
+    (20112, 3008, '2025-02-02T14:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 99, 4, 'done', 7026, '2025-02-02T14:00:00+00:00'),
+    (20113, 3008, '2025-01-11T20:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 107, 4, 'done', 7028, '2025-01-11T20:00:00+00:00'),
+    (20114, 3008, '2025-01-08T18:00:00+00:00', 'Full visibility across the fleet informs policy decisions automatically.', 113, 4, 'done', 7029, '2025-01-08T18:00:00+00:00'),
+    (20115, 3008, '2026-08-18T18:00:00+00:00', 'Identity signals feed the threat watch in real time and access adapts automatically.', 117, 7, 'done', 7030, '2026-08-18T18:00:00+00:00'),
+    (20116, 3008, '2026-08-23T12:00:00+00:00', 'Endpoint protection on most consoles; patches applied monthly by hand. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 95, 7, 'done', 7025, '2026-08-23T12:00:00+00:00'),
+    (20117, 3008, '2026-06-22T16:00:00+00:00', 'Traffic to command is encrypted; some internal droid traffic is still in the clear. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 103, 7, 'done', 7027, '2026-06-22T16:00:00+00:00'),
+    (20118, 3008, '2026-09-02T20:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 99, 7, 'done', 7026, '2026-09-02T20:00:00+00:00'),
+    (20119, 3008, '2026-06-27T12:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 107, 7, 'done', 7028, '2026-06-27T12:00:00+00:00'),
+    (20120, 3008, '2026-08-24T17:00:00+00:00', 'Enterprise-wide policy is enforced and adjusted continuously.', 113, 7, 'done', 7029, '2026-08-24T17:00:00+00:00'),
+    (20121, 3011, '2025-01-21T13:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.', 93, 4, 'done', 7024, '2025-01-21T13:00:00+00:00'),
+    (20122, 3011, '2025-01-26T14:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.', 72, 4, 'done', 7019, '2025-01-26T14:00:00+00:00'),
+    (20123, 3011, '2025-03-09T17:00:00+00:00', 'Micro-segmentation around HOLOCRON with encrypted traffic everywhere inside the base.', 80, 4, 'done', 7021, '2025-03-09T17:00:00+00:00'),
+    (20124, 3011, '2025-02-17T15:00:00+00:00', 'All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.', 77, 4, 'done', 7020, '2025-02-17T15:00:00+00:00'),
+    (20125, 3011, '2025-02-25T16:00:00+00:00', 'Data access logged and reviewed; loss-prevention rules block exfiltration of plans.', 84, 4, 'done', 7022, '2025-02-25T16:00:00+00:00'),
+    (20126, 3011, '2025-02-10T13:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the HOLOCRON owner, Jocasta Nu.', 88, 4, 'done', 7023, '2025-02-10T13:00:00+00:00'),
+    (20127, 3011, '2026-07-25T21:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.', 93, 7, 'done', 7024, '2026-07-25T21:00:00+00:00'),
+    (20128, 3011, '2026-07-25T19:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.', 72, 7, 'done', 7019, '2026-07-25T19:00:00+00:00'),
+    (20129, 3011, '2026-07-27T21:00:00+00:00', 'Fully software-defined network; every connection is authorized per request.', 81, 7, 'done', 7021, '2026-07-27T21:00:00+00:00'),
+    (20130, 3011, '2026-06-14T13:00:00+00:00', 'All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.', 77, 7, 'done', 7020, '2026-06-14T13:00:00+00:00'),
+    (20131, 3011, '2026-06-29T20:00:00+00:00', 'Automated data inventory and labeling for all records in HOLOCRON.', 84, 7, 'done', 7022, '2026-06-29T20:00:00+00:00'),
+    (20132, 3011, '2026-08-05T19:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the HOLOCRON owner, Jocasta Nu.', 88, 7, 'done', 7023, '2026-08-05T19:00:00+00:00'),
+    (20133, 3012, '2025-03-13T21:00:00+00:00', 'Council members sign in with Force signature plus code cylinder. Two members'' access under review.', 21, 4, 'done', 7006, '2025-03-13T21:00:00+00:00'),
+    (20134, 3012, '2025-01-09T17:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 3, 4, 'done', 7001, '2025-01-09T17:00:00+00:00'),
+    (20135, 3012, '2025-02-02T17:00:00+00:00', 'Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.', 11, 4, 'done', 7003, '2025-02-02T17:00:00+00:00'),
+    (20136, 3012, '2025-01-29T13:00:00+00:00', 'Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.', 7, 4, 'done', 7002, '2025-01-29T13:00:00+00:00'),
+    (20137, 3012, '2025-03-19T16:00:00+00:00', 'Automated data inventory and labeling for all records in COUNCIL-VOTE.', 15, 4, 'done', 7004, '2025-03-19T16:00:00+00:00'),
+    (20138, 3012, '2025-02-10T15:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 18, 4, 'done', 7005, '2025-02-10T15:00:00+00:00'),
+    (20139, 3012, '2026-06-20T18:00:00+00:00', 'Council members sign in with Force signature plus code cylinder. Two members'' access under review.', 20, 7, 'done', 7006, '2026-06-20T18:00:00+00:00'),
+    (20140, 3012, '2026-07-30T16:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 3, 7, 'done', 7001, '2026-07-30T16:00:00+00:00'),
+    (20141, 3012, '2026-08-21T21:00:00+00:00', 'Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.', 11, 7, 'done', 7003, '2026-08-21T21:00:00+00:00'),
+    (20142, 3012, '2026-07-16T19:00:00+00:00', 'Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.', 7, 7, 'done', 7002, '2026-07-16T19:00:00+00:00'),
+    (20143, 3012, '2026-07-18T20:00:00+00:00', 'Automated data inventory and labeling for all records in COUNCIL-VOTE.', 15, 7, 'done', 7004, '2026-07-18T20:00:00+00:00'),
+    (20144, 3012, '2026-08-13T19:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 18, 7, 'done', 7005, '2026-08-13T19:00:00+00:00'),
+    (20145, 3013, '2025-03-15T14:00:00+00:00', 'Local accounts on each terminal, reviewed by hand once a cycle.', 138, 4, 'done', 7036, '2025-03-15T14:00:00+00:00'),
+    (20146, 3013, '2025-02-14T17:00:00+00:00', 'Devices are checked when they connect, but compliance is not re-checked afterwards. Tracked by the CLONE-DIRECTIVE owner, Sheev Palpatine.', 119, 4, 'done', 7031, '2025-02-14T17:00:00+00:00'),
+    (20147, 3013, '2025-01-13T20:00:00+00:00', 'Network changes are made by hand in the comms room with no change record.', 126, 4, 'done', 7033, '2025-01-13T20:00:00+00:00'),
+    (20148, 3013, '2025-01-15T20:00:00+00:00', 'Undocumented override command found in the order registry. Under review.', 122, 4, 'done', 7032, '2025-01-15T20:00:00+00:00'),
+    (20149, 3013, '2025-02-13T18:00:00+00:00', 'No inventory of the data CLONE-DIRECTIVE holds; archive tapes kept in a locker.', 130, 4, 'done', 7034, '2025-02-13T18:00:00+00:00'),
+    (20150, 3013, '2025-03-02T21:00:00+00:00', 'Logs for CLONE-DIRECTIVE collected centrally; review is manual.', 135, 4, 'done', 7035, '2025-03-02T21:00:00+00:00'),
+    (20151, 3014, '2025-01-12T14:00:00+00:00', 'Single sign-on through the Naboo identity hub with conditional access by sector and clearance.', 140, 4, 'done', 7036, '2025-01-12T14:00:00+00:00'),
+    (20152, 3014, '2025-02-27T15:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 120, 4, 'done', 7031, '2025-02-27T15:00:00+00:00'),
+    (20153, 3014, '2025-01-15T19:00:00+00:00', 'Micro-segmentation around THEED-PALACE with encrypted traffic everywhere inside the base.', 128, 4, 'done', 7033, '2025-01-15T19:00:00+00:00'),
+    (20154, 3014, '2025-01-19T20:00:00+00:00', 'Access to THEED-PALACE brokered through the identity hub with per-request checks.', 124, 4, 'done', 7032, '2025-01-19T20:00:00+00:00'),
+    (20155, 3014, '2025-03-08T18:00:00+00:00', 'No inventory of the data THEED-PALACE holds; archive tapes kept in a locker.', 130, 4, 'done', 7034, '2025-03-08T18:00:00+00:00'),
+    (20156, 3014, '2025-01-19T20:00:00+00:00', 'Logs for THEED-PALACE collected centrally; review is manual.', 135, 4, 'done', 7035, '2025-01-19T20:00:00+00:00'),
+    (20157, 3014, '2026-07-10T13:00:00+00:00', 'Identity signals feed the threat watch in real time and access adapts automatically. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 141, 7, 'done', 7036, '2026-07-10T13:00:00+00:00'),
+    (20158, 3014, '2026-08-16T15:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 120, 7, 'done', 7031, '2026-08-16T15:00:00+00:00'),
+    (20159, 3014, '2026-09-02T21:00:00+00:00', 'Micro-segmentation around THEED-PALACE with encrypted traffic everywhere inside the base.', 128, 7, 'done', 7033, '2026-09-02T21:00:00+00:00'),
+    (20160, 3014, '2026-09-06T21:00:00+00:00', 'Application security monitoring is automated and feeds incident response directly. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 125, 7, 'done', 7032, '2026-09-06T21:00:00+00:00'),
+    (20161, 3014, '2026-09-04T17:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 131, 7, 'done', 7034, '2026-09-04T17:00:00+00:00'),
+    (20162, 3014, '2026-07-22T15:00:00+00:00', 'Logs for THEED-PALACE collected centrally; review is manual.', 135, 7, 'done', 7035, '2026-07-22T15:00:00+00:00'),
+    (20163, 3015, '2024-01-18T18:00:00+00:00', 'Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.', 44, 3, 'done', 7012, '2024-01-18T18:00:00+00:00'),
+    (20164, 3015, '2024-04-08T16:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 25, 3, 'done', 7007, '2024-04-08T16:00:00+00:00'),
+    (20165, 3015, '2024-02-11T19:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 33, 3, 'done', 7009, '2024-02-11T19:00:00+00:00'),
+    (20166, 3015, '2024-03-23T16:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 29, 3, 'done', 7008, '2024-03-23T16:00:00+00:00'),
+    (20167, 3015, '2024-04-07T15:00:00+00:00', 'Automated data inventory and labeling for all records in SENATE-BRIEF.', 38, 3, 'done', 7010, '2024-04-07T15:00:00+00:00'),
+    (20168, 3015, '2024-01-17T18:00:00+00:00', 'Logs for SENATE-BRIEF collected centrally; review is manual.', 40, 3, 'done', 7011, '2024-01-17T18:00:00+00:00'),
+    (20169, 3015, '2026-07-21T13:00:00+00:00', 'Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.', 44, 7, 'done', 7012, '2026-07-21T13:00:00+00:00'),
+    (20170, 3015, '2026-07-20T18:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 25, 7, 'done', 7007, '2026-07-20T18:00:00+00:00'),
+    (20171, 3015, '2026-09-08T19:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 33, 7, 'done', 7009, '2026-09-08T19:00:00+00:00'),
+    (20172, 3015, '2026-09-01T12:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 29, 7, 'done', 7008, '2026-09-01T12:00:00+00:00'),
+    (20173, 3015, '2026-07-29T21:00:00+00:00', 'Automated data inventory and labeling for all records in SENATE-BRIEF.', 38, 7, 'done', 7010, '2026-07-29T21:00:00+00:00'),
+    (20174, 3015, '2026-09-03T13:00:00+00:00', 'Logs for SENATE-BRIEF collected centrally; review is manual.', 40, 7, 'done', 7011, '2026-09-03T13:00:00+00:00'),
+    (20175, 3016, '2025-01-27T18:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 23, 4, 'done', 7006, '2025-01-27T18:00:00+00:00'),
+    (20176, 3016, '2025-01-20T20:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 3, 4, 'done', 7001, '2025-01-20T20:00:00+00:00'),
+    (20177, 3016, '2025-01-30T14:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 10, 4, 'done', 7003, '2025-01-30T14:00:00+00:00'),
+    (20178, 3016, '2025-02-22T16:00:00+00:00', 'Access to CLOUDCAR-ATC brokered through the identity hub with per-request checks.', 7, 4, 'done', 7002, '2025-02-22T16:00:00+00:00'),
+    (20179, 3016, '2025-02-13T15:00:00+00:00', 'Automated data inventory and labeling for all records in CLOUDCAR-ATC.', 15, 4, 'done', 7004, '2025-02-13T15:00:00+00:00'),
+    (20180, 3016, '2025-01-31T14:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 18, 4, 'done', 7005, '2025-01-31T14:00:00+00:00'),
+    (20181, 3016, '2026-08-29T19:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 23, 7, 'done', 7006, '2026-08-29T19:00:00+00:00'),
+    (20182, 3016, '2026-09-02T16:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 3, 7, 'done', 7001, '2026-09-02T16:00:00+00:00'),
+    (20183, 3016, '2026-07-17T18:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 10, 7, 'done', 7003, '2026-07-17T18:00:00+00:00'),
+    (20184, 3016, '2026-06-20T19:00:00+00:00', 'Access to CLOUDCAR-ATC brokered through the identity hub with per-request checks.', 7, 7, 'done', 7002, '2026-06-20T19:00:00+00:00'),
+    (20185, 3016, '2026-08-14T18:00:00+00:00', 'Data access decisions use labels and context in real time.', 16, 7, 'done', 7004, '2026-08-14T18:00:00+00:00'),
+    (20186, 3016, '2026-08-30T16:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 18, 7, 'done', 7005, '2026-08-30T16:00:00+00:00'),
+    (20187, 3017, '2025-01-21T15:00:00+00:00', 'Accounts federated to the Corellian directory, but removal on reassignment is manual and slow.', 21, 4, 'done', 7006, '2025-01-21T15:00:00+00:00'),
+    (20188, 3017, '2025-01-23T14:00:00+00:00', 'Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.', 2, 4, 'done', 7001, '2025-01-23T14:00:00+00:00'),
+    (20189, 3017, '2025-02-09T13:00:00+00:00', 'Navicomputer telemetry encrypted end to end since the last refit. Made the run in under twelve parsecs.', 11, 4, 'done', 7003, '2025-02-09T13:00:00+00:00'),
+    (20190, 3017, '2025-03-16T13:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the YT1300-DIAG owner, Han Solo.', 6, 4, 'done', 7002, '2025-03-16T13:00:00+00:00'),
+    (20191, 3017, '2025-01-19T17:00:00+00:00', 'Automated data inventory and labeling for all records in YT1300-DIAG.', 15, 4, 'done', 7004, '2025-01-19T17:00:00+00:00'),
+    (20192, 3017, '2025-03-04T14:00:00+00:00', 'Logs for YT1300-DIAG collected centrally; review is manual.', 17, 4, 'done', 7005, '2025-03-04T14:00:00+00:00'),
+    (20193, 3017, '2026-06-18T16:00:00+00:00', 'Accounts federated to the Corellian directory, but removal on reassignment is manual and slow.', 21, 7, 'done', 7006, '2026-06-18T16:00:00+00:00'),
+    (20194, 3017, '2026-07-08T12:00:00+00:00', 'Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.', 2, 7, 'done', 7001, '2026-07-08T12:00:00+00:00'),
+    (20195, 3017, '2026-08-08T12:00:00+00:00', 'Navicomputer telemetry encrypted end to end since the last refit. Made the run in under twelve parsecs.', 11, 7, 'done', 7003, '2026-08-08T12:00:00+00:00'),
+    (20196, 3017, '2026-09-06T16:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the YT1300-DIAG owner, Han Solo.', 6, 7, 'done', 7002, '2026-09-06T16:00:00+00:00'),
+    (20197, 3017, '2026-08-22T19:00:00+00:00', 'Automated data inventory and labeling for all records in YT1300-DIAG.', 15, 7, 'done', 7004, '2026-08-22T19:00:00+00:00'),
+    (20198, 3017, '2026-07-18T18:00:00+00:00', 'Logs for YT1300-DIAG collected centrally; review is manual.', 17, 7, 'done', 7005, '2026-07-18T18:00:00+00:00'),
+    (20199, 3018, '2025-02-07T13:00:00+00:00', 'Single sign-on through the Corellian identity hub with conditional access by sector and clearance.', 22, 4, 'done', 7006, '2025-02-07T13:00:00+00:00'),
+    (20200, 3018, '2025-03-07T15:00:00+00:00', 'Inventory and risk posture fully automated across all hangars and outposts.', 4, 4, 'done', 7001, '2025-03-07T15:00:00+00:00'),
+    (20201, 3018, '2025-01-30T14:00:00+00:00', 'Micro-segmentation around DESIGN-VAULT with encrypted traffic everywhere inside the base.', 11, 4, 'done', 7003, '2025-01-30T14:00:00+00:00'),
+    (20202, 3018, '2025-03-19T13:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 6, 4, 'done', 7002, '2025-03-19T13:00:00+00:00'),
+    (20203, 3018, '2025-02-25T18:00:00+00:00', 'Automated data inventory and labeling for all records in DESIGN-VAULT.', 15, 4, 'done', 7004, '2025-02-25T18:00:00+00:00'),
+    (20204, 3018, '2025-02-11T21:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 18, 4, 'done', 7005, '2025-02-11T21:00:00+00:00'),
+    (20205, 3018, '2026-08-28T15:00:00+00:00', 'Single sign-on through the Corellian identity hub with conditional access by sector and clearance.', 22, 7, 'done', 7006, '2026-08-28T15:00:00+00:00'),
+    (20206, 3018, '2026-07-15T16:00:00+00:00', 'Inventory and risk posture fully automated across all hangars and outposts.', 4, 7, 'done', 7001, '2026-07-15T16:00:00+00:00'),
+    (20207, 3018, '2026-08-24T19:00:00+00:00', 'Network policy adapts automatically to the threat level and is verified continuously.', 12, 7, 'done', 7003, '2026-08-24T19:00:00+00:00'),
+    (20208, 3018, '2026-09-05T19:00:00+00:00', 'Access to DESIGN-VAULT brokered through the identity hub with per-request checks.', 7, 7, 'done', 7002, '2026-09-05T19:00:00+00:00'),
+    (20209, 3018, '2026-06-17T16:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 14, 7, 'done', 7004, '2026-06-17T16:00:00+00:00'),
+    (20210, 3018, '2026-06-27T20:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 18, 7, 'done', 7005, '2026-06-27T20:00:00+00:00'),
+    (20211, 3019, '2025-01-30T13:00:00+00:00', 'Accounts federated to the Hutt directory, but removal on reassignment is manual and slow.', 21, 4, 'done', 7006, '2025-01-30T13:00:00+00:00'),
+    (20212, 3019, '2025-03-05T19:00:00+00:00', 'Endpoint protection on most consoles; patches applied monthly by hand. Tracked by the PODRACE-BET owner, Watto.', 2, 4, 'done', 7001, '2025-03-05T19:00:00+00:00'),
+    (20213, 3019, '2025-03-12T14:00:00+00:00', 'The perimeter shield is the only control; internal traffic is unencrypted.', 9, 4, 'done', 7003, '2025-03-12T14:00:00+00:00'),
+    (20214, 3019, '2025-02-05T14:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the PODRACE-BET owner, Watto.', 6, 4, 'done', 7002, '2025-02-05T14:00:00+00:00'),
+    (20215, 3019, '2025-01-13T21:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the PODRACE-BET owner, Watto.', 14, 4, 'done', 7004, '2025-01-13T21:00:00+00:00'),
+    (20216, 3019, '2025-02-24T14:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the PODRACE-BET owner, Watto.', 18, 4, 'done', 7005, '2025-02-24T14:00:00+00:00'),
+    (20217, 3019, '2026-07-27T13:00:00+00:00', 'Accounts federated to the Hutt directory, but removal on reassignment is manual and slow.', 21, 7, 'done', 7006, '2026-07-27T13:00:00+00:00'),
+    (20218, 3019, '2026-07-25T19:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the PODRACE-BET owner, Watto.', 2, 7, 'done', 7001, '2026-07-25T19:00:00+00:00'),
+    (20219, 3019, '2026-07-14T19:00:00+00:00', 'The perimeter shield is the only control; internal traffic is unencrypted.', 9, 7, 'done', 7003, '2026-07-14T19:00:00+00:00'),
+    (20220, 3019, '2026-08-22T17:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the PODRACE-BET owner, Watto.', 6, 7, 'done', 7002, '2026-08-22T17:00:00+00:00'),
+    (20221, 3019, '2026-07-13T14:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the PODRACE-BET owner, Watto.', 14, 7, 'done', 7004, '2026-07-13T14:00:00+00:00'),
+    (20222, 3019, '2026-08-27T15:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the PODRACE-BET owner, Watto.', 18, 7, 'done', 7005, '2026-08-27T15:00:00+00:00'),
+    (20223, 3020, '2025-03-06T19:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the TIE-FLEET owner, Rae Sloane.', 92, 4, 'done', 7024, '2025-03-06T19:00:00+00:00'),
+    (20224, 3020, '2025-01-18T16:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the TIE-FLEET owner, Rae Sloane.', 71, 4, 'done', 7019, '2025-01-18T16:00:00+00:00'),
+    (20225, 3020, '2025-02-03T13:00:00+00:00', 'Micro-segmentation around TIE-FLEET with encrypted traffic everywhere inside the base.', 80, 4, 'done', 7021, '2025-02-03T13:00:00+00:00'),
+    (20226, 3020, '2025-02-09T19:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the TIE-FLEET owner, Rae Sloane.', 75, 4, 'done', 7020, '2025-02-09T19:00:00+00:00'),
+    (20227, 3020, '2025-02-07T15:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the TIE-FLEET owner, Rae Sloane.', 83, 4, 'done', 7022, '2025-02-07T15:00:00+00:00'),
+    (20228, 3020, '2025-01-11T21:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the TIE-FLEET owner, Rae Sloane.', 88, 4, 'done', 7023, '2025-01-11T21:00:00+00:00'),
+    (20229, 3020, '2026-08-16T14:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the TIE-FLEET owner, Rae Sloane.', 92, 7, 'done', 7024, '2026-08-16T14:00:00+00:00'),
+    (20230, 3020, '2026-08-23T18:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the TIE-FLEET owner, Rae Sloane.', 71, 7, 'done', 7019, '2026-08-23T18:00:00+00:00'),
+    (20231, 3020, '2026-06-13T15:00:00+00:00', 'Micro-segmentation around TIE-FLEET with encrypted traffic everywhere inside the base.', 80, 7, 'done', 7021, '2026-06-13T15:00:00+00:00'),
+    (20232, 3020, '2026-08-21T20:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the TIE-FLEET owner, Rae Sloane.', 75, 7, 'done', 7020, '2026-08-21T20:00:00+00:00'),
+    (20233, 3020, '2026-09-02T19:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the TIE-FLEET owner, Rae Sloane.', 83, 7, 'done', 7022, '2026-09-02T19:00:00+00:00'),
+    (20234, 3020, '2026-07-15T15:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the TIE-FLEET owner, Rae Sloane.', 88, 7, 'done', 7023, '2026-07-15T15:00:00+00:00'),
+    (20235, 3021, '2025-02-24T14:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the TROOPER-HR owner, Rae Sloane.', 92, 4, 'done', 7024, '2025-02-24T14:00:00+00:00'),
+    (20236, 3021, '2025-02-19T14:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the TROOPER-HR owner, Rae Sloane.', 72, 4, 'done', 7019, '2025-02-19T14:00:00+00:00'),
+    (20237, 3021, '2025-02-05T15:00:00+00:00', 'Flat network across the base; anyone on the comm channel can reach TROOPER-HR.', 78, 4, 'done', 7021, '2025-02-05T15:00:00+00:00'),
+    (20238, 3021, '2025-01-14T18:00:00+00:00', 'Security testing happens only before major fleet deployments.', 74, 4, 'done', 7020, '2025-01-14T18:00:00+00:00'),
+    (20239, 3021, '2025-02-08T20:00:00+00:00', 'Marksmanship scores stored in clear text. Accuracy of the data is also in question.', 83, 4, 'done', 7022, '2025-02-08T20:00:00+00:00'),
+    (20240, 3021, '2025-01-15T13:00:00+00:00', 'Logs for TROOPER-HR collected centrally; review is manual.', 87, 4, 'done', 7023, '2025-01-15T13:00:00+00:00'),
+    (20241, 3022, '2025-02-07T15:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.', 46, 4, 'done', 7012, '2025-02-07T15:00:00+00:00'),
+    (20242, 3022, '2025-02-21T21:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the IMP-CENSUS owner, Enric Pryde.', 26, 4, 'done', 7007, '2025-02-21T21:00:00+00:00'),
+    (20243, 3022, '2025-01-23T21:00:00+00:00', 'Flat network across the base; anyone on the comm channel can reach IMP-CENSUS.', 32, 4, 'done', 7009, '2025-01-23T21:00:00+00:00'),
+    (20244, 3022, '2025-03-13T20:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the IMP-CENSUS owner, Enric Pryde.', 29, 4, 'done', 7008, '2025-03-13T20:00:00+00:00'),
+    (20245, 3022, '2025-03-17T21:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the IMP-CENSUS owner, Enric Pryde.', 37, 4, 'done', 7010, '2025-03-17T21:00:00+00:00'),
+    (20246, 3022, '2025-03-01T14:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the IMP-CENSUS owner, Enric Pryde.', 41, 4, 'done', 7011, '2025-03-01T14:00:00+00:00'),
+    (20247, 3022, '2026-08-08T12:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.', 46, 7, 'done', 7012, '2026-08-08T12:00:00+00:00'),
+    (20248, 3022, '2026-06-16T14:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the IMP-CENSUS owner, Enric Pryde.', 26, 7, 'done', 7007, '2026-06-16T14:00:00+00:00'),
+    (20249, 3022, '2026-07-28T12:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the IMP-CENSUS owner, Enric Pryde.', 33, 7, 'done', 7009, '2026-07-28T12:00:00+00:00'),
+    (20250, 3022, '2026-08-13T19:00:00+00:00', 'Access to IMP-CENSUS brokered through the identity hub with per-request checks.', 30, 7, 'done', 7008, '2026-08-13T19:00:00+00:00'),
+    (20251, 3022, '2026-07-29T17:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the IMP-CENSUS owner, Enric Pryde.', 37, 7, 'done', 7010, '2026-07-29T17:00:00+00:00'),
+    (20252, 3022, '2026-06-17T14:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the IMP-CENSUS owner, Enric Pryde.', 41, 7, 'done', 7011, '2026-06-17T14:00:00+00:00'),
+    (20253, 3023, '2025-03-21T15:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 23, 4, 'done', 7006, '2025-03-21T15:00:00+00:00'),
+    (20254, 3023, '2025-01-16T18:00:00+00:00', 'Device health is checked continuously and feeds access decisions in real time.', 4, 4, 'done', 7001, '2025-01-16T18:00:00+00:00'),
+    (20255, 3023, '2025-01-28T16:00:00+00:00', 'Network policy adapts automatically to the threat level and is verified continuously. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 12, 4, 'done', 7003, '2025-01-28T16:00:00+00:00'),
+    (20256, 3023, '2025-03-16T17:00:00+00:00', 'Static code scans run before release; findings tracked in the backlog. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 6, 4, 'done', 7002, '2025-03-16T17:00:00+00:00'),
+    (20257, 3023, '2025-01-20T19:00:00+00:00', 'Automated data inventory and labeling for all records in NR-CITIZEN-ID.', 15, 4, 'done', 7004, '2025-01-20T19:00:00+00:00'),
+    (20258, 3023, '2025-01-15T21:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 18, 4, 'done', 7005, '2025-01-15T21:00:00+00:00'),
+    (20259, 3023, '2026-08-15T12:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 23, 7, 'done', 7006, '2026-08-15T12:00:00+00:00'),
+    (20260, 3023, '2026-07-19T13:00:00+00:00', 'Device health is checked continuously and feeds access decisions in real time.', 4, 7, 'done', 7001, '2026-07-19T13:00:00+00:00'),
+    (20261, 3023, '2026-08-13T20:00:00+00:00', 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 12, 7, 'done', 7003, '2026-08-13T20:00:00+00:00'),
+    (20262, 3023, '2026-07-08T16:00:00+00:00', 'Access to NR-CITIZEN-ID brokered through the identity hub with per-request checks.', 7, 7, 'done', 7002, '2026-07-08T16:00:00+00:00'),
+    (20263, 3023, '2026-08-27T12:00:00+00:00', 'Automated data inventory and labeling for all records in NR-CITIZEN-ID.', 15, 7, 'done', 7004, '2026-08-27T12:00:00+00:00'),
+    (20264, 3023, '2026-07-17T18:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 18, 7, 'done', 7005, '2026-07-17T18:00:00+00:00'),
+    (20265, 3001, '2026-07-29T20:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the SHIELD-GRID owner, Maximilian Veers.', 93, 5, 'done', 7024, '2026-10-09T08:19:00-04:00'),
+    (20266, 3001, '2026-07-22T13:00:00+00:00', 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', 72, 5, 'done', 7019, '2026-10-09T08:34:00-04:00'),
+    (20267, 3001, '2026-08-22T15:00:00+00:00', 'All internal and external traffic encrypted and inspected, with automated response.', 81, 5, 'done', 7021, '2026-10-09T08:36:00-04:00'),
+    (20268, 3001, '2026-07-08T19:00:00+00:00', 'Security testing built into the pipeline; critical findings block a release.', 76, 5, 'done', 7020, '2026-10-09T08:39:00-04:00'),
+    (20269, 3001, '2026-07-22T18:00:00+00:00', 'Automated data inventory and labeling for all records in SHIELD-GRID.', 84, 5, 'done', 7022, '2026-10-09T08:55:00-04:00'),
+    (20270, 3001, '2026-06-29T18:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer.', 88, 5, 'done', 7023, '2026-10-09T09:14:00-04:00'),
+    (20271, 3002, '2026-08-31T21:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', 22, 5, 'done', 7006, '2026-10-12T11:46:00-04:00'),
+    (20272, 3002, '2026-06-13T17:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the TIE-NAV owner, Cassio Tagge.', 3, 5, 'done', 7001, '2026-10-12T11:14:00-04:00'),
+    (20273, 3002, '2026-06-18T21:00:00+00:00', 'Micro-segmentation around TIE-NAV with encrypted traffic everywhere inside the base.', 11, 5, 'done', 7003, '2026-10-12T11:31:00-04:00'),
+    (20274, 3002, '2026-09-04T21:00:00+00:00', 'Immutable workloads with continuous authorization and runtime protection. Tracked by the TIE-NAV owner, Cassio Tagge.', 8, 5, 'done', 7002, '2026-10-12T11:34:00-04:00'),
+    (20275, 3002, '2026-07-02T17:00:00+00:00', 'Data is not categorized; everything is treated as general crew information.', 13, 5, 'not_started', 7004, NULL),
+    (20276, 3002, '2026-07-03T14:00:00+00:00', 'Common response playbooks automated end to end.', 18, 5, 'not_started', 7005, NULL),
+    (20277, 3003, '2026-08-31T15:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed.', 46, 5, 'done', 7012, '2026-10-12T14:08:00-04:00'),
+    (20278, 3003, '2026-07-29T20:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console.', 26, 5, 'done', 7007, '2026-10-12T14:27:00-04:00'),
+    (20279, 3003, '2026-09-02T21:00:00+00:00', 'Micro-segmentation around INFORMANT-NET with encrypted traffic everywhere inside the base.', 34, 5, 'done', 7009, '2026-10-12T14:52:00-04:00'),
+    (20280, 3003, '2026-06-19T20:00:00+00:00', 'All application access is policy-driven and evaluated on every request.', 31, 5, 'done', 7008, '2026-10-12T15:11:00-04:00'),
+    (20281, 3003, '2026-06-18T14:00:00+00:00', 'Continuous monitoring across the full data lifecycle with automated response.', 39, 5, 'done', 7010, '2026-10-12T15:21:00-04:00'),
+    (20282, 3003, '2026-08-14T21:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.', 41, 5, 'done', 7011, '2026-10-12T15:28:00-04:00'),
+    (20283, 3004, '2026-09-09T20:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the MUSTER-PT owner, Cassio Tagge.', 116, 5, 'not_started', 7030, NULL),
+    (20284, 3004, '2026-07-30T12:00:00+00:00', 'Endpoint detection on every console; non-compliant droids are quarantined automatically.', 96, 5, 'not_started', 7025, NULL),
+    (20285, 3004, '2026-08-08T13:00:00+00:00', 'Micro-segmentation around MUSTER-PT with encrypted traffic everywhere inside the base.', 104, 5, 'not_started', 7027, NULL),
+    (20286, 3004, '2026-07-08T15:00:00+00:00', 'Configuration changes are reviewed but deployed by hand.', 99, 5, 'not_started', 7026, NULL),
+    (20287, 3004, '2026-08-11T13:00:00+00:00', 'No inventory of the data MUSTER-PT holds; archive tapes kept in a locker.', 106, 5, 'not_started', 7028, NULL),
+    (20288, 3004, '2026-06-17T20:00:00+00:00', 'Logs for MUSTER-PT collected centrally; review is manual.', 111, 5, 'not_started', 7029, NULL),
+    (20289, 3005, '2026-08-26T12:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the MED-FX7 owner, Maximilian Veers.', 22, 5, 'done', 7006, '2026-10-11T14:15:00-04:00'),
+    (20290, 3005, '2026-06-30T20:00:00+00:00', 'Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.', 1, 5, 'done', 7001, '2026-10-11T14:23:00-04:00'),
+    (20291, 3005, '2026-07-09T15:00:00+00:00', 'Micro-segmentation around MED-FX7 with encrypted traffic everywhere inside the base.', 11, 5, 'not_started', 7003, NULL),
+    (20292, 3005, '2026-07-19T14:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the MED-FX7 owner, Maximilian Veers.', 6, 5, 'not_started', 7002, NULL),
+    (20293, 3005, '2026-08-22T14:00:00+00:00', 'No inventory of the data MED-FX7 holds; archive tapes kept in a locker.', 13, 5, 'not_started', 7004, NULL),
+    (20294, 3005, '2026-08-07T16:00:00+00:00', 'Logs for MED-FX7 collected centrally; review is manual.', 17, 5, 'not_started', 7005, NULL),
+    (20295, 3006, '2026-06-25T14:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TACT-HOLO owner, Cassio Tagge.', 68, 5, 'not_started', 7018, NULL),
+    (20296, 3006, '2026-06-22T15:00:00+00:00', 'Personal comlinks connect to the TACT-HOLO network without checks.', 47, 5, 'not_started', 7013, NULL),
+    (20297, 3006, '2026-08-16T19:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year. Tracked by the TACT-HOLO owner, Cassio Tagge.', 56, 5, 'not_started', 7015, NULL),
+    (20298, 3006, '2026-07-07T19:00:00+00:00', 'Application security monitoring is automated and feeds incident response directly.', 54, 5, 'not_started', 7014, NULL),
+    (20299, 3006, '2026-07-01T21:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand.', 60, 5, 'not_started', 7016, NULL),
+    (20300, 3006, '2026-08-04T13:00:00+00:00', 'Logs for TACT-HOLO collected centrally; review is manual.', 63, 5, 'not_started', 7017, NULL),
+    (20301, 3008, '2026-08-18T18:00:00+00:00', 'Identity signals feed the threat watch in real time and access adapts automatically.', 117, 5, 'not_started', 7030, NULL),
+    (20302, 3008, '2026-08-23T12:00:00+00:00', 'Endpoint protection on most consoles; patches applied monthly by hand. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 95, 5, 'not_started', 7025, NULL),
+    (20303, 3008, '2026-06-22T16:00:00+00:00', 'Traffic to command is encrypted; some internal droid traffic is still in the clear. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 103, 5, 'not_started', 7027, NULL),
+    (20304, 3008, '2026-09-02T20:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 99, 5, 'not_started', 7026, NULL),
+    (20305, 3008, '2026-06-27T12:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the RECRUIT-PORTAL owner, Maximilian Veers.', 107, 5, 'not_started', 7028, NULL),
+    (20306, 3008, '2026-08-24T17:00:00+00:00', 'Enterprise-wide policy is enforced and adjusted continuously.', 113, 5, 'not_started', 7029, NULL),
+    (20307, 3011, '2026-07-25T21:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.', 93, 5, 'done', 7024, '2026-10-07T10:04:00-04:00'),
+    (20308, 3011, '2026-07-25T19:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.', 72, 5, 'done', 7019, '2026-10-07T10:06:00-04:00'),
+    (20309, 3011, '2026-07-27T21:00:00+00:00', 'Fully software-defined network; every connection is authorized per request.', 81, 5, 'done', 7021, '2026-10-07T10:21:00-04:00'),
+    (20310, 3011, '2026-06-14T13:00:00+00:00', 'All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.', 77, 5, 'done', 7020, '2026-10-07T10:34:00-04:00'),
+    (20311, 3011, '2026-06-29T20:00:00+00:00', 'Automated data inventory and labeling for all records in HOLOCRON.', 84, 5, 'done', 7022, '2026-10-07T10:42:00-04:00'),
+    (20312, 3011, '2026-08-05T19:00:00+00:00', 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the HOLOCRON owner, Jocasta Nu.', 88, 5, 'done', 7023, '2026-10-07T10:46:00-04:00'),
+    (20313, 3012, '2026-06-20T18:00:00+00:00', 'Council members sign in with Force signature plus code cylinder. Two members'' access under review.', 20, 5, 'done', 7006, '2026-10-09T13:24:00-04:00'),
+    (20314, 3012, '2026-07-30T16:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 3, 5, 'done', 7001, '2026-10-09T13:38:00-04:00'),
+    (20315, 3012, '2026-08-21T21:00:00+00:00', 'Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.', 11, 5, 'done', 7003, '2026-10-09T13:45:00-04:00'),
+    (20316, 3012, '2026-07-16T19:00:00+00:00', 'Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.', 7, 5, 'done', 7002, '2026-10-09T14:08:00-04:00'),
+    (20317, 3012, '2026-07-18T20:00:00+00:00', 'Automated data inventory and labeling for all records in COUNCIL-VOTE.', 15, 5, 'not_started', 7004, NULL),
+    (20318, 3012, '2026-08-13T19:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the COUNCIL-VOTE owner, Mace Windu.', 18, 5, 'not_started', 7005, NULL),
+    (20319, 3014, '2026-07-10T13:00:00+00:00', 'Identity signals feed the threat watch in real time and access adapts automatically. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 141, 5, 'not_started', 7036, NULL),
+    (20320, 3014, '2026-08-16T15:00:00+00:00', 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 120, 5, 'not_started', 7031, NULL),
+    (20321, 3014, '2026-09-02T21:00:00+00:00', 'Micro-segmentation around THEED-PALACE with encrypted traffic everywhere inside the base.', 128, 5, 'not_started', 7033, NULL),
+    (20322, 3014, '2026-09-06T21:00:00+00:00', 'Application security monitoring is automated and feeds incident response directly. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 125, 5, 'not_started', 7032, NULL),
+    (20323, 3014, '2026-09-04T17:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the THEED-PALACE owner, Quarsh Panaka.', 131, 5, 'not_started', 7034, NULL),
+    (20324, 3014, '2026-07-22T15:00:00+00:00', 'Logs for THEED-PALACE collected centrally; review is manual.', 135, 5, 'not_started', 7035, NULL),
+    (20325, 3015, '2026-07-21T13:00:00+00:00', 'Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.', 44, 5, 'done', 7012, '2026-10-10T09:17:00-04:00'),
+    (20326, 3015, '2026-07-20T18:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 25, 5, 'not_started', 7007, NULL),
+    (20327, 3015, '2026-09-08T19:00:00+00:00', 'Change requests are tracked, but firewall rules are reviewed only once a year. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 33, 5, 'not_started', 7009, NULL),
+    (20328, 3015, '2026-09-01T12:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the SENATE-BRIEF owner, Sio Bibble.', 29, 5, 'not_started', 7008, NULL),
+    (20329, 3015, '2026-07-29T21:00:00+00:00', 'Automated data inventory and labeling for all records in SENATE-BRIEF.', 38, 5, 'not_started', 7010, NULL),
+    (20330, 3015, '2026-09-03T13:00:00+00:00', 'Logs for SENATE-BRIEF collected centrally; review is manual.', 40, 5, 'not_started', 7011, NULL),
+    (20331, 3016, '2026-08-29T19:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 23, 5, 'done', 7006, '2026-10-09T13:08:00-04:00'),
+    (20332, 3016, '2026-09-02T16:00:00+00:00', 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 3, 5, 'done', 7001, '2026-10-09T13:18:00-04:00'),
+    (20333, 3016, '2026-07-17T18:00:00+00:00', 'Micro-segmentation around CLOUDCAR-ATC with encrypted traffic everywhere inside the base.', 11, 5, 'done', 7003, '2026-10-09T13:35:00-04:00'),
+    (20334, 3016, '2026-06-20T19:00:00+00:00', 'Access to CLOUDCAR-ATC brokered through the identity hub with per-request checks.', 7, 5, 'not_started', 7002, NULL),
+    (20335, 3016, '2026-08-14T18:00:00+00:00', 'Data access decisions use labels and context in real time.', 16, 5, 'not_started', 7004, NULL),
+    (20336, 3016, '2026-08-30T16:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', 18, 5, 'not_started', 7005, NULL),
+    (20337, 3017, '2026-06-18T16:00:00+00:00', 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the YT1300-DIAG owner, Han Solo.', 22, 5, 'done', 7006, '2026-10-12T10:02:00-04:00'),
+    (20338, 3017, '2026-07-08T12:00:00+00:00', 'Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.', 2, 5, 'done', 7001, '2026-10-12T10:20:00-04:00'),
+    (20339, 3017, '2026-08-08T12:00:00+00:00', 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the YT1300-DIAG owner, Han Solo.', 12, 5, 'done', 7003, '2026-10-12T10:23:00-04:00'),
+    (20340, 3017, '2026-09-06T16:00:00+00:00', 'Access to YT1300-DIAG brokered through the identity hub with per-request checks.', 7, 5, 'done', 7002, '2026-10-12T10:46:00-04:00'),
+    (20341, 3017, '2026-08-22T19:00:00+00:00', 'Continuous monitoring across the full data lifecycle with automated response. Tracked by the YT1300-DIAG owner, Han Solo.', 16, 5, 'done', 7004, '2026-10-12T10:57:00-04:00'),
+    (20342, 3017, '2026-07-18T18:00:00+00:00', 'Logs for YT1300-DIAG collected centrally; review is manual.', 17, 5, 'done', 7005, '2026-10-12T11:04:00-04:00'),
+    (20343, 3018, '2026-08-28T15:00:00+00:00', 'Single sign-on through the Corellian identity hub with conditional access by sector and clearance.', 22, 5, 'done', 7006, '2026-10-13T09:02:00-04:00'),
+    (20344, 3018, '2026-07-15T16:00:00+00:00', 'Inventory and risk posture fully automated across all hangars and outposts.', 4, 5, 'done', 7001, '2026-10-13T09:14:00-04:00'),
+    (20345, 3018, '2026-08-24T19:00:00+00:00', 'Network policy adapts automatically to the threat level and is verified continuously.', 12, 5, 'done', 7003, '2026-10-13T09:29:00-04:00'),
+    (20346, 3018, '2026-09-05T19:00:00+00:00', 'Access to DESIGN-VAULT brokered through the identity hub with per-request checks.', 7, 5, 'done', 7002, '2026-10-13T09:45:00-04:00'),
+    (20347, 3018, '2026-06-17T16:00:00+00:00', 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 14, 5, 'done', 7004, '2026-10-13T10:03:00-04:00'),
+    (20348, 3018, '2026-06-27T20:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', 18, 5, 'done', 7005, '2026-10-13T10:27:00-04:00'),
+    (20349, 3019, '2026-07-27T13:00:00+00:00', 'Accounts federated to the Hutt directory, but removal on reassignment is manual and slow.', 21, 5, 'not_started', 7006, NULL),
+    (20350, 3019, '2026-07-25T19:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the PODRACE-BET owner, Watto.', 2, 5, 'not_started', 7001, NULL),
+    (20351, 3019, '2026-07-14T19:00:00+00:00', 'The perimeter shield is the only control; internal traffic is unencrypted.', 9, 5, 'not_started', 7003, NULL),
+    (20352, 3019, '2026-08-22T17:00:00+00:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the PODRACE-BET owner, Watto.', 6, 5, 'not_started', 7002, NULL),
+    (20353, 3019, '2026-07-13T14:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the PODRACE-BET owner, Watto.', 14, 5, 'not_started', 7004, NULL),
+    (20354, 3019, '2026-08-27T15:00:00+00:00', 'Common response playbooks automated end to end. Tracked by the PODRACE-BET owner, Watto.', 18, 5, 'not_started', 7005, NULL),
+    (20355, 3020, '2026-08-16T14:00:00+00:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the TIE-FLEET owner, Rae Sloane.', 92, 5, 'not_started', 7024, NULL),
+    (20356, 3020, '2026-08-23T18:00:00+00:00', 'Inventory covers starfighters and terminals; droids and comlinks partly tracked. Tracked by the TIE-FLEET owner, Rae Sloane.', 71, 5, 'not_started', 7019, NULL),
+    (20357, 3020, '2026-06-13T15:00:00+00:00', 'Micro-segmentation around TIE-FLEET with encrypted traffic everywhere inside the base.', 80, 5, 'not_started', 7021, NULL),
+    (20358, 3020, '2026-08-21T20:00:00+00:00', 'Application access tied to the central directory; some legacy modules use local logins. Tracked by the TIE-FLEET owner, Rae Sloane.', 75, 5, 'not_started', 7020, NULL),
+    (20359, 3020, '2026-09-02T19:00:00+00:00', 'Access to sensitive records limited by role but not monitored. Tracked by the TIE-FLEET owner, Rae Sloane.', 83, 5, 'not_started', 7022, NULL),
+    (20360, 3020, '2026-07-15T15:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the TIE-FLEET owner, Rae Sloane.', 88, 5, 'not_started', 7023, NULL),
+    (20361, 3022, '2026-08-08T12:00:00+00:00', 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.', 46, 5, 'done', 7012, '2026-10-13T12:14:00-04:00'),
+    (20362, 3022, '2026-06-16T14:00:00+00:00', 'Every device, astromechs included, is provisioned, monitored and retired automatically.', 27, 5, 'done', 7007, '2026-10-13T12:16:00-04:00'),
+    (20363, 3022, '2026-07-28T12:00:00+00:00', 'Base network split into hangar, command and civilian segments. Tracked by the IMP-CENSUS owner, Enric Pryde.', 33, 5, 'done', 7009, '2026-10-13T12:40:00-04:00'),
+    (20364, 3022, '2026-08-13T19:00:00+00:00', 'Access to IMP-CENSUS brokered through the identity hub with per-request checks.', 30, 5, 'not_started', 7008, NULL),
+    (20365, 3022, '2026-07-29T17:00:00+00:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the IMP-CENSUS owner, Enric Pryde.', 37, 5, 'not_started', 7010, NULL),
+    (20366, 3022, '2026-06-17T14:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the IMP-CENSUS owner, Enric Pryde.', 41, 5, 'not_started', 7011, NULL),
+    (20367, 3023, '2026-08-15T12:00:00+00:00', 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 23, 5, 'done', 7006, '2026-10-09T16:18:00-04:00'),
+    (20368, 3023, '2026-07-19T13:00:00+00:00', 'Device health is checked continuously and feeds access decisions in real time.', 4, 5, 'done', 7001, '2026-10-09T16:43:00-04:00'),
+    (20369, 3023, '2026-08-13T20:00:00+00:00', 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 12, 5, 'done', 7003, '2026-10-10T09:03:00-04:00'),
+    (20370, 3023, '2026-07-08T16:00:00+00:00', 'Access to NR-CITIZEN-ID brokered through the identity hub with per-request checks.', 7, 5, 'done', 7002, '2026-10-10T09:19:00-04:00'),
+    (20371, 3023, '2026-08-27T12:00:00+00:00', 'Automated data inventory and labeling for all records in NR-CITIZEN-ID.', 15, 5, 'done', 7004, '2026-10-10T09:37:00-04:00'),
+    (20372, 3023, '2026-07-17T18:00:00+00:00', 'Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', 18, 5, 'done', 7005, '2026-10-10T09:49:00-04:00'),
+    (20373, 3009, '2026-10-10T10:07:00-04:00', 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the DS2-WATCH owner, Wullf Yularen.', 22, 5, 'done', 7006, '2026-10-10T10:07:00-04:00'),
+    (20374, 3009, '2026-10-10T10:21:00-04:00', 'Devices are checked when they connect, but compliance is not re-checked afterwards. Tracked by the DS2-WATCH owner, Wullf Yularen.', 2, 5, 'done', 7001, '2026-10-10T10:21:00-04:00'),
+    (20375, 3009, '2026-10-10T10:28:00-04:00', 'Micro-segmentation around DS2-WATCH with encrypted traffic everywhere inside the base.', 11, 5, 'done', 7003, '2026-10-10T10:28:00-04:00'),
+    (20376, 3009, '2026-10-10T10:33:00-04:00', 'Configuration changes are reviewed but deployed by hand. Tracked by the DS2-WATCH owner, Wullf Yularen.', 6, 5, 'done', 7002, '2026-10-10T10:33:00-04:00'),
+    (20377, 3009, '2026-10-10T10:46:00-04:00', 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the DS2-WATCH owner, Wullf Yularen.', 14, 5, 'done', 7004, '2026-10-10T10:46:00-04:00'),
+    (20378, 3009, '2026-10-10T10:57:00-04:00', 'Logs for DS2-WATCH collected centrally; review is manual.', 17, 5, 'done', 7005, '2026-10-10T10:57:00-04:00')
+ON CONFLICT DO NOTHING;
+
+-- Executor (1002): the history-drawer fixture leaves it with one FY27 answer, which would
+-- rank it weakest on the open call. Carry three FY2025 answers forward, rollover style, and
+-- leave functions 7001/7002 free: the E2E suite writes those two itself.
+INSERT INTO public.scores (scoreid, fismasystemid, datecalculated, notes, functionoptionid, datacallid, notes_is_ai_summary, status, functionid, last_updated_at)
+SELECT 20379 + ROW_NUMBER() OVER (ORDER BY s.functionid) - 1, s.fismasystemid, s.datecalculated, s.notes, s.functionoptionid, 5, FALSE, 'not_started', s.functionid, NULL
+  FROM public.scores s
+ WHERE s.fismasystemid = 1002 AND s.datacallid = 4 AND s.functionid IN (7003, 7004, 7005) AND s.notes IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+-- Answer history for the FY27 edits (the rollover itself writes none): confirm, update, one
+-- create set (DS2-WATCH) and one undo on TIE-NAV.
+INSERT INTO public.score_revisions (revisionid, scoreid, revision_no, fismasystemid, datacallid, functionid, kind, prev_functionoptionid, prev_notes, prev_notes_is_ai_summary, prev_status, new_functionoptionid, new_notes, new_notes_is_ai_summary, new_status, undoes_revisionid, userid, createdat) OVERRIDING SYSTEM VALUE VALUES
+    (1000, 20265, 1, 3001, 5, 7024, 'update', 92, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly.', FALSE, 'not_started', 93, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the SHIELD-GRID owner, Maximilian Veers.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T08:19:00-04:00'),
+    (1001, 20266, 1, 3001, 5, 7019, 'confirm', 72, 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', FALSE, 'not_started', 72, 'Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T08:34:00-04:00'),
+    (1002, 20267, 1, 3001, 5, 7021, 'confirm', 81, 'All internal and external traffic encrypted and inspected, with automated response.', FALSE, 'not_started', 81, 'All internal and external traffic encrypted and inspected, with automated response.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T08:36:00-04:00'),
+    (1003, 20268, 1, 3001, 5, 7020, 'confirm', 76, 'Security testing built into the pipeline; critical findings block a release.', FALSE, 'not_started', 76, 'Security testing built into the pipeline; critical findings block a release.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T08:39:00-04:00'),
+    (1004, 20269, 1, 3001, 5, 7022, 'update', 83, 'Access to sensitive records limited by role but not monitored.', FALSE, 'not_started', 84, 'Automated data inventory and labeling for all records in SHIELD-GRID.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T08:55:00-04:00'),
+    (1005, 20270, 1, 3001, 5, 7023, 'confirm', 88, 'Central monitoring correlates events across the base and alerts the watch officer.', FALSE, 'not_started', 88, 'Central monitoring correlates events across the base and alerts the watch officer.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-09T09:14:00-04:00'),
+    (1006, 20271, 1, 3002, 5, 7006, 'update', 21, 'Accounts federated to the Imperial directory, but removal on reassignment is manual and slow.', FALSE, 'not_started', 22, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-12T11:09:00-04:00'),
+    (1007, 20272, 1, 3002, 5, 7001, 'update', 2, 'Devices are checked when they connect, but compliance is not re-checked afterwards.', FALSE, 'not_started', 3, 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-12T11:14:00-04:00'),
+    (1008, 20273, 1, 3002, 5, 7003, 'confirm', 11, 'Micro-segmentation around TIE-NAV with encrypted traffic everywhere inside the base.', FALSE, 'not_started', 11, 'Micro-segmentation around TIE-NAV with encrypted traffic everywhere inside the base.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-12T11:31:00-04:00'),
+    (1009, 20274, 1, 3002, 5, 7002, 'update', 7, 'Access to TIE-NAV brokered through the identity hub with per-request checks.', FALSE, 'not_started', 8, 'Immutable workloads with continuous authorization and runtime protection. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', NULL, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-12T11:34:00-04:00'),
+    (1010, 20277, 1, 3003, 5, 7012, 'confirm', 46, 'All human and droid identities are short-lived, just-in-time, and centrally governed.', FALSE, 'not_started', 46, 'All human and droid identities are short-lived, just-in-time, and centrally governed.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T14:08:00-04:00'),
+    (1011, 20278, 1, 3003, 5, 7007, 'confirm', 26, 'Restraining bolts replaced with managed device policies pushed from the central console.', FALSE, 'not_started', 26, 'Restraining bolts replaced with managed device policies pushed from the central console.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T14:27:00-04:00'),
+    (1012, 20279, 1, 3003, 5, 7009, 'update', 33, 'Change requests are tracked, but firewall rules are reviewed only once a year.', FALSE, 'not_started', 34, 'Micro-segmentation around INFORMANT-NET with encrypted traffic everywhere inside the base.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T14:52:00-04:00'),
+    (1013, 20280, 1, 3003, 5, 7008, 'confirm', 31, 'All application access is policy-driven and evaluated on every request.', FALSE, 'not_started', 31, 'All application access is policy-driven and evaluated on every request.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T15:11:00-04:00'),
+    (1014, 20281, 1, 3003, 5, 7010, 'confirm', 39, 'Continuous monitoring across the full data lifecycle with automated response.', FALSE, 'not_started', 39, 'Continuous monitoring across the full data lifecycle with automated response.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T15:21:00-04:00'),
+    (1015, 20282, 1, 3003, 5, 7011, 'confirm', 41, 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.', FALSE, 'not_started', 41, 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.', FALSE, 'done', NULL, '874e031b-472a-4d72-8083-ed0cfa509f3c', '2026-10-12T15:28:00-04:00'),
+    (1016, 20289, 1, 3005, 5, 7006, 'update', 21, 'MFA enforced for all crew with code cylinder plus PIN; service droids still use static keys.', FALSE, 'not_started', 22, 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the MED-FX7 owner, Maximilian Veers.', FALSE, 'done', NULL, 'b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', '2026-10-11T14:15:00-04:00'),
+    (1017, 20290, 1, 3005, 5, 7001, 'confirm', 1, 'Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.', FALSE, 'not_started', 1, 'Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.', FALSE, 'done', NULL, 'b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', '2026-10-11T14:23:00-04:00'),
+    (1018, 20307, 1, 3011, 5, 7024, 'confirm', 93, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.', FALSE, 'not_started', 93, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:04:00-04:00'),
+    (1019, 20308, 1, 3011, 5, 7019, 'confirm', 72, 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'not_started', 72, 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:06:00-04:00'),
+    (1020, 20309, 1, 3011, 5, 7021, 'confirm', 81, 'Fully software-defined network; every connection is authorized per request.', FALSE, 'not_started', 81, 'Fully software-defined network; every connection is authorized per request.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:21:00-04:00'),
+    (1021, 20310, 1, 3011, 5, 7020, 'confirm', 77, 'All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'not_started', 77, 'All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:34:00-04:00'),
+    (1022, 20311, 1, 3011, 5, 7022, 'confirm', 84, 'Automated data inventory and labeling for all records in HOLOCRON.', FALSE, 'not_started', 84, 'Automated data inventory and labeling for all records in HOLOCRON.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:42:00-04:00'),
+    (1023, 20312, 1, 3011, 5, 7023, 'confirm', 88, 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'not_started', 88, 'Central monitoring correlates events across the base and alerts the watch officer. Tracked by the HOLOCRON owner, Jocasta Nu.', FALSE, 'done', NULL, '6062a651-59b2-424e-84bc-479cb9ed7fa1', '2026-10-07T10:46:00-04:00'),
+    (1024, 20313, 1, 3012, 5, 7006, 'confirm', 20, 'Council members sign in with Force signature plus code cylinder. Two members'' access under review.', FALSE, 'not_started', 20, 'Council members sign in with Force signature plus code cylinder. Two members'' access under review.', FALSE, 'done', NULL, '89fa03c9-cbf4-438f-88dd-3a24cd9501ac', '2026-10-09T13:24:00-04:00'),
+    (1025, 20314, 1, 3012, 5, 7001, 'confirm', 3, 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the COUNCIL-VOTE owner, Mace Windu.', FALSE, 'not_started', 3, 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the COUNCIL-VOTE owner, Mace Windu.', FALSE, 'done', NULL, '89fa03c9-cbf4-438f-88dd-3a24cd9501ac', '2026-10-09T13:38:00-04:00'),
+    (1026, 20315, 1, 3012, 5, 7003, 'confirm', 11, 'Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.', FALSE, 'not_started', 11, 'Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.', FALSE, 'done', NULL, '89fa03c9-cbf4-438f-88dd-3a24cd9501ac', '2026-10-09T13:45:00-04:00'),
+    (1027, 20316, 1, 3012, 5, 7002, 'confirm', 7, 'Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.', FALSE, 'not_started', 7, 'Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.', FALSE, 'done', NULL, '89fa03c9-cbf4-438f-88dd-3a24cd9501ac', '2026-10-09T14:08:00-04:00'),
+    (1028, 20325, 1, 3015, 5, 7012, 'confirm', 44, 'Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.', FALSE, 'not_started', 44, 'Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.', FALSE, 'done', NULL, '7b7fa300-7937-400e-8876-aba33455a1cb', '2026-10-10T09:17:00-04:00'),
+    (1029, 20331, 1, 3016, 5, 7006, 'confirm', 23, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', FALSE, 'not_started', 23, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', FALSE, 'done', NULL, '9b9876f3-0de8-488c-8135-0ae2a9c2e974', '2026-10-09T13:08:00-04:00'),
+    (1030, 20332, 1, 3016, 5, 7001, 'confirm', 3, 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', FALSE, 'not_started', 3, 'Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', FALSE, 'done', NULL, '9b9876f3-0de8-488c-8135-0ae2a9c2e974', '2026-10-09T13:18:00-04:00'),
+    (1031, 20333, 1, 3016, 5, 7003, 'update', 10, 'Base network split into hangar, command and civilian segments. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.', FALSE, 'not_started', 11, 'Micro-segmentation around CLOUDCAR-ATC with encrypted traffic everywhere inside the base.', FALSE, 'done', NULL, '9b9876f3-0de8-488c-8135-0ae2a9c2e974', '2026-10-09T13:35:00-04:00'),
+    (1032, 20337, 1, 3017, 5, 7006, 'update', 21, 'Accounts federated to the Corellian directory, but removal on reassignment is manual and slow.', FALSE, 'not_started', 22, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the YT1300-DIAG owner, Han Solo.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T10:02:00-04:00'),
+    (1033, 20338, 1, 3017, 5, 7001, 'confirm', 2, 'Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.', FALSE, 'not_started', 2, 'Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T10:20:00-04:00'),
+    (1034, 20339, 1, 3017, 5, 7003, 'update', 11, 'Navicomputer telemetry encrypted end to end since the last refit. Made the run in under twelve parsecs.', FALSE, 'not_started', 12, 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the YT1300-DIAG owner, Han Solo.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T10:23:00-04:00'),
+    (1035, 20340, 1, 3017, 5, 7002, 'update', 6, 'Static code scans run before release; findings tracked in the backlog. Tracked by the YT1300-DIAG owner, Han Solo.', FALSE, 'not_started', 7, 'Access to YT1300-DIAG brokered through the identity hub with per-request checks.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T10:46:00-04:00'),
+    (1036, 20341, 1, 3017, 5, 7004, 'update', 15, 'Automated data inventory and labeling for all records in YT1300-DIAG.', FALSE, 'not_started', 16, 'Continuous monitoring across the full data lifecycle with automated response. Tracked by the YT1300-DIAG owner, Han Solo.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T10:57:00-04:00'),
+    (1037, 20342, 1, 3017, 5, 7005, 'confirm', 17, 'Logs for YT1300-DIAG collected centrally; review is manual.', FALSE, 'not_started', 17, 'Logs for YT1300-DIAG collected centrally; review is manual.', FALSE, 'done', NULL, '11a5190d-a7c1-44a8-892c-025f71c477db', '2026-10-12T11:04:00-04:00'),
+    (1038, 20343, 1, 3018, 5, 7006, 'confirm', 22, 'Single sign-on through the Corellian identity hub with conditional access by sector and clearance.', FALSE, 'not_started', 22, 'Single sign-on through the Corellian identity hub with conditional access by sector and clearance.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T09:02:00-04:00'),
+    (1039, 20344, 1, 3018, 5, 7001, 'confirm', 4, 'Inventory and risk posture fully automated across all hangars and outposts.', FALSE, 'not_started', 4, 'Inventory and risk posture fully automated across all hangars and outposts.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T09:14:00-04:00'),
+    (1040, 20345, 1, 3018, 5, 7003, 'confirm', 12, 'Network policy adapts automatically to the threat level and is verified continuously.', FALSE, 'not_started', 12, 'Network policy adapts automatically to the threat level and is verified continuously.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T09:29:00-04:00'),
+    (1041, 20346, 1, 3018, 5, 7002, 'confirm', 7, 'Access to DESIGN-VAULT brokered through the identity hub with per-request checks.', FALSE, 'not_started', 7, 'Access to DESIGN-VAULT brokered through the identity hub with per-request checks.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T09:45:00-04:00'),
+    (1042, 20347, 1, 3018, 5, 7004, 'confirm', 14, 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', FALSE, 'not_started', 14, 'Data inventory started; mission data and personnel records categorized by hand. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T10:03:00-04:00'),
+    (1043, 20348, 1, 3018, 5, 7005, 'confirm', 18, 'Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', FALSE, 'not_started', 18, 'Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.', FALSE, 'done', NULL, 'f62dc080-386f-40f3-8174-d9b8cc6a7a6e', '2026-10-13T10:27:00-04:00'),
+    (1044, 20361, 1, 3022, 5, 7012, 'confirm', 46, 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.', FALSE, 'not_started', 46, 'All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.', FALSE, 'done', NULL, '42dd7713-ff1c-4b06-8357-6e860cf22fd0', '2026-10-13T12:14:00-04:00'),
+    (1045, 20362, 1, 3022, 5, 7007, 'update', 26, 'Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the IMP-CENSUS owner, Enric Pryde.', FALSE, 'not_started', 27, 'Every device, astromechs included, is provisioned, monitored and retired automatically.', FALSE, 'done', NULL, '42dd7713-ff1c-4b06-8357-6e860cf22fd0', '2026-10-13T12:16:00-04:00'),
+    (1046, 20363, 1, 3022, 5, 7009, 'confirm', 33, 'Base network split into hangar, command and civilian segments. Tracked by the IMP-CENSUS owner, Enric Pryde.', FALSE, 'not_started', 33, 'Base network split into hangar, command and civilian segments. Tracked by the IMP-CENSUS owner, Enric Pryde.', FALSE, 'done', NULL, '42dd7713-ff1c-4b06-8357-6e860cf22fd0', '2026-10-13T12:40:00-04:00'),
+    (1047, 20367, 1, 3023, 5, 7006, 'confirm', 23, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'not_started', 23, 'Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-09T16:18:00-04:00'),
+    (1048, 20368, 1, 3023, 5, 7001, 'confirm', 4, 'Device health is checked continuously and feeds access decisions in real time.', FALSE, 'not_started', 4, 'Device health is checked continuously and feeds access decisions in real time.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-09T16:43:00-04:00'),
+    (1049, 20369, 1, 3023, 5, 7003, 'confirm', 12, 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'not_started', 12, 'All internal and external traffic encrypted and inspected, with automated response. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-10T09:03:00-04:00'),
+    (1050, 20370, 1, 3023, 5, 7002, 'confirm', 7, 'Access to NR-CITIZEN-ID brokered through the identity hub with per-request checks.', FALSE, 'not_started', 7, 'Access to NR-CITIZEN-ID brokered through the identity hub with per-request checks.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-10T09:19:00-04:00'),
+    (1051, 20371, 1, 3023, 5, 7004, 'confirm', 15, 'Automated data inventory and labeling for all records in NR-CITIZEN-ID.', FALSE, 'not_started', 15, 'Automated data inventory and labeling for all records in NR-CITIZEN-ID.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-10T09:37:00-04:00'),
+    (1052, 20372, 1, 3023, 5, 7005, 'confirm', 18, 'Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'not_started', 18, 'Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.', FALSE, 'done', NULL, '760a6b7e-5fc4-4491-8944-b9fe9b88cf22', '2026-10-10T09:49:00-04:00'),
+    (1053, 20271, 2, 3002, 5, 7006, 'update', 22, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', 20, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', NULL, 'b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6', '2026-10-12T11:16:00-04:00'),
+    (1054, 20271, 3, 3002, 5, 7006, 'undo', 20, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', 22, 'Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.', FALSE, 'done', 1053, 'e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', '2026-10-12T11:46:00-04:00'),
+    (1055, 20373, 1, 3009, 5, 7006, 'create', NULL, NULL, NULL, NULL, 22, 'Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the DS2-WATCH owner, Wullf Yularen.', FALSE, 'done', NULL, 'abfcd7c1-1b9b-402a-8852-71010e58a068', '2026-10-10T10:07:00-04:00'),
+    (1056, 20374, 1, 3009, 5, 7001, 'create', NULL, NULL, NULL, NULL, 2, 'Devices are checked when they connect, but compliance is not re-checked afterwards. Tracked by the DS2-WATCH owner, Wullf Yularen.', FALSE, 'done', NULL, '456e7bd8-a04c-47cc-87db-c867eb142f50', '2026-10-10T10:21:00-04:00'),
+    (1057, 20375, 1, 3009, 5, 7003, 'create', NULL, NULL, NULL, NULL, 11, 'Micro-segmentation around DS2-WATCH with encrypted traffic everywhere inside the base.', FALSE, 'done', NULL, '456e7bd8-a04c-47cc-87db-c867eb142f50', '2026-10-10T10:28:00-04:00'),
+    (1058, 20376, 1, 3009, 5, 7002, 'create', NULL, NULL, NULL, NULL, 6, 'Configuration changes are reviewed but deployed by hand. Tracked by the DS2-WATCH owner, Wullf Yularen.', FALSE, 'done', NULL, '456e7bd8-a04c-47cc-87db-c867eb142f50', '2026-10-10T10:33:00-04:00'),
+    (1059, 20377, 1, 3009, 5, 7004, 'create', NULL, NULL, NULL, NULL, 14, 'Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the DS2-WATCH owner, Wullf Yularen.', FALSE, 'done', NULL, '456e7bd8-a04c-47cc-87db-c867eb142f50', '2026-10-10T10:46:00-04:00'),
+    (1060, 20378, 1, 3009, 5, 7005, 'create', NULL, NULL, NULL, NULL, 17, 'Logs for DS2-WATCH collected centrally; review is manual.', FALSE, 'done', NULL, '456e7bd8-a04c-47cc-87db-c867eb142f50', '2026-10-10T10:57:00-04:00')
+ON CONFLICT DO NOTHING;
+
+-- Completion marks, written when an ISSO marks a data call complete.
+INSERT INTO public.datacalls_fismasystems (datacallid, fismasystemid) VALUES
+    (3, 3001),
+    (4, 3001),
+    (7, 3001),
+    (5, 3001),
+    (3, 3002),
+    (4, 3002),
+    (7, 3002),
+    (3, 3003),
+    (4, 3003),
+    (7, 3003),
+    (5, 3003),
+    (3, 3004),
+    (4, 3004),
+    (7, 3004),
+    (3, 3005),
+    (7, 3005),
+    (3, 3006),
+    (4, 3006),
+    (7, 3006),
+    (3, 3007),
+    (4, 3008),
+    (7, 3008),
+    (5, 3009),
+    (4, 3011),
+    (7, 3011),
+    (5, 3011),
+    (4, 3012),
+    (7, 3012),
+    (4, 3013),
+    (4, 3014),
+    (7, 3014),
+    (3, 3015),
+    (7, 3015),
+    (4, 3016),
+    (7, 3016),
+    (4, 3017),
+    (7, 3017),
+    (5, 3017),
+    (4, 3018),
+    (7, 3018),
+    (5, 3018),
+    (4, 3019),
+    (7, 3019),
+    (4, 3020),
+    (7, 3020),
+    (4, 3021),
+    (4, 3022),
+    (7, 3022),
+    (4, 3023),
+    (7, 3023),
+    (5, 3023)
+ON CONFLICT DO NOTHING;
+
+-- Insights panel data for two EMPIRE systems (EMPIRE is the one OpDiv with Insights enabled),
+-- plus an authorization-package record per active EMPIRE system.
+INSERT INTO public.system_insights (fismasystemid, questionid, payload, synced_at) VALUES
+    (3001, 8024, '{"pillar": "Identity", "question_text": "How are field commissions and trooper credentials verified at forward positions?", "question_order": 111, "functionid": 7024, "function_name": "Field Identity Verification", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 3, "suggested_label": "Advanced", "score_direction": "CONFIRMS", "score_floor_source": "CFACTS (ARS controls not satisfied)", "evidence_sources": "ARS", "ars_maturity": "Advanced", "ars_control_score": 3, "ars_controls_total": 4, "ars_controls_satisfied": 3, "ars_satisfied_controls": ["IA-2", "IA-5", "AC-2"], "ars_not_satisfied_controls": ["AC-7"], "cfacts_suggested_score": 3, "cfacts_suggested_label": "Advanced", "cfacts_reasoning": "3 of 4 Identity controls satisfied; next gap AC-7", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly.", "score_1_option": "Traditional maturity for Field Identity Verification", "score_2_option": "Defined maturity for Field Identity Verification", "score_3_option": "Managed maturity for Field Identity Verification", "score_4_option": "Advanced maturity for Field Identity Verification", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3001, 8019, '{"pillar": "Devices", "question_text": "Does your ground-assault force maintain a verified inventory of every walker, speeder, and emplacement?", "question_order": 211, "functionid": 7019, "function_name": "Ground Asset Management", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 3, "suggested_label": "Advanced", "score_direction": "CONFIRMS", "score_floor_source": "CFACTS (ARS controls not satisfied)", "evidence_sources": "ARS", "ars_maturity": "Advanced", "ars_control_score": 3, "ars_controls_total": 4, "ars_controls_satisfied": 3, "ars_satisfied_controls": ["CM-2", "CM-8", "SI-3"], "ars_not_satisfied_controls": ["SI-4"], "cfacts_suggested_score": 3, "cfacts_suggested_label": "Advanced", "cfacts_reasoning": "3 of 4 Devices controls satisfied; next gap SI-4", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.", "score_1_option": "Traditional maturity for Ground Asset Management", "score_2_option": "Defined maturity for Ground Asset Management", "score_3_option": "Managed maturity for Ground Asset Management", "score_4_option": "Advanced maturity for Ground Asset Management", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3001, 8021, '{"pillar": "Networks", "question_text": "How are forward-operating-base tactical networks segmented from the wider Imperial net?", "question_order": 311, "functionid": 7021, "function_name": "Field Network Security", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 4, "suggested_label": "Optimal", "score_direction": "CONFIRMS", "evidence_sources": "ARS", "ars_maturity": "Optimal", "ars_control_score": 4, "ars_controls_total": 4, "ars_controls_satisfied": 4, "ars_satisfied_controls": ["SC-7", "SC-8", "AC-4", "AU-12"], "ars_not_satisfied_controls": [], "cfacts_suggested_score": 4, "cfacts_suggested_label": "Optimal", "cfacts_reasoning": "4 of 4 Networks controls satisfied", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 4, "last_score_label": "Optimal", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "All internal and external traffic encrypted and inspected, with automated response.", "score_1_option": "Traditional maturity for Field Network Security", "score_2_option": "Defined maturity for Field Network Security", "score_3_option": "Managed maturity for Field Network Security", "score_4_option": "Advanced maturity for Field Network Security", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3001, 8020, '{"pillar": "Applications", "question_text": "How is targeting and fire-control software for ground assets secured against tampering?", "question_order": 411, "functionid": 7020, "function_name": "Fire-Control Application Security", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 4, "suggested_label": "Optimal", "score_direction": "HIGHER", "evidence_sources": "ARS", "ars_maturity": "Optimal", "ars_control_score": 4, "ars_controls_total": 4, "ars_controls_satisfied": 4, "ars_satisfied_controls": ["SA-11", "CM-3", "AC-3", "SI-10"], "ars_not_satisfied_controls": [], "cfacts_suggested_score": 4, "cfacts_suggested_label": "Optimal", "cfacts_reasoning": "4 of 4 Applications controls satisfied", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Security testing built into the pipeline; critical findings block a release.", "score_1_option": "Traditional maturity for Fire-Control Application Security", "score_2_option": "Defined maturity for Fire-Control Application Security", "score_3_option": "Managed maturity for Fire-Control Application Security", "score_4_option": "Advanced maturity for Fire-Control Application Security", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3001, 8022, '{"pillar": "Data", "question_text": "How is battlefield intelligence classified, encrypted, and purged on capture risk?", "question_order": 511, "functionid": 7022, "function_name": "Battlefield Data Protection", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 2, "suggested_label": "Initial", "score_direction": "CONFIRMS", "score_floor_source": "CFACTS (ARS controls not satisfied)", "evidence_sources": "ARS", "ars_maturity": "Initial", "ars_control_score": 2, "ars_controls_total": 4, "ars_controls_satisfied": 2, "ars_satisfied_controls": ["SC-28", "CP-9"], "ars_not_satisfied_controls": ["AU-9", "MP-6"], "cfacts_suggested_score": 2, "cfacts_suggested_label": "Initial", "cfacts_reasoning": "2 of 4 Data controls satisfied; next gap AU-9", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 2, "last_score_label": "Initial", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Access to sensitive records limited by role but not monitored.", "score_1_option": "Traditional maturity for Battlefield Data Protection", "score_2_option": "Defined maturity for Battlefield Data Protection", "score_3_option": "Managed maturity for Battlefield Data Protection", "score_4_option": "Advanced maturity for Battlefield Data Protection", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3001, 8023, '{"pillar": "CrossCutting", "question_text": "How are ground-campaign security policies enforced consistently across dispersed units?", "question_order": 611, "functionid": 7023, "function_name": "Ground Campaign Governance", "fismauid": "B54686A7-0F5F-4713-8358-053A47C20992", "fismaacronym": "SHIELD-GRID", "fismaname": "Imperial Planetary Shield Grid Control", "component": "EMPIRE", "groupacronym": "PDEF", "datacenterenvironment": "Ground-Assault", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 3, "suggested_label": "Advanced", "score_direction": "CONFIRMS", "score_floor_source": "CFACTS (ARS controls not satisfied)", "evidence_sources": "ARS", "ars_maturity": "Advanced", "ars_control_score": 3, "ars_controls_total": 4, "ars_controls_satisfied": 3, "ars_satisfied_controls": ["AU-6", "IR-4", "CA-7"], "ars_not_satisfied_controls": ["PL-2"], "cfacts_suggested_score": 3, "cfacts_suggested_label": "Advanced", "cfacts_reasoning": "3 of 4 CrossCutting controls satisfied; next gap PL-2", "cfacts_auth_methods": "Single sign-on (identity hub)", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Central monitoring correlates events across the base and alerts the watch officer.", "score_1_option": "Traditional maturity for Ground Campaign Governance", "score_2_option": "Defined maturity for Ground Campaign Governance", "score_3_option": "Managed maturity for Ground Campaign Governance", "score_4_option": "Advanced maturity for Ground Campaign Governance", "snapshot_ts": "2026-10-15T10:00:00+00:00"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8016, '{"pillar": "Identity", "question_text": "How does your system authenticate and verify Imperial officer identities across all access points?", "question_order": 101, "functionid": 7012, "function_name": "Station Identity Verification", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 4, "suggested_label": "Optimal", "score_direction": "CONFIRMS", "evidence_sources": "ARS, Kion", "ars_maturity": "Optimal", "ars_control_score": 4, "ars_controls_total": 4, "ars_controls_satisfied": 4, "ars_satisfied_controls": ["IA-2", "IA-5", "AC-2", "AC-7"], "ars_not_satisfied_controls": [], "cfacts_suggested_score": 4, "cfacts_suggested_label": "Optimal", "cfacts_reasoning": "4 of 4 Identity controls satisfied", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 4, "last_score_label": "Optimal", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "All human and droid identities are short-lived, just-in-time, and centrally governed.", "score_1_option": "Basic personnel credentials with manual check", "score_2_option": "Standardized ID with biometric authentication", "score_3_option": "Centralized identity with screening", "score_4_option": "Continuous identity verification", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 4, "kion_suggested_label": "Optimal", "kion_passing": [{"id": "kion-bridge-accounts-listed", "description": "Bridge accounts are inventoried.", "nist_controls": "AC-2", "level": 1}, {"id": "kion-console-mfa", "description": "Consoles require multi-factor sign-in.", "nist_controls": "IA-2", "level": 2}, {"id": "kion-droid-keys-rotated", "description": "Droid service keys are rotated.", "nist_controls": "IA-5", "level": 3}, {"id": "kion-dormant-disabled", "description": "Dormant pilot accounts are disabled after 90 days.", "nist_controls": "AC-2", "level": 4}]}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8001, '{"pillar": "Devices", "question_text": "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?", "question_order": 201, "functionid": 7007, "function_name": "Battle Station Device Management", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 3, "suggested_label": "Advanced", "score_direction": "CONFIRMS", "score_floor_source": "Kion (failing kion-drift-detection)", "evidence_sources": "ARS, Kion, SecurityHub", "ars_maturity": "Advanced", "ars_control_score": 3, "ars_controls_total": 4, "ars_controls_satisfied": 3, "ars_satisfied_controls": ["CM-2", "CM-8", "SI-3"], "ars_not_satisfied_controls": ["SI-4"], "cfacts_suggested_score": 3, "cfacts_suggested_label": "Advanced", "cfacts_reasoning": "3 of 4 Devices controls satisfied; next gap SI-4", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Restraining bolts replaced with managed device policies pushed from the central console.", "score_1_option": "Manual battle station device registry", "score_2_option": "Centralized Death Star systems inventory", "score_3_option": "Real-time station monitoring with anomaly detection", "score_4_option": "Predictive maintenance with AI threat detection", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 3, "kion_suggested_label": "Advanced", "kion_passing": [{"id": "kion-hangar-inventory", "description": "Hangar terminals appear in the device inventory.", "nist_controls": "CM-8", "level": 1}, {"id": "kion-baseline-image", "description": "Terminals run the approved baseline image.", "nist_controls": "CM-2", "level": 2}, {"id": "kion-endpoint-protection", "description": "Endpoint protection is active on all consoles.", "nist_controls": "SI-3", "level": 3}], "kion_remediation": "Fix the failing Kion checks and re-verify before the next cycle.", "has_sechub_data": true, "sechub_suggested_score": 3, "sechub_suggested_label": "Advanced", "sechub_passing": [{"id": "sh-ssm-managed", "description": "Instances are managed and inventoried.", "nist_controls": "CM-8", "level": 1}, {"id": "sh-ami-approved", "description": "Instances launch from approved images.", "nist_controls": "CM-2", "level": 2}, {"id": "sh-guardduty", "description": "Threat detection is enabled.", "nist_controls": "SI-4", "level": 3}], "sechub_remediation": "Remediate the failing SecurityHub controls before the next cycle.", "findings": {"kion": [{"id": "kion-drift-detection", "title": "Configuration drift is detected and reported", "description": "Configuration drift is detected and reported.", "severity": "LOW", "nist_controls": "SI-4", "remediation": "Fix and re-verify before the next cycle."}], "sechub": [{"id": "sh-inspector", "title": "Vulnerability scanning is enabled", "description": "Vulnerability scanning is enabled.", "severity": "LOW", "nist_controls": "SI-3", "remediation": "Fix and re-verify before the next cycle."}]}}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8007, '{"pillar": "Networks", "question_text": "How does your system secure Imperial communication networks from Rebel infiltration?", "question_order": 301, "functionid": 7009, "function_name": "Station Network Security", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 3, "suggested_label": "Advanced", "score_direction": "HIGHER", "score_floor_source": "Kion (failing kion-flow-logs)", "evidence_sources": "ARS, Kion", "ars_maturity": "Advanced", "ars_control_score": 3, "ars_controls_total": 4, "ars_controls_satisfied": 3, "ars_satisfied_controls": ["SC-7", "SC-8", "AC-4"], "ars_not_satisfied_controls": ["AU-12"], "cfacts_suggested_score": 3, "cfacts_suggested_label": "Advanced", "cfacts_reasoning": "3 of 4 Networks controls satisfied; next gap AU-12", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 2, "last_score_label": "Initial", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Change requests are tracked, but firewall rules are reviewed only once a year.", "score_1_option": "Basic station communication channels", "score_2_option": "Segmented station networks with encryption", "score_3_option": "Dynamic station network security monitoring", "score_4_option": "Software-defined station networks with zero trust", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 3, "kion_suggested_label": "Advanced", "kion_passing": [{"id": "kion-relay-no-open-inbound", "description": "Comm relays allow no open inbound channels.", "nist_controls": "SC-7", "level": 1}, {"id": "kion-droid-traffic-encrypted", "description": "Internal droid traffic is encrypted in transit.", "nist_controls": "SC-8", "level": 2}, {"id": "kion-segmentation", "description": "Hangar and command segments are isolated.", "nist_controls": "AC-4", "level": 3}], "kion_remediation": "Fix the failing Kion checks and re-verify before the next cycle.", "findings": {"kion": [{"id": "kion-flow-logs", "title": "Relay flow logs are enabled", "description": "Relay flow logs are enabled.", "severity": "LOW", "nist_controls": "AU-12", "remediation": "Fix and re-verify before the next cycle."}]}}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8004, '{"pillar": "Applications", "question_text": "How does your system integrate security testing throughout Imperial software development?", "question_order": 401, "functionid": 7008, "function_name": "Death Star Application Security", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 4, "suggested_label": "Optimal", "score_direction": "CONFIRMS", "evidence_sources": "ARS, Kion", "ars_maturity": "Optimal", "ars_control_score": 4, "ars_controls_total": 4, "ars_controls_satisfied": 4, "ars_satisfied_controls": ["SA-11", "CM-3", "AC-3", "SI-10"], "ars_not_satisfied_controls": [], "cfacts_suggested_score": 4, "cfacts_suggested_label": "Optimal", "cfacts_reasoning": "4 of 4 Applications controls satisfied", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 4, "last_score_label": "Optimal", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "All application access is policy-driven and evaluated on every request.", "score_1_option": "Basic superlaser targeting with manual authentication", "score_2_option": "Standardized reactor core protocols with access controls", "score_3_option": "Automated threat scanning for Death Star applications", "score_4_option": "Zero trust Death Star application architecture", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 4, "kion_suggested_label": "Optimal", "kion_passing": [{"id": "kion-release-gate", "description": "Releases pass security testing before deployment.", "nist_controls": "SA-11", "level": 1}, {"id": "kion-no-hand-changes", "description": "Production configuration is not changed by hand.", "nist_controls": "CM-3", "level": 2}, {"id": "kion-access-brokered", "description": "Application access is brokered through the identity hub.", "nist_controls": "AC-3", "level": 3}, {"id": "kion-input-validation", "description": "Inputs are validated at every boundary.", "nist_controls": "SI-10", "level": 4}]}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8010, '{"pillar": "Data", "question_text": "How does your system identify and manage Imperial tactical data inventory?", "question_order": 501, "functionid": 7010, "function_name": "Death Star Data Protection", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 4, "suggested_label": "Optimal", "score_direction": "CONFIRMS", "evidence_sources": "ARS, Kion, SecurityHub", "ars_maturity": "Optimal", "ars_control_score": 4, "ars_controls_total": 4, "ars_controls_satisfied": 4, "ars_satisfied_controls": ["SC-28", "CP-9", "AU-9", "MP-6"], "ars_not_satisfied_controls": [], "cfacts_suggested_score": 4, "cfacts_suggested_label": "Optimal", "cfacts_reasoning": "4 of 4 Data controls satisfied", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 4, "last_score_label": "Optimal", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Continuous monitoring across the full data lifecycle with automated response.", "score_1_option": "Death Star plans on isolated databases", "score_2_option": "Classified schematics with encryption", "score_3_option": "Automated DLP for Death Star plans", "score_4_option": "Dynamic protection with behavioral analytics", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 4, "kion_suggested_label": "Optimal", "kion_passing": [{"id": "kion-archive-encrypted", "description": "Archives are encrypted at rest.", "nist_controls": "SC-28", "level": 1}, {"id": "kion-backup-offsite", "description": "Backups are stored off-site.", "nist_controls": "CP-9", "level": 2}, {"id": "kion-record-audit", "description": "Changes to records are logged.", "nist_controls": "AU-9", "level": 3}, {"id": "kion-media-sanitized", "description": "Retired media is sanitized.", "nist_controls": "MP-6", "level": 4}], "has_sechub_data": true, "sechub_suggested_score": 4, "sechub_suggested_label": "Optimal", "sechub_passing": [{"id": "sh-s3-encrypted", "description": "Storage buckets are encrypted.", "nist_controls": "SC-28", "level": 1}, {"id": "sh-backup-plan", "description": "Backup plans cover production data.", "nist_controls": "CP-9", "level": 2}, {"id": "sh-cloudtrail", "description": "Data access is logged.", "nist_controls": "AU-9", "level": 3}, {"id": "sh-retention", "description": "Retention rules are configured.", "nist_controls": "MP-6", "level": 4}]}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    (3003, 8013, '{"pillar": "CrossCutting", "question_text": "How does your system coordinate Imperial security policies across all battle stations and fleets?", "question_order": 601, "functionid": 7011, "function_name": "Station Cross-Cutting Controls", "fismauid": "BFBBB0EC-9C28-499F-8D52-2EECD215DCB6", "fismaacronym": "INFORMANT-NET", "fismaname": "ISB Informant Network Intelligence Exchange", "component": "EMPIRE", "groupacronym": "INTEL", "datacenterenvironment": "Space-Station", "fips_impact_level": "High", "fips_level": "High", "fips_ceiling": 4, "suggested_score": 2, "suggested_label": "Initial", "score_direction": "LOWER", "score_floor_source": "Kion (failing kion-monitoring)", "evidence_sources": "ARS, Kion, SecurityHub", "ars_maturity": "Initial", "ars_control_score": 2, "ars_controls_total": 4, "ars_controls_satisfied": 2, "ars_satisfied_controls": ["AU-6", "IR-4"], "ars_not_satisfied_controls": ["CA-7", "PL-2"], "cfacts_suggested_score": 2, "cfacts_suggested_label": "Initial", "cfacts_reasoning": "2 of 4 CrossCutting controls satisfied; next gap CA-7", "cfacts_auth_methods": "Biometric scan + code cylinder", "last_datacall": "FY2026 Imperial Zero Trust Data Call", "last_score": 3, "last_score_label": "Advanced", "last_score_date": "2026-09-30T04:00:00+00:00", "last_score_notes": "Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.", "score_2_option": "Station-wide security policies standardized", "score_3_option": "Automated compliance across Death Star systems", "score_4_option": "Continuous security posture with adaptive controls", "snapshot_ts": "2026-10-15T10:00:00+00:00", "has_kion_data": true, "kion_suggested_score": 2, "kion_suggested_label": "Initial", "kion_passing": [{"id": "kion-watch-review", "description": "Logs are reviewed by the watch officer.", "nist_controls": "AU-6", "level": 1}, {"id": "kion-playbooks-tested", "description": "Incident playbooks are tested each cycle.", "nist_controls": "IR-4", "level": 2}], "kion_remediation": "Fix the failing Kion checks and re-verify before the next cycle.", "has_sechub_data": true, "sechub_suggested_score": 2, "sechub_suggested_label": "Initial", "sechub_passing": [{"id": "sh-cloudtrail-org", "description": "Audit logging covers all accounts.", "nist_controls": "AU-6", "level": 1}, {"id": "sh-incident-contacts", "description": "Incident contacts are registered.", "nist_controls": "IR-4", "level": 2}], "sechub_remediation": "Remediate the failing SecurityHub controls before the next cycle.", "findings": {"kion": [{"id": "kion-monitoring", "title": "Central monitoring covers all outposts", "description": "Central monitoring covers all outposts.", "severity": "MEDIUM", "nist_controls": "CA-7", "remediation": "Fix and re-verify before the next cycle."}], "sechub": [{"id": "sh-config-conformance", "title": "Conformance packs report compliant", "description": "Conformance packs report compliant.", "severity": "MEDIUM", "nist_controls": "CA-7", "remediation": "Fix and re-verify before the next cycle."}]}}'::jsonb, '2026-10-15T10:00:00+00:00')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.system_enrichment (fisma_uuid, payload, synced_at) VALUES
+    ('B54686A7-0F5F-4713-8358-053A47C20992', '{"fisma_acronym": "SHIELD-GRID", "authorization_package_name": "Imperial Planetary Shield Grid Control", "component_acronym": "EMPIRE", "group_acronym": "PDEF", "group_name": "Planetary Defense Command", "division_name": null, "data_center_environment": "Ground-Assault", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "High", "ato_expiration_date": "2029-08-01", "auth_methods": "Single sign-on (identity hub)", "primary_isso_name": "Cassio Tagge", "primary_isso_email": "cassio.tagge@example.com", "contacts": [{"role": "ISSO", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}, {"role": "System Owner", "name": "Maximilian Veers", "email": "maximilian.veers@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('8A0D9B2E-21B3-495F-8A4E-615F47DCEA8D', '{"fisma_acronym": "TIE-NAV", "authorization_package_name": "TIE Fighter Navigation Computer Update Service", "component_acronym": "EMPIRE", "group_acronym": "STARFLT", "group_name": "Starfleet Command", "division_name": null, "data_center_environment": "Imperial-Fleet", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "Moderate", "ato_expiration_date": "2027-10-17", "auth_methods": "Biometric scan + code cylinder", "primary_isso_name": "Cassio Tagge", "primary_isso_email": "cassio.tagge@example.com", "contacts": [{"role": "ISSO", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}, {"role": "ISSO", "name": "Conan Motti", "email": "conan.motti@example.com"}, {"role": "System Owner", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('BFBBB0EC-9C28-499F-8D52-2EECD215DCB6', '{"fisma_acronym": "INFORMANT-NET", "authorization_package_name": "ISB Informant Network Intelligence Exchange", "component_acronym": "EMPIRE", "group_acronym": "INTEL", "group_name": "Imperial Informant Network", "division_name": null, "data_center_environment": "Space-Station", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "High", "ato_expiration_date": "2029-09-02", "auth_methods": "Biometric scan + code cylinder", "primary_isso_name": "Dedra Meero", "primary_isso_email": "dedra.meero@example.com", "contacts": [{"role": "ISSO", "name": "Dedra Meero", "email": "dedra.meero@example.com"}, {"role": "System Owner", "name": "Wullf Yularen", "email": "wullf.yularen@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('DEA6B3BB-0097-47C5-8F93-51FE75ADA548', '{"fisma_acronym": "MUSTER-PT", "authorization_package_name": "Fleet Muster Point Coordination", "component_acronym": "EMPIRE", "group_acronym": "STARFLT", "group_name": "Starfleet Command", "division_name": null, "data_center_environment": "Surveillance-Net", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "Moderate", "ato_expiration_date": "2029-06-22", "auth_methods": "Biometric scan + code cylinder", "primary_isso_name": "Dedra Meero", "primary_isso_email": "dedra.meero@example.com", "contacts": [{"role": "ISSO", "name": "Dedra Meero", "email": "dedra.meero@example.com"}, {"role": "System Owner", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('EA51B503-E764-49F5-803A-217412527ECD', '{"fisma_acronym": "MED-FX7", "authorization_package_name": "FX-7 Medical Droid Patient Records", "component_acronym": "EMPIRE", "group_acronym": "PDEF", "group_name": "Planetary Defense Command", "division_name": null, "data_center_environment": "Imperial-Fleet", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "High", "ato_expiration_date": "2028-10-08", "auth_methods": "Code cylinder + PIN", "primary_isso_name": "Conan Motti", "primary_isso_email": "conan.motti@example.com", "contacts": [{"role": "ISSO", "name": "Conan Motti", "email": "conan.motti@example.com"}, {"role": "System Owner", "name": "Maximilian Veers", "email": "maximilian.veers@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('E5753E47-A5EA-4CBF-8D94-0E6EA0FFFBBA', '{"fisma_acronym": "TACT-HOLO", "authorization_package_name": "Death Star Tactical Hologram Briefing System", "component_acronym": "EMPIRE", "group_acronym": "STARFLT", "group_name": "Starfleet Command", "division_name": null, "data_center_environment": "Imperial-Fleet", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "Low", "ato_expiration_date": "2029-12-28", "auth_methods": "Single sign-on (identity hub)", "primary_isso_name": "Conan Motti", "primary_isso_email": "conan.motti@example.com", "contacts": [{"role": "ISSO", "name": "Conan Motti", "email": "conan.motti@example.com"}, {"role": "System Owner", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('194FEF6C-2372-4029-86C7-0FEE0144E3E4', '{"fisma_acronym": "RECRUIT-PORTAL", "authorization_package_name": "Imperial Recruitment and Personnel Onboarding", "component_acronym": "EMPIRE", "group_acronym": "PDEF", "group_name": "Planetary Defense Command", "division_name": null, "data_center_environment": "Surveillance-Net", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "Moderate", "ato_expiration_date": "2028-06-01", "auth_methods": "Code cylinder + PIN", "primary_isso_name": "Ciena Ree", "primary_isso_email": "ciena.ree@example.com", "contacts": [{"role": "ISSO", "name": "Ciena Ree", "email": "ciena.ree@example.com"}, {"role": "System Owner", "name": "Maximilian Veers", "email": "maximilian.veers@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('567B5E6B-593A-4BD9-8868-50BF043315EE', '{"fisma_acronym": "DS2-WATCH", "authorization_package_name": "Death Star II Early Warning Array", "component_acronym": "EMPIRE", "group_acronym": "INTEL", "group_name": "Imperial Informant Network", "division_name": null, "data_center_environment": "Imperial-Fleet", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "High", "ato_expiration_date": "2027-01-23", "auth_methods": "Single sign-on (identity hub)", "primary_isso_name": "Tiaan Jerjerrod", "primary_isso_email": "tiaan.jerjerrod@example.com", "contacts": [{"role": "ISSO", "name": "Tiaan Jerjerrod", "email": "tiaan.jerjerrod@example.com"}, {"role": "System Owner", "name": "Wullf Yularen", "email": "wullf.yularen@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00'),
+    ('025E3073-949B-4CA0-85D3-4FB9AA6B2EAD', '{"fisma_acronym": "LOYALTY-BEACON", "authorization_package_name": "Imperial Loyalty Beacon Network", "component_acronym": "EMPIRE", "group_acronym": "STARFLT", "group_name": "Starfleet Command", "division_name": null, "data_center_environment": "Surveillance-Net", "lifecycle_phase": "Operational", "is_active": true, "is_retired": false, "is_decommissioned": false, "decommission_date": null, "fips_impact_level": "Moderate", "ato_expiration_date": "2029-09-07", "auth_methods": "Single sign-on (identity hub)", "primary_isso_name": "Snap Wexley", "primary_isso_email": "snap.wexley@example.com", "contacts": [{"role": "ISSO", "name": "Snap Wexley", "email": "snap.wexley@example.com"}, {"role": "System Owner", "name": "Cassio Tagge", "email": "cassio.tagge@example.com"}], "last_modified_date": "2026-10-14"}'::jsonb, '2026-10-15T10:00:00+00:00')
+ON CONFLICT DO NOTHING;
+
+-- Activity: logins, questionnaire views, FY27 answer edits, the data call creation,
+-- decommission/reactivation edits and delegate grants. Logins and views are dated relative
+-- to the load so last-seen stays current. Gated so a reload cannot duplicate them.
+INSERT INTO public.events (userid, action, resource, createdat, payload)
+SELECT v.userid, v.action, v.resource, v.createdat, v.payload FROM (VALUES
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9'::uuid, 'updated', 'fismasystems', '2024-11-04T15:00:00+00:00'::timestamptz, '{"fismauid": "87D4432F-7CB6-4E1B-8FDB-BADBA2002B04", "component": "EMPIRE", "fismaname": "Alderaan Garrison Communications Relay", "groupname": "Imperial Informant Network", "issoemail": "thane.kyrell@example.com", "divisionname": null, "fismaacronym": "ALDERAAN-COMMS", "groupacronym": "INTEL", "fismasystemid": 3007, "fismasubsystem": null, "datacallcontact": "thane.kyrell@example.com", "datacenterenvironment": "Ground-Assault"}'::jsonb),
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9'::uuid, 'updated', 'fismasystems', '2025-02-10T15:00:00+00:00'::timestamptz, '{"fismauid": "EA51B503-E764-49F5-803A-217412527ECD", "component": "EMPIRE", "fismaname": "FX-7 Medical Droid Patient Records", "groupname": "Planetary Defense Command", "issoemail": "conan.motti@example.com", "divisionname": null, "fismaacronym": "MED-FX7", "groupacronym": "PDEF", "fismasystemid": 3005, "fismasubsystem": null, "datacallcontact": "evaan.verlaine@example.com", "datacenterenvironment": "Imperial-Fleet"}'::jsonb),
+    ('127c0974-35bc-40d0-82dd-55c4a536a3b0'::uuid, 'updated', 'fismasystems', '2025-07-09T15:00:00+00:00'::timestamptz, '{"fismauid": "4FA36265-8754-4738-802A-836A5457F0C6", "component": "IGOV", "fismaname": "Galactic Senate Delegation Briefing Book", "groupname": "Theed Palace Security", "issoemail": "sabe@example.com", "divisionname": null, "fismaacronym": "SENATE-BRIEF", "groupacronym": "PAL", "fismasystemid": 3015, "fismasubsystem": null, "datacallcontact": "sabe@example.com", "datacenterenvironment": "Space-Station"}'::jsonb),
+    ('5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97'::uuid, 'updated', 'fismasystems', '2025-11-12T15:00:00+00:00'::timestamptz, '{"fismauid": "137280FF-B8F8-4EE0-8EC3-4547A1F70E16", "component": "COMPNOR", "fismaname": "Clone Contingency Order Registry", "groupname": "High Council Secretariat", "issoemail": "cody.cc2224@example.com", "divisionname": null, "fismaacronym": "CLONE-DIRECTIVE", "groupacronym": "CNCL", "fismasystemid": 3013, "fismasubsystem": null, "datacallcontact": "cody.cc2224@example.com", "datacenterenvironment": "Shipyard-RnD"}'::jsonb),
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9'::uuid, 'updated', 'fismasystems', '2026-01-14T15:00:00+00:00'::timestamptz, '{"fismauid": "EA51B503-E764-49F5-803A-217412527ECD", "component": "EMPIRE", "fismaname": "FX-7 Medical Droid Patient Records", "groupname": "Planetary Defense Command", "issoemail": "conan.motti@example.com", "divisionname": null, "fismaacronym": "MED-FX7", "groupacronym": "PDEF", "fismasystemid": 3005, "fismasubsystem": null, "datacallcontact": "evaan.verlaine@example.com", "datacenterenvironment": "Imperial-Fleet"}'::jsonb),
+    ('77969813-1f95-4e2f-8434-ac3d303b1012'::uuid, 'updated', 'fismasystems', '2026-02-03T15:00:00+00:00'::timestamptz, '{"fismauid": "A3069919-CE61-4F18-80CC-C2FDA731C445", "component": "INAV", "fismaname": "Stormtrooper Personnel and Marksmanship Records", "groupname": "Legacy Fleet Support", "issoemail": "rae.sloane@example.com", "divisionname": null, "fismaacronym": "TROOPER-HR", "groupacronym": "LGCY", "fismasystemid": 3021, "fismasubsystem": null, "datacallcontact": "rae.sloane@example.com", "datacenterenvironment": "Ground-Assault"}'::jsonb),
+    ('127c0974-35bc-40d0-82dd-55c4a536a3b0'::uuid, 'updated', 'fismasystems', '2026-03-18T15:00:00+00:00'::timestamptz, '{"fismauid": "4FA36265-8754-4738-802A-836A5457F0C6", "component": "IGOV", "fismaname": "Galactic Senate Delegation Briefing Book", "groupname": "Theed Palace Security", "issoemail": "sabe@example.com", "divisionname": null, "fismaacronym": "SENATE-BRIEF", "groupacronym": "PAL", "fismasystemid": 3015, "fismasubsystem": null, "datacallcontact": "sabe@example.com", "datacenterenvironment": "Space-Station"}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'created', 'users_fismasystems', '2026-04-11T14:00:00+00:00'::timestamptz, '{"userid": "26c1487a-c42c-4ec6-8093-1a456a532045", "fismasystemid": 3002}'::jsonb),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068'::uuid, 'created', 'users_fismasystems', '2026-05-01T14:00:00+00:00'::timestamptz, '{"userid": "456e7bd8-a04c-47cc-87db-c867eb142f50", "fismasystemid": 3009}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'created', 'users_fismasystems', '2026-06-19T14:00:00+00:00'::timestamptz, '{"userid": "666714f0-0195-4d51-8b31-248596ad67c1", "fismasystemid": 3003}'::jsonb),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'created', 'users_fismasystems', '2026-06-21T14:00:00+00:00'::timestamptz, '{"userid": "ec376891-6528-4138-8160-c8150019f2ea", "fismasystemid": 3005}'::jsonb),
+    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'::uuid, 'created', 'datacalls', '2026-10-01T00:00:00+00:00'::timestamptz, (SELECT jsonb_build_object('datacall', datacall, 'deadline', deadline, 'datacallid', datacallid, 'datecreated', datecreated, 'fiscal_year', fiscal_year, 'cadence', cadence) FROM public.datacalls WHERE datacallid = 5)),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:04:00-04:00'::timestamptz, '{"notes": "Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector.", "scoreid": 20307, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785013200, "functionoptionid": 93}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:06:00-04:00'::timestamptz, '{"notes": "Automated inventory of all ships, terminals and astromechs, reconciled weekly. Tracked by the HOLOCRON owner, Jocasta Nu.", "scoreid": 20308, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785006000, "functionoptionid": 72}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:21:00-04:00'::timestamptz, '{"notes": "Fully software-defined network; every connection is authorized per request.", "scoreid": 20309, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785186000, "functionoptionid": 81}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:34:00-04:00'::timestamptz, '{"notes": "All application access is policy-driven and evaluated on every request. Tracked by the HOLOCRON owner, Jocasta Nu.", "scoreid": 20310, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1781442000, "functionoptionid": 77}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:42:00-04:00'::timestamptz, '{"notes": "Automated data inventory and labeling for all records in HOLOCRON.", "scoreid": 20311, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1782763200, "functionoptionid": 84}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'updated', 'public.scores', '2026-10-07T10:46:00-04:00'::timestamptz, '{"notes": "Central monitoring correlates events across the base and alerts the watch officer. Tracked by the HOLOCRON owner, Jocasta Nu.", "scoreid": 20312, "datacallid": 5, "fismasystemid": 3011, "datecalculated": 1785956400, "functionoptionid": 88}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T08:19:00-04:00'::timestamptz, '{"notes": "Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the SHIELD-GRID owner, Maximilian Veers.", "scoreid": 20265, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1785355200, "functionoptionid": 93}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T08:34:00-04:00'::timestamptz, '{"notes": "Shield generator consoles inventoried after the cold-weather refit; snowtrooper barracks excluded.", "scoreid": 20266, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1784725200, "functionoptionid": 72}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T08:36:00-04:00'::timestamptz, '{"notes": "All internal and external traffic encrypted and inspected, with automated response.", "scoreid": 20267, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1787410800, "functionoptionid": 81}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T08:39:00-04:00'::timestamptz, '{"notes": "Security testing built into the pipeline; critical findings block a release.", "scoreid": 20268, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1783537200, "functionoptionid": 76}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T08:55:00-04:00'::timestamptz, '{"notes": "Automated data inventory and labeling for all records in SHIELD-GRID.", "scoreid": 20269, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1784743200, "functionoptionid": 84}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-09T09:14:00-04:00'::timestamptz, '{"notes": "Central monitoring correlates events across the base and alerts the watch officer.", "scoreid": 20270, "datacallid": 5, "fismasystemid": 3001, "datecalculated": 1782756000, "functionoptionid": 88}'::jsonb),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974'::uuid, 'updated', 'public.scores', '2026-10-09T13:08:00-04:00'::timestamptz, '{"notes": "Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.", "scoreid": 20331, "datacallid": 5, "fismasystemid": 3016, "datecalculated": 1788030000, "functionoptionid": 23}'::jsonb),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974'::uuid, 'updated', 'public.scores', '2026-10-09T13:18:00-04:00'::timestamptz, '{"notes": "Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the CLOUDCAR-ATC owner, Lando Calrissian.", "scoreid": 20332, "datacallid": 5, "fismasystemid": 3016, "datecalculated": 1788364800, "functionoptionid": 3}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'updated', 'public.scores', '2026-10-09T13:24:00-04:00'::timestamptz, '{"notes": "Council members sign in with Force signature plus code cylinder. Two members'' access under review.", "scoreid": 20313, "datacallid": 5, "fismasystemid": 3012, "datecalculated": 1781978400, "functionoptionid": 20}'::jsonb),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974'::uuid, 'updated', 'public.scores', '2026-10-09T13:35:00-04:00'::timestamptz, '{"notes": "Micro-segmentation around CLOUDCAR-ATC with encrypted traffic everywhere inside the base.", "scoreid": 20333, "datacallid": 5, "fismasystemid": 3016, "datecalculated": 1784311200, "functionoptionid": 11}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'updated', 'public.scores', '2026-10-09T13:38:00-04:00'::timestamptz, '{"notes": "Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the COUNCIL-VOTE owner, Mace Windu.", "scoreid": 20314, "datacallid": 5, "fismasystemid": 3012, "datecalculated": 1785427200, "functionoptionid": 3}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'updated', 'public.scores', '2026-10-09T13:45:00-04:00'::timestamptz, '{"notes": "Micro-segmentation around COUNCIL-VOTE with encrypted traffic everywhere inside the base.", "scoreid": 20315, "datacallid": 5, "fismasystemid": 3012, "datecalculated": 1787346000, "functionoptionid": 11}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'updated', 'public.scores', '2026-10-09T14:08:00-04:00'::timestamptz, '{"notes": "Access to COUNCIL-VOTE brokered through the identity hub with per-request checks.", "scoreid": 20316, "datacallid": 5, "fismasystemid": 3012, "datecalculated": 1784228400, "functionoptionid": 7}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-09T16:18:00-04:00'::timestamptz, '{"notes": "Continuous authentication with real-time risk scoring; sessions re-checked when a pilot changes sector. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.", "scoreid": 20367, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1786795200, "functionoptionid": 23}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-09T16:43:00-04:00'::timestamptz, '{"notes": "Device health is checked continuously and feeds access decisions in real time.", "scoreid": 20368, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1784466000, "functionoptionid": 4}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-10T09:03:00-04:00'::timestamptz, '{"notes": "All internal and external traffic encrypted and inspected, with automated response. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.", "scoreid": 20369, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1786651200, "functionoptionid": 12}'::jsonb),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb'::uuid, 'updated', 'public.scores', '2026-10-10T09:17:00-04:00'::timestamptz, '{"notes": "Accounts federated to the Naboo directory, but removal on reassignment is manual and slow.", "scoreid": 20325, "datacallid": 5, "fismasystemid": 3015, "datecalculated": 1784638800, "functionoptionid": 44}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-10T09:19:00-04:00'::timestamptz, '{"notes": "Access to NR-CITIZEN-ID brokered through the identity hub with per-request checks.", "scoreid": 20370, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1783526400, "functionoptionid": 7}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-10T09:37:00-04:00'::timestamptz, '{"notes": "Automated data inventory and labeling for all records in NR-CITIZEN-ID.", "scoreid": 20371, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1787832000, "functionoptionid": 15}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'updated', 'public.scores', '2026-10-10T09:49:00-04:00'::timestamptz, '{"notes": "Policies enforced consistently across all environments through central tooling. Tracked by the NR-CITIZEN-ID owner, Amilyn Holdo.", "scoreid": 20372, "datacallid": 5, "fismasystemid": 3023, "datecalculated": 1784311200, "functionoptionid": 18}'::jsonb),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068'::uuid, 'created', 'public.scores', '2026-10-10T10:07:00-04:00'::timestamptz, '{"notes": "Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the DS2-WATCH owner, Wullf Yularen.", "scoreid": 20373, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791641220, "functionoptionid": 22}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'public.scores', '2026-10-10T10:21:00-04:00'::timestamptz, '{"notes": "Devices are checked when they connect, but compliance is not re-checked afterwards. Tracked by the DS2-WATCH owner, Wullf Yularen.", "scoreid": 20374, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791642060, "functionoptionid": 2}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'public.scores', '2026-10-10T10:28:00-04:00'::timestamptz, '{"notes": "Micro-segmentation around DS2-WATCH with encrypted traffic everywhere inside the base.", "scoreid": 20375, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791642480, "functionoptionid": 11}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'public.scores', '2026-10-10T10:33:00-04:00'::timestamptz, '{"notes": "Configuration changes are reviewed but deployed by hand. Tracked by the DS2-WATCH owner, Wullf Yularen.", "scoreid": 20376, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791642780, "functionoptionid": 6}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'public.scores', '2026-10-10T10:46:00-04:00'::timestamptz, '{"notes": "Data encrypted at rest on primary storage; encryption in transit in progress. Tracked by the DS2-WATCH owner, Wullf Yularen.", "scoreid": 20377, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791643560, "functionoptionid": 14}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'public.scores', '2026-10-10T10:57:00-04:00'::timestamptz, '{"notes": "Logs for DS2-WATCH collected centrally; review is manual.", "scoreid": 20378, "datacallid": 5, "fismasystemid": 3009, "datecalculated": 1791644220, "functionoptionid": 17}'::jsonb),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'updated', 'public.scores', '2026-10-11T14:15:00-04:00'::timestamptz, '{"notes": "Phishing-resistant code cylinders for all users; droid identities moved to rotating certificates. Tracked by the MED-FX7 owner, Maximilian Veers.", "scoreid": 20289, "datacallid": 5, "fismasystemid": 3005, "datecalculated": 1787745600, "functionoptionid": 22}'::jsonb),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'updated', 'public.scores', '2026-10-11T14:23:00-04:00'::timestamptz, '{"notes": "Device inventory is a spreadsheet kept by the quartermaster; astromechs are not tracked.", "scoreid": 20290, "datacallid": 5, "fismasystemid": 3005, "datecalculated": 1782849600, "functionoptionid": 1}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T10:02:00-04:00'::timestamptz, '{"notes": "Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the YT1300-DIAG owner, Han Solo.", "scoreid": 20337, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1781798400, "functionoptionid": 22}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T10:20:00-04:00'::timestamptz, '{"notes": "Hyperdrive motivator replaced; all onboard droids now registered, including the navicomputer personality.", "scoreid": 20338, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1783512000, "functionoptionid": 2}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T10:23:00-04:00'::timestamptz, '{"notes": "All internal and external traffic encrypted and inspected, with automated response. Tracked by the YT1300-DIAG owner, Han Solo.", "scoreid": 20339, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1786190400, "functionoptionid": 12}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T10:46:00-04:00'::timestamptz, '{"notes": "Access to YT1300-DIAG brokered through the identity hub with per-request checks.", "scoreid": 20340, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1788710400, "functionoptionid": 7}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T10:57:00-04:00'::timestamptz, '{"notes": "Continuous monitoring across the full data lifecycle with automated response. Tracked by the YT1300-DIAG owner, Han Solo.", "scoreid": 20341, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1787425200, "functionoptionid": 16}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'updated', 'public.scores', '2026-10-12T11:04:00-04:00'::timestamptz, '{"notes": "Logs for YT1300-DIAG collected centrally; review is manual.", "scoreid": 20342, "datacallid": 5, "fismasystemid": 3017, "datecalculated": 1784397600, "functionoptionid": 17}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-12T11:09:00-04:00'::timestamptz, '{"notes": "Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.", "scoreid": 20271, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1788210000, "functionoptionid": 22}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-12T11:14:00-04:00'::timestamptz, '{"notes": "Restraining bolts replaced with managed device policies pushed from the central console. Tracked by the TIE-NAV owner, Cassio Tagge.", "scoreid": 20272, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1781370000, "functionoptionid": 3}'::jsonb),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'updated', 'public.scores', '2026-10-12T11:16:00-04:00'::timestamptz, '{"notes": "Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.", "scoreid": 20271, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1788210000, "functionoptionid": 20}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-12T11:31:00-04:00'::timestamptz, '{"notes": "Micro-segmentation around TIE-NAV with encrypted traffic everywhere inside the base.", "scoreid": 20273, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1781816400, "functionoptionid": 11}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-12T11:34:00-04:00'::timestamptz, '{"notes": "Immutable workloads with continuous authorization and runtime protection. Tracked by the TIE-NAV owner, Cassio Tagge.", "scoreid": 20274, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1788555600, "functionoptionid": 8}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'updated', 'public.scores', '2026-10-12T11:46:00-04:00'::timestamptz, '{"notes": "Joiner, mover and leaver steps automated from the personnel roster; reviews run monthly. Tracked by the TIE-NAV owner, Cassio Tagge.", "scoreid": 20271, "datacallid": 5, "fismasystemid": 3002, "datecalculated": 1788210000, "functionoptionid": 22}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T14:08:00-04:00'::timestamptz, '{"notes": "All human and droid identities are short-lived, just-in-time, and centrally governed.", "scoreid": 20277, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1788188400, "functionoptionid": 46}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T14:27:00-04:00'::timestamptz, '{"notes": "Restraining bolts replaced with managed device policies pushed from the central console.", "scoreid": 20278, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1785355200, "functionoptionid": 26}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T14:52:00-04:00'::timestamptz, '{"notes": "Micro-segmentation around INFORMANT-NET with encrypted traffic everywhere inside the base.", "scoreid": 20279, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1788382800, "functionoptionid": 34}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T15:11:00-04:00'::timestamptz, '{"notes": "All application access is policy-driven and evaluated on every request.", "scoreid": 20280, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1781899200, "functionoptionid": 31}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T15:21:00-04:00'::timestamptz, '{"notes": "Continuous monitoring across the full data lifecycle with automated response.", "scoreid": 20281, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1781791200, "functionoptionid": 39}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'updated', 'public.scores', '2026-10-12T15:28:00-04:00'::timestamptz, '{"notes": "Central monitoring correlates events across the base and alerts the watch officer. Tracked by the INFORMANT-NET owner, Wullf Yularen.", "scoreid": 20282, "datacallid": 5, "fismasystemid": 3003, "datecalculated": 1786741200, "functionoptionid": 41}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T09:02:00-04:00'::timestamptz, '{"notes": "Single sign-on through the Corellian identity hub with conditional access by sector and clearance.", "scoreid": 20343, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1787929200, "functionoptionid": 22}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T09:14:00-04:00'::timestamptz, '{"notes": "Inventory and risk posture fully automated across all hangars and outposts.", "scoreid": 20344, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1784131200, "functionoptionid": 4}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T09:29:00-04:00'::timestamptz, '{"notes": "Network policy adapts automatically to the threat level and is verified continuously.", "scoreid": 20345, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1787598000, "functionoptionid": 12}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T09:45:00-04:00'::timestamptz, '{"notes": "Access to DESIGN-VAULT brokered through the identity hub with per-request checks.", "scoreid": 20346, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1788634800, "functionoptionid": 7}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T10:03:00-04:00'::timestamptz, '{"notes": "Data inventory started; mission data and personnel records categorized by hand. Tracked by the DESIGN-VAULT owner, Wedge Antilles.", "scoreid": 20347, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1781712000, "functionoptionid": 14}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'updated', 'public.scores', '2026-10-13T10:27:00-04:00'::timestamptz, '{"notes": "Policies enforced consistently across all environments through central tooling. Tracked by the DESIGN-VAULT owner, Wedge Antilles.", "scoreid": 20348, "datacallid": 5, "fismasystemid": 3018, "datecalculated": 1782590400, "functionoptionid": 18}'::jsonb),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0'::uuid, 'updated', 'public.scores', '2026-10-13T12:14:00-04:00'::timestamptz, '{"notes": "All human and droid identities are short-lived, just-in-time, and centrally governed. Tracked by the IMP-CENSUS owner, Enric Pryde.", "scoreid": 20361, "datacallid": 5, "fismasystemid": 3022, "datecalculated": 1786190400, "functionoptionid": 46}'::jsonb),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0'::uuid, 'updated', 'public.scores', '2026-10-13T12:16:00-04:00'::timestamptz, '{"notes": "Every device, astromechs included, is provisioned, monitored and retired automatically.", "scoreid": 20362, "datacallid": 5, "fismasystemid": 3022, "datecalculated": 1781618400, "functionoptionid": 27}'::jsonb),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0'::uuid, 'updated', 'public.scores', '2026-10-13T12:40:00-04:00'::timestamptz, '{"notes": "Base network split into hangar, command and civilian segments. Tracked by the IMP-CENSUS owner, Enric Pryde.", "scoreid": 20363, "datacallid": 5, "fismasystemid": 3022, "datecalculated": 1785240000, "functionoptionid": 33}'::jsonb),
+    ('ec376891-6528-4138-8160-c8150019f2ea'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '56 days' + interval '9 hours 39 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "ec376891-6528-4138-8160-c8150019f2ea"}'::jsonb),
+    ('ec376891-6528-4138-8160-c8150019f2ea'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '42 days' + interval '14 hours 30 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "ec376891-6528-4138-8160-c8150019f2ea"}'::jsonb),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '10 hours 40 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "42dd7713-ff1c-4b06-8357-6e860cf22fd0"}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '10 hours 43 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "760a6b7e-5fc4-4491-8944-b9fe9b88cf22"}'::jsonb),
+    ('666714f0-0195-4d51-8b31-248596ad67c1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '11 hours 12 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "666714f0-0195-4d51-8b31-248596ad67c1"}'::jsonb),
+    ('abfcd7c1-1b9b-402a-8852-71010e58a068'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '12 hours 27 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "abfcd7c1-1b9b-402a-8852-71010e58a068"}'::jsonb),
+    ('662df81f-0995-4030-8b22-64288c8d2748'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '16 hours 34 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "662df81f-0995-4030-8b22-64288c8d2748"}'::jsonb),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '9 days' + interval '16 hours 37 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8007, "fismasystemid": 3015}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '9 hours 3 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8016, "fismasystemid": 3012}'::jsonb),
+    ('99573e43-3fad-4d22-8a1f-4ea35668180a'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '9 hours 29 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "99573e43-3fad-4d22-8a1f-4ea35668180a"}'::jsonb),
+    ('760a6b7e-5fc4-4491-8944-b9fe9b88cf22'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '10 hours 19 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8001, "fismasystemid": 3023}'::jsonb),
+    ('23b009de-21be-43c8-88c4-02f43b6a606c'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '12 hours 11 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "23b009de-21be-43c8-88c4-02f43b6a606c"}'::jsonb),
+    ('456e7bd8-a04c-47cc-87db-c867eb142f50'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '13 hours 5 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "456e7bd8-a04c-47cc-87db-c867eb142f50"}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '15 hours 38 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8026, "fismasystemid": 3004}'::jsonb),
+    ('5f592fde-85fc-4c16-8813-52f08d4a789a'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '16 hours 24 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "5f592fde-85fc-4c16-8813-52f08d4a789a"}'::jsonb),
+    ('99573e43-3fad-4d22-8a1f-4ea35668180a'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '16 hours 34 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "99573e43-3fad-4d22-8a1f-4ea35668180a"}'::jsonb),
+    ('49654e9e-ba3d-46d4-85d4-785385681993'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '8 days' + interval '16 hours 37 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8030, "fismasystemid": 3008}'::jsonb),
+    ('f3728fee-57eb-497b-8b42-b2898ff18f90'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '8 hours 49 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "f3728fee-57eb-497b-8b42-b2898ff18f90"}'::jsonb),
+    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '9 hours 37 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b"}'::jsonb),
+    ('23b009de-21be-43c8-88c4-02f43b6a606c'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '11 hours 53 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8010, "fismasystemid": 3019}'::jsonb),
+    ('0ea66708-67ce-4d6c-83a3-7edfb370666d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '13 hours 47 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "0ea66708-67ce-4d6c-83a3-7edfb370666d"}'::jsonb),
+    ('a9b665b2-f46a-4d53-8148-8cb68820d06d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '14 hours 10 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "a9b665b2-f46a-4d53-8148-8cb68820d06d"}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '15 hours 29 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "11a5190d-a7c1-44a8-892c-025f71c477db"}'::jsonb),
+    ('5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '7 days' + interval '16 hours 40 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "5c3a5ccd-3d76-4695-8d4d-2f0de2e62f97"}'::jsonb),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '6 days' + interval '8 hours 5 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "9b9876f3-0de8-488c-8135-0ae2a9c2e974"}'::jsonb),
+    ('a9b665b2-f46a-4d53-8148-8cb68820d06d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '6 days' + interval '9 hours 35 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "a9b665b2-f46a-4d53-8148-8cb68820d06d"}'::jsonb),
+    ('26c1487a-c42c-4ec6-8093-1a456a532045'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '6 days' + interval '9 hours 43 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "26c1487a-c42c-4ec6-8093-1a456a532045"}'::jsonb),
+    ('db2b9477-e54e-4ec6-811d-bb827d72783d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '6 days' + interval '16 hours 3 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "db2b9477-e54e-4ec6-811d-bb827d72783d"}'::jsonb),
+    ('df09ca08-0432-47e7-8598-65435a488bf5'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '11 hours 15 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "df09ca08-0432-47e7-8598-65435a488bf5"}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '12 hours 5 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8013, "fismasystemid": 3018}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '12 hours 46 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8016, "fismasystemid": 3003}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '15 hours 53 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8001, "fismasystemid": 3017}'::jsonb),
+    ('662df81f-0995-4030-8b22-64288c8d2748'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '16 hours 5 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8026, "fismasystemid": 3010}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '5 days' + interval '16 hours 17 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "6062a651-59b2-424e-84bc-479cb9ed7fa1"}'::jsonb),
+    ('b6b46343-f22d-4f1b-832b-85b69f732f7d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '10 hours 10 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "b6b46343-f22d-4f1b-832b-85b69f732f7d"}'::jsonb),
+    ('0ea66708-67ce-4d6c-83a3-7edfb370666d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '10 hours 50 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "0ea66708-67ce-4d6c-83a3-7edfb370666d"}'::jsonb),
+    ('321cdf05-4676-4c20-8137-3d9b028118f1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '11 hours 6 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "321cdf05-4676-4c20-8137-3d9b028118f1"}'::jsonb),
+    ('666714f0-0195-4d51-8b31-248596ad67c1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '14 hours 5 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "666714f0-0195-4d51-8b31-248596ad67c1"}'::jsonb),
+    ('b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '16 hours 31 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "b499d8cc-5c89-45e4-8a9f-6ecb3c96a7e6"}'::jsonb),
+    ('49654e9e-ba3d-46d4-85d4-785385681993'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '4 days' + interval '16 hours 59 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "49654e9e-ba3d-46d4-85d4-785385681993"}'::jsonb),
+    ('89fa03c9-cbf4-438f-88dd-3a24cd9501ac'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '11 hours 3 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "89fa03c9-cbf4-438f-88dd-3a24cd9501ac"}'::jsonb),
+    ('d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '12 hours 54 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "d347be4d-1fb4-40fe-8f93-b1c6ea0ef69b"}'::jsonb),
+    ('df09ca08-0432-47e7-8598-65435a488bf5'::uuid, 'viewed', 'questionnaire', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '14 hours 11 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"readonly": false, "datacallid": 5, "questionid": 8023, "fismasystemid": 3020}'::jsonb),
+    ('11a5190d-a7c1-44a8-892c-025f71c477db'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '14 hours 38 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "11a5190d-a7c1-44a8-892c-025f71c477db"}'::jsonb),
+    ('874e031b-472a-4d72-8083-ed0cfa509f3c'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '16 hours 18 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "874e031b-472a-4d72-8083-ed0cfa509f3c"}'::jsonb),
+    ('42dd7713-ff1c-4b06-8357-6e860cf22fd0'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '3 days' + interval '16 hours 56 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "42dd7713-ff1c-4b06-8357-6e860cf22fd0"}'::jsonb),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '8 hours 55 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "7b7fa300-7937-400e-8876-aba33455a1cb"}'::jsonb),
+    ('f62dc080-386f-40f3-8174-d9b8cc6a7a6e'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '10 hours 51 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "f62dc080-386f-40f3-8174-d9b8cc6a7a6e"}'::jsonb),
+    ('cbcf9a86-1b38-44ff-8751-74d3d1463d75'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '11 hours 57 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "cbcf9a86-1b38-44ff-8751-74d3d1463d75"}'::jsonb),
+    ('77969813-1f95-4e2f-8434-ac3d303b1012'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '12 hours 28 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "77969813-1f95-4e2f-8434-ac3d303b1012"}'::jsonb),
+    ('1e46e0f1-23e2-48e1-8c75-aece4405bc48'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '13 hours 30 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "1e46e0f1-23e2-48e1-8c75-aece4405bc48"}'::jsonb),
+    ('df09ca08-0432-47e7-8598-65435a488bf5'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '15 hours 12 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "df09ca08-0432-47e7-8598-65435a488bf5"}'::jsonb),
+    ('662df81f-0995-4030-8b22-64288c8d2748'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '15 hours 37 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "662df81f-0995-4030-8b22-64288c8d2748"}'::jsonb),
+    ('127c0974-35bc-40d0-82dd-55c4a536a3b0'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '16 hours 15 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "127c0974-35bc-40d0-82dd-55c4a536a3b0"}'::jsonb),
+    ('7b7fa300-7937-400e-8876-aba33455a1cb'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '16 hours 20 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "7b7fa300-7937-400e-8876-aba33455a1cb"}'::jsonb),
+    ('9b9876f3-0de8-488c-8135-0ae2a9c2e974'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '16 hours 29 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "9b9876f3-0de8-488c-8135-0ae2a9c2e974"}'::jsonb),
+    ('d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '2 days' + interval '16 hours 52 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "d152b6d0-ce3b-4fc0-82ee-7c8a48cb23b9"}'::jsonb),
+    ('df7a39c7-97c9-45f1-801f-f6e5b71a1ef1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '8 hours 22 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "df7a39c7-97c9-45f1-801f-f6e5b71a1ef1"}'::jsonb),
+    ('db2b9477-e54e-4ec6-811d-bb827d72783d'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '10 hours 43 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "db2b9477-e54e-4ec6-811d-bb827d72783d"}'::jsonb),
+    ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '11 hours 14 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3"}'::jsonb),
+    ('8d1f43ff-ce3f-4aa4-84f4-fcd38e032117'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '14 hours 7 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "8d1f43ff-ce3f-4aa4-84f4-fcd38e032117"}'::jsonb),
+    ('26c1487a-c42c-4ec6-8093-1a456a532045'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '16 hours 8 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "26c1487a-c42c-4ec6-8093-1a456a532045"}'::jsonb),
+    ('6062a651-59b2-424e-84bc-479cb9ed7fa1'::uuid, 'created', 'session', ((date_trunc('day', now() AT TIME ZONE 'America/New_York') - interval '1 days' + interval '16 hours 29 minutes') AT TIME ZONE 'America/New_York')::timestamptz, '{"userid": "6062a651-59b2-424e-84bc-479cb9ed7fa1"}'::jsonb)
+) AS v(userid, action, resource, createdat, payload)
+CROSS JOIN demo_seed_gate g WHERE g.fresh;
+
+-- Move the id sequences past the explicit ids above.
+SELECT setval(pg_get_serial_sequence('public.fismasystems', 'fismasystemid'), GREATEST((SELECT max(fismasystemid) FROM public.fismasystems), 1));
+SELECT setval(pg_get_serial_sequence('public.scores', 'scoreid'), GREATEST((SELECT max(scoreid) FROM public.scores), 1));
+SELECT setval(pg_get_serial_sequence('public.score_revisions', 'revisionid'), GREATEST((SELECT max(revisionid) FROM public.score_revisions), 1));
+SELECT setval(pg_get_serial_sequence('public.datacalls', 'datacallid'), GREATEST((SELECT max(datacallid) FROM public.datacalls), 1));
+
+DROP TABLE demo_seed_gate;
+
 COMMIT;
