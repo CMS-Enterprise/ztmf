@@ -2032,6 +2032,15 @@ FROM (VALUES
 ) AS v(fismasystemid, fips)
 WHERE f.fismasystemid = v.fismasystemid AND f.fips IS NULL;
 
+-- The same systems record HVA as No. The questionnaire's FIPS baseline only shows
+-- for a confirmed non-HVA, since an unrecorded HVA is unknown, so without this the
+-- Low and Moderate fixture systems would show no baseline. Only fills a NULL.
+UPDATE public.fismasystems SET hva = FALSE
+WHERE hva IS NULL
+  AND fismasystemid IN (1001, 1002, 1003, 1004, 1005, 1006,
+                        1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108, 1109, 1110,
+                        2016, 2017);
+
 INSERT INTO public.users_fismasystems (userid, fismasystemid) VALUES
     ('e4a2b9dc-31ac-47e1-894e-2d70ea75c3b3', 3001),
     ('5f592fde-85fc-4c16-8813-52f08d4a789a', 3001),
