@@ -44,8 +44,8 @@ func dirtyScoresFixture(t *testing.T, ctx context.Context, tx pgx.Tx) (dataCallI
 	t.Helper()
 
 	require.NoError(t, tx.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("scores_guard_%d", 1)).Scan(&dataCallID))
 

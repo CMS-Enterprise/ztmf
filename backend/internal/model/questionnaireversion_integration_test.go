@@ -88,8 +88,8 @@ func pinnedTwin(t *testing.T, conn *pgxpool.Conn, src, v int32) int32 {
 	ctx := context.Background()
 	var dc int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline, questionnaire_versionid)
-		SELECT $1, NOW(), deadline, $2 FROM datacalls WHERE datacallid = $3
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year, cadence, questionnaire_versionid)
+		SELECT $1, NOW(), deadline, fiscal_year, cadence, $2 FROM datacalls WHERE datacallid = $3
 		RETURNING datacallid`,
 		fmt.Sprintf("%stwin_%d_%d", integrationTestPrefix, src, time.Now().UnixNano()), v, src).Scan(&dc))
 	tag, err := conn.Exec(ctx, `
