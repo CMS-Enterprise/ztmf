@@ -693,6 +693,126 @@ tests:
           data:
             <<: *updatedDataCallData
 
+  # Updates are partial. A body with only fiscal_year changes the year and
+  # keeps the title, deadline and cadence.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2101
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "quarterly"
+
+  # A body with only cadence changes the cadence and keeps the rest, including
+  # the year set just above.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "annual"
+
+  # Put the call back the way the update above left it.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2100
+        cadence: "quarterly"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # The path id is read as decimal. "0101" is call 101; fmt.Sscan read it as
+  # octal 65, a call that does not exist. The body sets cadence to the value
+  # call 101 already has, so nothing changes.
+  - url: http://localhost:8080/api/v1/datacalls/0101
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: http://localhost:8080/api/v1/datacalls/101
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacallid: 101
+            datacall: "FY23 ZTM"
+            fiscal_year: 2023
+            cadence: "annual"
+
+  # A path id of 0 is a 404, never a create.
+  - url: http://localhost:8080/api/v1/datacalls/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Should not be created"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 404
+
   # fiscal_year is required on create, and both fields are validated on create
   # and update. None of these writes a row, so the latest call is unchanged.
   - url: http://localhost:8080/api/v1/datacalls

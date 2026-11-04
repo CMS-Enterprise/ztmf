@@ -72,6 +72,10 @@ func TestDataCallsFiscalYearIntegration(t *testing.T) {
 		"FY2027 Zero Trust Data Call": {2027, "annual"},
 		"  fy23 q4  ":                 {2023, "quarterly"},
 		"FY26 HQ1 Review":             {2026, "annual"},
+		"FY26Q2":                      {2026, "quarterly"},
+		"FY2026Q3 Check-in":           {2026, "quarterly"},
+		"FY2027 Zero Trust Q2 Review": {2027, "annual"},
+		"FY26 Q1x":                    {2026, "annual"},
 	}
 	ids := make(map[string]int32, len(cases))
 	for name := range cases {
