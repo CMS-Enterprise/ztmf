@@ -387,14 +387,35 @@ components:
       type: object
     model.DataCall:
       properties:
+        cadence:
+          description: Defaults to annual on create; omitted on update keeps the stored
+            cadence.
+          enum:
+          - annual
+          - quarterly
+          example: annual
+          type: string
         datacall:
+          description: |-
+            Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+            and cadence are separate fields. Required on create; omitted on update
+            keeps the stored title.
           type: string
         datacallid:
           type: integer
         datecreated:
           type: string
         deadline:
+          description: Required on create; omitted on update keeps the stored deadline.
           type: string
+        fiscal_year:
+          description: |-
+            Four-digit fiscal year. Required on create; omitted on update keeps the
+            stored year.
+          example: 2026
+          maximum: 2999
+          minimum: 2000
+          type: integer
         questionnaire_versionid:
           description: |-
             The questionnaire version the call answers (ztmf-misc#397). Chosen at
@@ -404,15 +425,36 @@ components:
       type: object
     model.DataCallRepin:
       properties:
+        cadence:
+          description: Defaults to annual on create; omitted on update keeps the stored
+            cadence.
+          enum:
+          - annual
+          - quarterly
+          example: annual
+          type: string
         datacall:
+          description: |-
+            Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+            and cadence are separate fields. Required on create; omitted on update
+            keeps the stored title.
           type: string
         datacallid:
           type: integer
         datecreated:
           type: string
         deadline:
+          description: Required on create; omitted on update keeps the stored deadline.
           type: string
         dropped:
+          type: integer
+        fiscal_year:
+          description: |-
+            Four-digit fiscal year. Required on create; omitted on update keeps the
+            stored year.
+          example: 2026
+          maximum: 2999
+          minimum: 2000
           type: integer
         questionnaire_versionid:
           description: |-
@@ -1196,6 +1238,10 @@ paths:
       tags:
       - datacalls
     post:
+      description: 'The name (datacall) is a free-text title, unique ignoring case.
+        Create requires datacall, deadline and fiscal_year; cadence defaults to "annual".
+        Update is partial: any field left out keeps its stored value. A path id that
+        is zero or out of range is a 404.'
       parameters:
       - description: Data call ID (for update)
         in: path
@@ -1232,6 +1278,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
         "500":
           content:
             application/json:
@@ -1277,6 +1329,10 @@ paths:
       tags:
       - datacalls
     put:
+      description: 'The name (datacall) is a free-text title, unique ignoring case.
+        Create requires datacall, deadline and fiscal_year; cadence defaults to "annual".
+        Update is partial: any field left out keeps its stored value. A path id that
+        is zero or out of range is a 404.'
       parameters:
       - description: Data call ID (for update)
         in: path
@@ -1313,6 +1369,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
         "500":
           content:
             application/json:

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // A malformed query param decoded via gorilla/schema must surface as a 400
@@ -178,6 +180,10 @@ func TestSaveHandlers_UnusablePathIDIsNotACreate(t *testing.T) {
 			name: "SaveFunctionOption", handler: SaveFunctionOption, varName: "functionoptionid", path: "/api/v1/functionoptions/",
 			body: map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
 		},
+		{
+			name: "SaveDataCall", handler: SaveDataCall, varName: "datacallid", path: "/api/v1/datacalls/",
+			body: map[string]any{"datacall": "FY2027 Data Call", "deadline": "2027-09-30T00:00:00Z", "fiscal_year": 2027},
+		},
 	}
 
 	for _, h := range handlers {
@@ -194,4 +200,27 @@ func TestSaveHandlers_UnusablePathIDIsNotACreate(t *testing.T) {
 			})
 		}
 	}
+}
+
+// SaveDataCall takes create vs update from the route, never the body. A POST
+// whose body carries "datacallid" used to land in the UPDATE branch and rewrite
+// that row under a 201. Re-pinned to 0, it stays a create, so a body with no
+// fiscal_year or deadline is a 400 naming both, returned before any query.
+func TestSaveDataCall_BodyIDIsNotAnUpdate(t *testing.T) {
+	r := httptest.NewRequest("POST", "/api/v1/datacalls", jsonBody(t, map[string]any{
+		"datacallid": 5,
+		"datacall":   "Renamed by a POST",
+	}))
+	r = withUser(r, &model.User{Role: "OWNER"})
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	SaveDataCall(w, r)
+
+	require.Equal(t, http.StatusBadRequest, w.Code, "a body id must not select the update branch")
+	var res struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&res))
+	assert.Contains(t, res.Data, "fiscal_year")
+	assert.Contains(t, res.Data, "deadline")
 }

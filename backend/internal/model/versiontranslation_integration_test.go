@@ -25,8 +25,8 @@ func openCallWithAnswers(t *testing.T, ctx context.Context, conn *pgxpool.Conn, 
 	t.Helper()
 	var dc int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline, questionnaire_versionid)
-		VALUES ($1, NOW(), $2::timestamptz, 1) RETURNING datacallid`,
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year, questionnaire_versionid)
+		VALUES ($1, NOW(), $2::timestamptz, 2100, 1) RETURNING datacallid`,
 		fmt.Sprintf("%s%s_%d", integrationTestPrefix, label, time.Now().UnixNano()), deadline).Scan(&dc))
 	tag, err := conn.Exec(ctx, `
 		INSERT INTO scores (fismasystemid, datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status)
@@ -104,6 +104,7 @@ func TestDataCallCreatePinsAVersionIntegration(t *testing.T) {
 		return (&DataCall{
 			DataCall:               fmt.Sprintf("%screate_%d", integrationTestPrefix, time.Now().UnixNano()),
 			Deadline:               time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+			FiscalYear:             2100,
 			QuestionnaireVersionID: version,
 		}).Save(ctx)
 	}
@@ -176,8 +177,8 @@ func TestDataCallRepinIntegration(t *testing.T) {
 	t.Run("NoAnswersIsAFreeSwap", func(t *testing.T) {
 		var dc int32
 		require.NoError(t, conn.QueryRow(ctx, `
-			INSERT INTO datacalls (datacall, datecreated, deadline, questionnaire_versionid)
-			VALUES ($1, NOW(), '2100-01-01', 1) RETURNING datacallid`, integrationTestPrefix+"repin_empty").Scan(&dc))
+			INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year, questionnaire_versionid)
+			VALUES ($1, NOW(), '2100-01-01', 2100, 1) RETURNING datacallid`, integrationTestPrefix+"repin_empty").Scan(&dc))
 		res, err := RepinDataCall(ctx, dc, missing)
 		require.NoError(t, err)
 		assert.Equal(t, missing, res.QuestionnaireVersionID)
@@ -430,6 +431,7 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 			dc, err = (&DataCall{
 				DataCall:               fmt.Sprintf("%srollover_new_%d", integrationTestPrefix, time.Now().UnixNano()),
 				Deadline:               time.Date(2101, 1, 1, 0, 0, 0, 0, time.UTC),
+				FiscalYear:             2101,
 				QuestionnaireVersionID: version,
 			}).Save(ctx)
 		})

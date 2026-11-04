@@ -384,8 +384,8 @@ func TestQuestionnaireVersionLifecycleIntegration(t *testing.T) {
 
 	var pinned int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline, questionnaire_versionid)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 1) RETURNING datacallid`,
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year, questionnaire_versionid)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2100, 1) RETURNING datacallid`,
 		integrationTestPrefix+"pinned_baseline").Scan(&pinned))
 	before, err := FindQuestionsByFismaSystem(ctx, systemID, FindQuestionsByFismaSystemInput{DataCallID: &pinned})
 	require.NoError(t, err)
@@ -495,7 +495,7 @@ func TestQuestionnaireVersionLineageRulesIntegration(t *testing.T) {
 }
 
 // An earlier version holding two lineages for one question and environment
-// (0068 allows it and reports duplicate_editions) must not make every later
+// (0071 allows it and reports duplicate_editions) must not make every later
 // draft unpublishable: keeping either lineage satisfies the rule.
 func TestQuestionnaireVersionDuplicateHistoricalLineageIntegration(t *testing.T) {
 	ctx, conn := versionTestSetup(t)

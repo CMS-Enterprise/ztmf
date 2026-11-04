@@ -235,8 +235,8 @@ func TestScoreSaveValidationIntegration(t *testing.T) {
 		t.Log("no future-deadline datacall present; using a synthesized one for this test")
 		name := fmt.Sprintf("%sfuture_%d", integrationTestPrefix, time.Now().UnixNano())
 		err = conn.QueryRow(ctx, `
-			INSERT INTO datacalls (datacall, datecreated, deadline)
-			VALUES ($1, NOW(), NOW() + INTERVAL '7 days')
+			INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+			VALUES ($1, NOW(), NOW() + INTERVAL '7 days', 2026)
 			RETURNING datacallid
 		`, name).Scan(&futureDataCallID)
 		require.NoError(t, err)
@@ -326,15 +326,15 @@ func TestCopyPreviousScoresIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprev_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snew_%d", integrationTestPrefix, suffix)).Scan(&newDC)
 	require.NoError(t, err)
@@ -420,15 +420,15 @@ func TestCopyPreviousScoresEmptyPreviousIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprev_empty_%d", integrationTestPrefix, suffix)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snew_empty_%d", integrationTestPrefix, suffix)).Scan(&newDC)
 	require.NoError(t, err)
@@ -474,15 +474,15 @@ func newRolloverFixture(t *testing.T, ctx context.Context, conn *pgxpool.Conn, l
 	suffix := time.Now().UnixNano()
 
 	err := conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprev_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2101-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snew_%s_%d", integrationTestPrefix, label, suffix)).Scan(&f.newDC)
 	require.NoError(t, err)
@@ -812,8 +812,8 @@ func TestFindLatestDataCallByDeadlineIntegration(t *testing.T) {
 	// 2099-12-31), so this call is the global latest by deadline.
 	var laterDeadlineID int32
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2102-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2102-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%slatest_deadline_%d", integrationTestPrefix, suffix)).Scan(&laterDeadlineID)
 	require.NoError(t, err)
@@ -822,8 +822,8 @@ func TestFindLatestDataCallByDeadlineIntegration(t *testing.T) {
 	// row that would wrongly win under datacallid ordering.
 	var higherIDEarlierDeadline int32
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-06-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-06-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%shigher_id_%d", integrationTestPrefix, suffix)).Scan(&higherIDEarlierDeadline)
 	require.NoError(t, err)
@@ -868,8 +868,8 @@ func ensureFutureDataCall(t *testing.T, ctx context.Context) int32 {
 
 	name := fmt.Sprintf("%saudit_future_%d", integrationTestPrefix, time.Now().UnixNano())
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '7 days')
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '7 days', 2026)
 		RETURNING datacallid
 	`, name).Scan(&dataCallID))
 	return dataCallID
@@ -1249,12 +1249,12 @@ func TestFindScoreDiffIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	var dcFrom, dcTo int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%sdiff_from_%d", integrationTestPrefix, suffix)).Scan(&dcFrom))
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%sdiff_to_%d", integrationTestPrefix, suffix)).Scan(&dcTo))
 
 	// F1: a function with at least two options so the same function can carry
@@ -1375,12 +1375,12 @@ func TestFindScoreDiffNotesWhitespaceIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	var dcFrom, dcTo int32
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%swsdiff_from_%d", integrationTestPrefix, suffix)).Scan(&dcFrom))
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '30 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '30 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%swsdiff_to_%d", integrationTestPrefix, suffix)).Scan(&dcTo))
 
 	// Two distinct functions, one option each. Same option is reused in both
@@ -1643,8 +1643,8 @@ func TestFindPreviousDataCallByDeadlineIntegration(t *testing.T) {
 	mk := func(name, deadline string) int32 {
 		var id int32
 		err := conn.QueryRow(ctx, `
-			INSERT INTO datacalls (datacall, datecreated, deadline)
-			VALUES ($1, NOW(), $2::timestamptz)
+			INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+			VALUES ($1, NOW(), $2::timestamptz, 2026)
 			RETURNING datacallid
 		`, fmt.Sprintf("%s%s_%d", integrationTestPrefix, name, suffix), deadline).Scan(&id)
 		require.NoError(t, err)
@@ -1721,15 +1721,15 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sconfirm_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sconfirm_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
 	require.NoError(t, err)
@@ -1881,8 +1881,8 @@ func TestConfirmScoreIntegration(t *testing.T) {
 	// cycle - same guard as Save, so confirm is not a post-deadline loophole.
 	var pastDC int32
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW() - INTERVAL '30 days', NOW() - INTERVAL '1 day')
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW() - INTERVAL '30 days', NOW() - INTERVAL '1 day', 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sconfirm_past_%d", integrationTestPrefix, suffix)).Scan(&pastDC)
 	require.NoError(t, err)

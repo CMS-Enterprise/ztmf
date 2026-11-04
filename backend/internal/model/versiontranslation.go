@@ -16,7 +16,7 @@ import (
 // what the re-pin's preflight checks is what its write does.
 //
 // It keys on root_functionid rather than on question lineage and edition:
-// 0068's functions_root_version_uniq makes a lineage at most one function per
+// 0071's functions_root_version_uniq makes a lineage at most one function per
 // version, so no answer can fan out or two land on one function, which the
 // edition key cannot promise for v1's duplicate editions. #396's lineage rules
 // make the two keys agree on every version published since. A function whose
