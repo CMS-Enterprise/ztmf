@@ -12,7 +12,9 @@ import (
 //	@Tags		functions
 //	@Produce	json
 //	@Security	bearerAuth
+//	@Param		versionid	query		int	false	"Questionnaire version to list; omitted lists the newest published version"
 //	@Success	200	{object}	apiResponse[[]model.Function]
+//	@Failure	400	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/functions [get]
 func ListFunctions(w http.ResponseWriter, r *http.Request) {

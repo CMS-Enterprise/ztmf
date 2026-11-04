@@ -15,7 +15,7 @@ import (
 //	@Produce	json
 //	@Security	bearerAuth
 //	@Param		fismasystemid	path		int	true	"FISMA system ID"
-//	@Param		datacallid		query		int	false	"Apply the reduced-pillar rule for this data call; omitted returns the environment's full catalog"
+//	@Param		datacallid		query		int	false	"Resolve this data call's questionnaire version and apply its reduced-pillar rule; omitted returns the environment's questions in the newest published version"
 //	@Success	200				{object}	apiResponse[[]model.Question]
 //	@Failure	400				{object}	apiResponse[any]
 //	@Failure	404				{object}	apiResponse[any]
@@ -47,11 +47,18 @@ func ListFismaSystemQuestions(w http.ResponseWriter, r *http.Request) {
 //	@Tags		questions
 //	@Produce	json
 //	@Security	bearerAuth
+//	@Param		versionid	query		int	false	"Questionnaire version to list; omitted lists the newest published version"
 //	@Success	200	{object}	apiResponse[[]model.Question]
+//	@Failure	400	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/questions [get]
 func ListQuestions(w http.ResponseWriter, r *http.Request) {
-	questions, err := model.FindQuestions(r.Context())
+	var questions []*model.Question
+	input := model.FindQuestionsInput{}
+	err := decoder.Decode(&input, r.URL.Query())
+	if err == nil {
+		questions, err = model.FindQuestions(r.Context(), input)
+	}
 	respond(w, r, questions, err)
 }
 

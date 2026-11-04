@@ -49,6 +49,8 @@ const (
 	// The row no longer holds what its head revision recorded, so something
 	// wrote it without a revision. Undoing would silently discard that write.
 	reasonDrifted = "This answer was changed outside its history. Change the answer directly instead."
+	// The previous answer belongs to another questionnaire version.
+	reasonOtherVersion = "The previous answer belongs to a different questionnaire version and cannot be restored."
 )
 
 // RevisionSide is one side of a change. Field-for-field identical to
@@ -470,6 +472,9 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 
 	var undoRev *ScoreRevision
 	reverted, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, score.ScoreID); err != nil {
+			return nil, err
+		}
 		current, _, err := lockScore(ctx, tx, score.ScoreID)
 		if err != nil {
 			return nil, err
@@ -530,6 +535,18 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		target := head.Prev
 		if target == nil {
 			return nil, ErrRevisionConflict
+		}
+		// Unreachable while a re-pin always leaves a translate head (refused
+		// above), so the read does not offer it; enforced here so an undo can
+		// never write another version's option back (ztmf-misc#395).
+		_, inVersion, err := optionPlacement(ctx, tx, target.FunctionOptionID, current.DataCallID)
+		if err != nil {
+			return nil, err
+		}
+		if !inVersion {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": reasonOtherVersion},
+			}
 		}
 
 		sqlb := stmntBuilder.

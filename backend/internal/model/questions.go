@@ -96,11 +96,23 @@ func (q *Question) validate() error {
 	return nil
 }
 
+// FindQuestionsInput selects the catalog version to list; nil means the newest
+// published version.
+type FindQuestionsInput struct {
+	VersionID *int32 `schema:"versionid"`
+}
+
 // FindQuestions returns questions without joins, it is used by admins for management
-func FindQuestions(ctx context.Context) ([]*Question, error) {
+func FindQuestions(ctx context.Context, input FindQuestionsInput) ([]*Question, error) {
 	sqlb := stmntBuilder.
 		Select(questionsColumns...).
 		From("questions")
+
+	if input.VersionID != nil {
+		sqlb = sqlb.Where("versionid=?", *input.VersionID)
+	} else {
+		sqlb = sqlb.Where(currentQuestionnaireVersionSQL("versionid"))
+	}
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByNameLax[Question])
 }
@@ -117,11 +129,12 @@ func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) 
 // FindQuestionsByFismaSystemInput carries the optional query filters for the
 // nested questions listing.
 type FindQuestionsByFismaSystemInput struct {
-	// DataCallID applies the reduced-pillar rule for the cycle being answered
-	// (ztmf#545): questions on a pillar a seeded rule excludes for this
-	// system's environment are omitted. Absent, the full catalog for the
-	// environment is returned, which is the pre-#545 contract the frontend's
-	// own pillar filter still expects.
+	// DataCallID resolves the cycle's pinned questionnaire version
+	// (ztmf-misc#395) and applies its reduced-pillar rule (ztmf#545): questions
+	// on a pillar a seeded rule excludes for this system's environment are
+	// omitted. Absent, the environment's questions in the newest published
+	// version are returned, with no pillar rule - so a client reading an older
+	// cycle must pass it.
 	DataCallID *int32 `schema:"datacallid"`
 }
 
@@ -146,8 +159,14 @@ func FindQuestionsByFismaSystem(ctx context.Context, fismaSystemID int32, input 
 		// rather than in heap order. See FindAnswers for the same tiebreaker.
 		OrderBy("pillars.ordr, questions.ordr, functions.ordr, questions.questionid ASC")
 
+	// Without a data call there is no pin, so the newest published version is
+	// the catalog; leaving it unscoped would list every version's questions.
 	if input.DataCallID != nil {
-		sqlb = sqlb.Where(reducedPillarScopeSQL("dce.scoring_key", "pillars.pillar", "?"), *input.DataCallID)
+		sqlb = sqlb.
+			Where(reducedPillarScopeSQL("dce.scoring_key", "pillars.pillar", "?"), *input.DataCallID).
+			Where(questionnaireVersionSQL("functions.versionid", "?"), *input.DataCallID)
+	} else {
+		sqlb = sqlb.Where(currentQuestionnaireVersionSQL("functions.versionid"))
 	}
 
 	return query(ctx, sqlb, func(row pgx.CollectableRow) (*Question, error) {
