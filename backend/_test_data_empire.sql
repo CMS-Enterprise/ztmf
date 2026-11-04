@@ -206,10 +206,10 @@ INSERT INTO public.pillars VALUES (6, 'Identity', 1) ON CONFLICT DO NOTHING;
 -- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
 -- as tiebreak; #393), so the open FY2027 cycle below wins via its far-future
 -- deadline. IDs stay chronological for readability only.
-INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z', 2022) ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z', 2023) ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 2024) ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z', 2025) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z', 2022) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z', 2023) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 2024) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z', 2025) ON CONFLICT DO NOTHING;
 -- The open FY2027 cycle. Its deadline is computed at load time (about 200 days
 -- out) so it never expires, however long a seeded volume lives: ISSO writes need
 -- a non-expired datacall so validate() does not trip the deadline guard, and it
@@ -221,14 +221,14 @@ INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01
 -- the audit-fields block; if you reorder or renumber this row, update the
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
-INSERT INTO public.datacalls VALUES (5, 'FY2027 Imperial Zero Trust Data Call', '2026-10-01T00:00:00Z', now() + interval '200 days', 2027) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (5, 'FY2027 Imperial Zero Trust Data Call', '2026-10-01T00:00:00Z', now() + interval '200 days', 2027) ON CONFLICT DO NOTHING;
 -- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
 -- outside the app - its scores are seeded below with NO events rows, so every
 -- answer keeps status 'not_started' and carries no editor/timestamp. This is
 -- the shape that makes a closed call read 0/N under the "updated" lens while
 -- QuestionsAnswered still reports it complete; keep it event-free on purpose
 -- so that behavior stays reproducible locally.
-INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z', 2020) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z', 2020) ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema

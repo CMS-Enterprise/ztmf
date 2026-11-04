@@ -28,13 +28,17 @@ const (
 	maxFiscalYear = 2999
 )
 
+// An update is partial: a field left out of the body (an empty title or
+// cadence, a zero deadline or fiscal year) keeps its stored value.
 type DataCall struct {
 	DataCallID int32 `json:"datacallid"`
-	// Free-text title. Nothing parses it; the fiscal year and cadence are
-	// separate fields.
+	// Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+	// and cadence are separate fields. Required on create; omitted on update
+	// keeps the stored title.
 	DataCall    string    `json:"datacall"`
 	DateCreated time.Time `json:"datecreated"`
-	Deadline    time.Time `json:"deadline"`
+	// Required on create; omitted on update keeps the stored deadline.
+	Deadline time.Time `json:"deadline"`
 	// Four-digit fiscal year. Required on create; omitted on update keeps the
 	// stored year.
 	FiscalYear int32 `json:"fiscal_year" minimum:"2000" maximum:"2999" example:"2026"`
@@ -61,13 +65,16 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 			Values(d.DataCall, d.Deadline, d.FiscalYear, d.Cadence).
 			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
 	} else {
-		// fiscal_year and cadence keep their stored values when the body leaves
-		// them out, so a client that only edits the title or deadline cannot
-		// reset them by omission.
+		// Every field keeps its stored value when the body leaves it out, so
+		// PUT {"cadence":"quarterly"} changes the cadence and nothing else.
+		var deadline any
+		if !d.Deadline.IsZero() {
+			deadline = d.Deadline
+		}
 		sqlb = stmntBuilder.
 			Update("datacalls").
-			Set("datacall", d.DataCall).
-			Set("deadline", d.Deadline).
+			Set("datacall", squirrel.Expr("COALESCE(NULLIF(?::text, ''), datacall)", d.DataCall)).
+			Set("deadline", squirrel.Expr("COALESCE(?::timestamptz, deadline)", deadline)).
 			Set("fiscal_year", squirrel.Expr("COALESCE(NULLIF(?::int, 0), fiscal_year)", d.FiscalYear)).
 			Set("cadence", squirrel.Expr("COALESCE(NULLIF(?::text, ''), cadence)", d.Cadence)).
 			Where("datacallid=?", d.DataCallID).
@@ -95,15 +102,31 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	return dataCall, nil
 }
 
-// validate checks the fiscal year and cadence. A zero fiscal year or an empty
-// cadence is valid only on update, where it means "keep the stored value"; on
-// create Save has already defaulted the cadence, so a zero year is the only
-// missing field left to reject.
+// validate checks the fields a client sends. On update an omitted field (zero
+// value) means "keep the stored value", so only fields that are present are
+// checked. On create the title, deadline and fiscal year are required.
+//
+// An empty cadence passes on both paths. Save defaults it to annual before an
+// insert, and the column's DEFAULT 'annual' covers a create that reaches the
+// database without going through Save.
 func (d *DataCall) validate() error {
 	err := InvalidInputError{data: map[string]any{}}
+	create := d.DataCallID == 0
+
+	// TrimSpace for blankness: "   " is not a title. Only the empty string
+	// means "omitted" on update.
+	if d.DataCall != "" && strings.TrimSpace(d.DataCall) == "" {
+		err.data["datacall"] = d.DataCall
+	} else if create && d.DataCall == "" {
+		err.data["datacall"] = d.DataCall
+	}
+
+	if create && d.Deadline.IsZero() {
+		err.data["deadline"] = d.Deadline
+	}
 
 	if d.FiscalYear == 0 {
-		if d.DataCallID == 0 {
+		if create {
 			err.data["fiscal_year"] = d.FiscalYear
 		}
 	} else if d.FiscalYear < minFiscalYear || d.FiscalYear > maxFiscalYear {
@@ -111,11 +134,7 @@ func (d *DataCall) validate() error {
 	}
 
 	switch d.Cadence {
-	case CadenceAnnual, CadenceQuarterly:
-	case "":
-		if d.DataCallID == 0 {
-			err.data["cadence"] = d.Cadence
-		}
+	case "", CadenceAnnual, CadenceQuarterly:
 	default:
 		err.data["cadence"] = d.Cadence
 	}

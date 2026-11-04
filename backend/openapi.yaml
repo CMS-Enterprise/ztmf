@@ -363,14 +363,16 @@ components:
           type: string
         datacall:
           description: |-
-            Free-text title. Nothing parses it; the fiscal year and cadence are
-            separate fields.
+            Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+            and cadence are separate fields. Required on create; omitted on update
+            keeps the stored title.
           type: string
         datacallid:
           type: integer
         datecreated:
           type: string
         deadline:
+          description: Required on create; omitted on update keeps the stored deadline.
           type: string
         fiscal_year:
           description: |-
@@ -1103,9 +1105,10 @@ paths:
       tags:
       - datacalls
     post:
-      description: The name (datacall) is a free-text title. fiscal_year is required
-        on create and cadence defaults to "annual". On update, an omitted fiscal_year
-        or cadence keeps the stored value.
+      description: 'The name (datacall) is a free-text title, unique ignoring case.
+        Create requires datacall, deadline and fiscal_year; cadence defaults to "annual".
+        Update is partial: any field left out keeps its stored value. A path id that
+        is zero or out of range is a 404.'
       parameters:
       - description: Data call ID (for update)
         in: path
@@ -1142,6 +1145,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
         "500":
           content:
             application/json:
@@ -1187,9 +1196,10 @@ paths:
       tags:
       - datacalls
     put:
-      description: The name (datacall) is a free-text title. fiscal_year is required
-        on create and cadence defaults to "annual". On update, an omitted fiscal_year
-        or cadence keeps the stored value.
+      description: 'The name (datacall) is a free-text title, unique ignoring case.
+        Create requires datacall, deadline and fiscal_year; cadence defaults to "annual".
+        Update is partial: any field left out keeps its stored value. A path id that
+        is zero or out of range is a 404.'
       parameters:
       - description: Data call ID (for update)
         in: path
@@ -1226,6 +1236,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/controller.apiResponse-any'
           description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
         "500":
           content:
             application/json:

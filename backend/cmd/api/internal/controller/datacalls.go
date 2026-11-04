@@ -130,7 +130,7 @@ func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
 }
 
 //	@Summary	Create or update a data call
-//	@Description	The name (datacall) is a free-text title. fiscal_year is required on create and cadence defaults to "annual". On update, an omitted fiscal_year or cadence keeps the stored value.
+//	@Description	The name (datacall) is a free-text title, unique ignoring case. Create requires datacall, deadline and fiscal_year; cadence defaults to "annual". Update is partial: any field left out keeps its stored value. A path id that is zero or out of range is a 404.
 //	@Tags		datacalls
 //	@Accept		json
 //	@Produce	json
@@ -140,6 +140,7 @@ func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
 //	@Success	201	{object}	apiResponse[model.DataCall]
 //	@Failure	400	{object}	apiResponse[any]
 //	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/datacalls [post]
 //	@Router		/datacalls/{datacallid} [put]
@@ -159,9 +160,20 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["datacallid"]; ok {
-		fmt.Sscan(v, &d.DataCallID)
+	// The route decides create vs update, never the body: getJSON decodes a
+	// "datacallid" field, which would otherwise turn a POST into an update of
+	// that row.
+	d.DataCallID = 0
+	// A path id that is present but unusable (0, or past int32) is a 404,
+	// never a fallthrough to the create branch: the route said update.
+	// pathInt32 also reads "0012" as 12, where fmt.Sscan read it as octal 10.
+	if v, ok := mux.Vars(r)["datacallid"]; ok {
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		d.DataCallID = id
 	}
 
 	d, err = d.Save(r.Context())
