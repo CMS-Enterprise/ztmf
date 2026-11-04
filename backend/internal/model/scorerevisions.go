@@ -13,8 +13,8 @@ import (
 // Revision kinds. Stored data, pinned by score_revisions_kind_check in
 // migration 0066 - changing a VALUE here is a data migration, not an edit.
 //
-// revisionKindTranslate is reserved for ztmf-misc#397's version re-pin and is
-// never written today.
+// revisionKindTranslate is written only by ztmf-misc#397's version re-pin
+// (repinRevisionsSQL).
 const (
 	revisionKindCreate    = "create"
 	revisionKindUpdate    = "update"
@@ -154,7 +154,9 @@ func snapshotOf(s *Score) *scoreSnapshot {
 // recordScoreWrite appends the audit event and the revision for one score
 // write, inside the caller's transaction. Save, Confirm and Undo all go through
 // it so the three cannot drift on the event literals or on revision_no
-// allocation, and so ztmf-misc#397 has one place to hook.
+// allocation. ztmf-misc#397's re-pin is the exception: it rewrites a whole call
+// at once, so it appends its translate revisions in one statement
+// (repinRevisionsSQL) and audits the re-pin as one event.
 //
 // No user in context means neither an event nor a revision, mirroring
 // recordEvent's early return. Not hypothetical: _test_data_empire.sql and

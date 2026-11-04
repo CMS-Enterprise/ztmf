@@ -236,6 +236,13 @@ components:
         error:
           type: string
       type: object
+    controller.apiResponse-model_DataCallRepin:
+      properties:
+        data:
+          $ref: '#/components/schemas/model.DataCallRepin'
+        error:
+          type: string
+      type: object
     controller.apiResponse-model_EventsPage:
       properties:
         data:
@@ -359,6 +366,11 @@ components:
         access_expires_at:
           type: string
       type: object
+    controller.repinDataCallInput:
+      properties:
+        questionnaire_versionid:
+          type: integer
+      type: object
     controller.setUserOpDivsInput:
       properties:
         opdiv_ids:
@@ -413,6 +425,54 @@ components:
           example: 2026
           maximum: 2999
           minimum: 2000
+          type: integer
+        questionnaire_versionid:
+          description: |-
+            The questionnaire version the call answers (ztmf-misc#397). Chosen at
+            create, newest published unless named; changed only through
+            PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+          type: integer
+      type: object
+    model.DataCallRepin:
+      properties:
+        cadence:
+          description: Defaults to annual on create; omitted on update keeps the stored
+            cadence.
+          enum:
+          - annual
+          - quarterly
+          example: annual
+          type: string
+        datacall:
+          description: |-
+            Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+            and cadence are separate fields. Required on create; omitted on update
+            keeps the stored title.
+          type: string
+        datacallid:
+          type: integer
+        datecreated:
+          type: string
+        deadline:
+          description: Required on create; omitted on update keeps the stored deadline.
+          type: string
+        dropped:
+          type: integer
+        fiscal_year:
+          description: |-
+            Four-digit fiscal year. Required on create; omitted on update keeps the
+            stored year.
+          example: 2026
+          maximum: 2999
+          minimum: 2000
+          type: integer
+        questionnaire_versionid:
+          description: |-
+            The questionnaire version the call answers (ztmf-misc#397). Chosen at
+            create, newest published unless named; changed only through
+            PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+          type: integer
+        translated:
           type: integer
       type: object
     model.DataCenterEnvironment:
@@ -1436,6 +1496,74 @@ paths:
       security:
       - bearerAuth: []
       summary: Mark a FISMA system as having completed a data call
+      tags:
+      - datacalls
+  /datacalls/{datacallid}/questionnaire-version:
+    put:
+      description: Answers move by function lineage and option score. An answer with
+        no counterpart is dropped if nobody has touched it this cycle (saved it, edited
+        it, or marked its system complete); if anyone has, the re-pin is a 409 VERSION_NOT_TRANSLATABLE.
+        Translated answers that have history gain a translate revision, which undo
+        refuses. Refused for a draft, archived or missing version (400) and, for everyone,
+        after the deadline (403).
+      parameters:
+      - description: Data call ID
+        in: path
+        name: datacallid
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.repinDataCallInput'
+                description: Target version
+                summary: body
+        description: Target version
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-model_DataCallRepin'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/controller.apiResponse-any'
+          description: Internal Server Error
+      security:
+      - bearerAuth: []
+      summary: Pin a data call to another questionnaire version
       tags:
       - datacalls
   /datacalls/latest:

@@ -10,7 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var dataCallColumns = []string{"datacallid", "datacall", "datecreated", "deadline", "fiscal_year", "cadence"}
+var (
+	dataCallColumns    = []string{"datacallid", "datacall", "datecreated", "deadline", "fiscal_year", "cadence", "questionnaire_versionid"}
+	dataCallColumnList = strings.Join(dataCallColumns, ", ")
+)
 
 // Cadence values a data call can carry. They mirror the datacalls_cadence_check
 // constraint.
@@ -44,11 +47,13 @@ type DataCall struct {
 	FiscalYear int32 `json:"fiscal_year" minimum:"2000" maximum:"2999" example:"2026"`
 	// Defaults to annual on create; omitted on update keeps the stored cadence.
 	Cadence string `json:"cadence" enums:"annual,quarterly" example:"annual"`
+	// The questionnaire version the call answers (ztmf-misc#397). Chosen at
+	// create, newest published unless named; changed only through
+	// PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+	QuestionnaireVersionID int32 `json:"questionnaire_versionid" db:"questionnaire_versionid"`
 }
 
 func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
-
-	var sqlb SqlBuilder
 
 	if d.DataCallID == 0 && d.Cadence == "" {
 		d.Cadence = CadenceAnnual
@@ -58,30 +63,31 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 		return nil, err
 	}
 
+	var (
+		dataCall *DataCall
+		err      error
+	)
 	if d.DataCallID == 0 {
-		sqlb = stmntBuilder.
-			Insert("datacalls").
-			Columns("datacall", "deadline", "fiscal_year", "cadence").
-			Values(d.DataCall, d.Deadline, d.FiscalYear, d.Cadence).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
+		dataCall, err = d.create(ctx)
 	} else {
-		// Every field keeps its stored value when the body leaves it out, so
+		// The pin is not set here, whatever the body says: moving a call to
+		// another version has to translate its answers, which only
+		// PUT /datacalls/{id}/questionnaire-version does. Every other field keeps
+		// its stored value when the body leaves it out, so
 		// PUT {"cadence":"quarterly"} changes the cadence and nothing else.
 		var deadline any
 		if !d.Deadline.IsZero() {
 			deadline = d.Deadline
 		}
-		sqlb = stmntBuilder.
+		dataCall, err = queryRow(ctx, stmntBuilder.
 			Update("datacalls").
 			Set("datacall", squirrel.Expr("COALESCE(NULLIF(?::text, ''), datacall)", d.DataCall)).
 			Set("deadline", squirrel.Expr("COALESCE(?::timestamptz, deadline)", deadline)).
 			Set("fiscal_year", squirrel.Expr("COALESCE(NULLIF(?::int, 0), fiscal_year)", d.FiscalYear)).
 			Set("cadence", squirrel.Expr("COALESCE(NULLIF(?::text, ''), cadence)", d.Cadence)).
 			Where("datacallid=?", d.DataCallID).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
+			Suffix("RETURNING "+dataCallColumnList), pgx.RowToStructByName[DataCall])
 	}
-
-	dataCall, err := queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +106,47 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	}
 
 	return dataCall, nil
+}
+
+// create inserts a call pinned to the version it names, or to the newest
+// published one. The version is held FOR SHARE until commit, so it cannot be
+// archived under a call that is about to pin it.
+func (d *DataCall) create(ctx context.Context) (*DataCall, error) {
+	sqlb := stmntBuilder.Insert("datacalls").Columns("datacall", "deadline", "fiscal_year", "cadence", "questionnaire_versionid")
+	res, err := scoreTx(ctx, func(tx pgx.Tx) (*DataCall, error) {
+		version := d.QuestionnaireVersionID
+		if version == 0 {
+			// Shared with other creates; waits out a publish or archive so the
+			// newest published version cannot change between this read and its lock.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared($1)`, lifecycleLockKey); err != nil {
+				return nil, trapError(err)
+			}
+			var current *int32
+			if err := tx.QueryRow(ctx, `SELECT MAX(versionid) FROM questionnaire_versions WHERE state = 'published'`).Scan(&current); err != nil {
+				return nil, trapError(err)
+			}
+			if current == nil {
+				return nil, &InvalidInputError{data: map[string]any{"questionnaire_versionid": "no questionnaire version is published"}}
+			}
+			version = *current
+		}
+		if err := lockPinnableVersion(ctx, tx, version); err != nil {
+			return nil, err
+		}
+		sqlb = sqlb.Values(d.DataCall, d.Deadline, d.FiscalYear, d.Cadence, version).Suffix("RETURNING " + dataCallColumnList)
+		sql, args, _ := sqlb.ToSql()
+		rows, err := tx.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, trapError(err)
+		}
+		row, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[DataCall])
+		return &row, trapError(err)
+	})
+	if err != nil {
+		return nil, err
+	}
+	recordEvent(ctx, sqlb, *res)
+	return res, nil
 }
 
 // validate checks the fields a client sends. On update an omitted field (zero

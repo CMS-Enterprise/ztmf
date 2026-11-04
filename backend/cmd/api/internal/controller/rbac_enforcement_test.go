@@ -215,6 +215,14 @@ var catalogWriteCases = []struct {
 		target:  "/api/v1/questionnaire-versions",
 		body:    map[string]any{"label": "rbac fixture"},
 	},
+	{
+		name:    "RepinDataCall",
+		handler: RepinDataCall,
+		method:  "PUT",
+		target:  "/api/v1/datacalls/1/questionnaire-version",
+		vars:    map[string]string{"datacallid": "1"},
+		body:    map[string]any{"questionnaire_versionid": 1},
+	},
 }
 
 // catalogBodylessWriteCases are the catalog writes with no body to make

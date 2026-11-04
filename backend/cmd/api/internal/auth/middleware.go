@@ -43,6 +43,9 @@ const (
 	// targeted a published or archived version, or no draft was open
 	// (ztmf-misc#396). The fix is to fork a draft, not to change roles.
 	CodeVersionNotDraft = "VERSION_NOT_DRAFT"
+	// Set by the controller (sanitizeErr): a re-pin would drop answers already
+	// given this cycle (ztmf-misc#397).
+	CodeVersionNotTranslatable = "VERSION_NOT_TRANSLATABLE"
 )
 
 // Package-level seams over the model lookups so tests can stub them without a

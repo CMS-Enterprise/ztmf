@@ -165,8 +165,11 @@ func sanitizeErr(err error) (int, string, error) {
 	case errors.Is(err, model.ErrVersionNotDraft):
 		status = 403
 		code = auth.CodeVersionNotDraft
+	case errors.Is(err, model.ErrVersionNotTranslatable):
+		status = 409
+		code = auth.CodeVersionNotTranslatable
 	case errors.Is(err, model.ErrRevisionConflict):
-		// Optimistic-concurrency failure on undo, and the only 409 in this API.
+		// Optimistic-concurrency failure on undo.
 		// Coded because parseApiError has no 409 branch: the FE distinguishes
 		// this by code and refreshes its history view rather than retrying.
 		status = 409

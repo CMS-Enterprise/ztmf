@@ -187,7 +187,7 @@ func ArchiveQuestionnaireVersion(ctx context.Context, versionID int32) (*Questio
 
 // DiscardQuestionnaireVersion deletes a draft and everything in it. Safe for
 // the same reason draft content DELETE is, which rests on two guards: no data
-// call can pin a draft (#397 must refuse a draft pin at create and re-pin) and
+// call can pin a draft (#397's lockPinnableVersion, at create and re-pin) and
 // no score can reference a draft's options (#395's write check). The contents
 // are snapshotted into the audit trail before they go.
 func DiscardQuestionnaireVersion(ctx context.Context, versionID int32) error {
