@@ -108,15 +108,6 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 		// NO KEY: it also conflicts with the FK check of any insert referencing
 		// the call, such as a system marking it complete, which the preflight
 		// counts as touched.
-		var from int32
-		var deadline time.Time
-		err := tx.QueryRow(ctx, `
-			SELECT questionnaire_versionid, deadline FROM datacalls WHERE datacallid = $1 FOR UPDATE`,
-			dataCallID).Scan(&from, &deadline)
-		if err != nil {
-			return nil, trapError(err)
-		}
-
 		var res DataCallRepin
 		pin := func(sql string, args ...any) error {
 			rows, err := tx.Query(ctx, sql, args...)
@@ -125,9 +116,13 @@ func RepinDataCall(ctx context.Context, dataCallID, versionID int32) (*DataCallR
 			}
 			return trapError(err)
 		}
+		if err := pin(`SELECT `+dataCallColumnList+` FROM datacalls WHERE datacallid = $1 FOR UPDATE`, dataCallID); err != nil {
+			return nil, err
+		}
+		from, deadline := res.QuestionnaireVersionID, res.Deadline
 		// Before the published check: a call keeps its pin after that version is archived.
 		if from == versionID {
-			return &res, pin(`SELECT `+dataCallColumnList+` FROM datacalls WHERE datacallid = $1`, dataCallID)
+			return &res, nil
 		}
 		if err := lockPinnableVersion(ctx, tx, versionID); err != nil {
 			return nil, err
