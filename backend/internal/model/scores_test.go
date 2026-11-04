@@ -193,16 +193,6 @@ func TestAggregatePillarRows(t *testing.T) {
 
 func int32Ptr(i int32) *int32 { return &i }
 
-// normalizeInput mirrors the FindScoresAggregate promotion of a bare
-// FismaSystemID into the FismaSystemIDs slice, so the scope assertions below
-// run against the same input shape the production query builder sees.
-func normalizeInput(in FindScoresInput) FindScoresInput {
-	if in.FismaSystemID != nil && len(in.FismaSystemIDs) == 0 {
-		in.FismaSystemIDs = []*int32{in.FismaSystemID}
-	}
-	return in
-}
-
 // TestFindScoresAggregate_ISSOwithSpecificSystem is the regression test for the bug where
 // an ISSO requesting a specific fismasystemid would get scores for ALL their assigned systems
 // because the equality filter was skipped when FismaSystemIDs was pre-populated.
@@ -217,10 +207,10 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 	t.Run("ISSOwithMultipleSystemsRequestsSpecific", func(t *testing.T) {
 		// Simulate controller setting FismaSystemIDs to the user's assigned systems,
 		// then query param setting FismaSystemID to the specific requested system.
-		input := normalizeInput(FindScoresInput{
-			FismaSystemIDs: []*int32{sys1, sys2, sys3},
-			FismaSystemID:  sys1,
-		})
+		input := FindScoresInput{
+			SystemScope:   assigned(sys1, sys2, sys3),
+			FismaSystemID: sys1,
+		}
 
 		sql, args := buildPillarScoresSQL(input)
 
@@ -229,18 +219,15 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 		// Must also include the equality predicate for the specific system
 		assert.Contains(t, sql, "fs.fismasystemid = $", "should have equality filter for specific system")
 		// 1 arg for equality + 3 for IN list = 4 args from the system scope.
-		// Plus FismaSystemID promoted into FismaSystemIDs replaces the bare
-		// slice in tests that don't override, but here both are explicit and
-		// the IN list keeps three entries.
 		assert.Len(t, args, 4, "should have 4 args: 1 for equality + 3 for IN list")
 	})
 
 	t.Run("ISSOwithSingleSystemRequestsSpecific", func(t *testing.T) {
 		// Edge case: ISSO with only one assigned system.
-		input := normalizeInput(FindScoresInput{
-			FismaSystemIDs: []*int32{sys1},
-			FismaSystemID:  sys1,
-		})
+		input := FindScoresInput{
+			SystemScope:   assigned(sys1),
+			FismaSystemID: sys1,
+		}
 
 		sql, args := buildPillarScoresSQL(input)
 
@@ -257,25 +244,26 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 	})
 
 	t.Run("AdminRequestsSpecificSystem", func(t *testing.T) {
-		// Admin path: FismaSystemIDs is empty, only FismaSystemID from query param.
-		// normalizeInput promotes FismaSystemID -> FismaSystemIDs so the IN
-		// list ends up with a single entry.
-		input := normalizeInput(FindScoresInput{
+		// Admin path: no system scope, only FismaSystemID from the query param,
+		// applied as a single equality predicate.
+		input := FindScoresInput{
 			FismaSystemID: sys2,
-		})
+		}
 
 		sql, args := buildPillarScoresSQL(input)
 
-		assert.Contains(t, sql, "fs.fismasystemid", "should filter on fismasystemid")
-		assert.NotEmpty(t, args, "should bind at least one argument for the system filter")
+		assert.Contains(t, sql, "fs.fismasystemid = $1", "should filter on the requested system")
+		assert.NotContains(t, sql, "fs.fismasystemid IN", "an unscoped admin gets no assigned-systems list")
+		assert.NotContains(t, sql, "FALSE", "an unscoped admin does not fail closed")
+		assert.Equal(t, []any{*sys2}, args, "only the requested system is bound")
 	})
 
 	t.Run("ISSOwithNoSpecificSystem", func(t *testing.T) {
 		// ISSO list view: no fismasystemid query param, just the assigned systems scope.
 		// Should produce an IN clause and no equality predicate.
-		input := normalizeInput(FindScoresInput{
-			FismaSystemIDs: []*int32{sys1, sys2},
-		})
+		input := FindScoresInput{
+			SystemScope: assigned(sys1, sys2),
+		}
 
 		sql, args := buildPillarScoresSQL(input)
 
@@ -292,9 +280,9 @@ func TestFindScoresAggregate_ISSOwithSpecificSystem(t *testing.T) {
 // rows rather than every row.
 func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
 	t.Run("ScopedToGrantedOpDivs", func(t *testing.T) {
-		input := normalizeInput(FindScoresInput{
+		input := FindScoresInput{
 			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
-		})
+		}
 
 		sql, args := buildPillarScoresSQL(input)
 
@@ -311,9 +299,9 @@ func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
 	})
 
 	t.Run("RestrictedWithNoGrantsFailsClosed", func(t *testing.T) {
-		input := normalizeInput(FindScoresInput{
+		input := FindScoresInput{
 			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: nil},
-		})
+		}
 
 		sql, _ := buildPillarScoresSQL(input)
 
@@ -322,12 +310,88 @@ func TestBuildPillarScoresSQL_OpDivScope(t *testing.T) {
 	})
 
 	t.Run("UnscopedEmitsNoOpDivPredicate", func(t *testing.T) {
-		input := normalizeInput(FindScoresInput{})
+		input := FindScoresInput{}
 
 		sql, _ := buildPillarScoresSQL(input)
 
 		assert.NotContains(t, sql, "fs.opdiv_id = ANY($", "unscoped admins get no OpDiv filter")
 		assert.NotContains(t, sql, "FALSE", "unscoped admins do not fail closed")
+	})
+}
+
+// assigned builds the restricted assigned-systems scope the aggregate
+// controller sets for a self-scoped caller.
+func assigned(ids ...*int32) SystemScope {
+	var s SystemScope
+	s.ScopeToSystems(ids)
+	return s
+}
+
+// TestBuildPillarScoresSQL_SystemScope pins the fail-closed decision for the
+// assigned-systems self-scope. A self-scoped caller with no assigned systems
+// must match no rows (WHERE ... FALSE), whether or not a fismasystemid is
+// requested; dropping the predicate would aggregate every system.
+func TestBuildPillarScoresSQL_SystemScope(t *testing.T) {
+	sys1, sys2 := int32Ptr(1001), int32Ptr(1002)
+
+	for name, ids := range map[string][]*int32{
+		"NilAssignments":   nil,
+		"EmptyAssignments": {},
+	} {
+		t.Run(name+"FailsClosed", func(t *testing.T) {
+			input := FindScoresInput{SystemScope: assigned(ids...)}
+
+			sql, args := buildPillarScoresSQL(input)
+
+			assert.Contains(t, sql, " AND FALSE", "an empty self-scope must match nothing")
+			assert.NotContains(t, sql, "fs.fismasystemid IN", "an empty self-scope binds no id list")
+			assert.Empty(t, args, "nothing to bind for an empty self-scope")
+		})
+
+		t.Run(name+"WithRequestedSystemFailsClosed", func(t *testing.T) {
+			input := FindScoresInput{SystemScope: assigned(ids...), FismaSystemID: sys2}
+
+			sql, args := buildPillarScoresSQL(input)
+
+			assert.Contains(t, sql, "fs.fismasystemid = $1 AND FALSE",
+				"a requested system must not stand in for the empty assigned scope")
+			assert.NotContains(t, sql, "fs.fismasystemid IN")
+			assert.Equal(t, []any{*sys2}, args)
+		})
+	}
+
+	t.Run("AssignedScopeEmitsInList", func(t *testing.T) {
+		input := FindScoresInput{SystemScope: assigned(sys1, sys2), DataCallID: int32Ptr(5)}
+
+		sql, args := buildPillarScoresSQL(input)
+
+		assert.Contains(t, sql, "dc.datacallid = $1 AND fs.fismasystemid IN ($2,$3)")
+		assert.NotContains(t, sql, "FALSE")
+		assert.Equal(t, []any{int32(5), sys1, sys2}, args)
+	})
+
+	t.Run("UnrestrictedEmptyListAddsNothing", func(t *testing.T) {
+		// Admin tiers never call ScopeToSystems, so an empty list here means
+		// "no filter", not "nothing".
+		sql, args := buildPillarScoresSQL(FindScoresInput{})
+
+		assert.NotContains(t, sql, "fs.fismasystemid IN")
+		assert.NotContains(t, sql, "fs.fismasystemid = $")
+		assert.NotContains(t, sql, "FALSE")
+		assert.Empty(t, args)
+	})
+
+	t.Run("OpDivTierUnaffected", func(t *testing.T) {
+		input := FindScoresInput{
+			OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7}},
+		}
+
+		sql, args := buildPillarScoresSQL(input)
+
+		assert.Contains(t, sql, "fs.opdiv_id = ANY($1)")
+		assert.NotContains(t, sql, "fs.fismasystemid IN")
+		assert.NotContains(t, sql, "FALSE")
+		assert.Equal(t, []any{[]int32{7}}, args)
 	})
 }
 

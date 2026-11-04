@@ -72,8 +72,8 @@ func TestTimeSpentQueriesMeasuredIntegration(t *testing.T) {
 	var dc int32
 	suffix := time.Now().UnixNano()
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '90 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '90 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%stsq_measured_%d", integrationTestPrefix, suffix)).Scan(&dc)
 	require.NoError(t, err)
 
@@ -179,8 +179,8 @@ func TestTimeSpentQueriesProxyIntegration(t *testing.T) {
 	var dc int32
 	suffix := time.Now().UnixNano()
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '90 days') RETURNING datacallid
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '90 days', 2026) RETURNING datacallid
 	`, fmt.Sprintf("%stsq_proxy_%d", integrationTestPrefix, suffix)).Scan(&dc)
 	require.NoError(t, err)
 

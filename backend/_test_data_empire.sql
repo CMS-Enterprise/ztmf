@@ -98,6 +98,13 @@ INSERT INTO public.users (userid, email, fullname, role, identity_provider)
     VALUES ('66666666-6666-6666-6666-666666666666', 'Isso.User@nowhere.xyz', 'ISSO Test User', 'ISSO', 'okta')
     ON CONFLICT DO NOTHING;
 
+-- ISSO with no assigned systems, for the self-scope E2E cases: every scores
+-- list endpoint must return an empty list for this user, never every system's
+-- rows. Deliberately left out of users_fismasystems and users_opdivs below.
+INSERT INTO public.users (userid, email, fullname, role, identity_provider)
+    VALUES ('0ddba11a-0000-4000-8000-000000000000', 'Unassigned.Isso@nowhere.xyz', 'Unassigned ISSO Test User', 'ISSO', 'okta')
+    ON CONFLICT DO NOTHING;
+
 -- System Delegate fixture (#455): contractor/support-staff tier, system-scoped
 -- like ISSO but answers-only (barred from target maturity). Assigned to Death Star
 -- (1001), which is enrolled in the open Audit cycle so E2E can exercise score writes.
@@ -199,24 +206,24 @@ INSERT INTO public.pillars VALUES (6, 'Identity', 1) ON CONFLICT DO NOTHING;
 -- Current/latest resolves by deadline (ORDER BY deadline DESC, datacallid DESC
 -- as tiebreak; #393), so the open Audit cycle below wins via its far-future
 -- deadline. IDs stay chronological for readability only.
-INSERT INTO public.datacalls VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
-INSERT INTO public.datacalls VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (1, 'FY2022 Imperial Security Review', '2022-01-01T00:00:00Z', '2022-12-31T23:59:59Z', 2022) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (2, 'FY2023 Imperial Security Review', '2023-01-01T00:00:00Z', '2023-12-31T23:59:59Z', 2023) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (3, 'FY2024 Imperial Security Review', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 2024) ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (4, 'FY2025 Death Star Assessment', '2025-01-01T00:00:00Z', '2025-03-31T23:59:59Z', 2025) ON CONFLICT DO NOTHING;
 -- Future-deadline cycle used by audit-field smoke tests (ISSO writes need
 -- a non-expired datacall so validate() does not trip the deadline guard).
 -- NOTE: backend/emberfall_tests.yml references datacallid=5 literally in
 -- the audit-fields block; if you reorder or renumber this row, update the
 -- "datacallid: 5" references and the "?datacallid=5" query string
 -- in that file in lockstep.
-INSERT INTO public.datacalls VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (5, 'Audit Fields Smoke Cycle', '2026-01-01T00:00:00Z', '2099-12-31T23:59:59Z', 2026) ON CONFLICT DO NOTHING;
 -- Closed, IMPORTED cycle (ztmf#435): mirrors production history loaded from
 -- outside the app - its scores are seeded below with NO events rows, so every
 -- answer keeps status 'not_started' and carries no editor/timestamp. This is
 -- the shape that makes a closed call read 0/N under the "updated" lens while
 -- QuestionsAnswered still reports it complete; keep it event-free on purpose
 -- so that behavior stays reproducible locally.
-INSERT INTO public.datacalls VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z') ON CONFLICT DO NOTHING;
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES (6, 'FY2020 Imperial Archives Import', '2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z', 2020) ON CONFLICT DO NOTHING;
 
 -- Test FISMA Systems (Imperial Systems)
 -- Use explicit column names to work with initial schema
@@ -1177,10 +1184,10 @@ DELETE FROM public.datacalls WHERE datacallid IN (101, 102, 103, 104);
 DELETE FROM public.fismasystems WHERE fismaacronym LIKE 'MOCK-%';
 
 -- The 3 historical HHS data calls
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
- (101,'FY23 ZTM','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00'),
- (102,'FY24 ZTM','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00'),
- (103,'FY25 ZTM','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00');
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+ (101,'FY23 ZTM','2023-09-30 00:00:00+00','2023-09-30 00:00:00+00',2023),
+ (102,'FY24 ZTM','2024-09-30 00:00:00+00','2024-09-30 00:00:00+00',2024),
+ (103,'FY25 ZTM','2025-09-30 00:00:00+00','2025-09-30 00:00:00+00',2025);
 
 -- NEW mock systems across the sister divisions.
 -- Faithful HHS-inventory null pattern: fismasubsystem/component/group*/
@@ -1220,8 +1227,8 @@ INSERT INTO public.fismasystems (fismasystemid, fismauid, fismaacronym, fismanam
 -- for every other test. Only MOCK-SAAS maps to scoring_key 'SaaS', so no existing
 -- fixture changes behaviour.
 -- ---------------------------------------------------------------------------
-INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline) VALUES
- (104,'FY26 ZTM','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00')
+INSERT INTO public.datacalls (datacallid, datacall, datecreated, deadline, fiscal_year) VALUES
+ (104,'FY26 ZTM','2025-10-01 00:00:00+00','2026-09-11 00:00:00+00',2026)
 ON CONFLICT DO NOTHING;
 
 -- The seeded reduced-scope rule (ztmf#545), anchored at the fixture FY26 cycle.

@@ -22,6 +22,12 @@ opDivAdminHeaders: &opDivAdminHeaders
 opDivReadonlyHeaders: &opDivReadonlyHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im9wZGl2LnJlYWRvbmx5QGVtcGlyZS50ZXN0In0.enezNI1lnuNFcXzcxZqm0CTalZfbOV40dolVjoFxnII"
 
+# ISSO with no assigned systems (Unassigned.Isso@nowhere.xyz). Every scores list
+# endpoint must return an empty list for this user. Email claim
+# unassigned.isso@nowhere.xyz.
+unassignedIssoHeaders: &unassignedIssoHeaders
+  authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InVuYXNzaWduZWQuaXNzb0Bub3doZXJlLnh5eiJ9.96VzdFLsJpx7LLmngNtgCZqgabLIDFzWle2hxNuxf7Q"
+
 # System Delegate (#455): contractor/support-staff, system-scoped like ISSO but
 # answers-only. Assigned to Death Star (1001) only. Email claim
 # delegate.user@nowhere.xyz. Must 403 on target maturity even for 1001.
@@ -36,10 +42,19 @@ delegateHeaders: &delegateHeaders
 dataCallData: &dataCallData
   datacall: "FY2100 ZTM"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
 
+# The create body leaves cadence out, so the response carries the default.
+createdDataCallData: &createdDataCallData
+  <<: *dataCallData
+  cadence: "annual"
+
+# The name is a free-text title; the year and cadence are their own fields.
 updatedDataCallData: &updatedDataCallData
-  datacall: "FY2100 ZTM"
+  datacall: "Zero Trust Data Call 2100"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
+  cadence: "quarterly"
 
 fismaSystemData: &fismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
@@ -601,7 +616,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: http://localhost:8080/api/v1/datacalls/latest
     method: GET
@@ -614,7 +629,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: GET
@@ -627,7 +642,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: PUT
@@ -652,7 +667,248 @@ tests:
         json:
           data:
             <<: *updatedDataCallData
-  
+
+  # An update that leaves fiscal_year and cadence out keeps the stored values,
+  # so a title-only edit cannot reset a quarterly call to annual.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # Updates are partial. A body with only fiscal_year changes the year and
+  # keeps the title, deadline and cadence.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2101
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "quarterly"
+
+  # A body with only cadence changes the cadence and keeps the rest, including
+  # the year set just above.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "annual"
+
+  # Put the call back the way the update above left it.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2100
+        cadence: "quarterly"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # The path id is read as decimal. "0101" is call 101; fmt.Sscan read it as
+  # octal 65, a call that does not exist. The body sets cadence to the value
+  # call 101 already has, so nothing changes.
+  - url: http://localhost:8080/api/v1/datacalls/0101
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: http://localhost:8080/api/v1/datacalls/101
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacallid: 101
+            datacall: "FY23 ZTM"
+            fiscal_year: 2023
+            cadence: "annual"
+
+  # A path id of 0 is a 404, never a create.
+  - url: http://localhost:8080/api/v1/datacalls/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Should not be created"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 404
+
+  # fiscal_year is required on create, and both fields are validated on create
+  # and update. None of these writes a row, so the latest call is unchanged.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "No fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 0
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Two-digit fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 26
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 26
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Unknown cadence"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+        cadence: "monthly"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            cadence: "monthly"
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        cadence: "monthly"
+    expect:
+      status: 400
+
+  # Titles are unique ignoring case: the UI resolves questionnaire deep links
+  # by title case-insensitively, so a title that differs from an existing one
+  # only by case is rejected the same way an exact duplicate is (400, not
+  # unique). Neither write creates a row.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "ZERO TRUST data call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:
@@ -1707,8 +1963,9 @@ tests:
             - functionoptionid: 4
               score: 4
 
-  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400, not a
-  # CHECK violation - there is no CHECK on this column.
+  # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400 from
+  # validate, returned before the DB CHECK (functionoptions_score_check) is
+  # reached.
   - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
     method: POST
     headers:
@@ -3529,6 +3786,45 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+      body:
+        text: "{\"data\":[]}"
+
+  # An ISSO with no assigned systems reads nothing from the scores list
+  # endpoints: an empty list, not every system's rows, including when a
+  # specific system is requested.
+  - url: http://localhost:8080/api/v1/scores/aggregate
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores/aggregate?fismasystemid=1001&include_pillars=true
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores?fismasystemid=1001
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
+      body:
+        text: "{\"data\":[]}"
+
+  - url: http://localhost:8080/api/v1/scores/progress?datacallid=4
+    method: GET
+    headers:
+      <<: *unassignedIssoHeaders
+    expect:
+      status: 200
       body:
         text: "{\"data\":[]}"
 
