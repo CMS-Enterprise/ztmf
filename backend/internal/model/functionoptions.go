@@ -63,6 +63,7 @@ func FindFunctionOptions(ctx context.Context, input FindFunctionOptionsInput) ([
 	if input.FunctionID != nil {
 		sqlb = sqlb.Where("functionid=?", *input.FunctionID)
 	}
+	sqlb = hideDrafts(ctx, sqlb, "versionid")
 
 	return query(ctx, sqlb, pgx.RowToAddrOfStructByName[FunctionOption])
 }

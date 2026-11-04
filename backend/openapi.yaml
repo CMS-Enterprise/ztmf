@@ -344,6 +344,16 @@ components:
         idp:
           type: string
       type: object
+    controller.publishQuestionnaireVersionInput:
+      properties:
+        dropped_root_functionids:
+          description: Every parent lineage the draft leaves out; answers on them
+            stop carrying forward.
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
+      type: object
     controller.renewDelegateBody:
       properties:
         access_expires_at:
@@ -3157,7 +3167,9 @@ paths:
   /questionnaire-versions/{versionid}/publish:
     put:
       description: Runs the publish gate; a 400 names the offending rows for each
-        rule that fails.
+        rule that fails. If the draft leaves out any of its parent's function lineages,
+        the body must list exactly those root_functionids; otherwise the 400 on dropped_root_functionids
+        lists them. The body is optional when nothing is dropped.
       parameters:
       - description: Questionnaire version ID
         in: path
@@ -3165,6 +3177,16 @@ paths:
         required: true
         schema:
           type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.publishQuestionnaireVersionInput'
+                description: Lineages the draft drops
+                summary: body
+        description: Lineages the draft drops
       responses:
         "200":
           content:

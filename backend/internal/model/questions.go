@@ -11,13 +11,13 @@ var questionsColumns = []string{"questionid", "question", "notesprompt", "ordr",
 
 // Question represents a record from the questions table
 type Question struct {
-	QuestionID  int32     `json:"questionid"`
-	Question    string    `json:"question"`
-	NotesPrompt string    `json:"notesprompt"`
+	QuestionID  int32  `json:"questionid"`
+	Question    string `json:"question"`
+	NotesPrompt string `json:"notesprompt"`
 	// Rank within the question's pillar. Omitted or null keeps the stored
 	// value; a rank cannot be reset to null.
-	Ordr        *int      `json:"order"`
-	PillarID    int       `json:"pillarid"`
+	Ordr     *int `json:"order"`
+	PillarID int  `json:"pillarid"`
 	// The questionnaire version this row belongs to (ztmf-misc#394). Honoured
 	// only on create, where it must name a draft; omitted, the open draft is
 	// used. Fixed after create.
@@ -25,9 +25,9 @@ type Question struct {
 	// The question's identity across versions. Honoured only on create, to
 	// restore a lineage a draft deleted (ztmf-misc#396); omitted, a new
 	// question starts its own.
-	RootQuestionID *int32  `json:"root_questionid,omitempty" db:"root_questionid"`
-	Pillar         *Pillar `json:"pillar,omitempty"`
-	Function    *Function `json:"function,omitempty"`
+	RootQuestionID *int32    `json:"root_questionid,omitempty" db:"root_questionid"`
+	Pillar         *Pillar   `json:"pillar,omitempty"`
+	Function       *Function `json:"function,omitempty"`
 }
 
 func (q *Question) Save(ctx context.Context) (*Question, error) {
@@ -167,7 +167,7 @@ func FindQuestions(ctx context.Context, input FindQuestionsInput) ([]*Question, 
 		From("questions")
 
 	if input.VersionID != nil {
-		sqlb = sqlb.Where("versionid=?", *input.VersionID)
+		sqlb = hideDrafts(ctx, sqlb.Where("versionid=?", *input.VersionID), "versionid")
 	} else {
 		sqlb = sqlb.Where(currentQuestionnaireVersionSQL("versionid"))
 	}
@@ -180,6 +180,7 @@ func FindQuestionByID(ctx context.Context, questionID int32) (*Question, error) 
 		Select(questionsColumns...).
 		From("questions").
 		Where("questionid=?", questionID)
+	sqlb = hideDrafts(ctx, sqlb, "versionid")
 
 	return queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Question])
 }

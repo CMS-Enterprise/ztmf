@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 
@@ -78,12 +80,19 @@ func ForkQuestionnaireVersion(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, version, err)
 }
 
+type publishQuestionnaireVersionInput struct {
+	// Every parent lineage the draft leaves out; answers on them stop carrying forward.
+	DroppedRootFunctionIDs []int32 `json:"dropped_root_functionids"`
+}
+
 // @Summary	Publish a draft questionnaire version
-// @Description	Runs the publish gate; a 400 names the offending rows for each rule that fails.
+// @Description	Runs the publish gate; a 400 names the offending rows for each rule that fails. If the draft leaves out any of its parent's function lineages, the body must list exactly those root_functionids; otherwise the 400 on dropped_root_functionids lists them. The body is optional when nothing is dropped.
 // @Tags		questionnaire-versions
+// @Accept		json
 // @Produce	json
 // @Security	bearerAuth
-// @Param		versionid	path		int	true	"Questionnaire version ID"
+// @Param		versionid	path		int									true	"Questionnaire version ID"
+// @Param		body		body		publishQuestionnaireVersionInput	false	"Lineages the draft drops"
 // @Success	200			{object}	apiResponse[model.QuestionnaireVersion]
 // @Failure	400			{object}	apiResponse[any]
 // @Failure	403			{object}	apiResponse[any]
@@ -91,7 +100,14 @@ func ForkQuestionnaireVersion(w http.ResponseWriter, r *http.Request) {
 // @Failure	500			{object}	apiResponse[any]
 // @Router		/questionnaire-versions/{versionid}/publish [put]
 func PublishQuestionnaireVersion(w http.ResponseWriter, r *http.Request) {
-	versionTransition(w, r, model.PublishQuestionnaireVersion)
+	versionTransition(w, r, func(ctx context.Context, id int32) (*model.QuestionnaireVersion, error) {
+		input := publishQuestionnaireVersionInput{}
+		if err := getJSON(r.Body, &input); err != nil && !errors.Is(err, io.EOF) {
+			log.Println(err)
+			return nil, ErrMalformed
+		}
+		return model.PublishQuestionnaireVersion(ctx, id, input.DroppedRootFunctionIDs)
+	})
 }
 
 // @Summary	Archive a published questionnaire version

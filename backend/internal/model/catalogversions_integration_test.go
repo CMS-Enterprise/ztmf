@@ -159,6 +159,10 @@ func TestQuestionnaireVersionContentWritesIntegration(t *testing.T) {
 		baseline, root := int32(1), int32(8001)
 		_, err = (&Question{Question: "q", NotesPrompt: "p", PillarID: 1, VersionID: &baseline, RootQuestionID: &root}).Save(ctx)
 		assert.ErrorIs(t, err, ErrVersionNotDraft)
+
+		missing := int32(999999)
+		_, err = (&Question{Question: "q", NotesPrompt: "p", PillarID: 1, VersionID: &missing}).Save(ctx)
+		requireInvalidOn(t, err, "versionid")
 	})
 
 	draft, err := ForkQuestionnaireVersion(ctx, integrationTestPrefix+"content")
@@ -168,6 +172,39 @@ func TestQuestionnaireVersionContentWritesIntegration(t *testing.T) {
 		_, err := (&Question{QuestionID: 8001, Question: "q", NotesPrompt: "p", PillarID: 1}).Save(ctx)
 		assert.ErrorIs(t, err, ErrVersionNotDraft)
 		assert.ErrorContains(t, err, fmt.Sprintf("version %d is the open draft", draft.VersionID))
+	})
+
+	t.Run("DraftsReadableOnlyByHHSWideWriters", func(t *testing.T) {
+		var q, f int32
+		require.NoError(t, conn.QueryRow(ctx, `SELECT questionid, functionid FROM functions WHERE versionid = $1 LIMIT 1`, draft.VersionID).Scan(&q, &f))
+		v := draft.VersionID
+		for _, tc := range []struct {
+			role    string
+			visible bool
+		}{{"HHS_ADMIN", true}, {"OPDIV_ADMIN", false}, {"ISSO", false}} {
+			userCtx := UserToContext(context.Background(), &User{UserID: "00000000-0000-0000-0000-000000000000", Role: tc.role})
+			questions, err := FindQuestions(userCtx, FindQuestionsInput{VersionID: &v})
+			require.NoError(t, err)
+			functions, err := FindFunctions(userCtx, FindFunctionsInput{VersionID: &v})
+			require.NoError(t, err)
+			options, err := FindFunctionOptions(userCtx, FindFunctionOptionsInput{FunctionID: &f})
+			require.NoError(t, err)
+			_, qErr := FindQuestionByID(userCtx, q)
+			_, fErr := FindFunctionByID(userCtx, f)
+			if tc.visible {
+				assert.NotEmpty(t, questions, tc.role)
+				assert.NotEmpty(t, functions, tc.role)
+				assert.NotEmpty(t, options, tc.role)
+				assert.NoError(t, qErr, tc.role)
+				assert.NoError(t, fErr, tc.role)
+			} else {
+				assert.Empty(t, questions, tc.role)
+				assert.Empty(t, functions, tc.role)
+				assert.Empty(t, options, tc.role)
+				assert.ErrorIs(t, qErr, ErrNoData, tc.role)
+				assert.ErrorIs(t, fErr, ErrNoData, tc.role)
+			}
+		}
 	})
 
 	t.Run("NewQuestionLandsInTheOpenDraft", func(t *testing.T) {
@@ -337,7 +374,7 @@ func TestQuestionnaireVersionPublishGateIntegration(t *testing.T) {
 			defer func() { require.NoError(t, DiscardQuestionnaireVersion(ctx, v)) }()
 
 			offending := tc.breakIt(t, v, q, f)
-			_, err := PublishQuestionnaireVersion(ctx, v)
+			_, err := PublishQuestionnaireVersion(ctx, v, nil)
 			requireInvalidOn(t, err, tc.field, offending)
 			var invalid *InvalidInputError
 			require.ErrorAs(t, err, &invalid)
@@ -348,6 +385,99 @@ func TestQuestionnaireVersionPublishGateIntegration(t *testing.T) {
 			assert.Equal(t, versionStateDraft, got.State, "a refused publish changes nothing")
 		})
 	}
+}
+
+// A draft that leaves out parent lineages publishes only when the body names
+// exactly those lineages; a question re-created without its root_questionid
+// still counts as dropped.
+func TestQuestionnaireVersionPublishDropsIntegration(t *testing.T) {
+	ctx, conn := versionTestSetup(t)
+
+	var otherEnv string
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT datacenterenvironment FROM functions WHERE versionid = 1 AND datacenterenvironment <> 'AWS' LIMIT 1`).Scan(&otherEnv))
+	addFunction := func(q int32, env string, root *int32) int32 {
+		var f int32
+		require.NoError(t, conn.QueryRow(ctx, `
+			INSERT INTO functions (function, description, datacenterenvironment, questionid, pillarid, root_functionid)
+			VALUES ('f', 'd', $1, $2, 1, $3) RETURNING functionid`, env, q, root).Scan(&f))
+		_, err := conn.Exec(ctx, `INSERT INTO functionoptions (functionid, score, optionname, description)
+			SELECT $1, s, 'o', 'd' FROM generate_series(1, 4) s`, f)
+		require.NoError(t, err)
+		return f
+	}
+	addQuestion := func(v int32, root *int32) int32 {
+		var q int32
+		require.NoError(t, conn.QueryRow(ctx, `
+			INSERT INTO questions (question, notesprompt, pillarid, versionid, root_questionid)
+			VALUES ('second', 'p', 1, $1, $2) RETURNING questionid`, v, root).Scan(&q))
+		return q
+	}
+	refusedListing := func(t *testing.T, err error, roots ...int32) {
+		t.Helper()
+		requireInvalidOn(t, err, "dropped_root_functionids")
+		var invalid *InvalidInputError
+		require.ErrorAs(t, err, &invalid)
+		var got []int32
+		for _, d := range invalid.Data()["dropped_root_functionids"].(map[string]any)["lineages"].([]DroppedLineage) {
+			got = append(got, d.RootFunctionID)
+		}
+		assert.ElementsMatch(t, roots, got)
+	}
+
+	// The parent: question A in two environments, question B in one.
+	parent, qa, _ := minimalDraft(t, ctx, conn, "AWS")
+	rootA2 := addFunction(qa, otherEnv, nil)
+	qb := addQuestion(parent, nil)
+	rootB := addFunction(qb, "AWS", nil)
+	_, err := PublishQuestionnaireVersion(ctx, parent, nil)
+	require.NoError(t, err)
+
+	draft, err := ForkQuestionnaireVersion(ctx, integrationTestPrefix+"drops")
+	require.NoError(t, err)
+	v := draft.VersionID
+	inDraft := func(sql string, root int32) int32 {
+		var id int32
+		require.NoError(t, conn.QueryRow(ctx, sql, v, root).Scan(&id))
+		return id
+	}
+	require.NoError(t, DeleteQuestion(ctx, inDraft(`SELECT questionid FROM questions WHERE versionid = $1 AND root_questionid = $2`, qb)))
+	require.NoError(t, DeleteFunction(ctx, inDraft(`SELECT functionid FROM functions WHERE versionid = $1 AND root_functionid = $2`, rootA2)))
+
+	t.Run("RefusedUntilNamed", func(t *testing.T) {
+		_, err := PublishQuestionnaireVersion(ctx, v, nil)
+		refusedListing(t, err, rootB, rootA2)
+	})
+	t.Run("MissingOneIsRefused", func(t *testing.T) {
+		_, err := PublishQuestionnaireVersion(ctx, v, []int32{rootB})
+		refusedListing(t, err, rootB, rootA2)
+	})
+	t.Run("ExtraOneIsRefused", func(t *testing.T) {
+		_, err := PublishQuestionnaireVersion(ctx, v, []int32{rootB, rootA2, 999999})
+		refusedListing(t, err, rootB, rootA2)
+	})
+	t.Run("RecreatedWithoutRootIsStillDropped", func(t *testing.T) {
+		q := addQuestion(v, nil)
+		addFunction(q, "AWS", nil)
+		_, err := PublishQuestionnaireVersion(ctx, v, []int32{rootA2})
+		refusedListing(t, err, rootB, rootA2)
+		require.NoError(t, DeleteQuestion(ctx, q))
+	})
+	t.Run("RestoredLineageIsNotDropped", func(t *testing.T) {
+		rootQB := qb
+		q := addQuestion(v, &rootQB)
+		addFunction(q, "AWS", &rootB)
+		published, err := PublishQuestionnaireVersion(ctx, v, []int32{rootA2})
+		require.NoError(t, err)
+		assert.Equal(t, versionStatePublished, published.State)
+	})
+
+	t.Run("NothingDroppedNeedsNoBody", func(t *testing.T) {
+		next, err := ForkQuestionnaireVersion(ctx, integrationTestPrefix+"no_drops")
+		require.NoError(t, err)
+		_, err = PublishQuestionnaireVersion(ctx, next.VersionID, nil)
+		require.NoError(t, err)
+	})
 }
 
 // create -> edit in draft -> publish -> edit again (403) -> archive.
@@ -369,14 +499,14 @@ func TestQuestionnaireVersionLifecycleIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "edited in draft", edited.Question)
 
-	published, err := PublishQuestionnaireVersion(ctx, v2)
+	published, err := PublishQuestionnaireVersion(ctx, v2, nil)
 	require.NoError(t, err)
 	assert.Equal(t, versionStatePublished, published.State)
 	assert.NotNil(t, published.PublishedAt)
 
 	_, err = (&Question{QuestionID: q2, Question: "after publish", NotesPrompt: "p", PillarID: 1}).Save(ctx)
 	assert.ErrorIs(t, err, ErrVersionNotDraft, "published content is immutable")
-	_, err = PublishQuestionnaireVersion(ctx, v2)
+	_, err = PublishQuestionnaireVersion(ctx, v2, nil)
 	requireInvalidOn(t, err, "state")
 
 	_, err = ArchiveQuestionnaireVersion(ctx, v2)
@@ -515,7 +645,7 @@ func TestQuestionnaireVersionDuplicateHistoricalLineageIntegration(t *testing.T)
 	_, err = conn.Exec(ctx, `UPDATE functions SET root_functionid = $2 WHERE functionid = $1`, f, f2)
 	require.NoError(t, err)
 
-	published, err := PublishQuestionnaireVersion(ctx, v)
+	published, err := PublishQuestionnaireVersion(ctx, v, nil)
 	require.NoError(t, err, "keeping one of two historical lineages is allowed")
 	assert.Equal(t, versionStatePublished, published.State)
 

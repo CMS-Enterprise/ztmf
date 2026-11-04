@@ -1,7 +1,10 @@
 package model
 
 import (
+	"context"
 	"fmt"
+
+	"github.com/Masterminds/squirrel"
 )
 
 // questionnaireVersionSQL restricts a functions row to the catalog version the
@@ -52,4 +55,13 @@ func currentQuestionnaireVersionSQL(versionExpr string) string {
 	return fmt.Sprintf(`%s = (SELECT MAX(qvcur.versionid) FROM questionnaire_versions qvcur WHERE qvcur.state = 'published')`,
 		versionExpr,
 	)
+}
+
+// hideDrafts keeps draft content to the users who can edit it (HHS-wide
+// writers). A context with no user is an internal read and sees every version.
+func hideDrafts(ctx context.Context, sqlb squirrel.SelectBuilder, versionExpr string) squirrel.SelectBuilder {
+	if u := UserFromContext(ctx); u == nil || u.CanWriteHHSWide() {
+		return sqlb
+	}
+	return sqlb.Where(fmt.Sprintf(`%s IN (SELECT versionid FROM questionnaire_versions WHERE state <> 'draft')`, versionExpr))
 }
