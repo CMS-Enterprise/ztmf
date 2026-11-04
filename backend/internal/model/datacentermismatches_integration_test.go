@@ -17,6 +17,9 @@ import (
 //   - Death Star (1001, EMPIRE): mismatch but decommissioned -> excluded.
 //   - RB-1 (1005, REBELLION): mismatch but REBELLION is not insights_enabled
 //     -> gated.
+//   - TACT-HOLO (3006, EMPIRE, active; demo portfolio at the end of the seed): its record
+//     names a different environment on purpose, so the demo has a row to show
+//     -> the second visible mismatch.
 //
 // Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
 // `go test -short`.
@@ -29,9 +32,10 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 	t.Run("UnscopedSeesSeededMismatchOnly", func(t *testing.T) {
 		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{})
 		require.NoError(t, err)
-		require.Len(t, rows, 1, "expected exactly the Shield Gen row: Executor matches, Death Star is decommissioned, RB-1 is OpDiv-gated")
+		require.Len(t, rows, 2, "expected exactly the Shield Gen and TACT-HOLO rows: Executor matches, Death Star is decommissioned, RB-1 is OpDiv-gated")
 
-		got := rows[0]
+		got := findMismatchBySystemID(rows, 1003)
+		require.NotNil(t, got, "Shield Gen must be reported")
 		assert.Equal(t, int32(1003), got.FismaSystemID)
 		assert.Equal(t, "SLD-GEN", got.FismaAcronym)
 		if assert.NotNil(t, got.DataCenterEnvironment) {
@@ -40,6 +44,11 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 		assert.Equal(t, "CMS-Cloud-AWS", got.CFACTSDataCenterEnvironment)
 		assert.True(t, got.CFACTSValueKnown, "CMS-Cloud-AWS is canonical vocabulary (migration 0045)")
 		assert.False(t, got.SyncedAt.IsZero())
+
+		demo := findMismatchBySystemID(rows, 3006)
+		require.NotNil(t, demo, "the demo portfolio's TACT-HOLO mismatch must be reported")
+		assert.Equal(t, "TACT-HOLO", demo.FismaAcronym)
+		assert.True(t, demo.CFACTSValueKnown, "the demo record names a canonical fixture environment")
 	})
 
 	t.Run("UnknownCFACTSValueIsFlagged", func(t *testing.T) {
@@ -97,7 +106,8 @@ func TestFindDataCenterMismatchesIntegration(t *testing.T) {
 
 		rows, err := FindDataCenterMismatches(ctx, FindDataCenterMismatchesInput{OpDivScope: OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{empireID}}})
 		require.NoError(t, err)
-		require.NotEmpty(t, rows, "EMPIRE-scoped admin should see the Shield Gen mismatch")
+		require.NotNil(t, findMismatchBySystemID(rows, 1003), "EMPIRE-scoped admin should see the Shield Gen mismatch")
+		require.NotNil(t, findMismatchBySystemID(rows, 3006), "EMPIRE-scoped admin should see the demo portfolio's TACT-HOLO mismatch")
 		for _, r := range rows {
 			if assert.NotNil(t, r.OpDivID) {
 				assert.Equal(t, empireID, *r.OpDivID)
