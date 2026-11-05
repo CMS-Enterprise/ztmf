@@ -65,7 +65,7 @@ resource "aws_ecs_task_definition" "env" {
       essential = true
       command   = ["/usr/local/bin/ztmfapi"]
       dependsOn = [{ containerName = "postgres", condition = "HEALTHY" }]
-      environment = [
+      environment = concat([
         { name = "ENVIRONMENT", value = "test" },
         { name = "PORT", value = tostring(local.api_port) },
         { name = "DB_ENDPOINT", value = "localhost" },
@@ -73,13 +73,20 @@ resource "aws_ecs_task_definition" "env" {
         { name = "DB_NAME", value = "ztmf" },
         { name = "DB_USER", value = "ztmf" },
         { name = "DB_POPULATE", value = "/app/_test_data_empire.sql" },
-        { name = "AUTH_HEADER_FIELD", value = "Authorization" },
+        // Okta mode: the frontend's HS256 bearer. Cognito mode: the ALB's
+        // signed header, so each person is the seeded user their email names.
+        { name = "AUTH_HEADER_FIELD", value = local.cognito ? "x-amzn-oidc-data" : "Authorization" },
         // Dev's ztmf_session cookie is host-scoped to dev.ztmf.cms.gov and is
         // checked before the bearer header, so a browser signed in to dev would
         // fail against the per-PR secret. A distinct name keeps the sessions apart.
         { name = "AUTH_SESSION_COOKIE_NAME", value = "ztmf_${var.repo}_${var.pr_number}_session" },
         { name = "AWS_REGION", value = "us-east-1" },
-      ]
+        ], local.cognito ? [
+        // Same key endpoint dev's API uses to verify the ALB's ES256 header,
+        // and the issuer pinned to this environment's pool.
+        { name = "AUTH_TOKEN_KEY_URL", value = "https://public-keys.auth.elb.us-east-1.amazonaws.com/" },
+        { name = "AUTH_OKTA_ISSUER", value = "https://${aws_cognito_user_pool.env[0].endpoint}" },
+      ] : [])
       secrets = [
         { name = "DB_PASS", valueFrom = aws_ssm_parameter.db_password.arn },
         { name = "AUTH_HS256_SECRET", valueFrom = aws_ssm_parameter.hs256.arn },
@@ -97,8 +104,10 @@ resource "aws_ecs_task_definition" "env" {
         { name = "API_UPSTREAM", value = "http://127.0.0.1:${local.api_port}" },
         { name = "TEST_USER_EMAIL", value = var.test_user_email },
       ]
+      // Cognito mode gives the UI its own key (cognito.tf), so the token it
+      // writes into config.js cannot authenticate against the API.
       secrets = [
-        { name = "AUTH_HS256_SECRET", valueFrom = aws_ssm_parameter.hs256.arn },
+        { name = "AUTH_HS256_SECRET", valueFrom = local.cognito ? aws_ssm_parameter.ui_hs256[0].arn : aws_ssm_parameter.hs256.arn },
       ]
       logConfiguration = local.log_config["ui"]
     },
