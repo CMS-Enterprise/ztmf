@@ -13,6 +13,11 @@ name: Manual Deploy to IMPL
 on:
   workflow_dispatch:
 
+# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+concurrency:
+  group: manual-deploy-impl-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Analysis
@@ -29,6 +34,11 @@ jobs:
     secrets: inherit
 
   infrastructure:
+    # Shares the impl apply queue with orchestration-impl.
+    concurrency:
+      group: deploy-impl
+      queue: max
+      cancel-in-progress: false
     name: Infrastructure
     needs:
       - analysis

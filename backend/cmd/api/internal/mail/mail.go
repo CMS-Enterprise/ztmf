@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/config"
+	"github.com/CMS-Enterprise/ztmf/backend/internal/tlslog"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
@@ -17,12 +18,15 @@ import (
 func Send(subject, body string, recipients []string) {
 	var (
 		cfg        = config.GetInstance()
-		tlsCfg     *tls.Config
 		emailsSent int
 	)
 
-	if cfg.SMTP.Certs != nil {
-		tlsCfg = &tls.Config{RootCAs: cfg.SMTP.Certs}
+	// A nil RootCAs (no custom SMTP certs) still means the system roots, and
+	// go-smtp fills in ServerName from the host, so always passing a config
+	// changes nothing but the handshake log line.
+	tlsCfg := &tls.Config{
+		RootCAs:          cfg.SMTP.Certs,
+		VerifyConnection: tlslog.Verifier("smtp"),
 	}
 
 	log.Println("dialing SMTP server...")

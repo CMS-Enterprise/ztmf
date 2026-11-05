@@ -54,3 +54,24 @@ func TestDedupeRecipients(t *testing.T) {
 		assert.NotNil(t, got)
 	})
 }
+
+// TestMassEmailGroupKeysFitColumn pins the width of massemails."group" (0059,
+// VARCHAR(30)) against every selector the API accepts. 0011 sized the column
+// for the five original keys and SYSTEM_DELEGATE silently outgrew it.
+func TestMassEmailGroupKeysFitColumn(t *testing.T) {
+	const groupColumnWidth = 30
+	for key := range massEmailGroups {
+		assert.LessOrEqual(t, len(key), groupColumnWidth, "group key %q does not fit massemails.group", key)
+	}
+}
+
+// TestReadonlyAdminGroup pins the READONLY_ADMIN audience (ztmf-misc#297) to
+// the two read-only tiers and keeps the write tiers out of it.
+func TestReadonlyAdminGroup(t *testing.T) {
+	sqlb, ok := massEmailGroups["READONLY_ADMIN"]
+	assert.True(t, ok, "READONLY_ADMIN must be an accepted group")
+
+	_, args, err := sqlb().ToSql()
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []any{"HHS_READONLY_ADMIN", "OPDIV_READONLY_ADMIN"}, args)
+}

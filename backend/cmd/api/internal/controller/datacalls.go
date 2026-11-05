@@ -130,6 +130,7 @@ func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
 }
 
 //	@Summary	Create or update a data call
+//	@Description	The name (datacall) is a free-text title, unique ignoring case. Create requires datacall, deadline and fiscal_year; cadence defaults to "annual". Update is partial: any field left out keeps its stored value. A path id that is zero or out of range is a 404.
 //	@Tags		datacalls
 //	@Accept		json
 //	@Produce	json
@@ -139,6 +140,7 @@ func scopeFindAnswersInput(user *model.User, input *model.FindAnswersInput) {
 //	@Success	201	{object}	apiResponse[model.DataCall]
 //	@Failure	400	{object}	apiResponse[any]
 //	@Failure	403	{object}	apiResponse[any]
+//	@Failure	404	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/datacalls [post]
 //	@Router		/datacalls/{datacallid} [put]
@@ -158,9 +160,20 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["datacallid"]; ok {
-		fmt.Sscan(v, &d.DataCallID)
+	// The route decides create vs update, never the body: getJSON decodes a
+	// "datacallid" field, which would otherwise turn a POST into an update of
+	// that row.
+	d.DataCallID = 0
+	// A path id that is present but unusable (0, or past int32) is a 404,
+	// never a fallthrough to the create branch: the route said update.
+	// pathInt32 also reads "0012" as 12, where fmt.Sscan read it as octal 10.
+	if v, ok := mux.Vars(r)["datacallid"]; ok {
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		d.DataCallID = id
 	}
 
 	d, err = d.Save(r.Context())
@@ -171,6 +184,54 @@ func SaveDataCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, r, d, nil)
+}
+
+type repinDataCallInput struct {
+	QuestionnaireVersionID int32 `json:"questionnaire_versionid"`
+}
+
+// RepinDataCall moves an open data call to another published questionnaire
+// version, translating its answers (ztmf-misc#397). It changes what every
+// OpDiv answers this cycle, so it takes the catalog's CanWriteHHSWide gate,
+// checked before the body is read.
+//
+//	@Summary		Pin a data call to another questionnaire version
+//	@Description	Answers move by function lineage and option score. An answer with no counterpart is dropped if nobody has touched it this cycle (saved it, edited it, or marked its system complete); if anyone has, the re-pin is a 409 VERSION_NOT_TRANSLATABLE. Translated answers that have history gain a translate revision, which undo refuses. Refused for a draft, archived or missing version (400) and, for everyone, after the deadline (403).
+//	@Tags			datacalls
+//	@Accept			json
+//	@Produce		json
+//	@Security		bearerAuth
+//	@Param			datacallid	path		int					true	"Data call ID"
+//	@Param			body		body		repinDataCallInput	true	"Target version"
+//	@Success		200			{object}	apiResponse[model.DataCallRepin]
+//	@Failure		400			{object}	apiResponse[any]
+//	@Failure		403			{object}	apiResponse[any]
+//	@Failure		404			{object}	apiResponse[any]
+//	@Failure		409			{object}	apiResponse[any]
+//	@Failure		500			{object}	apiResponse[any]
+//	@Router			/datacalls/{datacallid}/questionnaire-version [put]
+func RepinDataCall(w http.ResponseWriter, r *http.Request) {
+	if !model.UserFromContext(r.Context()).CanWriteHHSWide() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	id, ok := pathInt32(mux.Vars(r)["datacallid"])
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+	input := repinDataCallInput{}
+	if err := getJSON(r.Body, &input); err != nil {
+		log.Println(err)
+		respond(w, r, nil, ErrMalformed)
+		return
+	}
+	res, err := model.RepinDataCall(r.Context(), id, input.QuestionnaireVersionID)
+	if err != nil {
+		respond(w, r, nil, err)
+		return
+	}
+	respondOK(w, res)
 }
 
 //	@Summary	Get the latest data call

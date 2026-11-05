@@ -74,14 +74,17 @@ func TestFismaSystemDecommissionedField(t *testing.T) {
 
 // TestFismaSystemSDLSyncEnabledField tests the SDL sync toggle field
 func TestFismaSystemSDLSyncEnabledField(t *testing.T) {
-	t.Run("DefaultFalse", func(t *testing.T) {
+	t.Run("DefaultNil", func(t *testing.T) {
+		// nil means "not sent": Save writes false on insert and leaves the
+		// stored value alone on update, so a partial PUT cannot switch sync off.
 		system := FismaSystem{}
-		assert.False(t, system.SDLSyncEnabled, "SDLSyncEnabled should default to false (zero value)")
+		assert.Nil(t, system.SDLSyncEnabled, "SDLSyncEnabled should default to nil (omitted)")
 	})
 
 	t.Run("SetTrue", func(t *testing.T) {
-		system := FismaSystem{SDLSyncEnabled: true}
-		assert.True(t, system.SDLSyncEnabled, "SDLSyncEnabled should be true when set")
+		v := true
+		system := FismaSystem{SDLSyncEnabled: &v}
+		assert.True(t, *system.SDLSyncEnabled, "SDLSyncEnabled should be true when set")
 	})
 
 	t.Run("ColumnArrayContainsSDLSyncEnabled", func(t *testing.T) {

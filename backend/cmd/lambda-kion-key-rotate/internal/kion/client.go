@@ -8,12 +8,15 @@ package kion
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/CMS-Enterprise/ztmf/backend/internal/tlslog"
 )
 
 const rotatePath = "/api/v3/app-api-key/rotate"
@@ -30,10 +33,16 @@ type Client struct {
 // would replay the POST body (which carries the current API key) to whatever
 // target the redirect points at.
 func NewClient(baseURL string) *Client {
+	// DefaultTransport's settings, plus a log line per TLS handshake naming the
+	// key exchange group Kion accepted.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{VerifyConnection: tlslog.Verifier("kion")}
+
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},

@@ -18,6 +18,18 @@ variable "entra_enabled" {
   default     = false
 }
 
+variable "cloudfront_minimum_protocol_version" {
+  description = "Viewer security policy on the CloudFront distribution, which sets the lowest TLS version a browser can use. TLSv1.3_2025 refuses TLS 1.2, so only TLS 1.3 is offered, which is where CloudFront's hybrid post-quantum key exchange is available. Clients still choose the key exchange. Set per environment in tfvars so the change can be held in dev before impl and prod."
+  type        = string
+  default     = "TLSv1.2_2021"
+}
+
+variable "alb_ssl_policy" {
+  description = "Security policy on the internal ALB's HTTPS listener. It also decides the policy the ALB uses for its backend connections (the API targets), so a post-quantum listener policy is what makes the ALB to API hop hybrid. Set per environment in tfvars so a policy change can be checked in dev before impl and prod."
+  type        = string
+  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}
+
 variable "alarm_notification_email" {
   description = "Email subscribed to the ztmf-alarms SNS topic for login/OIDC alerting. Empty (default) creates the topic and alarms without a subscription so they can land before a destination is finalized; set per-environment in tfvars. For a Slack/PagerDuty endpoint, swap the subscription protocol in monitoring-login-auth.tf."
   type        = string
@@ -28,4 +40,16 @@ variable "kion_rotate_schedule_enabled" {
   description = "Enable the daily EventBridge schedule for ztmf-kion-key-rotate. Kion NAT allowlist is in place (CMS-Enterprise/ztmf-misc#174) and real rotation was validated end to end on 2026-04-22, so this defaults to true. Set to false only for temporary maintenance windows when rotation must be paused."
   type        = bool
   default     = true
+}
+
+variable "pr_env_enabled" {
+  description = "Enable per-PR environment plumbing in this account (ztmf-misc#321): the /pr/* CloudFront behavior on the internal-ALB origin and the ztmf/ui ECR repo the PR frontend image is published to. Dev only; the pr-env root (infrastructure/pr-env) creates everything per PR."
+  type        = bool
+  default     = false
+}
+
+variable "pr_env_max_environments" {
+  description = "Concurrent per-PR environment cap (ztmf-misc#344). The fleet alarm fires when more pr-env tasks than this run for 10 minutes. Recorded on the epic, ztmf-misc#321."
+  type        = number
+  default     = 10
 }

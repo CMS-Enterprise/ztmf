@@ -61,10 +61,7 @@ func ListScores(w http.ResponseWriter, r *http.Request) {
 //	@Router		/scores [post]
 //	@Router		/scores/{scoreid} [put]
 func SaveScore(w http.ResponseWriter, r *http.Request) {
-	var (
-		scoreID int32
-		err     error
-	)
+	var err error
 
 	user := model.UserFromContext(r.Context())
 	score := &model.Score{}
@@ -85,11 +82,49 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
+	// Unconditional, so a POST body's "scoreid" is zeroed rather than honoured.
+	score.ScoreID = scoreIDFromRequest(r)
 
-	if v, ok := vars["scoreid"]; ok {
-		fmt.Sscan(v, &scoreID)
-		score.ScoreID = scoreID
+	// Authorization is deliberately asymmetric between create and update.
+	//
+	// UPDATE: authorize against the STORED row, never the request body. The
+	// body's fismasystemid is a client assertion; trusting it let any caller
+	// with write access to one system reach every score row by id, since the
+	// UPDATE is keyed on scoreid alone. Load the row first and guard on what
+	// is actually there. The stored datacallid is also carried onto the
+	// receiver so the deadline is evaluated against the cycle the row belongs
+	// to rather than one the caller names.
+	//
+	// CREATE: no row exists yet, so the body's fismasystemid is the only
+	// thing to authorize against, which is correct there.
+	if score.ScoreID != 0 {
+		stored, err := model.FindScoreByID(r.Context(), score.ScoreID)
+		if err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		if err := guardScoreWrite(r.Context(), user, stored.FismaSystemID); err != nil {
+			respond(w, r, nil, err)
+			return
+		}
+		// Both columns are immutable on update (Save omits them from the SET
+		// list); pinning them here keeps the receiver honest for the deadline
+		// check and the no-op comparison.
+		score.FismaSystemID = stored.FismaSystemID
+		score.DataCallID = stored.DataCallID
+
+		// The row read above authorizes the write; it is deliberately not
+		// handed to Save, which re-reads it FOR UPDATE so its no-op comparison
+		// runs against the values the UPDATE would overwrite rather than a
+		// snapshot taken before the lock.
+		score, err = score.Save(r.Context())
+		respond(w, r, score, err)
+		return
+	}
+
+	if err := guardScoreWrite(r.Context(), user, score.FismaSystemID); err != nil {
+		respond(w, r, nil, err)
+		return
 	}
 
 	// Authorization is deliberately asymmetric between create and update.
@@ -138,6 +173,20 @@ func SaveScore(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, score, err)
 }
 
+// scoreIDFromRequest returns the scoreid the request targets. Only the URL path
+// supplies it: a POST body's "scoreid" is deliberately ignored, since POST
+// /scores means "write this system's answer to this question for this cycle"
+// and that target is resolved from the natural key inside Score.Save
+// (ztmf#491). Honouring the body id gave POST a second, undocumented route into
+// the update branch.
+func scoreIDFromRequest(r *http.Request) int32 {
+	var id int32
+	if v, ok := mux.Vars(r)["scoreid"]; ok {
+		fmt.Sscan(v, &id)
+	}
+	return id
+}
+
 // guardScoreWrite is the shared authorization for every score-mutating
 // endpoint (SaveScore, ConfirmScore): read-only admins never write; ISSO/ISSM
 // must hold the per-system assignment; admin tiers must manage the system's
@@ -175,6 +224,7 @@ func guardScoreWrite(ctx context.Context, user *model.User, fismaSystemID int32)
 //	@Security	bearerAuth
 //	@Param		scoreid	path		int	true	"Score ID"
 //	@Success	200		{object}	apiResponse[model.Score]
+//	@Failure	400		{object}	apiResponse[any]
 //	@Failure	403		{object}	apiResponse[any]
 //	@Failure	404		{object}	apiResponse[any]
 //	@Failure	500		{object}	apiResponse[any]
@@ -316,15 +366,24 @@ func GetScoresAggregate(w http.ResponseWriter, r *http.Request) {
 
 	err = decoder.Decode(&findScoresInput, r.URL.Query())
 
-	// Same tier scoping as ListScores, applied AFTER decode. This endpoint's
-	// self-scope default is the assigned-systems list, not UserID.
-	if findScoresInput.ApplyTier(user) {
-		findScoresInput.FismaSystemIDs = user.AssignedFismaSystems
-	}
+	scopeScoresAggregateInput(user, &findScoresInput)
 
 	if err == nil {
 		aggregate, err = model.FindScoresAggregate(r.Context(), findScoresInput)
 	}
 
 	respond(w, r, aggregate, err)
+}
+
+// scopeScoresAggregateInput applies the caller's tier to the aggregate query
+// input. Same tier scoping as ListScores, applied AFTER decode so a client
+// cannot widen scope via query params, except that this endpoint's self-scope
+// is the assigned-systems list rather than a UserID join. ScopeToSystems marks
+// that list as a restriction, so a caller with no assigned systems gets no rows
+// instead of an unfiltered aggregate. Extracted so the role matrix is
+// unit-testable without a database.
+func scopeScoresAggregateInput(user *model.User, input *model.FindScoresInput) {
+	if input.ApplyTier(user) {
+		input.ScopeToSystems(user.AssignedFismaSystems)
+	}
 }

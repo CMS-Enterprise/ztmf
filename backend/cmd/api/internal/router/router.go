@@ -45,6 +45,7 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/datacalls/latest", controller.GetLatestDataCall).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.GetDataCallByID).Methods("GET")
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}", controller.SaveDataCall).Methods("PUT")
+	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/questionnaire-version", controller.RepinDataCall).Methods("PUT")
 	// records that a fisma system has completed the data call
 	router.HandleFunc("/api/v1/datacalls/{datacallid:[0-9]+}/fismasystems/{fismasystemid:[0-9]+}", controller.SaveDataCallFismaSystem).Methods("PUT")
 	// returns a list of fisma systems that have marked this data call as complete
@@ -75,7 +76,15 @@ func Handler() http.Handler {
 	// TODO: deprecate this in favor of non-nested URIs
 	router.HandleFunc("/api/v1/fismasystems/{fismasystemid:[0-9]+}/questions", controller.ListFismaSystemQuestions).Methods("GET")
 
+	// The options are the 1-4 scoring scale every answer points at. Create is
+	// nested so the owning function comes from the path; update is flat because
+	// an option's function is a fact about the stored row, not the request
+	// (ztmf-misc#398). No DELETE until the catalog is versioned - see
+	// FunctionOption.Save.
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.ListFunctionOptions).Methods("GET")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}/options", controller.SaveFunctionOption).Methods("POST")
+	router.HandleFunc("/api/v1/functionoptions/{functionoptionid:[0-9]+}", controller.SaveFunctionOption).Methods("PUT")
+	router.HandleFunc("/api/v1/functionoptions/{functionoptionid:[0-9]+}", controller.DeleteFunctionOption).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/opdivs", controller.ListOpDivs).Methods("GET")
 	router.HandleFunc("/api/v1/opdivs", controller.SaveOpDiv).Methods("POST")
@@ -108,16 +117,31 @@ func Handler() http.Handler {
 	router.HandleFunc("/api/v1/scores", controller.SaveScore).Methods("POST")
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}", controller.SaveScore).Methods("PUT")
 	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}/confirm", controller.ConfirmScore).Methods("PUT")
+	// Answer history and undo (ztmf-misc#391). Both sit behind the {scoreid}
+	// pattern, so neither can shadow the literal-segment routes above - those
+	// match a segment that is not [0-9]+.
+	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}/revisions", controller.ListScoreRevisions).Methods("GET")
+	router.HandleFunc("/api/v1/scores/{scoreid:[0-9]+}/revisions/undo", controller.UndoScoreRevision).Methods("POST")
 
 	router.HandleFunc("/api/v1/questions", controller.ListQuestions).Methods("GET")
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.GetQuestionByID).Methods("GET")
 	router.HandleFunc("/api/v1/questions", controller.SaveQuestion).Methods("POST")
 	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.SaveQuestion).Methods("PUT")
+	router.HandleFunc("/api/v1/questions/{questionid:[0-9]+}", controller.DeleteQuestion).Methods("DELETE")
 
 	router.HandleFunc("/api/v1/functions", controller.ListFunctions).Methods("GET")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.GetFunctionByID).Methods("GET")
 	router.HandleFunc("/api/v1/functions", controller.SaveFunction).Methods("POST")
 	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.SaveFunction).Methods("PUT")
+	router.HandleFunc("/api/v1/functions/{functionid:[0-9]+}", controller.DeleteFunction).Methods("DELETE")
+
+	// Questionnaire version lifecycle (ztmf-misc#396).
+	router.HandleFunc("/api/v1/questionnaire-versions", controller.ListQuestionnaireVersions).Methods("GET")
+	router.HandleFunc("/api/v1/questionnaire-versions", controller.ForkQuestionnaireVersion).Methods("POST")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}", controller.GetQuestionnaireVersion).Methods("GET")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}", controller.DiscardQuestionnaireVersion).Methods("DELETE")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}/publish", controller.PublishQuestionnaireVersion).Methods("PUT")
+	router.HandleFunc("/api/v1/questionnaire-versions/{versionid:[0-9]+}/archive", controller.ArchiveQuestionnaireVersion).Methods("PUT")
 
 	router.HandleFunc("/api/v1/datacenterenvironments", controller.ListDataCenterEnvironments).Methods("GET")
 

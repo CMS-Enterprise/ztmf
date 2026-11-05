@@ -78,34 +78,17 @@ func (s *Score) AuditInfo() (*time.Time, *AuditRef) {
 	return s.LastEditedAt, s.LastEditedBy
 }
 
-// scoreSaveConfig carries request-shape context that is not part of the
-// persisted entity.
-type scoreSaveConfig struct {
-	current *Score
-}
-
-// ScoreSaveOption configures a Score.Save call.
-type ScoreSaveOption func(*scoreSaveConfig)
-
-// WithCurrentScore hands Save the stored row the caller has already loaded, so
-// the no-op comparison does not read it a second time. The update path
-// authorizes against the stored row, which means the controller loads it on
-// every PUT; the questionnaire PUTs on each Next click, so the duplicate read
-// would land on the hottest write path in the app.
-//
-// The row passed here MUST be the one Save is about to update, read through
-// FindScoreByID. Passing a stale or unrelated row would make the no-op
-// comparison lie about whether the answer changed.
-func WithCurrentScore(current *Score) ScoreSaveOption {
-	return func(c *scoreSaveConfig) { c.current = current }
-}
-
 // Save writes one answer for the current data call, as an interactive human
 // edit. It is the questionnaire's write path and it hardcodes that meaning:
 // every successful write sets status to scoreStatusDone, and the event it
-// records through queryRow carries action 'created' or 'updated' - the two
-// actions that migration 0048's backfill and the seed status-sync treat as
-// "a human answered this cycle".
+// records carries action 'created' or 'updated' - the two actions that
+// migration 0048's backfill and the seed status-sync treat as "a human answered
+// this cycle".
+//
+// The answer row and its audit event are written in one transaction (see
+// scoretx.go). Both must land or neither: the read-back below projects the
+// event this call just wrote, so an event that failed separately would leave
+// the response advertising an editor the next GET could not confirm.
 //
 // Importer contract (ztmf#445): a future bulk importer must NOT reuse Save as
 // it stands. Loading history through it would flip every imported row to done
@@ -113,9 +96,8 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 // status column exists to preserve - imported rows are supposed to stay
 // not_started and report no last-updated. An importer should either
 //
-//   - take an explicit status/provenance parameter added to Save (a
-//     ScoreSaveOption alongside WithCurrentScore is the natural shape), so the
-//     caller states the status to write and the action to record; or
+//   - take an explicit status/provenance parameter, so the caller states the
+//     status to write and the action to record; or
 //   - write through its own path that inserts the rows and records action
 //     'imported' (eventActionImported in events.go), mirroring the provenance
 //     the 0048 backfill and the seed data deliberately exclude.
@@ -123,116 +105,33 @@ func WithCurrentScore(current *Score) ScoreSaveOption {
 // Adding the parameter is the larger change of the two and was deliberately
 // left undone here rather than designed speculatively without an importer to
 // shape it.
-func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, error) {
-	var sqlb SqlBuilder
-
-	cfg := &scoreSaveConfig{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
+func (s *Score) Save(ctx context.Context) (*Score, error) {
 	if err := s.validate(ctx); err != nil {
 		return nil, err
 	}
 
-	// Audit-preserving no-op: on an UPDATE that does not actually change
-	// any answer field, skip the write entirely. The questionnaire UI
-	// PUTs on every Next click regardless of whether the user touched
-	// the answer, so without this guard a read-through user gets stamped
-	// as the new editor and the prior cycle's real editor is overwritten.
-	// The product rule is "save on real change, not on read-through" so
-	// we enforce it here as defense in depth even if the client adds its
-	// own dirty check.
-	//
-	// Treats nil notes and empty-string notes as the same value, since the
-	// FE may submit either for an unanswered notes box. Returns the
-	// current row through the same lookupScoreAudit path the normal write
-	// uses, so the caller cannot tell a no-op apart from a successful
-	// write -- only the events table (unchanged) reveals the truth.
-	//
-	// On a no-op match we carry the incoming.FunctionOption (if any)
-	// onto the returned current row so callers that requested
-	// ?include=functionoption still get a fully-shaped response, matching
-	// the populated-write path through queryRow + FindScores. The PUT
-	// controller writes 204 today but still encodes the body, so the
-	// response is observable to clients that parse 204 bodies.
-	if s.ScoreID != 0 {
-		if same, current, err := scoreUpdateIsNoOp(ctx, s, cfg.current); err != nil {
-			return nil, err
-		} else if same {
-			if s.FunctionOption != nil {
-				current.FunctionOption = s.FunctionOption
-			}
-			if at, by := lookupScoreAudit(ctx, current.ScoreID); at != nil && by != nil {
-				current.LastEditedAt = at
-				current.LastEditedBy = by
-			}
-			return current, nil
-		}
-	}
-
-	// status is set to 'done' in the same INSERT/UPDATE statement as the
-	// answer (ztmf#435). Because it rides the same write, the state can never
-	// disagree with the row it describes - unlike the old events-derived
-	// progress, which depended on a fire-and-forget, non-transactional,
-	// context-gated event write landing separately. Reaching this point means
-	// a genuine create (scoreid == 0) or a change that cleared the no-op guard
-	// above, which is exactly what "updated this cycle" means. A read-through
-	// PUT short-circuits before here and never touches status, so a carried-over
-	// row stays not_started (ztmf#299 preserved).
-	if s.ScoreID == 0 {
-		sqlb = stmntBuilder.
-			Insert("public.scores").
-			Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-			Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-	} else {
-		// fismasystemid and datacallid are deliberately NOT in the SET list.
-		// Saving an answer must never move the row to another system or
-		// another cycle: those are the two columns that decide who may write
-		// the row and which deadline applies to it, so letting a request body
-		// rewrite them turns an answer edit into a reparenting primitive.
-		// The controller authorizes an update against the stored row and pins
-		// both values onto the receiver before calling Save.
-		setCols := squirrel.Eq{
-			"notes":            s.Notes,
-			"functionoptionid": s.FunctionOptionID,
-			"status":           scoreStatusDone,
-		}
-		if s.NotesIsAISummary != nil {
-			setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
-		}
-		// Bind the write to the row the caller was authorized against, not to
-		// the id alone. The controller loads the row and pins these two fields
-		// onto the receiver before calling Save; matching on them here means a
-		// future caller that forgets to pin cannot write a row it did not
-		// authorize - it updates zero rows and fails as ErrNoData rather than
-		// succeeding against someone else's answer.
-		sqlb = stmntBuilder.
-			Update("public.scores").
-			SetMap(setCols).
-			Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
-			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
-	}
-
-	saved, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+	saved, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		return s.saveTx(ctx, tx)
+	})
 	if err != nil {
-		return saved, err
+		return nil, err
 	}
 
 	// Stamp the just-performed edit onto the response so the POST/PUT body
 	// is consistent with what a subsequent GET will return. We read back
-	// the canonical row that recordEvent (fired from queryRow above) just
-	// wrote, rather than synthesizing from time.Now() + ctx user. Two
-	// reasons:
-	//   1) recordEvent currently logs-and-swallows errors. If the event
-	//      INSERT failed (FK, JSONB issue, transient), no event row
-	//      exists. Reading back means we leave audit fields nil instead
-	//      of advertising a phantom editor the next GET cannot confirm.
-	//   2) Postgres CURRENT_TIMESTAMP is the authoritative source. Using
-	//      time.Now().UTC() invites sub-second clock skew between the
-	//      stamped response and the canonical events.createdat that
-	//      subsequent reads project. Same source = no drift.
+	// the canonical event row the transaction above committed, rather than
+	// synthesizing from time.Now() + ctx user, because Postgres
+	// CURRENT_TIMESTAMP is the authoritative source: using time.Now().UTC()
+	// invites sub-second clock skew between the stamped response and the
+	// events.createdat that subsequent reads project. Same source = no drift.
+	//
+	// The read is outside the transaction and therefore sees the committed
+	// event. On a no-op it resolves the PRIOR editor's event rather than
+	// nothing, which is exactly the guard's purpose: a read-through caller
+	// cannot tell a skipped write from a real one, and the earlier editor keeps
+	// the attribution (TestScoreSaveNoOpPreservesPriorEditorIntegration). It
+	// resolves nothing only for a row that has never been edited, or a context
+	// with no user - which is why the both-or-neither guard stays.
 	if saved != nil {
 		// Both-or-neither: only stamp when the lateral lookup resolved
 		// both the event timestamp AND the editor identity. See the
@@ -245,6 +144,173 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 	return saved, nil
 }
 
+// saveTx is Save's write - resolve the row, lock it, skip a no-op, write it and
+// record its event and revision - inside the caller's transaction.
+//
+// status is set to 'done' in the same INSERT/UPDATE statement as the answer
+// (ztmf#435). Because it rides the same write, the state can never disagree with
+// the row it describes. Reaching either write means a genuine create or a change
+// that cleared the no-op guard, which is exactly what "updated this cycle" means.
+// A read-through PUT short-circuits before the UPDATE and never touches status,
+// so a carried-over row stays not_started (ztmf#299 preserved). last_updated_at
+// rides the same write for the same reason; progress reads it instead of the
+// events log (ztmf-misc#426). clock_timestamp(), not now(), for the reason
+// insertScoreEvent gives: now() is transaction start.
+func (s *Score) saveTx(ctx context.Context, tx pgx.Tx) (*Score, error) {
+	// An answer is identified by (system, data call, question), never by
+	// scoreid, and migration 0061 enforces that (ztmf#491). Create and update
+	// resolve that key differently, and deliberately so.
+	var current *Score
+	if s.ScoreID == 0 {
+		// CREATE: the caller names no row, so the natural key names it for them.
+		// This is the ztmf#491 fix - a caller that does not know the existing
+		// scoreid (a bulk write that did not read current state, a client that
+		// lost the id) used to insert a second answer, and would now take a 400.
+		if err := checkOptionInPinnedVersion(ctx, tx, s.FunctionOptionID, s.DataCallID); err != nil {
+			return nil, err
+		}
+		var err error
+		current, err = lockScoreByNaturalKey(ctx, tx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+		if errors.Is(err, ErrNoData) {
+			sqlb := stmntBuilder.
+				Insert("public.scores").
+				Columns("fismasystemid", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status", "last_updated_at").
+				Values(s.FismaSystemID, s.Notes, derefBool(s.NotesIsAISummary), s.FunctionOptionID, s.DataCallID, scoreStatusDone, squirrel.Expr("clock_timestamp()")).
+				Suffix("ON CONFLICT (fismasystemid, datacallid, functionid) DO NOTHING RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+			var created *Score
+			created, err = writeScore(ctx, tx, sqlb)
+			if err == nil {
+				if err := recordScoreWrite(ctx, tx, created, nil, revisionKindCreate, eventActionCreated, nil); err != nil {
+					return nil, err
+				}
+				return created, nil
+			}
+			if !errors.Is(err, ErrNoData) {
+				return nil, err
+			}
+			// No row back means a concurrent writer inserted this answer after the
+			// lookup above. DO NOTHING waited for it to commit instead of raising
+			// 23505, so this transaction is intact: lock the winner's row and land
+			// as the update this always was. The conflict target names 0061's index
+			// only, so any other unique violation still fails.
+			current, err = lockScoreByNaturalKey(ctx, tx, s.FismaSystemID, s.DataCallID, s.FunctionOptionID)
+		}
+		if err != nil {
+			return nil, err
+		}
+		s.ScoreID = current.ScoreID
+	} else {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
+		locked, functionID, err := lockScore(ctx, tx, s.ScoreID)
+		if err != nil {
+			return nil, err
+		}
+		current = locked
+
+		// UPDATE: the question is part of the row's identity, so an option
+		// belonging to a DIFFERENT question is a malformed request rather than an
+		// instruction to go write somewhere else.
+		//
+		// Rejecting is what keeps this honest. Writing the natural-key row instead
+		// would silently modify a row the caller never named and leave the named
+		// one untouched, so a buggy client would appear to succeed. Letting it
+		// through is worse still: it rewrites this row's question, which both
+		// duplicates the target question and discards this row's own answer - the
+		// ztmf#491 defect, manufactured on the spot.
+		//
+		// Skipped on the hot path: an unchanged option is necessarily the same
+		// question, so the questionnaire's Next-click PUT pays nothing.
+		if current.FunctionOptionID != s.FunctionOptionID {
+			// Version first: another version's copy of this same question is
+			// also "a different functionid", and the version is the real reason.
+			optionFunctionID, inVersion, err := optionPlacement(ctx, tx, s.FunctionOptionID, current.DataCallID)
+			if err != nil {
+				return nil, err
+			}
+			if !inVersion {
+				return nil, errOptionOutsidePinnedVersion()
+			}
+			if optionFunctionID != 0 && optionFunctionID != functionID {
+				return nil, errOptionAnswersDifferentQuestion()
+			}
+		}
+	}
+
+	// Audit-preserving no-op: on an UPDATE that does not actually change any
+	// answer field, skip the write entirely. The questionnaire UI PUTs on every
+	// Next click regardless of whether the user touched the answer, so without
+	// this guard a read-through user gets stamped as the new editor and the prior
+	// cycle's real editor is overwritten. The product rule is "save on real
+	// change, not on read-through" so we enforce it here as defense in depth even
+	// if the client adds its own dirty check.
+	//
+	// Compared against the FOR UPDATE row rather than one the controller
+	// preloaded, so "unchanged" is decided against the values this statement
+	// would overwrite and holds until commit. Returning here commits a
+	// transaction that only took the lock, which is what releases it.
+	//
+	// Treats nil notes and empty-string notes as the same value, since the FE may
+	// submit either for an unanswered notes box. Returns the current row through
+	// the same lookupScoreAudit path the normal write uses, so the caller cannot
+	// tell a no-op apart from a successful write -- only the events table
+	// (unchanged) reveals the truth.
+	//
+	// On a no-op match we carry the incoming.FunctionOption (if any) onto the
+	// returned current row so callers that requested ?include=functionoption
+	// still get a fully-shaped response, matching the populated-write path
+	// through FindScores. The PUT controller writes 204 today but still encodes
+	// the body, so the response is observable to clients that parse 204 bodies.
+	if scoresEqualForUpdate(current, s) {
+		if s.FunctionOption != nil {
+			current.FunctionOption = s.FunctionOption
+		}
+		return current, nil
+	}
+
+	// fismasystemid and datacallid are deliberately NOT in the SET list. Saving
+	// an answer must never move the row to another system or another cycle:
+	// those are the two columns that decide who may write the row and which
+	// deadline applies to it, so letting a request body rewrite them turns an
+	// answer edit into a reparenting primitive. The controller authorizes an
+	// update against the stored row and pins both values onto the receiver
+	// before calling Save.
+	setCols := squirrel.Eq{
+		"notes":            s.Notes,
+		"functionoptionid": s.FunctionOptionID,
+		"status":           scoreStatusDone,
+		"last_updated_at":  squirrel.Expr("clock_timestamp()"),
+	}
+	if s.NotesIsAISummary != nil {
+		setCols["notes_is_ai_summary"] = *s.NotesIsAISummary
+	}
+	// Bind the write to the row the caller was authorized against, not to the id
+	// alone. The controller loads the row and pins these two fields onto the
+	// receiver before calling Save; matching on them here means a future caller
+	// that forgets to pin cannot write a row it did not authorize - it updates
+	// zero rows and fails as ErrNoData rather than succeeding against someone
+	// else's answer.
+	sqlb := stmntBuilder.
+		Update("public.scores").
+		SetMap(setCols).
+		Where("scoreid=? AND fismasystemid=? AND datacallid=?", s.ScoreID, s.FismaSystemID, s.DataCallID).
+		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+
+	saved, err := writeScore(ctx, tx, sqlb)
+	if err != nil {
+		return nil, err
+	}
+
+	// A create that resolved to an existing row is an update, and records one,
+	// with the locked row as its before-image.
+	if err := recordScoreWrite(ctx, tx, saved, snapshotOf(current), revisionKindUpdate, eventActionUpdated, nil); err != nil {
+		return nil, err
+	}
+
+	return saved, nil
+}
+
 // Confirm records that the user affirmed this carried-forward answer as still
 // accurate for the current data call: it flips status to 'done' and nothing
 // else. It exists because agreement changes no answer field, and Save's no-op
@@ -252,8 +318,9 @@ func (s *Score) Save(ctx context.Context, opts ...ScoreSaveOption) (*Score, erro
 // "reviewed and agreed" needs its own explicit, attributable write.
 //
 // Deliberately narrow: sets ONLY status - notably not notes_is_ai_summary,
-// since agreeing with an AI-drafted justification is not authoring it. Runs
-// through queryRow so recordEvent stamps the confirming user as the editor.
+// since agreeing with an AI-drafted justification is not authoring it. Writes
+// its audit event in the same transaction as the status flip, so the confirming
+// user is recorded as the editor or the confirm does not happen at all.
 // Idempotent on an already-'done' row.
 //
 // The receiver must be a row loaded by FindScoreByID, not a client-supplied
@@ -279,16 +346,49 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 		return s, nil
 	}
 
-	sqlb := stmntBuilder.
-		Update("public.scores").
-		Set("status", scoreStatusDone).
-		// Keep the no-op guard in the write predicate as well as above. Two
-		// requests can both load not_started before either reaches Confirm; only
-		// the first must be allowed to update and create an audit event.
-		Where("scoreid=? AND status <> ?", s.ScoreID, scoreStatusDone).
-		Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+	// lockScore before the conditional UPDATE. The UPDATE's status <> 'done'
+	// predicate would be atomic on its own, but the revision needs two things
+	// the predicate cannot give: the before-image to record as prev, and
+	// revision_no allocated as MAX+1 with the read and the insert under one
+	// lock.
+	confirmed, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, s.ScoreID); err != nil {
+			return nil, err
+		}
+		current, _, err := lockScore(ctx, tx, s.ScoreID)
+		if err != nil {
+			return nil, err
+		}
+		// Confirming endorses the stored option, so it must be this cycle's.
+		if err := checkOptionInPinnedVersion(ctx, tx, current.FunctionOptionID, current.DataCallID); err != nil {
+			return nil, err
+		}
 
-	confirmed, err := queryRow(ctx, sqlb, pgx.RowToStructByNameLax[Score])
+		sqlb := stmntBuilder.
+			Update("public.scores").
+			Set("status", scoreStatusDone).
+			Set("last_updated_at", squirrel.Expr("clock_timestamp()")).
+			// Keep the no-op guard in the write predicate as well as above. Two
+			// requests can both load not_started before either reaches Confirm; only
+			// the first must be allowed to update and create an audit event.
+			Where("scoreid=? AND status <> ?", s.ScoreID, scoreStatusDone).
+			Suffix("RETURNING scoreid, fismasystemid, EXTRACT(EPOCH FROM datecalculated) as datecalculated, notes, notes_is_ai_summary, functionoptionid, datacallid, status")
+
+		updated, err := writeScore(ctx, tx, sqlb)
+		if err != nil {
+			return nil, err
+		}
+
+		// kind='confirm' rather than 'update': the answer did not change, only
+		// the affirmation that it is still accurate. ztmf-misc#392 labels the
+		// undo button off this value, and undoing it un-confirms without
+		// touching the answer.
+		if err := recordScoreWrite(ctx, tx, updated, snapshotOf(current), revisionKindConfirm, eventActionUpdated, nil); err != nil {
+			return nil, err
+		}
+
+		return updated, nil
+	})
 	if err != nil {
 		// A conditional UPDATE that lost the race to another confirmer returns
 		// no row. Reload to distinguish that successful idempotent outcome from
@@ -321,56 +421,10 @@ func (s *Score) Confirm(ctx context.Context) (*Score, error) {
 	return confirmed, nil
 }
 
-// scoreUpdateIsNoOp reports whether the incoming Score's answer fields
-// match the existing row exactly. Used by Save to short-circuit the
-// "Next click without editing" path so the prior editor is not
-// overwritten by a read-through. Returns the existing row alongside the
-// boolean so callers can return it as the response without a second
-// round trip.
-//
-// notes is compared as a string with nil normalized to "" -- the FE may
-// submit either for an unanswered notes box and we treat them as the
-// same value. Whitespace-only notes intentionally do NOT normalize to
-// empty; the FE trims before submitting today, so reaching this layer
-// with " " means a caller is sending whitespace deliberately and the
-// stored value should reflect that. See TestScoresEqualForUpdate's
-// WhitespaceNotesNotEqualEmpty case for the pinned contract.
-// fismasystemid and datacallid are included in the comparison because
-// a PUT that moves a score across systems or cycles is a real change
-// even if notes and option are unchanged.
-//
-// Concurrency: this SELECT precedes the (skipped) UPDATE outside any
-// transaction, so a concurrent writer could land a real change in the
-// gap. The window is small and the practical consequence is "the next
-// GET corrects the audit fields" -- there is no data loss, only a
-// brief response that lags the latest write. Wrapping Save in a
-// transaction would close the window but rework every model that
-// relies on queryRow's auto-event hook, which is out of scope for the
-// audit-fields branch.
-//
-// Returns ErrNotData when the row is missing so the caller can fail
-// cleanly without paying a second round trip through the UPDATE that
-// would also fail.
-// A non-nil preloaded row is used as-is instead of re-reading: the update path
-// authorizes against the stored row, so the controller has already fetched it.
-func scoreUpdateIsNoOp(ctx context.Context, incoming, preloaded *Score) (bool, *Score, error) {
-	current := preloaded
-	if current == nil {
-		var err error
-		current, err = FindScoreByID(ctx, incoming.ScoreID)
-		if err != nil {
-			return false, nil, err
-		}
-	}
-
-	return scoresEqualForUpdate(current, incoming), current, nil
-}
-
 // FindScoreByID reads one score row by id, on the read-only path (a plain
 // conn.QueryRow, never queryRow, so no event is recorded for a lookup).
 //
-// Shared by scoreUpdateIsNoOp, which needs the current answer fields to compare
-// against, and by ConfirmScore, which needs the row's real fismasystemid so the
+// Used by the score controller, which needs the row's real fismasystemid so the
 // controller can authorize against it rather than against a client-asserted one.
 //
 // Returns ErrNoData when the row is missing so callers can fail cleanly without
@@ -402,10 +456,94 @@ func FindScoreByID(ctx context.Context, scoreID int32) (*Score, error) {
 	return current, nil
 }
 
-// scoresEqualForUpdate is the pure comparison used by scoreUpdateIsNoOp,
+// optionPlacement is what a score write needs to know about an option: the
+// question it answers, and whether it belongs to the questionnaire version the
+// data call is pinned to (ztmf-misc#395). One query, not two.
+//
+// An unknown option reports functionID 0 and in-version, deliberately: Save
+// lets the write proceed and fail on the real reason (the trigger raises 23503,
+// which is the existing 400 ErrNoReference) rather than a less accurate one.
+// An unknown data call likewise reports in-version and fails on its FK.
+//
+// The data call row is locked FOR SHARE until commit, so ztmf-misc#397's
+// re-pin (which updates that row) cannot commit between this check and the
+// write it guards. Every score write takes that lock before the score row -
+// here on create, through lockScoreDataCall on the scoreid paths - so a re-pin
+// that updates the data call first waits for them rather than deadlocking.
+func optionPlacement(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallID int32) (functionID int32, inVersion bool, err error) {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM datacalls WHERE datacallid = $1 FOR SHARE`, dataCallID); err != nil {
+		return 0, false, trapError(err)
+	}
+	var pinned *bool
+	err = tx.QueryRow(ctx, `
+		SELECT fo.functionid, `+questionnaireVersionSQL("fo.versionid", "$2")+`
+		  FROM functionoptions fo
+		 WHERE fo.functionoptionid = $1`, functionOptionID, dataCallID,
+	).Scan(&functionID, &pinned)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, true, nil
+	}
+	if err != nil {
+		return 0, false, trapError(err)
+	}
+	return functionID, pinned == nil || *pinned, nil
+}
+
+// lockScoreDataCall locks a score's data call FOR SHARE ahead of lockScore, the
+// order the create path already takes (optionPlacement before the natural-key
+// lock). One order on every score write is what keeps ztmf-misc#397's re-pin,
+// which updates the data call row before any score, free of deadlocks.
+func lockScoreDataCall(ctx context.Context, tx pgx.Tx, scoreID int32) error {
+	_, err := tx.Exec(ctx, `
+		SELECT 1 FROM datacalls
+		 WHERE datacallid = (SELECT datacallid FROM scores WHERE scoreid = $1)
+		   FOR SHARE`, scoreID)
+	return trapError(err)
+}
+
+// checkOptionInPinnedVersion rejects an option from a version other than the
+// data call's pin. A draft or older version's option has its own functionid,
+// so it would land as a second answer to the same question that 0061's index
+// cannot see and the read paths would then hide. It is also what keeps a
+// draft's options unanswerable, which ztmf-misc#396's draft DELETE relies on.
+func checkOptionInPinnedVersion(ctx context.Context, tx pgx.Tx, functionOptionID, dataCallID int32) error {
+	_, inVersion, err := optionPlacement(ctx, tx, functionOptionID, dataCallID)
+	if err != nil {
+		return err
+	}
+	if !inVersion {
+		return errOptionOutsidePinnedVersion()
+	}
+	return nil
+}
+
+func errOptionOutsidePinnedVersion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different questionnaire version than this data call",
+	}}
+}
+
+// errOptionAnswersDifferentQuestion is the 400 for an update whose option
+// belongs to another question. Same InvalidInputError shape every other field
+// validation uses, keyed on the offending field.
+func errOptionAnswersDifferentQuestion() error {
+	return &InvalidInputError{data: map[string]any{
+		"functionoptionid": "belongs to a different question than this score; save an answer for that question instead of changing this one",
+	}}
+}
+
+// scoresEqualForUpdate is the pure comparison behind Save's no-op guard,
 // extracted so unit tests can pin the equality rules without spinning up
 // a database. Returns true when the incoming Score would produce no
 // observable change to the answer fields on the current row.
+//
+// notes is compared as a string with nil normalized to "" -- the FE may submit
+// either for an unanswered notes box and we treat them as the same value.
+// Whitespace-only notes intentionally do NOT normalize to empty; the FE trims
+// before submitting today, so reaching this layer with " " means a caller is
+// sending whitespace deliberately and the stored value should reflect that. See
+// TestScoresEqualForUpdate's WhitespaceNotesNotEqualEmpty case for the pinned
+// contract.
 func scoresEqualForUpdate(current, incoming *Score) bool {
 	if current == nil || incoming == nil {
 		return false
@@ -536,8 +674,8 @@ type PillarScore struct {
 //	>= 3.10  -> Advanced
 //	>= 2.10  -> Initial
 //	>= 1.01  -> Traditional
-//	otherwise -> Not Assessed (a pillar with zero answered questions lands
-//	             at exactly 1.0 under the +1 shift aggregation).
+//	otherwise -> Not Assessed (unreachable from computed scores, whose floor
+//	             is 1.25; the aggregate uses tierFor).
 //
 // The comparison happens in integer space (score * 100 rounded to int)
 // so a system whose float64 representation is, e.g., 3.099999... but
@@ -562,14 +700,28 @@ func Tier(score float64) string {
 	}
 }
 
+// tierFor labels an aggregate score. A pillar or system with nothing answered
+// is Not Assessed: its score sits at the 1.25 floor because a blank counts as
+// a 1, but calling it Traditional would claim an assessment that never
+// happened (ztmf-misc#433).
+func tierFor(score float64, answered int32) string {
+	if answered == 0 {
+		return "Not Assessed"
+	}
+	return Tier(score)
+}
+
 type FindScoresInput struct {
 	input
-	FismaSystemID  *int32   `schema:"fismasystemid"`
-	FismaSystemIDs []*int32 `schema:"-"`
-	DataCallID     *int32   `schema:"datacallid"`
-	UserID         *string  `schema:"-"`
-	IncludePillars *bool    `schema:"include_pillars"`
+	FismaSystemID  *int32  `schema:"fismasystemid"`
+	DataCallID     *int32  `schema:"datacallid"`
+	UserID         *string `schema:"-"`
+	IncludePillars *bool   `schema:"include_pillars"`
 	OpDivScope
+	// SystemScope is the assigned-systems self-scope /scores/aggregate uses in
+	// place of UserID. Set it with ScopeToSystems so an empty assignment list
+	// fails closed instead of reading as "no filter".
+	SystemScope
 }
 
 func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
@@ -590,6 +742,13 @@ func FindScores(ctx context.Context, input FindScoresInput) ([]*Score, error) {
 
 	if input.FismaSystemID != nil {
 		sqlb = sqlb.Where("scores.fismasystemid=?", *input.FismaSystemID)
+	}
+
+	// Assigned-systems scope (fail-closed). ListScores self-scopes by UserID and
+	// never sets this, but honoring it here means an input scoped with
+	// ScopeToSystems cannot read unfiltered through this path either.
+	if f := input.SystemWhere("scores.fismasystemid"); f != nil {
+		sqlb = sqlb.Where(f)
 	}
 
 	if input.DataCallID != nil {
@@ -706,25 +865,27 @@ type pillarScoreRow struct {
 	Pillar        string  `db:"pillar"`
 	Score         float64 `db:"score"`
 	SystemScore   float64 `db:"system_score"`
+	// Answered counts the questions with an answer, for the pillar and for
+	// the whole system. Zero means Not Assessed whatever the score says.
+	Answered       int32 `db:"answered"`
+	SystemAnswered int32 `db:"system_answered"`
 }
 
 // FindScoresAggregate returns one ScoreAggregate per (datacall, system) pair
 // matching the input filters. Both the system score and the per-pillar scores
-// are computed on the HHS-aligned 1.0-5.0 scale via the +1 shift aggregation
-// described in ztmf-misc#175. The system score is the simple AVG of pillar
+// are computed on the HHS 1.0-5.0 scale with the HHS scorecard formula
+// (average answer x 1.25, ztmf-misc#433). The system score is the simple AVG of pillar
 // scores; the divisor follows the actual pillar count rather than being
 // hardcoded, so adding or removing a pillar does not silently change the
 // math. Pillar scores are populated on the aggregate when IncludePillars is
 // true.
+//
+// A requested FismaSystemID is applied as its own equality predicate in
+// buildPillarScoresSQL. It is deliberately not copied into the assigned-systems
+// list: that list is the caller's authorization scope, and filling an empty one
+// from the query string would turn "assigned to nothing" into "assigned to
+// whatever was asked for".
 func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAggregate, error) {
-	// Convert single FismaSystemID to FismaSystemIDs array if needed so the
-	// scoping rules below see a consistent shape. This mirrors prior behavior
-	// so an admin requesting a specific system still flows through the same
-	// IN-list path that ISSOs use for their assigned-system scope.
-	if input.FismaSystemID != nil && len(input.FismaSystemIDs) == 0 {
-		input.FismaSystemIDs = []*int32{input.FismaSystemID}
-	}
-
 	pillarRows, err := findPillarScoresAll(ctx, input)
 	if err != nil {
 		return nil, err
@@ -748,8 +909,13 @@ func FindScoresAggregate(ctx context.Context, input FindScoresInput) ([]*ScoreAg
 // recomputing the same average in a different runtime.
 //
 // The input slice is assumed to be ordered by (datacallid, fismasystemid,
-// pillarid), which is the canonical ordering emitted by the underlying SQL
-// in findPillarScoresAll. The output preserves that order.
+// pillars.ordr, pillarid), which is the canonical ordering emitted by the
+// underlying SQL in findPillarScoresAll. The output preserves that order, and
+// ztmf-ui's buildRadarData plots pillarscores in array order without sorting,
+// so this is what an ISSO reads on the trend radar - it has to match the
+// questionnaire's sequence rather than whatever order the pillars happened to
+// be inserted in (ztmf-misc#393). The other consumers (PillarGrid,
+// SystemDetailReadView) re-sort client-side and are indifferent.
 func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAggregate {
 	type key struct {
 		dataCallID    int32
@@ -767,7 +933,7 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 				DataCallID:    r.DataCallID,
 				FismaSystemID: r.FismaSystemID,
 				SystemScore:   r.SystemScore,
-				SystemTier:    Tier(r.SystemScore),
+				SystemTier:    tierFor(r.SystemScore, r.SystemAnswered),
 			}
 			aggByKey[k] = agg
 			order = append(order, k)
@@ -777,7 +943,7 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 				PillarID: r.PillarID,
 				Pillar:   r.Pillar,
 				Score:    r.Score,
-				Tier:     Tier(r.Score),
+				Tier:     tierFor(r.Score, r.Answered),
 			})
 		}
 	}
@@ -792,8 +958,9 @@ func aggregatePillarRows(rows []*pillarScoreRow, includePillars bool) []*ScoreAg
 // findPillarScoresAll returns one row per (datacall, system, pillar) for every
 // combination matching the input filters. Pillar scores are computed by
 // enumerating every expected question for each (system, datacall, pillar)
-// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 0,
-// applying the +1 shift, and averaging.
+// triple, LEFT JOINing to existing answers, COALESCEing missing rows to 1,
+// averaging, and scaling by 1.25. The answered count rides along so the
+// rollup can label a pillar or system with nothing answered Not Assessed.
 //
 // The query is built as parameterized raw SQL because the derived subqueries
 // and conditional joins exceed what squirrel expresses cleanly. Filters are
@@ -831,15 +998,9 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 		argN++
 	}
 
-	if len(input.FismaSystemIDs) > 0 {
-		placeholders := make([]string, len(input.FismaSystemIDs))
-		for i, id := range input.FismaSystemIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argN)
-			args = append(args, id)
-			argN++
-		}
-		conds = append(conds, fmt.Sprintf("fs.fismasystemid IN (%s)", strings.Join(placeholders, ",")))
-	}
+	// Assigned-systems scope (fail-closed): a self-scoped caller with no
+	// assigned systems matches no rows rather than every row.
+	input.AppendRawSystemFilter(&conds, &args, &argN, "fs.fismasystemid")
 
 	// OpDiv scope (fail-closed) on the expected CTE, which already joins
 	// fismasystems as fs.
@@ -856,6 +1017,11 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// pillar, so closed calls are untouched.
 	conds = append(conds, reducedPillarScopeSQL("dce.scoring_key", "p.pillar", "sp.datacallid"))
 
+	// Each (system, data call) pair enumerates its own cycle's catalog
+	// (ztmf-misc#395), through the pair's own dc row, so a retroactive
+	// recompute of a closed cycle uses the version that cycle was answered in.
+	conds = append(conds, pinnedVersionJoinSQL("f.versionid", "dc"))
+
 	var userJoin string
 	if input.UserID != nil {
 		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = fs.fismasystemid AND ufs.userid = $%d", argN)
@@ -871,11 +1037,10 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// render "No Score" tiles for systems that have not started, so a
 	// blanket cartesian over every active system would double-count.
 	//
-	// Pillar-level "Not Assessed" is still reachable for partial systems:
-	// once a (system, datacall) pair enters the universe via any score,
-	// every pillar for that system gets enumerated through the expected
-	// CTE. Pillars where every function is unanswered COALESCE to 0,
-	// shift to 1.0, average to exactly 1.0, and emit Not Assessed.
+	// Partial systems still score every pillar: once a (system, datacall)
+	// pair enters the universe via any score, every pillar for that system
+	// gets enumerated through the expected CTE. Pillars where every function
+	// is unanswered score the 1.25 floor and are labeled Not Assessed.
 	//
 	// The datacalls_fismasystems junction looks like the natural fit here
 	// but is misleading: per backend/internal/model/datacallsfismasystems.go,
@@ -884,16 +1049,13 @@ func buildPillarScoresSQL(input FindScoresInput) (string, []any) {
 	// junction is empty for live data calls that have thousands of score
 	// rows. Using it as the universe filter returns nothing.
 	//
-	// Question catalog drift is intentionally not handled. Functions are
-	// keyed by datacenterenvironment, not by datacall. A retroactive
-	// recompute of a closed historical cycle uses the current question set
-	// for that environment, which matches the legacy AVG-over-scored-rows
-	// behavior (it only averaged whatever functionoptions were referenced
-	// in the scores table). If question versioning becomes a real
-	// requirement, both paths would need the same treatment.
+	// Question catalog drift is handled by the version pin above: expected
+	// enumerates the functions of the pair's own questionnaire version, so a
+	// closed cycle rescored later reproduces its original numbers.
 	//
-	// Both pillar score and system score are computed in Postgres so the
-	// float math is consistent. System score is AVG of pillar scores
+	// Both pillar score and system score are computed in Postgres, in exact
+	// numeric until the final cast, so the result does not depend on the
+	// order rows reach the window. System score is AVG of pillar scores
 	// (equal weighting per the locked plan); the divisor follows the
 	// actual pillar count via the inner AVG, so adding or removing a
 	// pillar does not silently shift the math. system_score is carried on
@@ -904,7 +1066,7 @@ WITH scored_pairs AS (
     SELECT DISTINCT fismasystemid, datacallid FROM scores
 ),
 expected AS (
-    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, f.functionid
+    SELECT sp.fismasystemid, sp.datacallid, p.pillarid, p.pillar, p.ordr, f.functionid
     FROM scored_pairs sp
     INNER JOIN fismasystems fs ON fs.fismasystemid = sp.fismasystemid
     INNER JOIN datacalls dc    ON dc.datacallid    = sp.datacallid
@@ -920,6 +1082,11 @@ expected AS (
     %s
     WHERE %s
 ),
+-- Deliberately NOT de-duplicated: migration 0061 guarantees one row per
+-- (fismasystemid, datacallid, functionid), so the LEFT JOIN below cannot fan
+-- out and the AVG cannot double-weight a question. A DISTINCT ON here would
+-- mask a lost index by producing plausible numbers instead of a visibly wrong
+-- average (ztmf#491).
 answers AS (
     SELECT s.fismasystemid, s.datacallid, fo.functionid, fo.score
     FROM scores s
@@ -931,23 +1098,35 @@ pillar_scores AS (
         e.fismasystemid,
         e.pillarid,
         e.pillar,
-        AVG(COALESCE(a.score, 0) + 1.0)::float8 AS pillar_score
+        e.ordr,
+        -- HHS scorecard formula (ztmf-misc#433): average of the 1-4 answers
+        -- times 1.25, i.e. sum x 5 / max. An unanswered question counts as 1
+        -- (Traditional), so a pillar with nothing answered scores 1.25.
+        -- Kept as exact numeric for the system average below; floated only for output.
+        AVG(COALESCE(a.score, 1)) * 1.25 AS pillar_score_exact,
+        -- Answered count, so Go can label a pillar (or whole system) with
+        -- nothing answered Not Assessed rather than Traditional.
+        COUNT(a.score)::int AS answered
     FROM expected e
     LEFT JOIN answers a
       ON a.fismasystemid = e.fismasystemid
      AND a.datacallid    = e.datacallid
      AND a.functionid    = e.functionid
-    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar
+    GROUP BY e.datacallid, e.fismasystemid, e.pillarid, e.pillar, e.ordr
 )
 SELECT
     ps.datacallid,
     ps.fismasystemid,
     ps.pillarid,
     ps.pillar,
-    ps.pillar_score AS score,
-    AVG(ps.pillar_score) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score
+    ps.pillar_score_exact::float8 AS score,
+    ps.answered,
+    -- Averaged in numeric, then floated: a float8 AVG sums in plan-dependent
+    -- row order, so any query-shape change moved the last bit (ztmf-misc#395).
+    AVG(ps.pillar_score_exact) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::float8 AS system_score,
+    SUM(ps.answered) OVER (PARTITION BY ps.datacallid, ps.fismasystemid)::int AS system_answered
 FROM pillar_scores ps
-ORDER BY ps.datacallid, ps.fismasystemid, ps.pillarid
+ORDER BY ps.datacallid, ps.fismasystemid, ps.ordr, ps.pillarid
 `, userJoin, strings.Join(conds, " AND "))
 
 	return sql, args
@@ -1309,73 +1488,169 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		return 0, err
 	}
 	defer conn.Release()
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
 
-	// Total candidate rows in the previous cycle, including any that are no
-	// longer referentially valid. Compared against the count actually copied to
-	// detect a partial (or empty) rollover.
-	var expected int64
-	countSql, countArgs, _ := squirrel.
-		Select("COUNT(*)").
-		From("scores").
-		Where("datacallid=?", prevDataCall.DataCallID).
-		PlaceholderFormat(squirrel.Dollar).
-		ToSql()
-	if err = conn.QueryRow(ctx, countSql, countArgs...).Scan(&expected); err != nil {
+	// Both calls FOR SHARE, the lock every score write takes first, so a
+	// re-pin of either (ztmf-misc#397) waits for the copy: the versions read
+	// here are the versions the copied rows land in.
+	var sourceVersion, targetVersion int32
+	if err = tx.QueryRow(ctx, `
+		SELECT MAX(questionnaire_versionid) FILTER (WHERE datacallid = $1),
+		       MAX(questionnaire_versionid) FILTER (WHERE datacallid = $2)
+		  FROM (SELECT datacallid, questionnaire_versionid FROM datacalls
+		         WHERE datacallid IN ($1, $2) ORDER BY datacallid FOR SHARE) dc`,
+		prevDataCall.DataCallID, dataCallID).Scan(&sourceVersion, &targetVersion); err != nil {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
+		return 0, err
+	}
+	translate := sourceVersion != targetVersion
+
+	// Three counts, because one number can no longer tell a healthy rollover from
+	// a damaged one now that the copy deduplicates. candidates is every row in the
+	// previous cycle; resolvable drops those whose FK parents are gone, which the
+	// copy's INNER JOINs also drop (ztmf#411); expected is what the deduplicating
+	// copy below should actually emit, so copied < expected is a true under-copy
+	// rather than the duplicate collapse it would have looked like against a plain
+	// COUNT(*).
+	var candidates, resolvable, expected int64
+	const countSQL = `
+		SELECT (SELECT COUNT(*) FROM scores WHERE datacallid = $1),
+		       COUNT(*),
+		       COUNT(DISTINCT (s.fismasystemid, fo.functionid))
+		  FROM scores s
+		  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		 WHERE s.datacallid = $1`
+	if err = tx.QueryRow(ctx, countSQL, prevDataCall.DataCallID).Scan(&candidates, &resolvable, &expected); err != nil {
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
 		return 0, err
 	}
 
-	// Copy the previous scores into the new cycle, rewriting datacallid to the
-	// latest. INNER JOIN the FK parents so a score whose fismasystem or
-	// functionoption no longer resolves is silently dropped instead of aborting
-	// the entire batch - the all-or-nothing INSERT...SELECT was the ztmf#411
-	// foot-gun where a single bad row emptied the whole rollover.
-	//
-	// status is seeded as the 'not_started' literal (ztmf#435): the answer value
-	// carries forward in functionoptionid, but its review state for THIS cycle is
-	// reset, so a carried-over-but-untouched answer reads as not updated - the
-	// semantic the events lateral used to derive from "no event exists"
-	// (ztmf#299). The literal is a selected column so it lands in the same
-	// INSERT...SELECT as the copy, keeping the reset atomic with the row.
-	//
-	// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
-	// value has one definition. Safe to interpolate: the constant is
-	// package-owned, never request input.
-	//
-	// It stays a selected literal rather than becoming a bind parameter for two
-	// reasons. It keeps the emitted SQL byte-identical to what this statement
-	// has always produced; and an untyped $n in a SELECT list feeding an
-	// INSERT...SELECT walks into the same type-inference trap the sibling
-	// copySQL comment above documents at length for its ::int casts - Postgres
-	// resolves an unadorned placeholder to text and the column comparison
-	// fails at runtime.
-	prevScoresSqlb := squirrel.
-		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", "s.functionoptionid", fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
-		From("scores s").
-		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
-		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid").
-		Where("s.datacallid=?", prevDataCall.DataCallID)
+	// Across versions, an answer to a question the new version removed, or
+	// whose option score it no longer offers, is deliberately left behind.
+	// That is content removal, not damage, so it is counted apart: copied is
+	// held to what translates, and the rest gets its own token rather than
+	// firing the ROLLOVER_ANOMALY alarm on every legitimate version bump.
+	translatable := expected
+	if translate {
+		if err = tx.QueryRow(ctx, `
+			SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid))
+			  FROM scores s
+			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
+			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+			  `+versionTranslationJoinSQL("$2")+`
+			 WHERE s.datacallid = $1`, prevDataCall.DataCallID, targetVersion).Scan(&translatable); err != nil {
+			log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
+			return 0, err
+		}
+	}
 
-	sqlb := squirrel.
-		Insert("scores").
-		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
-		Select(prevScoresSqlb).
-		PlaceholderFormat(squirrel.Dollar)
-
-	sql, args, _ := sqlb.ToSql()
-
-	tag, err := conn.Exec(ctx, sql, args...)
+	sql, args := rolloverSQL(prevDataCall.DataCallID, dataCallID, targetVersion, translate)
+	tag, err := tx.Exec(ctx, sql, args...)
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
 	if err != nil {
-		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, translatable, err)
 		return 0, err
 	}
 
 	copied := tag.RowsAffected()
-	if copied < expected {
-		// Either zero-when-expected, or a partial copy where dead-FK rows were
-		// dropped by the JOIN. Both warrant an operator signal.
-		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d err=<none>", dataCallID, expected, copied)
+	if copied < translatable || resolvable < candidates {
+		// Either an under-copy, or previous-cycle rows the JOINs dropped because
+		// their FK parents no longer resolve. Both warrant an operator signal.
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d candidates=%d unresolvable=%d deduped=%d err=<none>",
+			dataCallID, translatable, copied, candidates, candidates-resolvable, resolvable-expected)
+	}
+	if translatable < expected {
+		log.Printf("VERSION_TRANSLATION_DROPPED datacall=%d from_version=%d to_version=%d dropped=%d",
+			dataCallID, sourceVersion, targetVersion, expected-translatable)
 	}
 
 	return copied, nil
+}
+
+// rolloverSQL is copyPreviousScores' INSERT..SELECT. Between calls pinned to
+// one version it is the statement the rollover has always run, plus ON CONFLICT:
+// the new call is committed before this runs, so an answer saved in between
+// keeps its place instead of failing the whole copy (it still counts as an
+// under-copy below). Across versions each answer moves through
+// versionTranslationJoinSQL, and an answer with no counterpart drops out.
+//
+// It INNER JOINs the FK parents so a score whose fismasystem or functionoption
+// no longer resolves is silently dropped instead of aborting the entire batch -
+// the all-or-nothing INSERT...SELECT was the ztmf#411 foot-gun where a single
+// bad row emptied the whole rollover.
+//
+// status is seeded as the 'not_started' literal (ztmf#435): the answer value
+// carries forward in functionoptionid, but its review state for THIS cycle is
+// reset, so a carried-over-but-untouched answer reads as not updated - the
+// semantic the events lateral used to derive from "no event exists"
+// (ztmf#299). The literal is a selected column so it lands in the same
+// INSERT...SELECT as the copy, keeping the reset atomic with the row.
+//
+// Interpolated from scoreStatusNotStarted rather than hand-quoted so the
+// value has one definition. Safe to interpolate: the constant is
+// package-owned, never request input.
+//
+// It stays a selected literal rather than becoming a bind parameter: an
+// untyped $n in a SELECT list feeding an INSERT...SELECT hits a type-inference
+// trap where Postgres resolves the placeholder to text and the column
+// comparison fails at runtime.
+//
+// DISTINCT ON guarantees one answer per question. Migration 0061 now makes a
+// duplicated source cycle unreachable through ordinary writes, but this stays:
+// without it a single stale duplicate - a restore from a pre-cleanup backup, a
+// bulk load run with the index dropped - aborts this whole INSERT...SELECT with
+// 23505 and the entire annual rollover emits nothing. That is the ztmf#411
+// all-or-nothing foot-gun the INNER JOINs defuse, reopened on a different error
+// class. The key is the question in the namespace the row lands in: the source
+// function within a version, its lineage across versions, which names exactly
+// one target function. The ORDER BY must lead with the same two expressions
+// for DISTINCT ON to be legal; the rest picks the winner.
+//
+// status outranks scoreid, and the order matters. scoreid is creation order,
+// not edit order - an edit is an in-place UPDATE that keeps its scoreid - so
+// the highest scoreid is not the freshest answer. Duplicates arrive as a bulk
+// copy with arbitrary relative ordering, and the ISSO then answers one of the
+// pair; on scoreid alone the untouched twin can outrank it and the real answer
+// for the cycle is silently discarded. 'done' means a human saved this answer
+// during the source cycle and 'not_started' means it was carried and never
+// touched, so preferring done keeps the answer that was actually given.
+func rolloverSQL(prevDataCallID, dataCallID, targetVersion int32, translate bool) (string, []any) {
+	option, question := "s.functionoptionid", "fo.functionid"
+	if translate {
+		option, question = "tfo.functionoptionid", "f.root_functionid"
+	}
+
+	prevScoresSqlb := squirrel.
+		Select("s.fismasystemid", "s.datecalculated", "s.notes", "s.notes_is_ai_summary", option, fmt.Sprintf("%d as latestdatacallid", dataCallID), fmt.Sprintf("'%s' as status", scoreStatusNotStarted)).
+		Options(fmt.Sprintf("DISTINCT ON (s.fismasystemid, %s)", question)).
+		From("scores s").
+		Join("fismasystems fs ON fs.fismasystemid = s.fismasystemid").
+		Join("functionoptions fo ON fo.functionoptionid = s.functionoptionid")
+	if translate {
+		prevScoresSqlb = prevScoresSqlb.JoinClause(versionTranslationJoinSQL("?"), targetVersion)
+	}
+	prevScoresSqlb = prevScoresSqlb.
+		Where("s.datacallid=?", prevDataCallID).
+		OrderBy("s.fismasystemid", question, fmt.Sprintf("(s.status = '%s') DESC", scoreStatusDone), "s.scoreid DESC")
+	if translate {
+		// v1 can repeat a score within a function; either option scores alike.
+		prevScoresSqlb = prevScoresSqlb.OrderBy("tfo.functionoptionid")
+	}
+
+	sql, args, _ := squirrel.
+		Insert("scores").
+		Columns("fismasystemid", "datecalculated", "notes", "notes_is_ai_summary", "functionoptionid", "datacallid", "status").
+		Select(prevScoresSqlb).
+		Suffix("ON CONFLICT DO NOTHING").
+		PlaceholderFormat(squirrel.Dollar).
+		ToSql()
+	return sql, args
 }

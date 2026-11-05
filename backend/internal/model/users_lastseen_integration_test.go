@@ -83,10 +83,22 @@ func TestFindUsersLastSeenIntegration(t *testing.T) {
 		// so it must not pay for a correlated subquery that only the list view
 		// renders. Lax scanning leaves the field nil; this pins that choice so
 		// a later "make it consistent" edit is a deliberate one.
+		// Busiest user FindUserByID accepts: the seed OWNER's all-ones id fails
+		// isValidUUID, and tests that write as it can make it the busiest.
+		rows, err := conn.Query(ctx, `
+			SELECT e.userid FROM public.events e JOIN public.users u USING (userid)
+			GROUP BY e.userid ORDER BY count(*) DESC`)
+		require.NoError(t, err)
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		require.NoError(t, err)
 		var userID string
-		require.NoError(t, conn.QueryRow(ctx, `
-			SELECT userid FROM public.events GROUP BY userid ORDER BY count(*) DESC LIMIT 1
-		`).Scan(&userID))
+		for _, id := range ids {
+			if isValidUUID(id) {
+				userID = id
+				break
+			}
+		}
+		require.NotEmpty(t, userID, "need an active user with a valid id")
 
 		one, err := FindUserByID(ctx, userID)
 		require.NoError(t, err)

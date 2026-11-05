@@ -70,6 +70,10 @@ func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, `regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g')`, "notes must be whitespace-normalized before comparison (nil/empty equal, spacing-only differences ignored)")
 	assert.Contains(t, sql, "resource = 'public.scores'", "attribution lateral must read score events")
 	assert.Contains(t, sql, "(payload->>'scoreid')::int = t.scoreid", "attribution must key on the later (To) write")
+	for _, dc := range []string{"$1", "$2"} {
+		assert.Contains(t, sql, "s.datacallid = "+dc+" AND "+questionnaireVersionSQL("rf.versionid", dc),
+			"each cycle reads only its own pinned version, on its own datacallid placeholder")
+	}
 
 	// Two cycle filters, no scope: from=3 then to=4, in that order.
 	if assert.Len(t, args, 2, "expected one datacallid arg per cycle") {
@@ -108,6 +112,9 @@ func TestBuildScoreDiffSQL_UserScope(t *testing.T) {
 	sql, args := buildScoreDiffSQL(in)
 
 	assert.Equal(t, 2, strings.Count(sql, "INNER JOIN users_fismasystems"), "user scope must join both cycle CTEs")
+	for _, dc := range []string{"$2", "$4"} {
+		assert.Contains(t, sql, questionnaireVersionSQL("rf.versionid", dc), "the version pin follows the datacallid, not the user id")
+	}
 	// from: userid, datacall ; to: userid, datacall
 	assert.Equal(t, []any{uid, int32(3), uid, int32(4)}, args)
 }

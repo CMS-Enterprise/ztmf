@@ -1,5 +1,8 @@
-name: Orchestration DEV
+name: PR checks
 
+# Tests every PR to main without deploying it. PR previews run in per-PR
+# environments (orchestration-pr.yml); DEV deploys only from merges to main,
+# ahead of PROD (orchestration-prod.yml). Context: ztmf-misc#345.
 on:
   pull_request:
     branches:
@@ -9,6 +12,11 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+
+# Serialize runs on the same ref.
+concurrency:
+  group: orchestration-dev-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   analysis:
@@ -24,7 +32,7 @@ jobs:
       backend: ${{ steps.backend.outputs.backend }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -49,9 +57,14 @@ jobs:
       # This is a git approximation: it cannot see a migration another open PR
       # deployed to dev without merging; that case is caught by the
       # deploy-failure diagnostics in infrastructure.yml. Context: ztmf-misc#298.
+      #
+      # The diff must run from the PR head, not HEAD: on pull_request events the
+      # checkout is refs/pull/N/merge, whose main-side diff is empty by
+      # construction. The head SHA is the merge commit's second parent, so the
+      # full-history checkout already has it.
       - name: Fail fast on migrations missing from this branch
         run: |
-          MISSING=$(git diff --name-only --diff-filter=A HEAD...origin/main -- \
+          MISSING=$(git diff --name-only --diff-filter=A ${{ github.event.pull_request.head.sha }}...origin/main -- \
             'backend/cmd/api/internal/migrations/[0-9][0-9][0-9][0-9]*.go' | grep -v '_test' || true)
           if [ -n "$MISSING" ]; then
             echo "::error::main has migrations this branch does not include:"
@@ -62,6 +75,25 @@ jobs:
           fi
           echo "No migrations on main are missing from this branch."
 
+      # Migrations are globally ordered state, so a PR that touches them must be
+      # authored against the schema main actually has: an edited migration or a
+      # schema change merged behind this branch will not show up as a missing
+      # file above, but still diverges dev the moment this deploys. Require
+      # currency with main instead of guessing. Only migration-touching PRs pay
+      # this cost. Context: ztmf-misc#303.
+      - name: Require migration-touching branches to be current with main
+        run: |
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          TOUCHES=$(git diff --name-only origin/main...$HEAD_SHA -- backend/cmd/api/internal/migrations/ | head -n 1)
+          BEHIND=$(git rev-list --count $HEAD_SHA..origin/main)
+          if [ -n "$TOUCHES" ] && [ "$BEHIND" -gt 0 ]; then
+            echo "::error::This PR touches the migrations package and is $BEHIND commit(s) behind main."
+            echo "Migrations are globally ordered; a migration authored against a stale schema can collide or diverge silently at merge."
+            echo "Remedy: rebase onto latest main, then push."
+            exit 1
+          fi
+          echo "Migration currency check passed (touches=${TOUCHES:-none}, behind=$BEHIND)."
+
   backend:
     name: Backend
     needs:
@@ -71,17 +103,22 @@ jobs:
     uses: ./.github/workflows/backend.yml
     with:
       environment: DEV
+      deploy: false
     secrets: inherit
-     
-  infrastructure:
-    name: Infrastructure
-    needs: 
-      - analysis
-      - diff
-      - backend
-    if: ${{ github.event.pull_request.draft == false && !failure() && !cancelled() }}
-    uses: ./.github/workflows/infrastructure.yml
-    with:
-      environment: DEV
-    secrets: inherit
-  
+
+  # The one check the main ruleset requires. Skipped reusable-workflow jobs
+  # report under the caller's name and run ones under nested names, so no
+  # single nested check is always present to require.
+  result:
+    name: PR checks passed
+    if: always()
+    needs: [analysis, diff, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any check failed or was cancelled
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::A PR check failed or was cancelled."
+            exit 1
+          fi
+          echo "All PR checks passed or were skipped."

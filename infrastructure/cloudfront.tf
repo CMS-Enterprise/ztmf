@@ -219,6 +219,35 @@ resource "aws_cloudfront_distribution" "ztmf" {
     }
   }
 
+  # Per-PR environments (ztmf-misc#341): /pr/<repo>/<n>/ rides the same
+  # internal-ALB origin, where a per-PR listener rule authenticates and forwards
+  # to that environment's task. Same forward-everything, TTL 0 shape as /api/*
+  # so a re-push is visible without an invalidation.
+  dynamic "ordered_cache_behavior" {
+    for_each = var.pr_env_enabled ? [1] : []
+    content {
+      path_pattern               = "/pr/*"
+      allowed_methods            = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+      cached_methods             = ["HEAD", "GET", "OPTIONS"]
+      target_origin_id           = "ztmf_api"
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.hsts_policy.id
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
+      }
+
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = true
+      viewer_protocol_policy = "redirect-to-https"
+    }
+  }
+
   # Serve static error page when the API origin returns 5xx errors.
   # The error page is deployed to S3 alongside the React app assets.
   # Short TTL (10s) so CloudFront picks up a recovered origin quickly.
@@ -260,7 +289,22 @@ resource "aws_cloudfront_distribution" "ztmf" {
     # cloudfront_default_certificate = true
     acm_certificate_arn      = local.ztmf_acm_certificate_arn
     ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    minimum_protocol_version = var.cloudfront_minimum_protocol_version
+  }
+
+  // Assert price_class and the viewer TLS minimum rather than trusting the
+  // config to survive future edits. Postconditions evaluate against refreshed
+  // state, so they also catch an out-of-band change (a console edit during the
+  // dev hold week, for example), not just a bad diff.
+  lifecycle {
+    postcondition {
+      condition     = self.price_class == "PriceClass_All"
+      error_message = "CloudFront price_class must be PriceClass_All."
+    }
+    postcondition {
+      condition     = self.viewer_certificate[0].minimum_protocol_version == var.cloudfront_minimum_protocol_version
+      error_message = "CloudFront minimum_protocol_version must match var.cloudfront_minimum_protocol_version."
+    }
   }
 
   // Assert the value above rather than trusting the literal to survive future
@@ -272,4 +316,52 @@ resource "aws_cloudfront_distribution" "ztmf" {
       error_message = "CloudFront price_class must be PriceClass_All."
     }
   }
+}
+
+resource "aws_cloudwatch_log_delivery_source" "cloudfront" {
+  name         = "ztmf-cloudfront${local.name_suffix}"
+  log_type     = "ACCESS_LOGS"
+  resource_arn = aws_cloudfront_distribution.ztmf.arn
+}
+
+resource "aws_cloudwatch_log_delivery_destination" "cloudfront_s3" {
+  name          = "ztmf-cloudfront-s3${local.name_suffix}"
+  output_format = "json"
+
+  delivery_destination_configuration {
+    destination_resource_arn = "arn:aws:s3:::ztmf-logs-${local.account_id}-use1/cloudfront/${var.environment}"
+  }
+}
+
+resource "aws_cloudwatch_log_delivery" "cloudfront_s3" {
+  delivery_source_name     = aws_cloudwatch_log_delivery_source.cloudfront.name
+  delivery_destination_arn = aws_cloudwatch_log_delivery_destination.cloudfront_s3.arn
+
+  record_fields = [
+    "date",
+    "time",
+    "x-edge-location",
+    "c-ip",
+    "c-country",
+    "asn",
+    "cs-method",
+    "cs(Host)",
+    "cs-uri-stem",
+    "sc-status",
+    "cs(User-Agent)",
+    "cs-protocol",
+    "cs-protocol-version",
+    "ssl-protocol",
+    "ssl-cipher",
+    "time-to-first-byte",
+    "time-taken",
+    "x-edge-result-type",
+    "x-edge-detailed-result-type",
+    "x-edge-request-id",
+  ]
+
+  s3_delivery_configuration = [{
+    suffix_path                 = "{yyyy}/{MM}/{dd}"
+    enable_hive_compatible_path = false
+  }]
 }

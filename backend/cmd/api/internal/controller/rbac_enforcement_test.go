@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/CMS-Enterprise/ztmf/backend/internal/model"
@@ -106,6 +107,28 @@ func TestSaveScore_OpDivReadonlyForbiddenOnUpdate(t *testing.T) {
 			"otherwise the 403/404 split reveals which score ids exist")
 }
 
+// --- UndoScoreRevision: read-only tiers are blocked before any DB access ---
+
+// Same discriminating trick, and for the same reason: undo authorizes against
+// the stored row, so the lookup is easy to place before the role check. A
+// nonexistent scoreid separates the two orderings - 403 means role first, 404
+// means the row was looked up first, and that difference is the existence leak.
+// The Emberfall cases for this endpoint use a real score, so they would pass
+// under either ordering and cannot stand in for this (ztmf-misc#391).
+func TestUndoScoreRevision_OpDivReadonlyForbidden(t *testing.T) {
+	const missingScoreID = "2147483600" // no fixture allocates anything near this
+	body := jsonBody(t, map[string]any{"expected_head_revisionid": 1})
+	r := httptest.NewRequest("POST", "/api/v1/scores/"+missingScoreID+"/revisions/undo", body)
+	r = mux.SetURLVars(r, map[string]string{"scoreid": missingScoreID})
+	r = withUser(r, opdivReadonly)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	UndoScoreRevision(w, r)
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a read-only tier must be rejected on role before the stored-row lookup, "+
+			"otherwise the 403/404 split reveals which score ids exist")
+}
+
 // --- ConfirmScore: read-only tiers are blocked before any DB access ---
 
 func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
@@ -113,4 +136,213 @@ func TestConfirmScore_OpDivReadonlyForbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	ConfirmScore(w, r)
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// --- Questionnaire catalog writes: HHS-wide, so OPDIV_ADMIN is out ---
+//
+// The catalog is a single set every OpDiv is scored against, so an OPDIV_ADMIN
+// editing a question changes what every other OpDiv answers. They pass
+// IsAdmin(), which is what these gates used to read (ztmf-misc#398).
+//
+// The bodies in this table are deliberately well-formed: the point is that a
+// genuinely valid write is refused, not merely that a broken one fails. Note
+// the consequence - if a gate ever regresses, these cases reach the DB and
+// write for real against whatever DB_* env is set. They fail loudly when that
+// happens, which is the tradeoff; TestCatalogWrites_GatePrecedesDecode covers
+// the same routes with an unparseable body and so can never write at all.
+
+// catalogWriteCases covers every content route in one table so a new one cannot
+// be added with a weaker gate unnoticed. PUT cases carry their path var because
+// the handlers read it, though the gate returns before that matters.
+var catalogWriteCases = []struct {
+	name    string
+	handler func(http.ResponseWriter, *http.Request)
+	method  string
+	target  string
+	vars    map[string]string
+	body    map[string]any
+}{
+	{
+		name:    "SaveQuestion create",
+		handler: SaveQuestion,
+		method:  "POST",
+		target:  "/api/v1/questions",
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveQuestion update",
+		handler: SaveQuestion,
+		method:  "PUT",
+		target:  "/api/v1/questions/1",
+		vars:    map[string]string{"questionid": "1"},
+		body:    map[string]any{"question": "q?", "notesprompt": "prompt", "pillarid": 1},
+	},
+	{
+		name:    "SaveFunction create",
+		handler: SaveFunction,
+		method:  "POST",
+		target:  "/api/v1/functions",
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunction update",
+		handler: SaveFunction,
+		method:  "PUT",
+		target:  "/api/v1/functions/1",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"function": "fn", "description": "d", "datacenterenvironment": "AWS", "questionid": 8001},
+	},
+	{
+		name:    "SaveFunctionOption create",
+		handler: SaveFunctionOption,
+		method:  "POST",
+		target:  "/api/v1/functions/1/options",
+		vars:    map[string]string{"functionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+	{
+		name:    "SaveFunctionOption update",
+		handler: SaveFunctionOption,
+		method:  "PUT",
+		target:  "/api/v1/functionoptions/1",
+		vars:    map[string]string{"functionoptionid": "1"},
+		body:    map[string]any{"score": 1, "optionname": "Traditional", "description": "d"},
+	},
+	{
+		name:    "ForkQuestionnaireVersion",
+		handler: ForkQuestionnaireVersion,
+		method:  "POST",
+		target:  "/api/v1/questionnaire-versions",
+		body:    map[string]any{"label": "rbac fixture"},
+	},
+	{
+		name:    "RepinDataCall",
+		handler: RepinDataCall,
+		method:  "PUT",
+		target:  "/api/v1/datacalls/1/questionnaire-version",
+		vars:    map[string]string{"datacallid": "1"},
+		body:    map[string]any{"questionnaire_versionid": 1},
+	},
+}
+
+// catalogBodylessWriteCases are the catalog writes with no body to make
+// unparseable (ztmf-misc#396). Their path id is "0", which no handler accepts:
+// a passing gate therefore stops at 404 before the DB, and the forbidden table
+// below still proves the gate runs first.
+var catalogBodylessWriteCases = []struct {
+	name    string
+	handler func(http.ResponseWriter, *http.Request)
+	method  string
+	target  string
+	vars    map[string]string
+}{
+	{"DeleteQuestion", DeleteQuestion, "DELETE", "/api/v1/questions/0", map[string]string{"questionid": "0"}},
+	{"DeleteFunction", DeleteFunction, "DELETE", "/api/v1/functions/0", map[string]string{"functionid": "0"}},
+	{"DeleteFunctionOption", DeleteFunctionOption, "DELETE", "/api/v1/functionoptions/0", map[string]string{"functionoptionid": "0"}},
+	{"PublishQuestionnaireVersion", PublishQuestionnaireVersion, "PUT", "/api/v1/questionnaire-versions/0/publish", map[string]string{"versionid": "0"}},
+	{"ArchiveQuestionnaireVersion", ArchiveQuestionnaireVersion, "PUT", "/api/v1/questionnaire-versions/0/archive", map[string]string{"versionid": "0"}},
+	{"DiscardQuestionnaireVersion", DiscardQuestionnaireVersion, "DELETE", "/api/v1/questionnaire-versions/0", map[string]string{"versionid": "0"}},
+}
+
+func TestCatalogBodylessWrites_HHSWideOnly(t *testing.T) {
+	for _, c := range catalogBodylessWriteCases {
+		for _, u := range []*model.User{opdivAdmin, opdivReadonly, {Role: "HHS_READONLY_ADMIN"}, {Role: "ISSO"}, {Role: "SYSTEM_DELEGATE"}} {
+			t.Run(c.name+" forbidden for "+u.Role, func(t *testing.T) {
+				r := withUser(mux.SetURLVars(httptest.NewRequest(c.method, c.target, nil), c.vars), u)
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusForbidden, w.Code)
+			})
+		}
+		for _, u := range []*model.User{{Role: "OWNER"}, {Role: "HHS_ADMIN"}} {
+			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
+				r := withUser(mux.SetURLVars(httptest.NewRequest(c.method, c.target, nil), c.vars), u)
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusNotFound, w.Code)
+			})
+		}
+	}
+}
+
+func TestCatalogWrites_HHSWideOnly(t *testing.T) {
+	forbidden := []*model.User{
+		opdivAdmin,
+		opdivReadonly,
+		{Role: "HHS_READONLY_ADMIN"},
+		{Role: "ISSO"},
+		{Role: "SYSTEM_DELEGATE"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range forbidden {
+			t.Run(c.name+" forbidden for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, jsonBody(t, c.body))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusForbidden, w.Code)
+			})
+		}
+	}
+}
+
+// OWNER and HHS_ADMIN must still pass the gate.
+//
+// The body here is deliberately UNPARSEABLE, the inverse of the forbidden
+// table's. A well-formed one would pass the gate and go on to write: these
+// handlers reach the DB through whatever DB_* env happens to be set, and the
+// repo's own pre-push hook sources dev.compose.env before running
+// `go test -short ./...`. That combination inserted junk questions and
+// functions into the local seed and clobbered functionoptions row 1 - while the
+// test still passed, because "not 403" is true of a successful write too.
+//
+// Malformed JSON fails at getJSON, which sits after the gate and before any DB
+// access, so 400 means the gate passed and nothing was written. It is also a
+// stronger assertion than "not 403": only one status satisfies it.
+func TestCatalogWrites_HHSWideAdminsPassTheGate(t *testing.T) {
+	allowed := []*model.User{
+		{Role: "OWNER"},
+		{Role: "HHS_ADMIN"},
+	}
+
+	for _, c := range catalogWriteCases {
+		for _, u := range allowed {
+			t.Run(c.name+" gate passes for "+u.Role, func(t *testing.T) {
+				r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
+				if c.vars != nil {
+					r = mux.SetURLVars(r, c.vars)
+				}
+				r = withUser(r, u)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				c.handler(w, r)
+				assert.Equal(t, http.StatusBadRequest, w.Code)
+			})
+		}
+	}
+}
+
+// The gate must run before getJSON, which is what lets the test above assume a
+// malformed body never reaches the DB. Pinned from the other side: a forbidden
+// role sending that same unparseable body must still get 403, not the 400 a
+// decode-first handler would return.
+func TestCatalogWrites_GatePrecedesDecode(t *testing.T) {
+	for _, c := range catalogWriteCases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(c.method, c.target, strings.NewReader("{"))
+			if c.vars != nil {
+				r = mux.SetURLVars(r, c.vars)
+			}
+			r = withUser(r, opdivAdmin)
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			c.handler(w, r)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+		})
+	}
 }
