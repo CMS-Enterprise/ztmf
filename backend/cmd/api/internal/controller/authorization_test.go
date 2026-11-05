@@ -400,6 +400,35 @@ func TestSystemDelegate_ForbiddenNonAnswerSurfaces(t *testing.T) {
 	}
 }
 
+// TestSystemDelegate_AllowedAnswerSurfaces is the positive half of the delegate
+// invariant (#455) and the deliberate counterweight to
+// TestSystemDelegate_ForbiddenNonAnswerSurfaces above.
+//
+// The invariant cuts BOTH ways: a delegate may reach nothing an ISSO can that is
+// not a data-call answer, and must reach everything that is. Undo
+// (ztmf-misc#391) is an answer surface - it changes functionoptionid, notes and
+// status on a score row and nothing else - so a blanket IsSystemDelegate()
+// guard bolted onto the score write paths would silently break the product for
+// the tier the role exists to serve. This is the tripwire for that mistake.
+//
+// guardScoreWrite is asserted directly rather than through the handler: the
+// allowed path continues into a DB write, while the guard's non-admin branch is
+// pure, so this stays a no-DB unit test like its sibling.
+func TestSystemDelegate_AllowedAnswerSurfaces(t *testing.T) {
+	delegate := &model.User{
+		UserID:               "55555555-5555-4555-8555-555555555555",
+		Email:                "Delegate.User@nowhere.xyz",
+		Role:                 "SYSTEM_DELEGATE",
+		AssignedFismaSystems: []*int32{int32Ptr(1)},
+	}
+	ctx := context.Background()
+
+	assert.NoError(t, guardScoreWrite(ctx, delegate, 1),
+		"an assigned delegate must be able to save, confirm and undo its system's answers")
+	assert.ErrorIs(t, guardScoreWrite(ctx, delegate, 999), ErrForbidden,
+		"assignment is still required; the role alone grants nothing")
+}
+
 // --- ListScores ---
 
 func TestListScores_ReadonlyAdminAllowed(t *testing.T) {

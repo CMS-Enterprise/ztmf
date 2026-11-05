@@ -39,8 +39,8 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	// copyPreviousScores resolves "previous" via findPreviousDataCall, which
 	// returns the datacall with the furthest deadline other than the target (it
 	// is only ever called on the newest cycle, so "latest, excluding me" is the
-	// real previous). The seed carries a far-future cycle (the 2099 "Audit Fields
-	// Smoke Cycle", datacallid 5), so the synthetic cycle must sit ABOVE every
+	// real previous). The seed carries a far-out open cycle (datacallid 5, "FY2027
+	// Imperial Zero Trust Data Call", due about 200 days after load), so the synthetic cycle must sit ABOVE every
 	// existing deadline: newDC must be the global latest and prevDC the next one
 	// down, or findPreviousDataCall(newDC) rolls a seed datacall forward instead
 	// of our marker. Anchor both deadlines above the current max. Prefixed names
@@ -55,15 +55,15 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), prevDeadline).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), newDeadline).Scan(&newDC)
 	require.NoError(t, err)
@@ -93,11 +93,12 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 
 	// Seed one answer in the previous cycle via raw SQL (no events, same as
 	// historical data), then roll it into the new cycle the way datacall
-	// creation does.
+	// creation does. The source row is stamped so the carried copy's NULL
+	// below proves the rollover does not copy last_updated_at.
 	notes := "progress integration marker"
 	_, err = conn.Exec(ctx, `
-		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO scores (fismasystemid, functionoptionid, datacallid, notes, last_updated_at)
+		VALUES ($1, $2, $3, $4, now() - interval '1 day')
 	`, fismaSystemID, functionOptionID, prevDC, notes)
 	require.NoError(t, err)
 
@@ -126,7 +127,7 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	assert.Equal(t, int32(1), before.QuestionsAnswered,
 		"the carried-forward answer has a row, so it counts as answered even before it is touched")
 	assert.False(t, before.UpdatedSinceStart)
-	assert.Nil(t, before.LastUpdatedAt)
+	assert.Nil(t, before.LastUpdatedAt, "a carried-forward row must not inherit the source cycle's last_updated_at")
 	assert.GreaterOrEqual(t, before.QuestionsExpected, int32(1),
 		"expected count resolves through the environment mapping and includes the applicable answered function")
 
@@ -174,7 +175,7 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	assert.True(t, after.UpdatedSinceStart)
 	assert.LessOrEqual(t, after.QuestionsUpdated, after.QuestionsExpected,
 		"updated can never exceed the applicable-question denominator")
-	if assert.NotNil(t, after.LastUpdatedAt, "last update timestamp must surface from the edit event") {
+	if assert.NotNil(t, after.LastUpdatedAt, "a real Save must stamp last_updated_at") {
 		assert.WithinDuration(t, time.Now(), *after.LastUpdatedAt, 5*time.Minute)
 	}
 }
@@ -236,8 +237,8 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 	var dc int32
 	suffix := time.Now().UnixNano()
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '90 days')
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '90 days', 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sinapplicable_%d", integrationTestPrefix, suffix)).Scan(&dc)
 	require.NoError(t, err)
@@ -287,7 +288,7 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 // (the questionnaire UI PUTs on every Next click) must keep status =
 // 'not_started', so it never counts as updated this cycle. The sibling progress
 // test only proves not_started -> done on a genuine edit; this proves the no-op
-// guard (scoreUpdateIsNoOp) leaves status untouched, which is the exact path a
+// guard in Save leaves status untouched, which is the exact path a
 // broken guard would regress - silently flipping carried rows to done and
 // over-counting progress, the bug this whole change exists to kill.
 //
@@ -316,15 +317,15 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
 	require.NoError(t, err)
@@ -413,6 +414,10 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 		"a no-op re-save must not transition a carried answer to done (ztmf#299)")
 	assert.Equal(t, int32(0), questionsUpdated(),
 		"a no-op re-save must leave QuestionsUpdated at zero")
+
+	var stamped *time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT last_updated_at FROM scores WHERE scoreid = $1`, copiedScoreID).Scan(&stamped))
+	assert.Nil(t, stamped, "a no-op re-save must not stamp last_updated_at")
 }
 
 // TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration pins the
@@ -461,10 +466,9 @@ func TestImportedScoresKeepProvenanceWithoutDoneStatusIntegration(t *testing.T) 
 // TestScoreProgressLastUpdatedIgnoresImportedEventsIntegration pins ztmf#513
 // through the real FindScoreProgress path: a score row whose only events are
 // out-of-band provenance ('imported') reports NO last-updated, matching the
-// status backfill that already refuses to call such a row done. Before the
-// action filter the lateral took the newest event of any action, so these rows
-// reported the load's timestamp while questionsupdated stayed 0 - last-updated
-// and questionsupdated disagreed about the same events.
+// status backfill that already refuses to call such a row done. last_updated_at
+// is derived from created/updated events only (0063's backfill and the seed's
+// copy of it), so these rows stay NULL while questionsupdated stays 0.
 //
 // The systems under test are resolved from the events table rather than
 // hardcoded, so the test cannot pass vacuously against a data call that simply
@@ -575,8 +579,9 @@ func saasScopeFixture(ctx context.Context, t *testing.T, cms bool) (systemID, in
 }
 
 // reducedScopeAnchorAndPriorDataCalls returns the earliest seeded anchor call
-// (where the reduced scope starts, per the reducedpillarscopes table) and one
-// with a strictly earlier deadline.
+// (where the SaaS reduced scope starts, per the reducedpillarscopes table) and
+// one with a strictly earlier deadline. Filtered to the SaaS key so a rule added
+// for another scoring key cannot move the anchor these tests assert against.
 func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anchor, prior int32, ok bool) {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -586,7 +591,7 @@ func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anc
 	var anchorDeadline time.Time
 	err = conn.QueryRow(ctx, `
 		SELECT dc.datacallid, dc.deadline FROM datacalls dc
-		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes)
+		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes WHERE scoring_key = 'SaaS')
 		 ORDER BY dc.deadline ASC, dc.datacallid ASC LIMIT 1
 	`).Scan(&anchor, &anchorDeadline)
 	if err != nil {

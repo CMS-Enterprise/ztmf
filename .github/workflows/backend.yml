@@ -7,17 +7,21 @@ on:
         type: string
         description: environment to deploy to
         required: true
-        
+      deploy:
+        type: boolean
+        description: push the image, update the Lambdas, and write the image tag; false runs the build and tests only
+        default: true
+
 jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Read the required Go from go.mod (setup-go v6 sets GOTOOLCHAIN=local,
           # so a pinned version below go.mod's would not auto-download).
@@ -31,52 +35,53 @@ jobs:
       # merges green.
       #
       # This is a peer of `build`, so it gates the MERGE (mark it a required check
-      # in branch protection) but does not block `build`'s deploy steps, which run
+      # in the main ruleset) but does not block `build`'s deploy steps, which run
       # in parallel. That is intentional: merge-gating keeps a red integration test
-      # out of main, and prod (deployed post-merge) therefore never runs on red.
-      # A PR auto-deploying to dev while red is acceptable and self-corrects on the
-      # next green push. To gate the deploy itself, add `needs: [integration-tests]`
-      # to `build`.
+      # out of main, so the post-merge dev and prod deploys never run on red. To
+      # gate the deploy itself, add `needs: [integration-tests]` to `build`.
       - name: Integration tests (isolated ephemeral DB)
         run: make test-integration
 
   build:
     name: Build and Smoke Test
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # No environment when only testing, so a PR check records no deployment.
+    environment: ${{ inputs.deploy && inputs.environment || '' }}
     permissions:
       id-token: write
       contents: read
+    env:
+      IMAGE_REPO: ${{ inputs.deploy && secrets.ECR_REPO_URL || 'ztmf-api' }}
     outputs:
       shaShort: ${{ steps.revParse.outputs.shaShort }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       
       - name: Get Commit SHA
         id: revParse
         run: echo "shaShort=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
       
       - name: Docker - Build
-        run: docker buildx build --platform linux/amd64 --tag ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
+        run: docker buildx build --platform linux/amd64 --tag ${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }} --load ./backend 
 
       - name: Snyk - Test Image
-        uses: snyk/actions/docker@8e119fbb6c251787721d34ba683ed48eba792766 # snyk/actions has no tagged releases; pinned master @ 2026-06-16
+        uses: snyk/actions/docker@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
+          image: "${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}"
           args: --severity-threshold=high --file=./backend/Dockerfile --policy-path=./backend/.snyk
       
       - name: Start API and Postgres Containers
-        uses: hoverkraft-tech/compose-action@11beaa1c2dae4e8ed7b1665aa074723b6cecb0e4 # v3.0.0
+        uses: hoverkraft-tech/compose-action@b659c744ee9bed25aea2307c017ad849bd104433 # v3.2.0
         with:
           compose-file: ./backend/actions-compose.yml
         env:
-          API_IMAGE_URI: "${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}"
+          API_IMAGE_URI: "${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}"
           
           # for postgre container
           POSTGRES_DB: ztmf
@@ -101,26 +106,30 @@ jobs:
           WORKSPACE: ${{ github.workspace }}
 
       - name: Emberfall Smoke Tests
-        uses: aquia-inc/emberfall@90b0381a446bb7ba326af24153bb0518e49fb279 # main @ 2026-06-16 (composite; binary version set via `version` below)
+        uses: aquia-inc/emberfall@0e01767cd9c78b8b4ba3da9706d8228c442d503a # v0.5.0 (composite; binary version set via `version` below)
         with:
           version: 0.4.1
           file: ./backend/emberfall_tests.yml
 
       - name: AWS - Get Credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        if: inputs.deploy
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.ROLEARN }}
           role-duration-seconds: 900
           aws-region: us-east-1
               
       - name: Docker - Login
+        if: inputs.deploy
         run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URL }}
   
       - name: Docker - Push
-        run: docker push ${{ secrets.ECR_REPO_URL }}:${{ steps.revParse.outputs.shaShort }}
+        if: inputs.deploy
+        run: docker push ${{ env.IMAGE_REPO }}:${{ steps.revParse.outputs.shaShort }}
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        if: inputs.deploy
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Read the required Go from go.mod rather than hardcoding it. setup-go
           # v6 sets GOTOOLCHAIN=local, so a pinned version below go.mod's
@@ -129,6 +138,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Lambda - Build (Kion Key Rotate)
+        if: inputs.deploy
         # Kion rotate Lambda runs on Graviton (arm64) with provided.al2023 runtime.
         # The other Lambdas in this workflow are still x86_64/al2; those are tracked
         # for a separate upgrade PR (see ztmf-misc follow-up issue).
@@ -142,6 +152,7 @@ jobs:
           ls -la kion-key-rotate-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
       - name: Lambda - Build (Cert Rotation)
+        if: inputs.deploy
         run: |
           set -e
           cd backend
@@ -152,6 +163,7 @@ jobs:
           ls -la cert-rotation-deployment-${{ steps.revParse.outputs.shaShort }}.zip
 
       - name: Lambda - Upload to S3
+        if: inputs.deploy
         run: |
           set -e
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
@@ -170,6 +182,7 @@ jobs:
           echo "All Lambda deployment packages uploaded successfully"
 
       - name: Lambda - Update Function Code
+        if: inputs.deploy
         run: |
           set -e
           ENV_LOWER=$(echo "${{ inputs.environment }}" | tr '[:upper:]' '[:lower:]')
@@ -198,6 +211,7 @@ jobs:
           done
         
       - name: AWS - SSM Put Parameter
+        if: inputs.deploy
         # Guard against IMPL environment misconfiguration: if PARAMETER_NAME
         # is copy-pasted from DEV (ztmf_api_tag) into IMPL, every impl CI
         # run silently overwrites dev's image pointer and dev's next apply

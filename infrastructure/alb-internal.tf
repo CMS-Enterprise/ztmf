@@ -28,6 +28,8 @@ resource "aws_lb" "ztmf_api" {
   subnets                    = data.aws_subnets.private.ids
   enable_deletion_protection = true
 
+  depends_on = [aws_s3_bucket_policy.ztmf_logs_access]
+
   # Per-request access logs record actions_executed + error_reason for failed
   # authenticate-oidc, the one signal missing when an Entra/Okta login breaks.
   # Bucket name is referenced literally (not aws_s3_bucket.ztmf_logs[0].id)
@@ -38,6 +40,12 @@ resource "aws_lb" "ztmf_api" {
   access_logs {
     bucket  = "ztmf-logs-${local.account_id}-use1"
     prefix  = "rest-api-alb"
+    enabled = true
+  }
+
+  connection_logs {
+    bucket  = "ztmf-logs-${local.account_id}-use1"
+    prefix  = "rest-api-alb-conn"
     enabled = true
   }
 }
@@ -91,7 +99,7 @@ resource "aws_lb_listener" "ztmf_api_https" {
   load_balancer_arn = aws_lb.ztmf_api.arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  ssl_policy        = var.alb_ssl_policy
   certificate_arn   = local.ztmf_acm_certificate_arn
 
   default_action {

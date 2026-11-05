@@ -43,8 +43,8 @@ func TestFindScoreProgressInputValidate(t *testing.T) {
 //     numerator past 100%;
 //   - the updated count filters on the persisted scores.status column
 //     (status = 'done'), excluding pre-populated rows, rather than requiring
-//     an edit event; the events lateral is now LEFT and feeds only
-//     lastupdatedat;
+//     an edit event; lastupdatedat likewise reads the persisted
+//     scores.last_updated_at, so the query never touches events;
 //   - the SaaS pillar scope appears in both halves, never one;
 //   - both halves LEFT JOIN back onto scoped_systems so a zero-activity or
 //     unmapped-environment system still returns a row (0 of N).
@@ -63,9 +63,8 @@ func TestBuildScoreProgressSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, "dce.scoring_key = f.datacenterenvironment", "an answered function must still be applicable to the system's current environment")
 	assert.Equal(t, 3, strings.Count(sql, "COUNT(DISTINCT f.functionid)"), "expected, answered, and updated all count distinct applicable functions from the same set")
 	assert.Contains(t, sql, "FILTER (WHERE s.status = 'done')", "updated is the answered set filtered to genuinely-saved rows via the persisted status column")
-	assert.Contains(t, sql, "LEFT JOIN LATERAL", "the events lateral is now LEFT (audit timeline only), not the filter for the count")
-	assert.Contains(t, sql, "resource = 'public.scores'", "the lateral must read score events for lastupdatedat")
-	assert.Contains(t, sql, "action IN ('created', 'updated')", "lastupdatedat reads only in-app edits, the same actions the status backfill (0048) counts - imported provenance must not surface as an update")
+	assert.Contains(t, sql, "MAX(s.last_updated_at) AS lastupdatedat", "lastupdatedat reads the persisted column, stamped only by in-app saves")
+	assert.NotRegexp(t, `(?i)(FROM|JOIN)\s+(public\.)?events\b`, sql, "progress must not read the events log; the per-row lateral was the query's dominant cost")
 	assert.Contains(t, sql, "LEFT JOIN expected", "unmapped-environment systems must still return a row")
 	assert.Contains(t, sql, "LEFT JOIN updated", "zero-activity systems must still return a row")
 	assert.Contains(t, sql, "COALESCE(u.questionsanswered, 0)", "zero-activity systems report 0 answered, not NULL")

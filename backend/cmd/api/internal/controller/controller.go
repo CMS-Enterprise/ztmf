@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/CMS-Enterprise/ztmf/backend/cmd/api/internal/auth"
@@ -92,6 +93,25 @@ func getJSON(r io.Reader, dest any) error {
 	return d.Decode(dest)
 }
 
+// pathInt32 parses a decimal path variable. strconv rather than fmt.Sscan,
+// whose default verb honours an octal prefix: the mux patterns are [0-9]+, so a
+// zero-padded id like "0012" is routed and then scanned as 10 - silently the
+// wrong row.
+//
+// The bool is not decoration. A failed parse used to come back as a bare 0,
+// which the Save handlers could not tell apart from "no id in the path" - so
+// PUT /questions/99999999999 (routed, past int32) and PUT /questions/0 (routed,
+// zero) both fell into Save's create branch and inserted a row, under the PUT's
+// own 204 and with no id returned. Reporting usability separately makes that
+// impossible to read as "absent".
+func pathInt32(s string) (int32, bool) {
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil || v == 0 {
+		return 0, false
+	}
+	return int32(v), true
+}
+
 func parseRFC3339(dateStr string) (time.Time, error) {
 	return time.Parse(time.RFC3339, dateStr)
 }
@@ -142,6 +162,18 @@ func sanitizeErr(err error) (int, string, error) {
 		// FE branches on the code, not the status.
 		status = 400
 		code = auth.CodeDelegateRequiresAdmin
+	case errors.Is(err, model.ErrVersionNotDraft):
+		status = 403
+		code = auth.CodeVersionNotDraft
+	case errors.Is(err, model.ErrVersionNotTranslatable):
+		status = 409
+		code = auth.CodeVersionNotTranslatable
+	case errors.Is(err, model.ErrRevisionConflict):
+		// Optimistic-concurrency failure on undo.
+		// Coded because parseApiError has no 409 branch: the FE distinguishes
+		// this by code and refreshes its history view rather than retrying.
+		status = 409
+		code = auth.CodeRevisionConflict
 	case errors.Is(err, model.ErrNotUnique),
 		errors.Is(err, ErrMalformed),
 		errors.Is(err, ErrInvalidQueryParam),

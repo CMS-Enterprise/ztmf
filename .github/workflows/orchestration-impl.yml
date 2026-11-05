@@ -43,6 +43,11 @@ on:
       - synchronize
       - ready_for_review
 
+# Serialize runs on the same ref; never cancel a run that may be mid-deploy.
+concurrency:
+  group: orchestration-impl-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Analysis
@@ -56,7 +61,7 @@ jobs:
       backend: ${{ steps.backend.outputs.backend }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -87,6 +92,12 @@ jobs:
     secrets: inherit
 
   infrastructure:
+    # One impl apply at a time, shared with the manual deploy. queue: max keeps
+    # every waiter; never cancel an apply mid-flight.
+    concurrency:
+      group: deploy-impl
+      queue: max
+      cancel-in-progress: false
     name: Infrastructure
     needs:
       - analysis

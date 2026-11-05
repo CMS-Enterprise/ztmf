@@ -171,9 +171,11 @@ func (u *User) IsExpired() bool {
 }
 
 // CanWriteHHSWide is the gate for HHS-wide write actions that an OPDIV_ADMIN must
-// NOT reach even though IsAdmin() includes them - currently the per-OpDiv "Add
-// System Delegate Role" toggle, which only Owner and HHS admin may set (#467
-// decision 7).
+// NOT reach even though IsAdmin() includes them: the per-OpDiv "Add System
+// Delegate Role" toggle, which only Owner and HHS admin may set (#467 decision
+// 7), and the questionnaire catalog writes - questions, functions and their
+// options - which are one HHS-wide set every OpDiv is scored against
+// (ztmf-misc#398).
 func (u *User) CanWriteHHSWide() bool {
 	return u.Role == "OWNER" || u.Role == "HHS_ADMIN"
 }

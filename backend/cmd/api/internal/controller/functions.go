@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -13,7 +12,9 @@ import (
 //	@Tags		functions
 //	@Produce	json
 //	@Security	bearerAuth
+//	@Param		versionid	query		int	false	"Questionnaire version to list; omitted lists the newest published version"
 //	@Success	200	{object}	apiResponse[[]model.Function]
+//	@Failure	400	{object}	apiResponse[any]
 //	@Failure	500	{object}	apiResponse[any]
 //	@Router		/functions [get]
 func ListFunctions(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +48,11 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, nil, ErrNotFound)
 		return
 	}
-	var functionID int32
-	fmt.Sscan(ID, &functionID)
+	functionID, valid := pathInt32(ID)
+	if !valid {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
 
 	f, err := model.FindFunctionByID(r.Context(), functionID)
 
@@ -65,12 +69,14 @@ func GetFunctionByID(w http.ResponseWriter, r *http.Request) {
 //	@Success	201			{object}	apiResponse[model.Function]
 //	@Failure	400			{object}	apiResponse[any]
 //	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
 //	@Failure	500			{object}	apiResponse[any]
 //	@Router		/functions [post]
 //	@Router		/functions/{functionid} [put]
 func SaveFunction(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
-	if !user.IsAdmin() {
+	// HHS-wide catalog, same reasoning as SaveQuestion (ztmf-misc#398).
+	if !user.CanWriteHHSWide() {
 		respond(w, r, nil, ErrForbidden)
 		return
 	}
@@ -84,9 +90,17 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	if v, ok := vars["functionid"]; ok {
-		fmt.Sscan(v, &f.FunctionID)
+	// Re-pinned from the route after decoding, never taken from the body; same
+	// reasoning as SaveQuestion (ztmf-misc#398).
+	f.FunctionID = 0
+	if v, ok := mux.Vars(r)["functionid"]; ok {
+		// See SaveQuestion: an unusable path id must not fall through to create.
+		id, valid := pathInt32(v)
+		if !valid {
+			respond(w, r, nil, ErrNotFound)
+			return
+		}
+		f.FunctionID = id
 	}
 
 	f, err = f.Save(r.Context())
@@ -98,4 +112,28 @@ func SaveFunction(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, r, f, nil)
 
+}
+
+//	@Summary	Delete a function from a draft questionnaire version
+//	@Description	Its options go with it. Content in a published or archived version is never deleted (403, code VERSION_NOT_DRAFT).
+//	@Tags		functions
+//	@Security	bearerAuth
+//	@Param		functionid	path	int	true	"Function ID"
+//	@Success	204			"No Content"
+//	@Failure	400			{object}	apiResponse[any]
+//	@Failure	403			{object}	apiResponse[any]
+//	@Failure	404			{object}	apiResponse[any]
+//	@Failure	500			{object}	apiResponse[any]
+//	@Router		/functions/{functionid} [delete]
+func DeleteFunction(w http.ResponseWriter, r *http.Request) {
+	if !model.UserFromContext(r.Context()).CanWriteHHSWide() {
+		respond(w, r, nil, ErrForbidden)
+		return
+	}
+	id, ok := pathInt32(mux.Vars(r)["functionid"])
+	if !ok {
+		respond(w, r, nil, ErrNotFound)
+		return
+	}
+	respond(w, r, nil, model.DeleteFunction(r.Context(), id))
 }

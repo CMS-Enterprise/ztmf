@@ -11,3 +11,13 @@ type apiResponse[T any] struct {
 	Data  T      `json:"data,omitempty"`
 	Error string `json:"error,omitempty"`
 }
+
+// apiError documents an error that carries a typed code. Used only where a
+// client must branch on the code; other errors stay apiResponse[any].
+//
+//lint:ignore U1000 referenced only by swag @Failure annotation comments.
+type apiError struct {
+	Error string `json:"error"`
+	// REVISION_CONFLICT on the undo 409: refresh history and retry.
+	Code string `json:"code"`
+}

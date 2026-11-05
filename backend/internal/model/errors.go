@@ -29,6 +29,23 @@ var (
 	// machine-readable code so the FE can branch to "an administrator must handle
 	// this user" copy rather than string-matching (#467).
 	ErrDelegateRequiresAdmin = errors.New("this user must be added by an administrator")
+	// ErrRevisionConflict is returned when an undo names a head revision that is
+	// no longer the head: someone else changed this answer between the caller
+	// loading its history and submitting the undo (ztmf-misc#391). Mapped to 409
+	// in the controller's sanitizeErr - the first 409 in this API.
+	//
+	// Deliberately not folded into ErrNotUnique, which is 400 today and pinned
+	// there by Emberfall for duplicate system acronyms and OpDiv names.
+	ErrRevisionConflict = errors.New("this answer changed since you loaded it")
+	// ErrVersionNotDraft is returned for a questionnaire content write outside a
+	// draft version: the target is published or archived, or no draft is open
+	// to receive a new question (ztmf-misc#396). Mapped to 403 with a code, so a
+	// client can tell "fork a draft first" from a role problem.
+	ErrVersionNotDraft = errors.New("questionnaire content can only be changed in a draft version")
+	// ErrVersionNotTranslatable refuses a re-pin that would drop answers people
+	// have already given this cycle (ztmf-misc#397). Mapped to 409 with a code:
+	// the call is valid, the change waits for the next data call.
+	ErrVersionNotTranslatable = errors.New("answers given in this data call do not all carry into that version; structural changes wait for the next data call")
 )
 
 type InvalidInputError struct {

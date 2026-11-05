@@ -72,3 +72,73 @@ resource "aws_ecr_lifecycle_policy" "ztmf_ops" {
 }
 EOF
 }
+
+// Per-PR environment repos (ztmf-misc#341), dev account only. PR images never
+// share a repo with the bare-SHA deploy images in ztmf/api: a keep-last-N rule
+// with tagStatus any counts images a higher-priority rule protects, so PR
+// images would push the deployables out of the keep set (lifecycle preview,
+// ztmf#584). Here every long-lived tag carries a prefix, so a prefixed
+// keep-last-4 sits above an age rule that only ever reaches the PR images.
+locals {
+  pr_env_lifecycle = <<EOF
+{
+    "rules": [
+        {
+            "rulePriority": 1,
+            "description": "Keep the last 4 PREFIX images",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["PREFIX"],
+                "countType": "imageCountMoreThan",
+                "countNumber": 4
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 10,
+            "description": "Expire everything else 14 days after push",
+            "selection": {
+                "tagStatus": "any",
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 14
+            },
+            "action": {
+                "type": "expire"
+            }
+        }
+    ]
+}
+EOF
+}
+
+// API images for PR environments: pr-ztmf-<n>-<sha> from ztmf PRs and
+// main-<sha> test-target builds from ztmf main merges (what a ui PR runs).
+resource "aws_ecr_repository" "ztmf_api_pr" {
+  count                = local.manage_account_singletons && var.pr_env_enabled ? 1 : 0
+  name                 = "ztmf/api-pr"
+  image_tag_mutability = "IMMUTABLE"
+}
+
+resource "aws_ecr_lifecycle_policy" "ztmf_api_pr" {
+  count      = local.manage_account_singletons && var.pr_env_enabled ? 1 : 0
+  repository = aws_ecr_repository.ztmf_api_pr[0].name
+  policy     = replace(local.pr_env_lifecycle, "PREFIX", "main-")
+}
+
+// Frontend images (ztmf-misc#343): ui-<sha> from main merges, pr-ui-<n>-<sha>
+// from ui PRs. Dev and prod serve the bundle from S3, so this repo exists only
+// for PR environments.
+resource "aws_ecr_repository" "ztmf_ui" {
+  count                = local.manage_account_singletons && var.pr_env_enabled ? 1 : 0
+  name                 = "ztmf/ui"
+  image_tag_mutability = "IMMUTABLE"
+}
+
+resource "aws_ecr_lifecycle_policy" "ztmf_ui" {
+  count      = local.manage_account_singletons && var.pr_env_enabled ? 1 : 0
+  repository = aws_ecr_repository.ztmf_ui[0].name
+  policy     = replace(local.pr_env_lifecycle, "PREFIX", "ui-")
+}

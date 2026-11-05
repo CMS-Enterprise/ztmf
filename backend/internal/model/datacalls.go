@@ -6,42 +6,88 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
-var dataCallColumns = []string{"datacallid", "datacall", "datecreated", "deadline"}
+var (
+	dataCallColumns    = []string{"datacallid", "datacall", "datecreated", "deadline", "fiscal_year", "cadence", "questionnaire_versionid"}
+	dataCallColumnList = strings.Join(dataCallColumns, ", ")
+)
 
+// Cadence values a data call can carry. They mirror the datacalls_cadence_check
+// constraint.
+const (
+	CadenceAnnual    = "annual"
+	CadenceQuarterly = "quarterly"
+)
+
+// The fiscal year bounds mirror the datacalls_fiscal_year_check constraint. The
+// floor is 2000 because a two-digit "FY##" name expands to 20##. The bounds only
+// catch a typo (a two-digit year, a dropped or extra digit, zero); they are not
+// a policy on which years are allowed.
+const (
+	minFiscalYear = 2000
+	maxFiscalYear = 2999
+)
+
+// An update is partial: a field left out of the body (an empty title or
+// cadence, a zero deadline or fiscal year) keeps its stored value.
 type DataCall struct {
-	DataCallID  int32     `json:"datacallid"`
+	DataCallID int32 `json:"datacallid"`
+	// Free-text title, unique ignoring case. Nothing parses it; the fiscal year
+	// and cadence are separate fields. Required on create; omitted on update
+	// keeps the stored title.
 	DataCall    string    `json:"datacall"`
 	DateCreated time.Time `json:"datecreated"`
-	Deadline    time.Time `json:"deadline"`
+	// Required on create; omitted on update keeps the stored deadline.
+	Deadline time.Time `json:"deadline"`
+	// Four-digit fiscal year. Required on create; omitted on update keeps the
+	// stored year.
+	FiscalYear int32 `json:"fiscal_year" minimum:"2000" maximum:"2999" example:"2026"`
+	// Defaults to annual on create; omitted on update keeps the stored cadence.
+	Cadence string `json:"cadence" enums:"annual,quarterly" example:"annual"`
+	// The questionnaire version the call answers (ztmf-misc#397). Chosen at
+	// create, newest published unless named; changed only through
+	// PUT /datacalls/{id}/questionnaire-version, which translates the answers.
+	QuestionnaireVersionID int32 `json:"questionnaire_versionid" db:"questionnaire_versionid"`
 }
 
 func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 
-	var sqlb SqlBuilder
-
-	// if valid, err := d.isValid(); !valid {
-	// 	return err
-	// }
-
-	if d.DataCallID == 0 {
-		sqlb = stmntBuilder.
-			Insert("datacalls").
-			Columns("datacall", "deadline").
-			Values(d.DataCall, d.Deadline).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
-	} else {
-		sqlb = stmntBuilder.
-			Update("datacalls").
-			Set("datacall", d.DataCall).
-			Set("deadline", d.Deadline).
-			Where("datacallid=?", d.DataCallID).
-			Suffix("RETURNING " + strings.Join(dataCallColumns, ", "))
+	if d.DataCallID == 0 && d.Cadence == "" {
+		d.Cadence = CadenceAnnual
 	}
 
-	dataCall, err := queryRow(ctx, sqlb, pgx.RowToStructByName[DataCall])
+	if err := d.validate(); err != nil {
+		return nil, err
+	}
+
+	var (
+		dataCall *DataCall
+		err      error
+	)
+	if d.DataCallID == 0 {
+		dataCall, err = d.create(ctx)
+	} else {
+		// The pin is not set here, whatever the body says: moving a call to
+		// another version has to translate its answers, which only
+		// PUT /datacalls/{id}/questionnaire-version does. Every other field keeps
+		// its stored value when the body leaves it out, so
+		// PUT {"cadence":"quarterly"} changes the cadence and nothing else.
+		var deadline any
+		if !d.Deadline.IsZero() {
+			deadline = d.Deadline
+		}
+		dataCall, err = queryRow(ctx, stmntBuilder.
+			Update("datacalls").
+			Set("datacall", squirrel.Expr("COALESCE(NULLIF(?::text, ''), datacall)", d.DataCall)).
+			Set("deadline", squirrel.Expr("COALESCE(?::timestamptz, deadline)", deadline)).
+			Set("fiscal_year", squirrel.Expr("COALESCE(NULLIF(?::int, 0), fiscal_year)", d.FiscalYear)).
+			Set("cadence", squirrel.Expr("COALESCE(NULLIF(?::text, ''), cadence)", d.Cadence)).
+			Where("datacallid=?", d.DataCallID).
+			Suffix("RETURNING "+dataCallColumnList), pgx.RowToStructByName[DataCall])
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +106,91 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	}
 
 	return dataCall, nil
+}
+
+// create inserts a call pinned to the version it names, or to the newest
+// published one. The version is held FOR SHARE until commit, so it cannot be
+// archived under a call that is about to pin it.
+func (d *DataCall) create(ctx context.Context) (*DataCall, error) {
+	sqlb := stmntBuilder.Insert("datacalls").Columns("datacall", "deadline", "fiscal_year", "cadence", "questionnaire_versionid")
+	res, err := scoreTx(ctx, func(tx pgx.Tx) (*DataCall, error) {
+		version := d.QuestionnaireVersionID
+		if version == 0 {
+			// Shared with other creates; waits out a publish or archive so the
+			// newest published version cannot change between this read and its lock.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared($1)`, lifecycleLockKey); err != nil {
+				return nil, trapError(err)
+			}
+			var current *int32
+			if err := tx.QueryRow(ctx, `SELECT MAX(versionid) FROM questionnaire_versions WHERE state = 'published'`).Scan(&current); err != nil {
+				return nil, trapError(err)
+			}
+			if current == nil {
+				return nil, &InvalidInputError{data: map[string]any{"questionnaire_versionid": "no questionnaire version is published"}}
+			}
+			version = *current
+		}
+		if err := lockPinnableVersion(ctx, tx, version); err != nil {
+			return nil, err
+		}
+		sqlb = sqlb.Values(d.DataCall, d.Deadline, d.FiscalYear, d.Cadence, version).Suffix("RETURNING " + dataCallColumnList)
+		sql, args, _ := sqlb.ToSql()
+		rows, err := tx.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, trapError(err)
+		}
+		row, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[DataCall])
+		return &row, trapError(err)
+	})
+	if err != nil {
+		return nil, err
+	}
+	recordEvent(ctx, sqlb, *res)
+	return res, nil
+}
+
+// validate checks the fields a client sends. On update an omitted field (zero
+// value) means "keep the stored value", so only fields that are present are
+// checked. On create the title, deadline and fiscal year are required.
+//
+// An empty cadence passes on both paths. Save defaults it to annual before an
+// insert, and the column's DEFAULT 'annual' covers a create that reaches the
+// database without going through Save.
+func (d *DataCall) validate() error {
+	err := InvalidInputError{data: map[string]any{}}
+	create := d.DataCallID == 0
+
+	// TrimSpace for blankness: "   " is not a title. Only the empty string
+	// means "omitted" on update.
+	if d.DataCall != "" && strings.TrimSpace(d.DataCall) == "" {
+		err.data["datacall"] = d.DataCall
+	} else if create && d.DataCall == "" {
+		err.data["datacall"] = d.DataCall
+	}
+
+	if create && d.Deadline.IsZero() {
+		err.data["deadline"] = d.Deadline
+	}
+
+	if d.FiscalYear == 0 {
+		if create {
+			err.data["fiscal_year"] = d.FiscalYear
+		}
+	} else if d.FiscalYear < minFiscalYear || d.FiscalYear > maxFiscalYear {
+		err.data["fiscal_year"] = d.FiscalYear
+	}
+
+	switch d.Cadence {
+	case "", CadenceAnnual, CadenceQuarterly:
+	default:
+		err.data["cadence"] = d.Cadence
+	}
+
+	if len(err.data) > 0 {
+		return &err
+	}
+
+	return nil
 }
 
 func FindDataCalls(ctx context.Context) ([]*DataCall, error) {
