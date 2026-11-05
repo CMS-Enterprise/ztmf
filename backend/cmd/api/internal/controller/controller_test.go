@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -82,7 +83,17 @@ func TestSanitizeErrDelegateRequiresAdminCarriesCode(t *testing.T) {
 	assert.Equal(t, model.ErrDelegateRequiresAdmin, out, "human-readable message is preserved alongside the code")
 }
 
-// The undo conflict is the first and only 409 in this API. It carries a code
+// A re-pin that would drop given answers (ztmf-misc#397) is a 409 with a code,
+// keeping the counts the model wrapped into the message.
+func TestSanitizeErrVersionNotTranslatableCarriesCode(t *testing.T) {
+	wrapped := fmt.Errorf("%w: 3 of 40 answers have no counterpart in version 2", model.ErrVersionNotTranslatable)
+	status, code, out := sanitizeErr(wrapped)
+	assert.Equal(t, 409, status)
+	assert.Equal(t, auth.CodeVersionNotTranslatable, code)
+	assert.Equal(t, wrapped, out)
+}
+
+// The undo conflict was the first 409 in this API. It carries a code
 // because the FE's parseApiError has no 409 branch and would otherwise fall
 // through to the generic passthrough; on this code the drawer refreshes against
 // the fresh head rather than retrying (ztmf-misc#392).

@@ -164,7 +164,12 @@ func buildScoreProgressSQL(input FindScoreProgressInput) (string, []any) {
 	// The reduced pillar scope belongs to that shared set, so it is rendered once
 	// and interpolated into BOTH CTEs. In expected's alone it would leave a
 	// numerator of 40 against a denominator of 25, reporting a false "Complete".
-	pillarScope := reducedPillarScopeSQL("dce.scoring_key", "p.pillar", fmt.Sprintf("$%d", dataCallArg))
+	//
+	// The version pin (ztmf-misc#395) is part of the same set for the same
+	// reason, and also scopes lastupdatedat: an answer outside the version
+	// contributes no last-updated time.
+	applicable := reducedPillarScopeSQL("dce.scoring_key", "p.pillar", fmt.Sprintf("$%d", dataCallArg)) +
+		"\n      AND " + questionnaireVersionSQL("f.versionid", fmt.Sprintf("$%d", dataCallArg))
 
 	sql := fmt.Sprintf(`
 WITH scoped_systems AS (
@@ -214,7 +219,7 @@ FROM scoped_systems ss
 LEFT JOIN expected ex ON ex.fismasystemid = ss.fismasystemid
 LEFT JOIN updated u ON u.fismasystemid = ss.fismasystemid
 ORDER BY ss.fismasystemid
-`, strings.Join(conds, " AND "), pillarScope, dataCallArg, pillarScope)
+`, strings.Join(conds, " AND "), applicable, dataCallArg, applicable)
 
 	return sql, args
 }

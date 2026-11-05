@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -55,21 +56,31 @@ func FindAnswers(ctx context.Context, input FindAnswersInput) ([]*Answer, error)
 		// (ztmf-misc#384). The answered branch is the fallback for a system with no
 		// applicable catalog at all - a DECOMMISSIONED or unmapped environment -
 		// which would otherwise export nothing instead of its recorded history.
-		InnerJoin(`functions ON (
-			EXISTS (SELECT 1 FROM datacenterenvironments dce
-			        WHERE dce.datacenterenvironment=fismasystems.datacenterenvironment
-			          AND dce.scoring_key=functions.datacenterenvironment)
+		//
+		// The version pin (ztmf-misc#395) sits inside the applicable branch and
+		// its "no catalog" test, not in the top-level WHERE: the answered branch
+		// self-pins through the system's own scores, and a top-level predicate
+		// would delete that history.
+		InnerJoin(fmt.Sprintf(`functions ON (
+			(EXISTS (SELECT 1 FROM datacenterenvironments dce
+			         WHERE dce.datacenterenvironment=fismasystems.datacenterenvironment
+			           AND dce.scoring_key=functions.datacenterenvironment)
+			 AND %s)
 			OR (
 			    NOT EXISTS (SELECT 1 FROM datacenterenvironments dceany
 			                INNER JOIN functions applicable ON applicable.datacenterenvironment=dceany.scoring_key
-			                WHERE dceany.datacenterenvironment=fismasystems.datacenterenvironment)
+			                WHERE dceany.datacenterenvironment=fismasystems.datacenterenvironment
+			                  AND %s)
 			    AND EXISTS (SELECT 1 FROM scores answered
 			                INNER JOIN functionoptions answeredopt ON answeredopt.functionoptionid=answered.functionoptionid
 			                WHERE answered.fismasystemid=fismasystems.fismasystemid
 			                  AND answered.datacallid=?
 			                  AND answeredopt.functionid=functions.functionid)
 			)
-		)`, input.DataCallID).
+		)`,
+			questionnaireVersionSQL("functions.versionid", "?"),
+			questionnaireVersionSQL("applicable.versionid", "?"),
+		), input.DataCallID, input.DataCallID, input.DataCallID).
 		InnerJoin("questions ON questions.questionid=functions.questionid").
 		InnerJoin("pillars ON pillars.pillarid=questions.pillarid").
 		InnerJoin("datacalls ON datacalls.datacallid=?", input.DataCallID).

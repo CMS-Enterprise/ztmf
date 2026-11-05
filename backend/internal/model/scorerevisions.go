@@ -13,8 +13,8 @@ import (
 // Revision kinds. Stored data, pinned by score_revisions_kind_check in
 // migration 0066 - changing a VALUE here is a data migration, not an edit.
 //
-// revisionKindTranslate is reserved for ztmf-misc#397's version re-pin and is
-// never written today.
+// revisionKindTranslate is written only by ztmf-misc#397's version re-pin
+// (repinRevisionsSQL).
 const (
 	revisionKindCreate    = "create"
 	revisionKindUpdate    = "update"
@@ -49,6 +49,8 @@ const (
 	// The row no longer holds what its head revision recorded, so something
 	// wrote it without a revision. Undoing would silently discard that write.
 	reasonDrifted = "This answer was changed outside its history. Change the answer directly instead."
+	// The previous answer belongs to another questionnaire version.
+	reasonOtherVersion = "The previous answer belongs to a different questionnaire version and cannot be restored."
 )
 
 // RevisionSide is one side of a change. Field-for-field identical to
@@ -152,7 +154,9 @@ func snapshotOf(s *Score) *scoreSnapshot {
 // recordScoreWrite appends the audit event and the revision for one score
 // write, inside the caller's transaction. Save, Confirm and Undo all go through
 // it so the three cannot drift on the event literals or on revision_no
-// allocation, and so ztmf-misc#397 has one place to hook.
+// allocation. ztmf-misc#397's re-pin is the exception: it rewrites a whole call
+// at once, so it appends its translate revisions in one statement
+// (repinRevisionsSQL) and audits the re-pin as one event.
 //
 // No user in context means neither an event nor a revision, mirroring
 // recordEvent's early return. Not hypothetical: _test_data_empire.sql and
@@ -470,6 +474,9 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 
 	var undoRev *ScoreRevision
 	reverted, err := scoreTx(ctx, func(tx pgx.Tx) (*Score, error) {
+		if err := lockScoreDataCall(ctx, tx, score.ScoreID); err != nil {
+			return nil, err
+		}
 		current, _, err := lockScore(ctx, tx, score.ScoreID)
 		if err != nil {
 			return nil, err
@@ -530,6 +537,18 @@ func UndoScoreRevision(ctx context.Context, score *Score, expectedHead *int64) (
 		target := head.Prev
 		if target == nil {
 			return nil, ErrRevisionConflict
+		}
+		// Unreachable while a re-pin always leaves a translate head (refused
+		// above), so the read does not offer it; enforced here so an undo can
+		// never write another version's option back (ztmf-misc#395).
+		_, inVersion, err := optionPlacement(ctx, tx, target.FunctionOptionID, current.DataCallID)
+		if err != nil {
+			return nil, err
+		}
+		if !inVersion {
+			return nil, &InvalidInputError{
+				data: map[string]any{"expected_head_revisionid": reasonOtherVersion},
+			}
 		}
 
 		sqlb := stmntBuilder.
