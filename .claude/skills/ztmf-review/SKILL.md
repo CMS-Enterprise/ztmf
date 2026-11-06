@@ -11,11 +11,13 @@ Nothing is posted to GitHub until the person running this skill has seen the exa
 
 ## Step 1: read before judging
 
-1. `gh pr view <n> --repo CMS-Enterprise/ztmf --json title,body,author,headRefName,baseRefName,files,reviews,comments` for the PR body and any existing reviews. Do not repeat a point another reviewer already made.
-2. Read the linked ticket and its comments. Tickets usually live in `CMS-Enterprise/ztmf-misc`. The comment thread often holds constraints the PR body leaves out.
-3. Read the whole diff with `gh pr diff <n> --repo CMS-Enterprise/ztmf`, then open the surrounding code for every changed function. A hunk that looks wrong alone is often right in context.
-4. When the PR changes a handler, a query, a migration, scoring, an export, or a Terraform root, check out the branch and run the tests from the repo root: `make test-unit` and `make test-integration`, plus `make test-e2e` when an API response changes. Do not run anything that tears down or rebuilds a shared dev stack.
-5. Before saying the PR causes a problem, check that the problem is not already on `main`. A wrong claim costs the author more time than a missed one.
+1. `gh pr view <n> --repo CMS-Enterprise/ztmf --json title,body,author,headRefName,baseRefName,headRefOid,files,reviews,comments` for the PR body and any existing reviews. Inline review comments are not in that output, so also read `gh api repos/CMS-Enterprise/ztmf/pulls/<n>/comments`. Do not repeat a point another reviewer already made.
+2. Run `gh pr checks <n> --repo CMS-Enterprise/ztmf` for CI. A red check is often the first finding, and it decides whether the review can approve (see Step 4).
+3. Read the linked ticket and its comments. Tickets usually live in `CMS-Enterprise/ztmf-misc`. The comment thread often holds constraints the PR body leaves out.
+4. Read the whole diff with `gh pr diff <n> --repo CMS-Enterprise/ztmf`, then open the surrounding code for every changed function. A hunk that looks wrong alone is often right in context.
+5. If the person running this skill already reviewed this PR, this is a re-review. Read the commits pushed since their last review, and check each of their earlier findings: fixed, answered, or still open. Raise only what is still open or new. Do not post a finding again that the author already answered, unless the answer is wrong.
+6. When the PR changes a handler, a query, a migration, scoring, an export, or a Terraform root, run the tests. Check the branch out in its own worktree (`git worktree add <dir> <branch>`) so the person's own checkout and any work in it stay untouched, then run from the repo root of that worktree: `make test-unit` and `make test-integration`, plus `make test-e2e` when an API response changes. Do not run anything that tears down or rebuilds a shared dev stack. Remove the worktree when done.
+7. Before saying the PR causes a problem, check that the problem is not already on `main`. A wrong claim costs the author more time than a missed one.
 
 ## Step 2: apply the bar
 
@@ -59,6 +61,8 @@ The TL;DR gives the verdict (approve, request changes, or comment), then one to 
 
 After the TL;DR, the body has nothing else unless a finding cannot be tied to a line. Findings go in inline comments on the line they are about.
 
+GitHub accepts an inline comment only on a line inside the diff: an added line, or an unchanged line shown in a hunk. One comment on any other line makes GitHub reject the whole review. A finding about code the PR did not touch, such as a caller it should have updated, goes in the body after the TL;DR, with the file and line written out.
+
 Each inline comment:
 
 - Says what is wrong, why it matters, and what would fix it, in that order, then stops.
@@ -88,6 +92,7 @@ On approval, post everything as a single review so the author gets one notificat
 
 ```json
 {
+  "commit_id": "<headRefOid from Step 1>",
   "event": "APPROVE",
   "body": "**TL;DR:** ...",
   "comments": [
@@ -96,12 +101,14 @@ On approval, post everything as a single review so the author gets one notificat
 }
 ```
 
-`event` is `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`. Then:
+`commit_id` is the head commit you reviewed, so the comments stay on the lines you read even if the author pushes while you write. If the head has moved since Step 1, read the new commits before posting. A comment that spans lines adds `"start_line"` and `"start_side"`.
+
+`event` is `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`. GitHub does not let anyone approve or request changes on their own PR, so when the person running this skill is the author, use `COMMENT` and keep the verdict in the TL;DR. Then:
 
 ```bash
 gh api -X POST repos/CMS-Enterprise/ztmf/pulls/<n>/reviews --input review.json
 ```
 
-Do not approve a PR whose CI checks are red or whose local test run failed. Report what failed, with the output, and let the person decide what to post.
+Do not approve a PR whose CI checks are red or still running, or whose local test run failed. Report what failed or is still pending, with the output, and let the person decide what to post.
 
 After posting, give the review URL.
