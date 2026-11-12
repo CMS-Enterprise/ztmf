@@ -39,8 +39,8 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	// copyPreviousScores resolves "previous" via findPreviousDataCall, which
 	// returns the datacall with the furthest deadline other than the target (it
 	// is only ever called on the newest cycle, so "latest, excluding me" is the
-	// real previous). The seed carries a far-future cycle (the 2099 "Audit Fields
-	// Smoke Cycle", datacallid 5), so the synthetic cycle must sit ABOVE every
+	// real previous). The seed carries a far-out open cycle (datacallid 5, "FY2027
+	// Imperial Zero Trust Data Call", due about 200 days after load), so the synthetic cycle must sit ABOVE every
 	// existing deadline: newDC must be the global latest and prevDC the next one
 	// down, or findPreviousDataCall(newDC) rolls a seed datacall forward instead
 	// of our marker. Anchor both deadlines above the current max. Prefixed names
@@ -55,15 +55,15 @@ func TestFindScoreProgressIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), prevDeadline).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sprogress_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), newDeadline).Scan(&newDC)
 	require.NoError(t, err)
@@ -237,8 +237,8 @@ func TestFindScoreProgressExcludesInapplicableAnswers(t *testing.T) {
 	var dc int32
 	suffix := time.Now().UnixNano()
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), NOW() + INTERVAL '90 days')
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), NOW() + INTERVAL '90 days', 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%sinapplicable_%d", integrationTestPrefix, suffix)).Scan(&dc)
 	require.NoError(t, err)
@@ -317,15 +317,15 @@ func TestScoreNoOpReSavePreservesNotStartedIntegration(t *testing.T) {
 	suffix := time.Now().UnixNano()
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_prev_%d", integrationTestPrefix, suffix), time.Now().Add(-2*time.Hour), maxDeadline.Add(24*time.Hour)).Scan(&prevDC)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, $2::timestamptz, $3::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, $2::timestamptz, $3::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%snoop_new_%d", integrationTestPrefix, suffix), time.Now().Add(-1*time.Hour), maxDeadline.Add(48*time.Hour)).Scan(&newDC)
 	require.NoError(t, err)
@@ -579,8 +579,9 @@ func saasScopeFixture(ctx context.Context, t *testing.T, cms bool) (systemID, in
 }
 
 // reducedScopeAnchorAndPriorDataCalls returns the earliest seeded anchor call
-// (where the reduced scope starts, per the reducedpillarscopes table) and one
-// with a strictly earlier deadline.
+// (where the SaaS reduced scope starts, per the reducedpillarscopes table) and
+// one with a strictly earlier deadline. Filtered to the SaaS key so a rule added
+// for another scoring key cannot move the anchor these tests assert against.
 func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anchor, prior int32, ok bool) {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -590,7 +591,7 @@ func reducedScopeAnchorAndPriorDataCalls(ctx context.Context, t *testing.T) (anc
 	var anchorDeadline time.Time
 	err = conn.QueryRow(ctx, `
 		SELECT dc.datacallid, dc.deadline FROM datacalls dc
-		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes)
+		 WHERE dc.datacallid IN (SELECT effective_datacallid FROM reducedpillarscopes WHERE scoring_key = 'SaaS')
 		 ORDER BY dc.deadline ASC, dc.datacallid ASC LIMIT 1
 	`).Scan(&anchor, &anchorDeadline)
 	if err != nil {

@@ -35,17 +35,27 @@ delegateHeaders: &delegateHeaders
   authorization: "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImRlbGVnYXRlLnVzZXJAbm93aGVyZS54eXoifQ.yo5KvkCAnmcBbTGRNQZEfnaE8uXSe8zfgmofOiaL_rU"
 
 # Data definitions using YAML anchors.
-# The deadline is intentionally far-future — beyond the empire seed's
-# furthest-out call (Audit Fields Smoke Cycle, 2099-12-31) — so this
+# The deadline is intentionally far-future - beyond the empire seed's
+# furthest-out call (the open FY2027 call 5, whose deadline is load-relative,
+# about 200 days out, so it never expires) - so this
 # test-created call is the one GET /datacalls/latest returns. As of #393,
 # "latest"/"current" is the max-deadline call, not the max datacallid.
 dataCallData: &dataCallData
   datacall: "FY2100 ZTM"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
 
+# The create body leaves cadence out, so the response carries the default.
+createdDataCallData: &createdDataCallData
+  <<: *dataCallData
+  cadence: "annual"
+
+# The name is a free-text title; the year and cadence are their own fields.
 updatedDataCallData: &updatedDataCallData
-  datacall: "FY2100 ZTM"
+  datacall: "Zero Trust Data Call 2100"
   deadline: "2100-03-31T17:59:59Z"
+  fiscal_year: 2100
+  cadence: "quarterly"
 
 fismaSystemData: &fismaSystemData
   fismauid: "12345678-ABCD-4321-AFAB-123456789ABC"
@@ -607,7 +617,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: http://localhost:8080/api/v1/datacalls/latest
     method: GET
@@ -620,7 +630,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: GET
@@ -633,7 +643,7 @@ tests:
       body:
         json:
           data:
-            <<: *dataCallData
+            <<: *createdDataCallData
   
   - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
     method: PUT
@@ -658,7 +668,248 @@ tests:
         json:
           data:
             <<: *updatedDataCallData
-  
+
+  # An update that leaves fiscal_year and cadence out keeps the stored values,
+  # so a title-only edit cannot reset a quarterly call to annual.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # Updates are partial. A body with only fiscal_year changes the year and
+  # keeps the title, deadline and cadence.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2101
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "quarterly"
+
+  # A body with only cadence changes the cadence and keeps the rest, including
+  # the year set just above.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacall: "Zero Trust Data Call 2100"
+            deadline: "2100-03-31T17:59:59Z"
+            fiscal_year: 2101
+            cadence: "annual"
+
+  # Put the call back the way the update above left it.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        fiscal_year: 2100
+        cadence: "quarterly"
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            <<: *updatedDataCallData
+
+  # The path id is read as decimal. "0101" is call 101; fmt.Sscan read it as
+  # octal 65, a call that does not exist. The body sets cadence to the value
+  # call 101 already has, so nothing changes.
+  - url: http://localhost:8080/api/v1/datacalls/0101
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        cadence: "annual"
+    expect:
+      status: 204
+
+  - url: http://localhost:8080/api/v1/datacalls/101
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            datacallid: 101
+            datacall: "FY2023 Sector Readiness Census"
+            fiscal_year: 2023
+            cadence: "annual"
+
+  # A path id of 0 is a 404, never a create.
+  - url: http://localhost:8080/api/v1/datacalls/0
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Should not be created"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 404
+
+  # fiscal_year is required on create, and both fields are validated on create
+  # and update. None of these writes a row, so the latest call is unchanged.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "No fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 0
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Two-digit fiscal year"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 26
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            fiscal_year: 26
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Unknown cadence"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+        cadence: "monthly"
+    expect:
+      status: 400
+      body:
+        json:
+          data:
+            cadence: "monthly"
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        cadence: "monthly"
+    expect:
+      status: 400
+
+  # Titles are unique ignoring case: the UI resolves questionnaire deep links
+  # by title case-insensitively, so a title that differs from an existing one
+  # only by case is rejected the same way an exact duplicate is (400, not
+  # unique). Neither write creates a row.
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "Zero Trust Data Call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "ZERO TRUST data call 2100"
+        deadline: "2100-03-31T17:59:59Z"
+        fiscal_year: 2100
+    expect:
+      status: 400
+
   - url: http://localhost:8080/api/v1/datacalls
     method: GET
     headers:
@@ -667,6 +918,97 @@ tests:
       status: 200
       headers:
         content-type: "application/json"
+
+  # Questionnaire version pin (ztmf-misc#397). The call above took the newest
+  # published version, the baseline. A PUT naming another version is not a
+  # re-pin: it succeeds and the pin stays where it was.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *updatedDataCallData
+        questionnaire_versionid: 999999
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionnaire_versionid: 1
+
+  - url: http://localhost:8080/api/v1/datacalls
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        datacall: "FY2100 missing version"
+        deadline: "2100-03-31T17:59:59Z"
+        questionnaire_versionid: 999999
+    expect:
+      status: 400
+
+  # A re-pin changes what every OpDiv answers, so it is HHS-wide.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 403
+
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 999999
+    expect:
+      status: 400
+
+  - url: http://localhost:8080/api/v1/datacalls/999999/questionnaire-version
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 404
+
+  # The version it already has: a no-op, the call back with nothing moved.
+  - url: "http://localhost:8080/api/v1/datacalls/{{.createDataCall.Response.data.datacallid}}/questionnaire-version"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionnaire_versionid: 1
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            questionnaire_versionid: 1
+            translated: 0
+            dropped: 0
 
   # FISMA Systems Endpoints
   - id: createFismaSystem
@@ -1408,8 +1750,14 @@ tests:
 
 
   # Functions Endpoints
-  - id: createFunction
-    url: http://localhost:8080/api/v1/functions
+  #
+  # Since ztmf-misc#396 catalog content is written only in a draft questionnaire
+  # version, so every write below targets the published baseline and is refused
+  # with 403 VERSION_NOT_DRAFT. Successful draft writes are covered in Go
+  # (catalogversions_integration_test.go): Emberfall templates URLs only, so a
+  # body cannot name a draft question's runtime id. Validation still runs
+  # first, so the 400s below are unchanged.
+  - url: http://localhost:8080/api/v1/functions
     method: POST
     headers:
       <<: *commonHeaders
@@ -1418,28 +1766,12 @@ tests:
       json:
         <<: *functionData
     expect:
-      status: 201
-      headers:
-        content-type: "application/json"
+      status: 403
       body:
         json:
-          data:
-            <<: *functionData
-  
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-      body:
-        json:
-          data:
-            <<: *functionData
-  
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+          code: "VERSION_NOT_DRAFT"
+
+  - url: http://localhost:8080/api/v1/functions/7001
     method: PUT
     headers:
       <<: *commonHeaders
@@ -1448,21 +1780,22 @@ tests:
       json:
         <<: *updatedFunctionData
     expect:
-      status: 204
-  
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+      status: 403
+
+  # Seeded function 7001 is untouched by both refused writes.
+  - url: http://localhost:8080/api/v1/functions/7001
     method: GET
     headers:
       <<: *commonHeaders
     expect:
       status: 200
-      headers:
-        content-type: "application/json"
       body:
         json:
           data:
-            <<: *updatedFunctionData
-  
+            functionid: 7001
+            function: "Imperial Device Management"
+            datacenterenvironment: "Imperial-Fleet"
+
   - url: http://localhost:8080/api/v1/functions
     method: GET
     headers:
@@ -1472,32 +1805,8 @@ tests:
       headers:
         content-type: "application/json"
 
-  # A caller-supplied pillarid that disagrees with the question is corrected, not
-  # persisted. Question 8001 is in pillar 1; the request claims pillar 6.
-  - id: createFunctionPillarDrift
-    url: http://localhost:8080/api/v1/functions
-    method: POST
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        function: "Pillar Derivation Check"
-        description: "pillarid must follow the question, not the request body"
-        datacenterenvironment: "AWS"
-        order: 99
-        questionid: 8001
-        pillarid: 6
-    expect:
-      status: 201
-      body:
-        json:
-          data:
-            questionid: 8001
-            pillarid: 1
-
   # A function with no question has no pillar to derive from and reaches no
-  # questionnaire, so it is rejected.
+  # questionnaire, so it is rejected - before the draft check.
   - url: http://localhost:8080/api/v1/functions
     method: POST
     headers:
@@ -1513,10 +1822,8 @@ tests:
     expect:
       status: 400
 
-  # Same on update. The UPDATE sets every column, so before questionid was
-  # required this partial-update shape wrote NULL and orphaned the function from
-  # every questionnaire instead of failing.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+  # Same on update.
+  - url: http://localhost:8080/api/v1/functions/7001
     method: PUT
     headers:
       <<: *commonHeaders
@@ -1530,55 +1837,6 @@ tests:
         pillarid: 1
     expect:
       status: 400
-
-  # Nothing from the rejected update applied: the question is intact and the
-  # fields it did carry (a changed description) were not written either.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      body:
-        json:
-          data:
-            <<: *updatedFunctionData
-
-  # A POST carrying functionid must still create. The id comes from the route,
-  # never the body: without that re-pin Save reads the body id, takes its UPDATE
-  # branch, and rewrites that function while answering 201 Created.
-  - url: http://localhost:8080/api/v1/functions
-    method: POST
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        functionid: 7001
-        function: "Body Id Override Function"
-        description: "must create, not update the function named in the body"
-        datacenterenvironment: "AWS"
-        order: 98
-        questionid: 8001
-        pillarid: 1
-    expect:
-      status: 201
-
-  # Seeded function 7001 is untouched - only the create above happened. A
-  # literal id, not a {{...}} reference: Emberfall substitutes templates in URLs
-  # only, never inside a body.
-  - url: http://localhost:8080/api/v1/functions/7001
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      body:
-        json:
-          data:
-            functionid: 7001
-            function: "Imperial Device Management"
-            datacenterenvironment: "Imperial-Fleet"
 
   # Same unusable-path-id rule on functions (see the questions pair below).
   - url: http://localhost:8080/api/v1/functions/0
@@ -1603,98 +1861,66 @@ tests:
     expect:
       status: 404
 
-  # A PUT that omits "order" must leave the stored rank alone. Function.Ordr is
-  # a *int for exactly this: absent and 0 are indistinguishable once decoded, so
-  # the unconditional Set this replaced would clobber the rank the functions.ordr
-  # backfill populates. Last in this sequence because it is the one case that
-  # changes a field the assertions above pin.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
+  # Draft-only DELETE: the baseline function is refused, an unusable id is 404.
+  - url: http://localhost:8080/api/v1/functions/7001
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functions/0
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
+  # Function Options Endpoints
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+
+  # Option writes on a baseline function are refused (ztmf-misc#396).
+  - url: http://localhost:8080/api/v1/functions/7001/options
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        score: 2
+        optionname: "Initial"
+        description: "Some progress"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/functionoptions/1
     method: PUT
     headers:
       <<: *commonHeaders
       content-type: "application/json"
     body:
       json:
-        function: "Updated Identity Management"
-        description: "partial update omitting order"
-        datacenterenvironment: "AWS"
-        questionid: 8001
-        pillarid: 1
-    expect:
-      status: 204
-
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      body:
-        json:
-          data:
-            description: "partial update omitting order"
-            order: 2
-
-  # Function Options Endpoints
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-
-  # functionoptions gained a write path in ztmf-misc#398; before it the 1-4
-  # scoring scale every answer points at could only be changed by hand in SQL.
-  # functionid comes from the path on create - the body deliberately names a
-  # different function to prove it is ignored, which is what stops a write
-  # retargeting an option to a function the caller never named.
-  - id: createFunctionOption
-    url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
-    method: POST
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        functionid: 7001
-        score: 2
-        optionname: "Initial"
-        description: "Some progress"
-    expect:
-      status: 201
-      body:
-        json:
-          data:
-            score: 2
-            optionname: "Initial"
-
-  # A POST carrying functionoptionid must still create. Both ids come from the
-  # route, never the body: without that re-pin this reroutes into an update of
-  # option 1 - on whatever function owns it - and the path is ignored entirely.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
-    method: POST
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        functionoptionid: 1
-        functionid: 7001
         score: 1
         optionname: "Traditional"
-        description: "must create, not update option 1"
+        description: "must be refused on the baseline"
     expect:
-      status: 201
-      body:
-        json:
-          data:
-            score: 1
-            optionname: "Traditional"
+      status: 403
 
-  # Function 7001 still holds exactly its four seeded options, in score order -
-  # the write above created on the path function and touched nothing here.
+  # A published option is never deleted, which is also what keeps undo's
+  # prev_functionoptionid resolvable.
+  - url: http://localhost:8080/api/v1/functionoptions/1
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 403
+
+  # Function 7001 still holds exactly its four seeded options, in score order.
   - url: http://localhost:8080/api/v1/functions/7001/options
     method: GET
     headers:
@@ -1714,9 +1940,9 @@ tests:
               score: 4
 
   # score is the HHS maturity scale, 1-4. Off-scale is a field-named 400 from
-  # validate, returned before the DB CHECK (functionoptions_score_check) is
-  # reached.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+  # validate, returned before the DB CHECK (functionoptions_score_check) and
+  # the draft check, so these hold on the baseline.
+  - url: http://localhost:8080/api/v1/functions/7001/options
     method: POST
     headers:
       <<: *commonHeaders
@@ -1725,56 +1951,39 @@ tests:
       json:
         score: 5
         optionname: "Beyond"
-        description: "off the scale"
+        description: "off scale"
     expect:
       status: 400
 
-  # optionname is varchar(30); without the length check Postgres raises a
-  # truncation error instead of a 400 naming the field.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+  # optionname is varchar(30).
+  - url: http://localhost:8080/api/v1/functions/7001/options
     method: POST
     headers:
       <<: *commonHeaders
       content-type: "application/json"
     body:
       json:
-        score: 3
-        optionname: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        description: "31 characters"
+        score: 1
+        optionname: "This option name is far longer than thirty characters"
+        description: "too long"
     expect:
       status: 400
 
-  # description is varchar(1024). optionname was bounded from the start; this
-  # column is the other newly reachable string on a table that had no write path
-  # at all, and 22001 is not mapped by trapError - unbounded it is a 500.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
+  # description is varchar(1024).
+  - url: http://localhost:8080/api/v1/functions/7001/options
     method: POST
     headers:
       <<: *commonHeaders
       content-type: "application/json"
     body:
       json:
-        score: 3
-        optionname: "Over-long description"
-        description: "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        score: 1
+        optionname: "Traditional"
+        description: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     expect:
       status: 400
 
-  - url: "http://localhost:8080/api/v1/functionoptions/{{.createFunctionOption.Response.data.functionoptionid}}"
-    method: PUT
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        score: 4
-        optionname: "Optimal"
-        description: "Fully realized"
-    expect:
-      status: 204
-
-  # PUT against an option that does not exist is a 404, from the stored-row
-  # lookup the update path needs to resolve the owning function.
+  # PUT against an option that does not exist is a 404.
   - url: http://localhost:8080/api/v1/functionoptions/999999
     method: PUT
     headers:
@@ -1783,13 +1992,11 @@ tests:
     body:
       json:
         score: 1
-        optionname: "Nowhere"
-        description: "no such option"
+        optionname: "Traditional"
+        description: "d"
     expect:
       status: 404
 
-  # Unusable path ids on the option PUT: "0" and an over-int32 value both 404
-  # before any lookup, rather than reaching the create branch.
   - url: http://localhost:8080/api/v1/functionoptions/0
     method: PUT
     headers:
@@ -1798,8 +2005,8 @@ tests:
     body:
       json:
         score: 1
-        optionname: "Nowhere"
-        description: "no such option"
+        optionname: "Traditional"
+        description: "d"
     expect:
       status: 404
 
@@ -1811,27 +2018,10 @@ tests:
     body:
       json:
         score: 1
-        optionname: "Nowhere"
-        description: "no such option"
+        optionname: "Traditional"
+        description: "d"
     expect:
       status: 404
-
-  # The update keeps the option on its original function: PUT carries no
-  # functionid in the path, so the stored row is what decides. Two options now -
-  # the body-override create above and this updated one - in score order.
-  - url: "http://localhost:8080/api/v1/functions/{{.createFunction.Response.data.functionid}}/options"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      body:
-        json:
-          data:
-            - score: 1
-              optionname: "Traditional"
-            - score: 4
-              optionname: "Optimal"
 
   # Users Endpoints
   - id: createUser
@@ -2090,9 +2280,9 @@ tests:
   #
   # commonHeaders maps to test.user@nowhere.xyz (the OWNER fixture); the
   # ISSO scope block below uses Isso.User@nowhere.xyz via issoHeaders.
-  # Both saves target datacallid=5 ("Audit Fields Smoke Cycle"), seeded in
-  # _test_data_empire.sql with deadline 2099-12-31 so validate() does not
-  # trip the past-deadline guard on the ISSO path. (Admin bypasses the
+  # Both saves target datacallid=5 ("FY2027 Imperial Zero Trust Data Call"), seeded in
+  # _test_data_empire.sql with a load-relative deadline (about 200 days out) so
+  # validate() does not trip the past-deadline guard on the ISSO path. (Admin bypasses the
   # guard, but routing both paths through the same fixture keeps the
   # regression honest if the admin bypass is ever tightened.)
   #
@@ -2639,8 +2829,11 @@ tests:
       status: 404
 
   # Questions Endpoints
-  - id: createQuestion
-    url: http://localhost:8080/api/v1/questions
+  #
+  # No draft is open here, so a new question has nowhere to go and an edit to a
+  # baseline question is refused (ztmf-misc#396). The draft path is exercised in
+  # the questionnaire-versions flow at the end of this file.
+  - url: http://localhost:8080/api/v1/questions
     method: POST
     headers:
       <<: *commonHeaders
@@ -2649,28 +2842,12 @@ tests:
       json:
         <<: *questionData
     expect:
-      status: 201
-      headers:
-        content-type: "application/json"
+      status: 403
       body:
         json:
-          data:
-            <<: *questionData
-  
-  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-      body:
-        json:
-          data:
-            <<: *questionData
-  
-  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+          code: "VERSION_NOT_DRAFT"
+
+  - url: http://localhost:8080/api/v1/questions/8001
     method: PUT
     headers:
       <<: *commonHeaders
@@ -2679,28 +2856,10 @@ tests:
       json:
         <<: *updatedQuestionData
     expect:
-      status: 204
-  
-  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      headers:
-        content-type: "application/json"
-      body:
-        json:
-          data:
-            <<: *updatedQuestionData
+      status: 403
 
-  # Question.validate was a commented-out stub and Save called no validation at
-  # all (ztmf-misc#398), so an empty body inserted a row with empty text and
-  # pillarid 0 - which only failed downstream, on the FK, naming no field. All
-  # three columns are NOT NULL with no useful default, and Save's UPDATE sets
-  # each unconditionally, so a PUT omitting one would clobber it rather than
-  # leave it alone. order stays optional: it is a *int so a PUT that omits it
-  # preserves the stored rank.
+  # Question.validate (ztmf-misc#398) runs before the draft check, so these are
+  # still field-named 400s.
   - url: http://localhost:8080/api/v1/questions
     method: POST
     headers:
@@ -2736,24 +2895,8 @@ tests:
     expect:
       status: 400
 
-  # Well-formed but naming a pillar that does not exist. Left to the FK rather
-  # than a pre-emptive lookup: pillars carries no finder, and 23503 already
-  # surfaces as a 400 through ErrNoReference.
-  - url: http://localhost:8080/api/v1/questions
-    method: POST
-    headers:
-      <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        question: "A question on a pillar that does not exist"
-        notesprompt: "prompt"
-        pillarid: 999999
-    expect:
-      status: 400
-
   # A partial PUT is refused rather than silently clearing notesprompt.
-  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
+  - url: http://localhost:8080/api/v1/questions/8001
     method: PUT
     headers:
       <<: *commonHeaders
@@ -2765,22 +2908,7 @@ tests:
     expect:
       status: 400
 
-  # Nothing from the rejected writes applied.
-  - url: "http://localhost:8080/api/v1/questions/{{.createQuestion.Response.data.questionid}}"
-    method: GET
-    headers:
-      <<: *commonHeaders
-    expect:
-      status: 200
-      body:
-        json:
-          data:
-            <<: *updatedQuestionData
-
-  # A POST carrying questionid must still create, for the same reason the
-  # functionoptions create does: getJSON decodes any field on the struct, so an
-  # un-re-pinned body id sends Save down its UPDATE branch and silently rewrites
-  # that question - under a 201 Created.
+  # Whitespace-only text renders blank in the questionnaire and the export.
   - url: http://localhost:8080/api/v1/questions
     method: POST
     headers:
@@ -2788,17 +2916,13 @@ tests:
       content-type: "application/json"
     body:
       json:
-        questionid: 8001
-        question: "Body Id Override Question"
-        notesprompt: "must create, not update the question named in the body"
-        order: 98
+        question: "   "
+        notesprompt: "prompt"
         pillarid: 1
     expect:
-      status: 201
+      status: 400
 
-  # Seeded question 8001 still carries its seeded text. A literal id, not a
-  # {{...}} reference: Emberfall substitutes templates in URLs only, never
-  # inside a body.
+  # Seeded question 8001 carries its seeded text through every refused write.
   - url: http://localhost:8080/api/v1/questions/8001
     method: GET
     headers:
@@ -2812,8 +2936,6 @@ tests:
             question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
 
   # A PUT whose path id routes but cannot address a row is a 404, not a create.
-  # [0-9]+ matches both "0" and an over-int32 value; each used to parse to 0,
-  # read as "no id in the path", and insert a new question under the PUT's 204.
   - url: http://localhost:8080/api/v1/questions/0
     method: PUT
     headers:
@@ -2836,20 +2958,12 @@ tests:
     expect:
       status: 404
 
-  # Whitespace-only text is NOT NULL and non-empty as far as the column is
-  # concerned, but renders blank in the questionnaire and the export.
-  - url: http://localhost:8080/api/v1/questions
-    method: POST
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: DELETE
     headers:
       <<: *commonHeaders
-      content-type: "application/json"
-    body:
-      json:
-        question: "   "
-        notesprompt: "prompt"
-        pillarid: 1
     expect:
-      status: 400
+      status: 403
 
   - url: http://localhost:8080/api/v1/questions
     method: GET
@@ -2988,7 +3102,7 @@ tests:
     expect:
       status: 404
 
-  # Wrong-data-center report (issue #239). Two rows at this point in the run:
+  # Wrong-data-center report (issue #239). Three rows at this point in the run:
   #   - Shield Gen (1003, EMPIRE, active): the seeded mismatch (CFACTS
   #     CMS-Cloud-AWS vs ZTMF Forest-Moon), cfacts_value_known TRUE.
   #   - Executor (1002): seeded as MATCHING (Imperial-Fleet on both sides), but
@@ -2996,6 +3110,8 @@ tests:
   #     system to "Other" mid-suite, so by now it reports - proving the report
   #     tracks live system edits. The fresh-seed "matching row is excluded"
   #     behavior is pinned by internal/model/datacentermismatches_integration_test.go.
+  #   - TACT-HOLO (3006, EMPIRE, active; demo portfolio): its record names a
+  #     different data center on purpose.
   # Still excluded here: the Death Star (1001) mismatches but is decommissioned,
   # and RB-1 (1005) mismatches but REBELLION is not insights_enabled (gated).
   - url: http://localhost:8080/api/v1/datacentermismatches
@@ -3018,6 +3134,12 @@ tests:
               fismaacronym: "SSD-EX"
               datacenterenvironment: "Other"
               cfacts_datacenterenvironment: "Imperial-Fleet"
+              cfacts_value_known: true
+            # Demo portfolio at the end of the seed: TACT-HOLO is
+            # an EMPIRE system whose CFACTS-style record names a different data
+            # center on purpose, so the report has a row to show out of the box.
+            - fismasystemid: 3006
+              fismaacronym: "TACT-HOLO"
               cfacts_value_known: true
 
   # The report is admin-tier only: ISSO/ISSM get 403 (the ISSO-facing
@@ -3043,6 +3165,27 @@ tests:
           data:
             - fismasystemid: 1003
             - fismasystemid: 1002
+            - fismasystemid: 3006
+
+  # The EMPIRE-only OpDiv admin sees the same three rows: all three systems are
+  # EMPIRE, and nothing outside EMPIRE reports (RB-1 is also gated).
+  - url: http://localhost:8080/api/v1/datacentermismatches
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1003
+              fismaacronym: "SLD-GEN"
+            - fismasystemid: 1002
+              fismaacronym: "SSD-EX"
+            - fismasystemid: 3006
+              fismaacronym: "TACT-HOLO"
 
   # ZTMF Insights (issue #416). /insights is a LIST endpoint: scope and the
   # OpDiv gate yield an empty array (200), never 403/404. Array bodies assert
@@ -3614,7 +3757,7 @@ tests:
       status: 403
 
   # Headline capability: delegate CAN write a data-call answer on its assigned
-  # system (1001, open Audit cycle 5). The role's whole reason to exist - a
+  # system (1001, open FY2027 cycle 5). The role's whole reason to exist - a
   # regression that neutered it (e.g. a stray IsSystemDelegate 403 copied into
   # SaveScore) must fail here. Response echoes the delegate as the editor.
   - url: http://localhost:8080/api/v1/scores
@@ -4072,8 +4215,9 @@ tests:
 
   # ==========================================================================
   # Reduced pillar scope (ztmf#545 / ztmf-misc#289). MOCK-SAAS (2016) is the
-  # seeded SaaS fixture; 104 is the FY26 fixture cycle the seeded rule anchors
-  # on; 103 is the prior full-set cycle. The questionnaire endpoint serves the
+  # seeded SaaS fixture; 104 ('FY2026 Sector Readiness Census') is the FY26
+  # fixture cycle the SaaS rule row in _test_data_empire.sql anchors on; 103 is
+  # the prior full-set cycle. The questionnaire endpoint serves the
   # reduced set only when asked for an in-scope cycle, and the aggregate stops
   # scoring the excluded pillars from the anchor cycle onward.
   #
@@ -4209,7 +4353,7 @@ tests:
   # ---------------------------------------------------------------------------
   # Answer history and undo (ztmf-misc#391)
   #
-  # datacallid 5 ("Audit Fields Smoke Cycle", deadline 2099) for the same reason
+  # datacallid 5 ("FY2027 Imperial Zero Trust Data Call", deadline about 200 days out) for the same reason
   # every other write case uses it: datacall 104's deadline has passed, so a
   # non-admin write there trips ErrPastDeadline.
   #
@@ -4472,3 +4616,346 @@ tests:
         expected_head_revisionid: 1
     expect:
       status: 404
+
+  # ==========================================================================
+  # Demo portfolio (systems 3001+ at the end of _test_data_empire.sql).
+  # The demo login Opdiv.Admin@empire.test holds only EMPIRE, so the new EMPIRE
+  # systems must be readable and the new systems in every other OpDiv (REBELLION
+  # and the sister divisions) must stay out of reach, the same way 1005/1006 do.
+  # ==========================================================================
+
+  # The open FY2027 call keeps id 5 and its far-future deadline.
+  - url: http://localhost:8080/api/v1/datacalls/5
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            datacallid: 5
+            datacall: "FY2027 Imperial Zero Trust Data Call"
+
+  # EMPIRE demo systems are readable by the EMPIRE OpDiv admin and read-only admin.
+  - url: http://localhost:8080/api/v1/fismasystems/3001
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 3001
+            fismaacronym: "SHIELD-GRID"
+
+  - url: http://localhost:8080/api/v1/fismasystems/3003
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            fismasystemid: 3003
+            fismaacronym: "INFORMANT-NET"
+
+  # REBELLION demo system (3017) and a sister-division demo system (3011): 403
+  # for the EMPIRE-only admin on read, and 403 on write.
+  - url: http://localhost:8080/api/v1/fismasystems/3017
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/fismasystems/3011
+    method: GET
+    headers:
+      <<: *opDivReadonlyHeaders
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/fismasystems/3017
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *fismaSystemData
+    expect:
+      status: 403
+
+  # The aggregate for the open call, read by the EMPIRE-only OpDiv admin, lists
+  # exactly the EMPIRE systems that have answers on it: out-of-scope systems
+  # (REBELLION 1005 and 3017, COMPNOR 3011) are absent, and the list is exact so
+  # a scope regression that leaks one system fails. The Executor (1002) is not
+  # listed because the OWNER PUT earlier in the run moved it to the 'Other' data
+  # center, which has no questionnaire to score against. 1001 and 1003 appear
+  # because earlier cases write answers to them on this call. 3007 (decommissioned)
+  # and 3010 (new in FY27, nothing answered yet) have no answers on this call.
+  - url: http://localhost:8080/api/v1/scores/aggregate?datacallid=5
+    method: GET
+    headers:
+      <<: *opDivAdminHeaders
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+      body:
+        json:
+          data:
+            - fismasystemid: 1001
+            - fismasystemid: 1003
+            - fismasystemid: 3001
+            - fismasystemid: 3002
+            - fismasystemid: 3003
+            - fismasystemid: 3004
+            - fismasystemid: 3005
+            - fismasystemid: 3006
+            - fismasystemid: 3008
+            - fismasystemid: 3009
+
+  # Questionnaire versions (ztmf-misc#396). Last in the file: it forks a draft
+  # and leaves it discarded, so nothing above runs with a draft open. The
+  # empire seed's catalog does not pass the publish gate (its functions do not
+  # all carry four options scored 1-4), so a successful publish, the edit-after
+  # -publish 403 and archiving are covered in Go; here the gate's refusal is.
+  - url: http://localhost:8080/api/v1/questionnaire-versions
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            - versionid: 1
+              state: "published"
+
+  # Every version write is HHS-wide.
+  - url: http://localhost:8080/api/v1/questionnaire-versions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        label: "opdiv admin fork"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questionnaire-versions/1/publish
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questionnaire-versions/1/archive
+    method: PUT
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questionnaire-versions/1
+    method: DELETE
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    expect:
+      status: 403
+
+  - url: http://localhost:8080/api/v1/questionnaire-versions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        label: "   "
+    expect:
+      status: 400
+
+  - id: forkDraft
+    url: http://localhost:8080/api/v1/questionnaire-versions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        label: "Emberfall draft"
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            label: "Emberfall draft"
+            state: "draft"
+            parent_versionid: 1
+
+  # At most one draft: the second fork is a 400 from the partial unique index.
+  - url: http://localhost:8080/api/v1/questionnaire-versions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        label: "second draft"
+    expect:
+      status: 400
+
+  - url: "http://localhost:8080/api/v1/questionnaire-versions/{{.forkDraft.Response.data.versionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            state: "draft"
+
+  # With a draft open an HHS admin's write would succeed, so these 403s can
+  # only come from the HHS-wide role gate, not from VERSION_NOT_DRAFT.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *opDivAdminHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 403
+
+  # With a draft open a new question lands in it. The body names question 8001
+  # to prove the route, not the body, decides create vs update: this creates.
+  - id: draftQuestion
+    url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        questionid: 8001
+        question: "A draft question"
+        notesprompt: "prompt"
+        pillarid: 1
+    expect:
+      status: 201
+      body:
+        json:
+          data:
+            question: "A draft question"
+
+  - url: "http://localhost:8080/api/v1/questions/{{.draftQuestion.Response.data.questionid}}"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "Edited in the draft"
+        notesprompt: "prompt"
+        pillarid: 1
+    expect:
+      status: 204
+
+  # Seeded question 8001 is untouched by the create above.
+  - url: http://localhost:8080/api/v1/questions/8001
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 200
+      body:
+        json:
+          data:
+            question: "Does your Imperial system track all battle stations, Star Destroyers, and TIE fighters with comprehensive inventory?"
+
+  # In a draft a missing pillar reaches the FK and is a 400.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        question: "A question on a pillar that does not exist"
+        notesprompt: "prompt"
+        pillarid: 999999
+    expect:
+      status: 400
+
+  # The new question has no function, and the seed's functions lack options:
+  # the gate refuses with a 400 naming the rules that fail.
+  - url: "http://localhost:8080/api/v1/questionnaire-versions/{{.forkDraft.Response.data.versionid}}/publish"
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+
+  - url: "http://localhost:8080/api/v1/questions/{{.draftQuestion.Response.data.questionid}}"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/questions/{{.draftQuestion.Response.data.questionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
+  # The current published version cannot be archived.
+  - url: http://localhost:8080/api/v1/questionnaire-versions/1/archive
+    method: PUT
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 400
+
+  - url: "http://localhost:8080/api/v1/questionnaire-versions/{{.forkDraft.Response.data.versionid}}"
+    method: DELETE
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 204
+
+  - url: "http://localhost:8080/api/v1/questionnaire-versions/{{.forkDraft.Response.data.versionid}}"
+    method: GET
+    headers:
+      <<: *commonHeaders
+    expect:
+      status: 404
+
+  # Discarded: writes are refused again.
+  - url: http://localhost:8080/api/v1/questions
+    method: POST
+    headers:
+      <<: *commonHeaders
+      content-type: "application/json"
+    body:
+      json:
+        <<: *questionData
+    expect:
+      status: 403

@@ -41,8 +41,8 @@ func newUniqueAnswerFixture(t *testing.T, ctx context.Context, conn *pgxpool.Con
 
 	var f uniqueAnswerFixture
 	require.NoError(t, conn.QueryRow(ctx, `
-		INSERT INTO datacalls (datacall, datecreated, deadline)
-		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz)
+		INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+		VALUES ($1, NOW(), '2100-01-01T00:00:00Z'::timestamptz, 2026)
 		RETURNING datacallid
 	`, fmt.Sprintf("%suniq_%s_%d", integrationTestPrefix, label, time.Now().UnixNano())).Scan(&f.dataCallID))
 

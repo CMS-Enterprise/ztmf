@@ -37,6 +37,8 @@ permissions:
 
 env:
   TTL_DAYS: 7
+  # Idle limit for a PR labelled pr-env:keep (a demo environment).
+  KEEP_TTL_DAYS: 15
   TRACKING_REPO: CMS-Enterprise/ztmf-misc
   TRACKING_TITLE: "pr-env reaper: orphaned environments or a failed run"
 
