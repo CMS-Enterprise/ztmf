@@ -189,9 +189,11 @@ This only works on a task started with ECS Exec enabled. In dev, the easy path
 is `make db-shell-dev`, which starts one (cluster `ztmf`, container `ztmfops`)
 and gives a shell where the same command runs directly. `db-tunnel.sh` accepts
 only dev and prod, and prod has the sensor off, so it is no help elsewhere. In
-impl, start the `ops-impl` task in the `ztmf-impl` cluster yourself with
-`aws ecs run-task --enable-execute-command` (the call `db-tunnel.sh` makes, with
-the `ztmf_ops_task_impl` security group), then run the command above against it.
+impl, start a task from the `ops-impl` task definition in the `ztmf-impl`
+cluster yourself with `aws ecs run-task --enable-execute-command`, using the
+same Fargate launch type and private subnets `db-tunnel.sh` passes and the
+`ztmf_ops_task_impl` security group, then run the command above against it with
+`--container ztmfops` (the container name is the same in every environment).
 The `ztmf_api` service has no ECS Exec, so check its hosts in the Falcon
 console, and its task's `falcon-init` log stream for sensor install errors.
 
