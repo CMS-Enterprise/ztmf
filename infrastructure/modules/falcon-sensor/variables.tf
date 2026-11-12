@@ -4,9 +4,9 @@ variable "enabled" {
 }
 
 variable "image" {
-  description = "Falcon container sensor image the init container copies the sensor from. The one pinned version for every task lives here; callers pass null to take it. Bump deliberately: the sensor is copied from it on every task start."
+  description = "Falcon container sensor image the init container copies the sensor from, pinned by digest so a re-pushed tag cannot change the sensor files without a change here. The default is the 7.40.0-7903 release. The one pinned version for every task lives here; callers pass null to take it. Bump deliberately: the sensor is copied from it on every task start. To bump, read the new tag's digest from the registry or from a task's imageDigest and replace the whole value."
   type        = string
-  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container:7.40.0-7903"
+  default     = "artifactory.cloud.cms.gov/crowdstrike-remote/falcon-container/release/falcon-container@sha256:685810bb17b9f6c50ebdb7c56ce1108207180b647c104644c7a17ff88ac40705"
   nullable    = false
 }
 

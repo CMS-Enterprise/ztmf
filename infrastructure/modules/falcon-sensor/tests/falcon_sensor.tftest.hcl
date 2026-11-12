@@ -159,7 +159,7 @@ run "init_container_defaults" {
   }
 
   assert {
-    condition     = endswith(jsondecode(output.container_definitions)[0].image, "falcon-container:7.40.0-7903") && !can(jsondecode(output.container_definitions)[0].logConfiguration)
+    condition     = endswith(jsondecode(output.container_definitions)[0].image, "falcon-container@sha256:685810bb17b9f6c50ebdb7c56ce1108207180b647c104644c7a17ff88ac40705") && !can(jsondecode(output.container_definitions)[0].logConfiguration)
     error_message = "Without overrides the init container uses the module's pinned image and no log configuration."
   }
 }
