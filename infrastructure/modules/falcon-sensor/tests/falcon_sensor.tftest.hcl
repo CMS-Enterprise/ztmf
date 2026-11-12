@@ -92,7 +92,7 @@ run "enabled_wraps_every_container" {
       && length(c.entryPoint) == 6
       && contains(c.linuxParameters.capabilities.add, "SYS_PTRACE")
       && contains([for m in c.mountPoints : m.containerPath], "/tmp/CrowdStrike")
-      && contains([for d in c.dependsOn : "${d.containerName}:${d.condition}"], "crowdstrike-falcon-init-container:COMPLETE")
+      && contains([for d in c.dependsOn : "${d.containerName}:${d.condition}"], "crowdstrike-falcon-init-container:SUCCESS")
       && contains([for s in c.secrets : "${s.name}=${s.valueFrom}"], "FALCONCTL_OPTS=${var.falconctl_opts_arn}")
       && !strcontains(jsonencode(try(c.environment, [])), "FALCONCTL_OPTS")
     ])
@@ -193,8 +193,8 @@ run "existing_lists_are_merged" {
 
   assert {
     condition = (
-      [for d in jsondecode(output.container_definitions)[2].dependsOn : "${d.containerName}:${d.condition}"] == ["postgres:HEALTHY", "crowdstrike-falcon-init-container:COMPLETE"]
-      && [for d in jsondecode(output.container_definitions)[3].dependsOn : "${d.containerName}:${d.condition}"] == ["api:START", "crowdstrike-falcon-init-container:COMPLETE"]
+      [for d in jsondecode(output.container_definitions)[2].dependsOn : "${d.containerName}:${d.condition}"] == ["postgres:HEALTHY", "crowdstrike-falcon-init-container:SUCCESS"]
+      && [for d in jsondecode(output.container_definitions)[3].dependsOn : "${d.containerName}:${d.condition}"] == ["api:START", "crowdstrike-falcon-init-container:SUCCESS"]
       && [for s in jsondecode(output.container_definitions)[1].secrets : s.name] == ["POSTGRES_PASSWORD", "FALCONCTL_OPTS"]
       && [for s in jsondecode(output.container_definitions)[2].secrets : s.name] == ["DB_PASS", "AUTH_HS256_SECRET", "FALCONCTL_OPTS"]
       && [for s in jsondecode(output.container_definitions)[3].secrets : s.name] == ["AUTH_HS256_SECRET", "FALCONCTL_OPTS"]

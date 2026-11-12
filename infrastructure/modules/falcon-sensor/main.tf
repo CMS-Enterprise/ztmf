@@ -1,9 +1,9 @@
 // CrowdStrike Falcon container sensor for Fargate, done the way CrowdStrike's
 // terraform-aws-ecs-fargate module does it, but for every container in a task
 // instead of one. An init container copies the sensor into a shared volume,
-// then each container waits for it, gets SYS_PTRACE, and starts through the
-// sensor's entrypoint wrapper with its original entrypoint (one executable) as
-// the last argument and its original command as the command.
+// then each container waits for it to exit 0, gets SYS_PTRACE, and starts
+// through the sensor's entrypoint wrapper with its original entrypoint (one
+// executable) as the last argument and its original command as the command.
 //
 // No providers or resources: this only rewrites JSON, so both the root and the
 // pr-env root can call it whatever AWS provider version they pin.
@@ -85,8 +85,11 @@ locals {
       {
         entryPoint  = concat(local.wrapper, local.entrypoint_for[c.name].entry_point)
         mountPoints = concat(try(c.mountPoints, []), [local.sensor_mount])
-        dependsOn   = concat(try(c.dependsOn, []), [{ containerName = local.init_container_name, condition = "COMPLETE" }])
-        secrets     = concat(try(c.secrets, []), [{ name = "FALCONCTL_OPTS", valueFrom = var.falconctl_opts_arn }])
+        // SUCCESS, not COMPLETE: a failed copy then stops the task with the
+        // error on the init container, instead of starting this container and
+        // failing later on a missing sensor file.
+        dependsOn = concat(try(c.dependsOn, []), [{ containerName = local.init_container_name, condition = "SUCCESS" }])
+        secrets   = concat(try(c.secrets, []), [{ name = "FALCONCTL_OPTS", valueFrom = var.falconctl_opts_arn }])
         linuxParameters = merge(try(c.linuxParameters, {}), {
           capabilities = merge(try(c.linuxParameters.capabilities, {}), {
             add = distinct(concat(try(c.linuxParameters.capabilities.add, []), ["SYS_PTRACE"]))

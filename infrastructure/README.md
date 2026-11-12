@@ -171,11 +171,29 @@ the task at start, not the plan. The sensor image is pinned once, as the
 every task to a new sensor version. Each root's `falcon_image` is only an
 override and defaults to null.
 
-To check a sensor, open `make db-shell-<env>` and run
-`/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid`
-in the `ops` container; it prints an agent ID once connected. The `ztmf_api`
-service has no ECS Exec, so check its hosts in the Falcon console, and its
-task's `falcon-init` log stream for sensor install errors.
+`dev.tfvars` and `impl.tfvars` turn the sensor on and `prod.tfvars` leaves it
+off. Dev picks up a change on the next merge to `main`. Impl does not apply on
+merge: it gets the change only when someone merges the nightly main-to-impl
+sync PR (`.github/workflows/nightly-impl-sync.yml`), which triggers the impl
+deploy.
+
+To check a sensor, run `falconctl -g --aid` in a container through the
+sensor's bundled loader; it prints an agent ID once the sensor is connected:
+
+```bash
+aws ecs execute-command --cluster <cluster> --task <id> --container <name> --interactive \
+  --command "/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid"
+```
+
+This only works on a task started with ECS Exec enabled. In dev, the easy path
+is `make db-shell-dev`, which starts one (cluster `ztmf`, container `ztmfops`)
+and gives a shell where the same command runs directly. `db-tunnel.sh` accepts
+only dev and prod, and prod has the sensor off, so it is no help elsewhere. In
+impl, start the `ops-impl` task in the `ztmf-impl` cluster yourself with
+`aws ecs run-task --enable-execute-command` (the call `db-tunnel.sh` makes, with
+the `ztmf_ops_task_impl` security group), then run the command above against it.
+The `ztmf_api` service has no ECS Exec, so check its hosts in the Falcon
+console, and its task's `falcon-init` log stream for sensor install errors.
 
 ### Seeding `cert-rotation/acm-arn` for a new environment
 
