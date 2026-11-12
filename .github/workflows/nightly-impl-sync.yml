@@ -1,8 +1,12 @@
 name: Nightly sync main -> impl
 
-# Opens a PR that brings `main` into `impl` each night for a human to review and
-# SQUASH-MERGE. Merging pushes to `impl`, which triggers the impl deploy via
-# orchestration-impl (backend image build + terraform apply).
+# Opens a PR that brings `main` into `impl` when run by hand from the Actions
+# tab, for a human to review and SQUASH-MERGE. Merging pushes to `impl`, which
+# triggers the impl deploy via orchestration-impl (backend image build +
+# terraform apply).
+#
+# STOPPED: the nightly schedule is removed because `impl` and its syncs are being
+# retired. The workflow stays runnable by hand until it is deleted.
 #
 # WHY -X theirs + squash: main and impl are both squash-merged, so they share no
 # real ancestry (stale merge-base). Merging `main` into an impl-based branch with
@@ -24,19 +28,11 @@ name: Nightly sync main -> impl
 # read/write + Pull requests: read/write. Prefer a shared machine/service account;
 # set a rotation reminder (it expires -> 401 -> no PR).
 #
-# WHY no exact-midnight guard: cron is UTC and ignores DST; a strict hour==00 guard
-# was brittle (a scheduler delay tipped it past midnight and skipped whole nights).
-# Both DST crons run; "skip if a sync PR is already open" dedupes to one PR/night.
-#
-# TIMING: fires at :15, ~5 min ahead of ztmf-ui's :20 sync, so the backend PR opens
-# first (API leads UI). Note the deploy fires on MERGE, not on PR open -- so "API
-# up before UI" is realized by merging this PR before the ztmf-ui one.
+# ORDER: when syncing both repos by hand, merge this PR before the ztmf-ui one,
+# so the API deploys ahead of the UI (the deploy fires on merge, not on PR open).
 
 on:
-  schedule:
-    - cron: '15 8 * * *' # ~midnight PST / ~01:15 PDT
-    - cron: '15 7 * * *' # ~midnight PDT / ~23:15 PST
-  workflow_dispatch: {}
+  workflow_dispatch: {} # on-demand sync only; the nightly schedule is removed
 
 permissions:
   contents: read # writes are done with the PAT, not GITHUB_TOKEN
