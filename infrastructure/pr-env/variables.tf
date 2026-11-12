@@ -85,7 +85,7 @@ variable "cognito_password" {
 }
 
 variable "falcon_enabled" {
-  description = "Run the CrowdStrike Falcon container sensor in every container of the task (ztmf-misc#437). Needs the dev account's /crowdstrike/falconctl-opts/ztmf SecureString. When false the task definition is exactly as before."
+  description = "Run the CrowdStrike Falcon container sensor in every container of the task. Needs the dev account's /crowdstrike/falconctl-opts/ztmf SecureString. When false the task definition is exactly as before."
   type        = bool
   default     = true
 }

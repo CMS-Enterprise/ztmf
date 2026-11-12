@@ -31,5 +31,5 @@ enable_cert_rotation_lambda = true
 cert_rotation_prefix        = "impl"
 cert_rotation_domain        = "impl.ztmf.cms.gov"
 
-# CrowdStrike Falcon container sensor in every ECS task (ztmf-misc#437).
+# CrowdStrike Falcon container sensor in every ECS task.
 falcon_enabled = true

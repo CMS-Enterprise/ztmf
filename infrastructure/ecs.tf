@@ -39,7 +39,7 @@ resource "aws_iam_role_policy" "ztmf_api_task_execution_entra" {
   })
 }
 
-// CrowdStrike Falcon sensor (ztmf-misc#437). FALCONCTL_OPTS (CID,
+// CrowdStrike Falcon sensor. FALCONCTL_OPTS (CID,
 // provisioning token, tags) lives in a SecureString created outside Terraform,
 // one per cluster. The ARN is built from its name rather than read with a data
 // source, so the value never lands in state.
