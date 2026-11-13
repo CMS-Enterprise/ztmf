@@ -844,34 +844,43 @@ func TestCopyPreviousScoresDedupIsNotAnAnomalyIntegration(t *testing.T) {
 		"collapsing a duplicate is the guard working, not a partial copy - it must not trip the alarm")
 }
 
-// saasAnswer is one SaaS fixture function on the baseline and the option the
-// reduced-scope rollover tests answer it with.
+// saasAnswer is one fixture function on the baseline, the option the
+// reduced-scope tests answer it with, and a different option on the same
+// function for a test that needs a real change.
 type saasAnswer struct {
 	rootFunctionID int32
 	option         int32
+	altOption      int32
 	pillar         string
 }
 
 // saasBaselineAnswers lists every baseline SaaS function that hangs off a
-// question, with its lowest option. Read from the catalog rather than the seed
-// file so the tests pin the rule, not the fixture's numbering.
+// question. Read from the catalog rather than the seed file so the tests pin
+// the rule, not the fixture's numbering.
 func saasBaselineAnswers(t *testing.T, ctx context.Context, conn *pgxpool.Conn) []saasAnswer {
 	t.Helper()
+	return baselineAnswers(t, ctx, conn, "SaaS")
+}
+
+// baselineAnswers lists every baseline function of one function set that
+// hangs off a question, with its lowest and highest option.
+func baselineAnswers(t *testing.T, ctx context.Context, conn *pgxpool.Conn, functionSet string) []saasAnswer {
+	t.Helper()
 	rows, err := conn.Query(ctx, `
-		SELECT f.root_functionid, MIN(fo.functionoptionid), p.pillar
+		SELECT f.root_functionid, MIN(fo.functionoptionid), MAX(fo.functionoptionid), p.pillar
 		  FROM functions f
 		  JOIN questions q        ON q.questionid = f.questionid
 		  JOIN pillars p          ON p.pillarid   = q.pillarid
 		  JOIN functionoptions fo ON fo.functionid = f.functionid
-		 WHERE f.datacenterenvironment = 'SaaS' AND f.versionid = 1
+		 WHERE f.datacenterenvironment = $1 AND f.versionid = 1
 		 GROUP BY f.root_functionid, p.pillar
-		 ORDER BY f.root_functionid`)
+		 ORDER BY f.root_functionid`, functionSet)
 	require.NoError(t, err)
 	defer rows.Close()
 	var out []saasAnswer
 	for rows.Next() {
 		var a saasAnswer
-		require.NoError(t, rows.Scan(&a.rootFunctionID, &a.option, &a.pillar))
+		require.NoError(t, rows.Scan(&a.rootFunctionID, &a.option, &a.altOption, &a.pillar))
 		out = append(out, a)
 	}
 	require.NoError(t, rows.Err())
@@ -1115,6 +1124,61 @@ func TestCopyPreviousScoresReducedScopeIntegration(t *testing.T) {
 			`SELECT COUNT(*) FROM scores WHERE datacallid = $1 AND fismasystemid = $2 AND functionoptionid = $3`,
 			newDC, saasSystem, questionless).Scan(&n))
 		assert.Equal(t, 1, n, "an answer on a function with no question is kept")
+	})
+
+	t.Run("ScopeFollowsCurrentEnvironment", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		prevDC, newDC := rolloverCallsAt(t, ctx, conn, "scope_envchange", postAnchor[0], postAnchor[1])
+
+		// Two systems answer the Forest-Moon set in the source cycle. One
+		// moves to SaaS before the rollover; the other stays as the control.
+		// Scores carry no record of the environment they were answered
+		// under, so scope follows the system as it is at rollover time.
+		forestMoon := baselineAnswers(t, ctx, conn, "Forest-Moon")
+		kept, dropped := splitByScope(t, forestMoon)
+		env := "Forest-Moon"
+		moved := insertScopeFixtureSystem(t, ctx, conn, "MOVED", &env)
+		stayed := insertScopeFixtureSystem(t, ctx, conn, "STAYED", &env)
+		seedSaaSAnswers(t, ctx, conn, moved, prevDC, forestMoon)
+		seedSaaSAnswers(t, ctx, conn, stayed, prevDC, forestMoon)
+		_, err := conn.Exec(ctx, `UPDATE fismasystems SET datacenterenvironment = 'SaaS' WHERE fismasystemid = $1`, moved)
+		require.NoError(t, err)
+
+		copied, logged := rollover(t, newDC)
+		assert.EqualValues(t, len(forestMoon)+kept, copied)
+		assert.Contains(t, logged, fmt.Sprintf("ROLLOVER_SCOPE_SKIPPED datacall=%d skipped=%d", newDC, dropped))
+		for pillar := range reducedScopePillars {
+			assert.Zero(t, landedPillars(t, ctx, conn, moved, newDC)[pillar],
+				"%s is out of scope for the system's current SaaS environment", pillar)
+			assert.Positive(t, landedPillars(t, ctx, conn, stayed, newDC)[pillar],
+				"%s stays in scope for a system still on Forest-Moon", pillar)
+		}
+	})
+
+	t.Run("RuleHidingEveryPillarAlarms", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		prevDC, newDC := rolloverCallsAt(t, ctx, conn, "scope_hidall", postAnchor[0], postAnchor[1])
+		seedSaaSAnswers(t, ctx, conn, saasSystem, prevDC, answers)
+
+		// A misconfigured rule: every remaining pillar out of scope for SaaS
+		// from the target call on. Anchored on the target, so the purge's
+		// cascade removes it with the call.
+		_, err := conn.Exec(ctx, `
+			INSERT INTO reducedpillarscopes (scoring_key, pillarid, effective_datacallid)
+			SELECT 'SaaS', p.pillarid, $1 FROM pillars p
+			    ON CONFLICT DO NOTHING`, newDC)
+		require.NoError(t, err)
+
+		var copied int64
+		logged := captureRolloverLog(t, func() {
+			copied, err = copyPreviousScores(ctx, newDC)
+		})
+		require.NoError(t, err)
+		assert.Zero(t, copied)
+		assert.Contains(t, logged, fmt.Sprintf("ROLLOVER_ANOMALY datacall=%d expected=0 copied=0 translatable=%d reason=scope_hid_all err=<none>", newDC, len(answers)),
+			"a scope that hides every answer must not empty the cycle silently")
 	})
 }
 
@@ -1865,6 +1929,143 @@ func TestFindScoreDiffNotesWhitespaceIntegration(t *testing.T) {
 		assert.Equal(t, "Encryption at rest and in transit enabled.", derefString(d.To.Notes),
 			"stored notes are returned verbatim; only the comparison is normalized")
 	}
+}
+
+// TestFindScoreDiffReducedScopeIntegration pins Compare Data Calls against the
+// reduced pillar scope (ztmf#645). A post-anchor cycle can hold hidden
+// carried-forward answers on the excluded pillars, and the rollover fix and
+// cleanup make two cycles differ in whether they hold them. Those rows are on
+// no questionnaire, so their presence on one side only is not a change.
+//
+// Requires DB_* env vars pointing at a seeded ZTMF database. Skipped under
+// `go test -short`.
+func TestFindScoreDiffReducedScopeIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test")
+	}
+	ctx := context.Background()
+
+	saasSystem, found := findSystemIDByAcronym(ctx, t, "MOCK-SAAS")
+	if !found {
+		t.Skip("fixture system MOCK-SAAS not seeded")
+	}
+	anchor, _, ok := reducedScopeAnchorAndPriorDataCalls(ctx, t)
+	if !ok {
+		t.Skip("database has no seeded reduced-scope rule with an earlier cycle")
+	}
+
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+
+	answers := saasBaselineAnswers(t, ctx, conn)
+	_, dropped := splitByScope(t, answers)
+	var inScope []saasAnswer
+	for _, a := range answers {
+		if !reducedScopePillars[a.pillar] {
+			inScope = append(inScope, a)
+		}
+	}
+	var anchorDeadline time.Time
+	require.NoError(t, conn.QueryRow(ctx, `SELECT deadline FROM datacalls WHERE datacallid = $1`, anchor).Scan(&anchorDeadline))
+
+	call := func(t *testing.T, label string, deadline time.Time) int32 {
+		t.Helper()
+		var id int32
+		require.NoError(t, conn.QueryRow(ctx, `
+			INSERT INTO datacalls (datacall, datecreated, deadline, fiscal_year)
+			VALUES ($1, NOW(), $2, 2026) RETURNING datacallid`,
+			fmt.Sprintf("%sdiff_%s_%d", integrationTestPrefix, label, time.Now().UnixNano()), deadline).Scan(&id))
+		return id
+	}
+	diff := func(t *testing.T, system, from, to int32) []*ScoreDiff {
+		t.Helper()
+		diffs, err := FindScoreDiff(ctx, FindScoreDiffInput{FismaSystemID: &system, FromDataCallID: &from, ToDataCallID: &to})
+		require.NoError(t, err)
+		return diffs
+	}
+	pillarsOf := func(diffs []*ScoreDiff) map[string]int {
+		out := map[string]int{}
+		for _, d := range diffs {
+			if d.Pillar != nil {
+				out[*d.Pillar]++
+			}
+		}
+		return out
+	}
+	post := [2]time.Time{time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2101, 1, 1, 0, 0, 0, 0, time.UTC)}
+	pre := [2]time.Time{anchorDeadline.Add(-48 * time.Hour), anchorDeadline.Add(-24 * time.Hour)}
+
+	// Each case: the from cycle holds every answer, the to cycle only the
+	// in-scope ones, as after a scoped rollover or the cleanup.
+	t.Run("PostAnchorCyclesIgnoreHiddenRows", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		from, to := call(t, "post_from", post[0]), call(t, "post_to", post[1])
+		seedSaaSAnswers(t, ctx, conn, saasSystem, from, answers)
+		seedSaaSAnswers(t, ctx, conn, saasSystem, to, inScope)
+
+		assert.Empty(t, diff(t, saasSystem, from, to), "a hidden row on one side only is not a change")
+		assert.Empty(t, diff(t, saasSystem, to, from), "in either direction")
+
+		// Control: a real in-scope change still shows, alone.
+		_, err := conn.Exec(ctx, `UPDATE scores SET functionoptionid = $1 WHERE datacallid = $2 AND fismasystemid = $3 AND functionoptionid = $4`,
+			inScope[0].altOption, to, saasSystem, inScope[0].option)
+		require.NoError(t, err)
+		diffs := diff(t, saasSystem, from, to)
+		require.Len(t, diffs, 1)
+		assert.Equal(t, inScope[0].rootFunctionID, diffs[0].RootFunctionID)
+	})
+
+	// The documented choice (see scoreCycleCTE): a pillar out of scope in
+	// either cycle leaves the comparison, so comparing the last full cycle
+	// with the first reduced one does not list every reduced-scope system's
+	// excluded answers as removed. The questionnaire stopped asking; the
+	// system changed nothing.
+	t.Run("PreVsPostAnchorDropsExcludedPillars", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		from, to := call(t, "prepost_from", pre[0]), call(t, "prepost_to", post[1])
+		seedSaaSAnswers(t, ctx, conn, saasSystem, from, answers)
+		seedSaaSAnswers(t, ctx, conn, saasSystem, to, inScope)
+
+		assert.Empty(t, diff(t, saasSystem, from, to))
+		assert.Empty(t, diff(t, saasSystem, to, from))
+	})
+
+	t.Run("PreAnchorCyclesKeepEveryPillar", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		from, to := call(t, "pre_from", pre[0]), call(t, "pre_to", pre[1])
+		seedSaaSAnswers(t, ctx, conn, saasSystem, from, answers)
+		seedSaaSAnswers(t, ctx, conn, saasSystem, to, inScope)
+
+		diffs := diff(t, saasSystem, from, to)
+		assert.Len(t, diffs, dropped, "before the anchor the excluded pillars are on the questionnaire, so their removal shows")
+		for pillar := range reducedScopePillars {
+			assert.Positive(t, pillarsOf(diffs)[pillar], pillar)
+		}
+		for _, d := range diffs {
+			assert.NotNil(t, d.From)
+			assert.Nil(t, d.To, "each is an answer the to cycle no longer holds")
+		}
+	})
+
+	t.Run("NullOrUnmappedScoringKeyKeepsEveryPillar", func(t *testing.T) {
+		purgeIntegrationTestRows(t)
+		defer purgeIntegrationTestRows(t)
+		from, to := call(t, "nullkey_from", post[0]), call(t, "nullkey_to", post[1])
+		decommissioned, unmapped := "DECOMMISSIONED", "ztmf645-unmapped-environment"
+		for _, id := range []int32{
+			insertScopeFixtureSystem(t, ctx, conn, "DIFFNULLKEY", &decommissioned),
+			insertScopeFixtureSystem(t, ctx, conn, "DIFFUNMAPPED", &unmapped),
+			insertScopeFixtureSystem(t, ctx, conn, "DIFFNOENV", nil),
+		} {
+			seedSaaSAnswers(t, ctx, conn, id, from, answers)
+			seedSaaSAnswers(t, ctx, conn, id, to, inScope)
+			assert.Len(t, diff(t, id, from, to), dropped, "no scoring key: nothing is hidden, so the removals show")
+		}
+	})
 }
 
 // countScoreEvents is a small helper used by the no-op preservation test

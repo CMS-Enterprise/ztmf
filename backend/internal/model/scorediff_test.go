@@ -59,8 +59,8 @@ func TestFindScoreDiffInputValidate(t *testing.T) {
 // it diffs two cycles via a FULL OUTER JOIN (so a one-sided answer surfaces),
 // drops unchanged rows with the IS DISTINCT FROM pair, treats nil/empty notes
 // as equal, and attributes the change to the later (To) write through the
-// events lateral. The two cycle CTEs each bind their own datacallid, so the
-// from/to ids appear once each in arg order.
+// events lateral. Each cycle CTE binds its own datacallid, then the other
+// side's for the reduced pillar scope, so the ids appear twice in arg order.
 func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 	in := FindScoreDiffInput{FromDataCallID: int32Ptr(3), ToDataCallID: int32Ptr(4)}
 	sql, args := buildScoreDiffSQL(in)
@@ -70,16 +70,30 @@ func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, `regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g')`, "notes must be whitespace-normalized before comparison (nil/empty equal, spacing-only differences ignored)")
 	assert.Contains(t, sql, "resource = 'public.scores'", "attribution lateral must read score events")
 	assert.Contains(t, sql, "(payload->>'scoreid')::int = t.scoreid", "attribution must key on the later (To) write")
-	for _, dc := range []string{"$1", "$2"} {
+	for _, dc := range []string{"$1", "$3"} {
 		assert.Contains(t, sql, "s.datacallid = "+dc+" AND "+questionnaireVersionSQL("rf.versionid", dc),
 			"each cycle reads only its own pinned version, on its own datacallid placeholder")
 	}
-
-	// Two cycle filters, no scope: from=3 then to=4, in that order.
-	if assert.Len(t, args, 2, "expected one datacallid arg per cycle") {
-		assert.Equal(t, int32(3), args[0], "from cycle binds first")
-		assert.Equal(t, int32(4), args[1], "to cycle binds second")
+	// ztmf#645: each side applies the reduced pillar scope for both calls.
+	for _, dc := range []string{"$1", "$2", "$3", "$4"} {
+		assert.Contains(t, sql, answerScopeSQL(scoreDiffEnvironmentSQL, "rf.functionid", dc))
 	}
+
+	// from=3 (own, then other 4), to=4 (own, then other 3).
+	assert.Equal(t, []any{int32(3), int32(4), int32(4), int32(3)}, args)
+}
+
+// The diff's scope must not drop a row through a join: an unmapped or
+// NULL-key environment, or a function with no question, falls through to NOT
+// EXISTS as NULL and keeps the row (ztmf#645).
+func TestBuildScoreDiffSQL_ReducedScopeIsNullSafe(t *testing.T) {
+	in := FindScoreDiffInput{FromDataCallID: int32Ptr(3), ToDataCallID: int32Ptr(4)}
+	sql, _ := buildScoreDiffSQL(in)
+	assert.Equal(t, 4, strings.Count(sql, "NOT EXISTS ("), "two calls per side")
+	assert.Contains(t, sql, "dcescope.datacenterenvironment = (SELECT sfs.datacenterenvironment FROM fismasystems sfs WHERE sfs.fismasystemid = s.fismasystemid)")
+	assert.Contains(t, sql, "WHERE fscope.functionid = rf.functionid)")
+	assert.NotContains(t, sql, "JOIN fismasystems", "no join on a cycle CTE can drop an answer")
+	assert.NotContains(t, sql, "JOIN datacenterenvironments")
 }
 
 // TestBuildScoreDiffSQL_FismaSystemScope verifies that a single-system request
@@ -94,8 +108,8 @@ func TestBuildScoreDiffSQL_FismaSystemScope(t *testing.T) {
 	sql, args := buildScoreDiffSQL(in)
 
 	assert.Equal(t, 2, strings.Count(sql, "s.fismasystemid = $"), "system filter must apply to both cycle CTEs")
-	// from: datacall, system ; to: datacall, system
-	assert.Equal(t, []any{int32(3), int32(1001), int32(4), int32(1001)}, args)
+	// from: datacall, other datacall, system ; to: the same
+	assert.Equal(t, []any{int32(3), int32(4), int32(1001), int32(4), int32(3), int32(1001)}, args)
 }
 
 // TestBuildScoreDiffSQL_UserScope verifies the ISSO/ISSM path: each cycle CTE
@@ -112,11 +126,11 @@ func TestBuildScoreDiffSQL_UserScope(t *testing.T) {
 	sql, args := buildScoreDiffSQL(in)
 
 	assert.Equal(t, 2, strings.Count(sql, "INNER JOIN users_fismasystems"), "user scope must join both cycle CTEs")
-	for _, dc := range []string{"$2", "$4"} {
+	for _, dc := range []string{"$2", "$5"} {
 		assert.Contains(t, sql, questionnaireVersionSQL("rf.versionid", dc), "the version pin follows the datacallid, not the user id")
 	}
-	// from: userid, datacall ; to: userid, datacall
-	assert.Equal(t, []any{uid, int32(3), uid, int32(4)}, args)
+	// from: userid, datacall, other datacall ; to: the same
+	assert.Equal(t, []any{uid, int32(3), int32(4), uid, int32(4), int32(3)}, args)
 }
 
 // TestBuildScoreDiffSQL_OpDivScope mirrors the OpDiv read-scope contract from

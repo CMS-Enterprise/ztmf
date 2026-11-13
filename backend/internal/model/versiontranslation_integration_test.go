@@ -441,12 +441,13 @@ func TestDataCallRepinWaitsForCompletionIntegration(t *testing.T) {
 // scopeSkipped counts dc's answers a rollover into version v leaves behind for
 // the reduced pillar scope (ztmf#645) when the target call is past the anchor:
 // those that translate onto an excluded pillar for a SaaS-keyed system. Call
-// 103 seeds two such systems with answers on every pillar.
+// 103 seeds two such systems with answers on every pillar. Counted per
+// (system, lineage), the key copyPreviousScores counts and deduplicates on.
 func scopeSkipped(t *testing.T, ctx context.Context, conn *pgxpool.Conn, dc, v int32) int {
 	t.Helper()
 	var n int
 	require.NoError(t, conn.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT s.scoreid)
+		SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid))
 		  FROM scores s
 		  JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
 		  JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment

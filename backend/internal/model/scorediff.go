@@ -113,8 +113,8 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	var args []any
 	argN := 1
 
-	fromCTE := scoreCycleCTE(input, *input.FromDataCallID, &args, &argN)
-	toCTE := scoreCycleCTE(input, *input.ToDataCallID, &args, &argN)
+	fromCTE := scoreCycleCTE(input, *input.FromDataCallID, *input.ToDataCallID, &args, &argN)
+	toCTE := scoreCycleCTE(input, *input.ToDataCallID, *input.FromDataCallID, &args, &argN)
 
 	// FULL OUTER JOIN on (system, root_functionid) so a function answered in only
 	// one cycle still surfaces (added or removed answer), and so the same
@@ -194,7 +194,18 @@ ORDER BY fismasystemid, p.ordr, q.ordr, fn.ordr, functionid
 // FindScores (per-user assigned systems, OpDiv grants, or unrestricted). It
 // appends its bound values to args in placeholder order; both the from and to
 // cycles call it so the scope values are bound once per cycle.
-func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN *int) string {
+//
+// Each side also applies the reduced pillar scope (ztmf#545, ztmf#645) for
+// its own call AND the other side's, so a pillar out of scope for the system
+// in either cycle leaves the comparison on both sides. Two post-anchor cycles
+// then agree whether or not one still holds hidden carried-forward rows. A
+// pre-anchor cycle compared with a post-anchor one drops those pillars too,
+// rather than reporting every reduced-scope system's answers there as
+// removed: the questionnaire stopped asking, the system changed nothing.
+// Two pre-anchor cycles keep every pillar. Scope reads the system's current
+// environment (scores carry no history of it) and the pillar of this side's
+// own function.
+func scoreCycleCTE(input FindScoreDiffInput, dataCallID, otherDataCallID int32, args *[]any, argN *int) string {
 	var userJoin string
 	if input.UserID != nil {
 		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = s.fismasystemid AND ufs.userid = $%d", *argN)
@@ -208,6 +219,13 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 	conds := []string{"s.datacallid = " + dc, questionnaireVersionSQL("rf.versionid", dc)}
 	*args = append(*args, dataCallID)
 	*argN++
+
+	other := fmt.Sprintf("$%d", *argN)
+	*args = append(*args, otherDataCallID)
+	*argN++
+	for _, call := range []string{dc, other} {
+		conds = append(conds, answerScopeSQL(scoreDiffEnvironmentSQL, "rf.functionid", call))
+	}
 
 	if input.FismaSystemID != nil {
 		conds = append(conds, fmt.Sprintf("s.fismasystemid = $%d", *argN))
@@ -231,25 +249,30 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
     WHERE %s`, userJoin, strings.Join(conds, " AND "))
 }
 
+// scoreDiffEnvironmentSQL is the answer's system's raw datacenterenvironment.
+// A scalar subquery, like answerScopeSQL's own lookups, so the scope cannot
+// drop a row by joining fismasystems.
+const scoreDiffEnvironmentSQL = "(SELECT sfs.datacenterenvironment FROM fismasystems sfs WHERE sfs.fismasystemid = s.fismasystemid)"
+
 func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 	var (
 		d  ScoreDiff
 		fn *string
 		qn *string
 
-		fScoreID    *int32
-		fFOID       *int32
-		fOptScore   *int32
-		fOptName    *string
-		fNotes      *string
-		fAISummary  *bool
+		fScoreID   *int32
+		fFOID      *int32
+		fOptScore  *int32
+		fOptName   *string
+		fNotes     *string
+		fAISummary *bool
 
-		tScoreID    *int32
-		tFOID       *int32
-		tOptScore   *int32
-		tOptName    *string
-		tNotes      *string
-		tAISummary  *bool
+		tScoreID   *int32
+		tFOID      *int32
+		tOptScore  *int32
+		tOptName   *string
+		tNotes     *string
+		tAISummary *bool
 
 		at     *time.Time
 		uID    *string

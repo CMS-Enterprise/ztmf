@@ -1253,30 +1253,26 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	if inScope < translatable {
 		log.Printf("ROLLOVER_SCOPE_SKIPPED datacall=%d skipped=%d", dataCallID, translatable-inScope)
 	}
+	// Skipping is expected and not alarmed, but skipping everything is not: a
+	// rule that takes every pillar out of scope, or a mis-keyed one, would
+	// otherwise empty the new cycle without a signal, since copied == inScope.
+	if translatable > 0 && inScope == 0 {
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=0 copied=%d translatable=%d reason=scope_hid_all err=<none>",
+			dataCallID, copied, translatable)
+	}
 
 	return copied, nil
 }
 
-// rolloverScopeSQL is reducedPillarScopeSQL as the rollover applies it: the
-// copy and both of copyPreviousScores' counts build on it, so what is counted
-// as expected is what the copy keeps. functionExpr is the function the row
-// lands on (fo.functionid within a version, tf.functionid across versions) and
-// dataCallExpr the target call. It reads fs, the joined fismasystems row.
-//
-// Both lookups are scalar subqueries rather than joins on the copy's FROM, so
-// they cannot drop a row: a system whose environment is unmapped or maps to a
-// NULL scoring key, or a function with no question, yields NULL, and the NOT
-// EXISTS keeps the row (see reducedPillarScopeSQL). Each subquery walks primary
-// keys, so it returns at most one row.
+// rolloverScopeSQL is answerScopeSQL as the rollover applies it: the copy and
+// both of copyPreviousScores' counts build on it, so what is counted as
+// expected is what the copy keeps. functionExpr is the function the row lands
+// on (fo.functionid within a version, tf.functionid across versions) and
+// dataCallExpr the target call. It reads fs, the joined fismasystems row, so
+// scope follows the system's environment at rollover time, not the one it
+// was answered under.
 func rolloverScopeSQL(functionExpr, dataCallExpr string) string {
-	return reducedPillarScopeSQL(
-		"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment = fs.datacenterenvironment)",
-		"(SELECT pscope.pillar FROM functions fscope"+
-			" JOIN questions qscope ON qscope.questionid = fscope.questionid"+
-			" JOIN pillars pscope ON pscope.pillarid = qscope.pillarid"+
-			" WHERE fscope.functionid = "+functionExpr+")",
-		dataCallExpr,
-	)
+	return answerScopeSQL("fs.datacenterenvironment", functionExpr, dataCallExpr)
 }
 
 // rolloverSQL is copyPreviousScores' INSERT..SELECT. Between calls pinned to

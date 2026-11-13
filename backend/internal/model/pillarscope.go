@@ -9,8 +9,9 @@ import (
 // (scoring_key, pillarid, effective_datacallid) puts a pillar out of scope for
 // systems scored under that key, on every data call whose deadline is on or
 // after the anchor call's. Shared by the progress counts, the export, the
-// scoring aggregate, the questionnaire and the data call rollover
-// (rolloverScopeSQL, ztmf#645) so they cannot disagree.
+// scoring aggregate, the questionnaire, the data call rollover
+// (rolloverScopeSQL, ztmf#645) and Compare Data Calls (scoreCycleCTE) so they
+// cannot disagree.
 //
 // NOT EXISTS carries the NULL-safety the callers rely on: it never evaluates
 // to NULL, and a NULL scoring key (DECOMMISSIONED maps to NULL) fails the
@@ -40,5 +41,27 @@ func reducedPillarScopeSQL(scoringKeyExpr, pillarExpr, dataCallExpr string) stri
 		dataCallExpr,
 		scoringKeyExpr,
 		pillarExpr,
+	)
+}
+
+// answerScopeSQL is reducedPillarScopeSQL for a stored answer, for callers
+// that read scores rather than walk the catalog: the rollover and Compare Data
+// Calls. environmentExpr is the system's raw datacenterenvironment and
+// functionExpr the function the answer sits on, both valid in the caller's
+// scope.
+//
+// Both lookups are scalar subqueries rather than joins on the caller's FROM,
+// so they cannot drop a row: an environment that is unmapped or maps to a NULL
+// scoring key, or a function with no question, yields NULL, and the NOT EXISTS
+// keeps the row. Each subquery walks primary keys, so it returns at most one
+// row.
+func answerScopeSQL(environmentExpr, functionExpr, dataCallExpr string) string {
+	return reducedPillarScopeSQL(
+		"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment = "+environmentExpr+")",
+		"(SELECT pscope.pillar FROM functions fscope"+
+			" JOIN questions qscope ON qscope.questionid = fscope.questionid"+
+			" JOIN pillars pscope ON pscope.pillarid = qscope.pillarid"+
+			" WHERE fscope.functionid = "+functionExpr+")",
+		dataCallExpr,
 	)
 }

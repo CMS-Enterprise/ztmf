@@ -216,12 +216,22 @@ func TestQuestionnaireVersionRegressionBarIntegration(t *testing.T) {
 			_, err = conn.Exec(ctx, `DELETE FROM scores WHERE scoreid = $1`, strayID)
 			require.NoError(t, err)
 
-			// One real change still surfaces, keyed by lineage.
+			// One real change still surfaces, keyed by lineage. On an answer the
+			// reduced pillar scope keeps in view: call 104 carries hidden SaaS
+			// answers on the excluded pillars, and the diff ignores those
+			// (ztmf#645).
 			var changedRoot int32
 			require.NoError(t, conn.QueryRow(ctx, `
 				UPDATE scores s SET functionoptionid = alt.functionoptionid
 				  FROM functionoptions cur, functionoptions alt
-				 WHERE s.scoreid = (SELECT MIN(scoreid) FROM scores WHERE datacallid = $1)
+				 WHERE s.scoreid = (SELECT MIN(sc.scoreid) FROM scores sc
+				                      JOIN fismasystems vfs ON vfs.fismasystemid = sc.fismasystemid
+				                      LEFT JOIN datacenterenvironments vd ON vd.datacenterenvironment = vfs.datacenterenvironment
+				                      JOIN functions vf ON vf.functionid = sc.functionid
+				                      LEFT JOIN questions vq ON vq.questionid = vf.questionid
+				                      LEFT JOIN pillars vp ON vp.pillarid = vq.pillarid
+				                     WHERE sc.datacallid = $1
+				                       AND NOT COALESCE(vd.scoring_key = 'SaaS' AND vp.pillar IN ('Devices', 'Applications'), FALSE))
 				   AND cur.functionoptionid = s.functionoptionid
 				   AND alt.functionid = cur.functionid AND alt.score <> cur.score
 				   AND alt.functionoptionid = (SELECT MIN(a2.functionoptionid) FROM functionoptions a2
