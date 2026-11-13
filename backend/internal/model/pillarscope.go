@@ -9,7 +9,8 @@ import (
 // (scoring_key, pillarid, effective_datacallid) puts a pillar out of scope for
 // systems scored under that key, on every data call whose deadline is on or
 // after the anchor call's. Shared by the progress counts, the export, the
-// scoring aggregate and the questionnaire so they cannot disagree.
+// scoring aggregate, the questionnaire and the data call rollover
+// (rolloverScopeSQL, ztmf#645) so they cannot disagree.
 //
 // NOT EXISTS carries the NULL-safety the callers rely on: it never evaluates
 // to NULL, and a NULL scoring key (DECOMMISSIONED maps to NULL) fails the

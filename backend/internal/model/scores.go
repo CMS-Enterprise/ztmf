@@ -1185,19 +1185,21 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// a damaged one now that the copy deduplicates. candidates is every row in the
 	// previous cycle; resolvable drops those whose FK parents are gone, which the
 	// copy's INNER JOINs also drop (ztmf#411); expected is what the deduplicating
-	// copy below should actually emit, so copied < expected is a true under-copy
-	// rather than the duplicate collapse it would have looked like against a plain
-	// COUNT(*).
-	var candidates, resolvable, expected int64
-	const countSQL = `
+	// copy below would emit, so copied < expected is a true under-copy rather
+	// than the duplicate collapse it would have looked like against a plain
+	// COUNT(*). inScope is the part of expected the reduced pillar scope keeps
+	// in the target call (ztmf#645); the copy applies the same predicate.
+	var candidates, resolvable, expected, inScope int64
+	countSQL := `
 		SELECT (SELECT COUNT(*) FROM scores WHERE datacallid = $1),
 		       COUNT(*),
-		       COUNT(DISTINCT (s.fismasystemid, fo.functionid))
+		       COUNT(DISTINCT (s.fismasystemid, fo.functionid)),
+		       COUNT(DISTINCT (s.fismasystemid, fo.functionid)) FILTER (WHERE ` + rolloverScopeSQL("fo.functionid", "$2") + `)
 		  FROM scores s
 		  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
 		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 		 WHERE s.datacallid = $1`
-	if err = tx.QueryRow(ctx, countSQL, prevDataCall.DataCallID).Scan(&candidates, &resolvable, &expected); err != nil {
+	if err = tx.QueryRow(ctx, countSQL, prevDataCall.DataCallID, dataCallID).Scan(&candidates, &resolvable, &expected, &inScope); err != nil {
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=? copied=0 err=%v", dataCallID, err)
 		return 0, err
 	}
@@ -1207,15 +1209,17 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 	// That is content removal, not damage, so it is counted apart: copied is
 	// held to what translates, and the rest gets its own token rather than
 	// firing the ROLLOVER_ANOMALY alarm on every legitimate version bump.
+	// Scope is judged on the target-version function, the row that lands.
 	translatable := expected
 	if translate {
 		if err = tx.QueryRow(ctx, `
-			SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid))
+			SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid)),
+			       COUNT(DISTINCT (s.fismasystemid, f.root_functionid)) FILTER (WHERE `+rolloverScopeSQL("tf.functionid", "$3")+`)
 			  FROM scores s
 			  JOIN fismasystems fs    ON fs.fismasystemid    = s.fismasystemid
 			  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
 			  `+versionTranslationJoinSQL("$2")+`
-			 WHERE s.datacallid = $1`, prevDataCall.DataCallID, targetVersion).Scan(&translatable); err != nil {
+			 WHERE s.datacallid = $1`, prevDataCall.DataCallID, targetVersion, dataCallID).Scan(&translatable, &inScope); err != nil {
 			log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, expected, err)
 			return 0, err
 		}
@@ -1227,23 +1231,52 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 		err = tx.Commit(ctx)
 	}
 	if err != nil {
-		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, translatable, err)
+		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=0 err=%v", dataCallID, inScope, err)
 		return 0, err
 	}
 
+	// copied is held to inScope: answers the target call's reduced pillar scope
+	// hides are left behind on purpose, like untranslatable ones, and counted
+	// under their own token so a normal rollover into a reduced-scope call does
+	// not fire the alarm.
 	copied := tag.RowsAffected()
-	if copied < translatable || resolvable < candidates {
+	if copied < inScope || resolvable < candidates {
 		// Either an under-copy, or previous-cycle rows the JOINs dropped because
 		// their FK parents no longer resolve. Both warrant an operator signal.
 		log.Printf("ROLLOVER_ANOMALY datacall=%d expected=%d copied=%d candidates=%d unresolvable=%d deduped=%d err=<none>",
-			dataCallID, translatable, copied, candidates, candidates-resolvable, resolvable-expected)
+			dataCallID, inScope, copied, candidates, candidates-resolvable, resolvable-expected)
 	}
 	if translatable < expected {
 		log.Printf("VERSION_TRANSLATION_DROPPED datacall=%d from_version=%d to_version=%d dropped=%d",
 			dataCallID, sourceVersion, targetVersion, expected-translatable)
 	}
+	if inScope < translatable {
+		log.Printf("ROLLOVER_SCOPE_SKIPPED datacall=%d skipped=%d", dataCallID, translatable-inScope)
+	}
 
 	return copied, nil
+}
+
+// rolloverScopeSQL is reducedPillarScopeSQL as the rollover applies it: the
+// copy and both of copyPreviousScores' counts build on it, so what is counted
+// as expected is what the copy keeps. functionExpr is the function the row
+// lands on (fo.functionid within a version, tf.functionid across versions) and
+// dataCallExpr the target call. It reads fs, the joined fismasystems row.
+//
+// Both lookups are scalar subqueries rather than joins on the copy's FROM, so
+// they cannot drop a row: a system whose environment is unmapped or maps to a
+// NULL scoring key, or a function with no question, yields NULL, and the NOT
+// EXISTS keeps the row (see reducedPillarScopeSQL). Each subquery walks primary
+// keys, so it returns at most one row.
+func rolloverScopeSQL(functionExpr, dataCallExpr string) string {
+	return reducedPillarScopeSQL(
+		"(SELECT dcescope.scoring_key FROM datacenterenvironments dcescope WHERE dcescope.datacenterenvironment = fs.datacenterenvironment)",
+		"(SELECT pscope.pillar FROM functions fscope"+
+			" JOIN questions qscope ON qscope.questionid = fscope.questionid"+
+			" JOIN pillars pscope ON pscope.pillarid = qscope.pillarid"+
+			" WHERE fscope.functionid = "+functionExpr+")",
+		dataCallExpr,
+	)
 }
 
 // rolloverSQL is copyPreviousScores' INSERT..SELECT. Between calls pinned to
@@ -1293,10 +1326,16 @@ func copyPreviousScores(ctx context.Context, dataCallID int32) (int64, error) {
 // for the cycle is silently discarded. 'done' means a human saved this answer
 // during the source cycle and 'not_started' means it was carried and never
 // touched, so preferring done keeps the answer that was actually given.
+//
+// The reduced pillar scope (ztmf#545) is applied for the target call, so an
+// answer on a pillar the new cycle hides for that system is not copied into
+// rows no reader shows and no user can clear (ztmf#645). It is a WHERE filter,
+// so DISTINCT ON and ON CONFLICT see only the rows it keeps; across versions
+// it judges the target function, the row that lands.
 func rolloverSQL(prevDataCallID, dataCallID, targetVersion int32, translate bool) (string, []any) {
-	option, question := "s.functionoptionid", "fo.functionid"
+	option, question, landing := "s.functionoptionid", "fo.functionid", "fo.functionid"
 	if translate {
-		option, question = "tfo.functionoptionid", "f.root_functionid"
+		option, question, landing = "tfo.functionoptionid", "f.root_functionid", "tf.functionid"
 	}
 
 	prevScoresSqlb := squirrel.
@@ -1310,6 +1349,7 @@ func rolloverSQL(prevDataCallID, dataCallID, targetVersion int32, translate bool
 	}
 	prevScoresSqlb = prevScoresSqlb.
 		Where("s.datacallid=?", prevDataCallID).
+		Where(rolloverScopeSQL(landing, "?"), dataCallID).
 		OrderBy("s.fismasystemid", question, fmt.Sprintf("(s.status = '%s') DESC", scoreStatusDone), "s.scoreid DESC")
 	if translate {
 		// v1 can repeat a score within a function; either option scores alike.
