@@ -41,3 +41,16 @@ func TestReducedPillarScopeSQL_UsesCallerExpressions(t *testing.T) {
 	assert.NotContains(t, sql, "dce.scoring_key",
 		"no alias may be hardcoded; the export has no dce in scope")
 }
+
+// One predicate across several calls (Compare Data Calls, ztmf#645): the same
+// rule, matched against every call at once, so a pillar out of scope in any
+// of them is excluded.
+func TestReducedPillarScopeAnySQL_MatchesEveryCall(t *testing.T) {
+	sql := reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", "$1", "$2")
+
+	assert.Contains(t, sql, "tdc.datacallid IN ($1, $2)")
+	assert.Equal(t, 1, strings.Count(sql, "NOT EXISTS ("))
+	assert.Equal(t,
+		strings.Replace(reducedPillarScopeSQL("sdce.scoring_key", "sp.pillar", "$1"), "tdc.datacallid = $1", "tdc.datacallid IN ($1, $2)", 1),
+		sql, "only the call match differs from the single-call predicate")
+}

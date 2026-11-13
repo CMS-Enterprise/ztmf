@@ -75,25 +75,65 @@ func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 			"each cycle reads only its own pinned version, on its own datacallid placeholder")
 	}
 	// ztmf#645: each side applies the reduced pillar scope for both calls.
-	for _, dc := range []string{"$1", "$2", "$3", "$4"} {
-		assert.Contains(t, sql, answerScopeSQL(scoreDiffEnvironmentSQL, "rf.functionid", dc))
-	}
+	assert.Contains(t, sql, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", "$1", "$2"))
+	assert.Contains(t, sql, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", "$3", "$4"))
 
 	// from=3 (own, then other 4), to=4 (own, then other 3).
 	assert.Equal(t, []any{int32(3), int32(4), int32(4), int32(3)}, args)
 }
 
 // The diff's scope must not drop a row through a join: an unmapped or
-// NULL-key environment, or a function with no question, falls through to NOT
-// EXISTS as NULL and keeps the row (ztmf#645).
+// NULL-key environment, or a function with no question, reaches NOT EXISTS
+// as NULL and keeps the row (ztmf#645). The lookups are LEFT JOINs on the
+// cycle CTE; an inner join there would drop the answer.
 func TestBuildScoreDiffSQL_ReducedScopeIsNullSafe(t *testing.T) {
 	in := FindScoreDiffInput{FromDataCallID: int32Ptr(3), ToDataCallID: int32Ptr(4)}
 	sql, _ := buildScoreDiffSQL(in)
-	assert.Equal(t, 4, strings.Count(sql, "NOT EXISTS ("), "two calls per side")
-	assert.Contains(t, sql, "dcescope.datacenterenvironment = (SELECT sfs.datacenterenvironment FROM fismasystems sfs WHERE sfs.fismasystemid = s.fismasystemid)")
-	assert.Contains(t, sql, "WHERE fscope.functionid = rf.functionid)")
-	assert.NotContains(t, sql, "JOIN fismasystems", "no join on a cycle CTE can drop an answer")
-	assert.NotContains(t, sql, "JOIN datacenterenvironments")
+	assert.Equal(t, 2, strings.Count(sql, "NOT EXISTS ("), "one predicate per side, covering both calls")
+	assert.Equal(t, 2, strings.Count(sql, scoreDiffScopeJoins), "both cycle CTEs resolve the scope through the same joins")
+
+	// Each cycle CTE's own FROM: every join to a lookup table must be LEFT.
+	for _, cte := range strings.Split(sql, "FROM scores s")[1:] {
+		from := cte[:strings.Index(cte, "WHERE s.datacallid")]
+		for _, table := range []string{"fismasystems", "datacenterenvironments", "questions", "pillars"} {
+			lefts := strings.Count(from, "LEFT JOIN "+table+" ")
+			all := strings.Count(from, "JOIN "+table+" ")
+			assert.Equal(t, 1, lefts, "%s is joined once, LEFT", table)
+			assert.Equal(t, lefts, all, "an inner join to %s on the cycle CTE could drop an answer", table)
+		}
+	}
+}
+
+// TestBuildScoreDiffSQL_AllFiltersTogether pins placeholder order when every
+// filter applies: per side the user, its own call, the other call, the
+// system, then the OpDiv grants.
+func TestBuildScoreDiffSQL_AllFiltersTogether(t *testing.T) {
+	uid := "11111111-1111-1111-1111-111111111111"
+	in := FindScoreDiffInput{
+		FromDataCallID: int32Ptr(3),
+		ToDataCallID:   int32Ptr(4),
+		FismaSystemID:  int32Ptr(1001),
+		UserID:         &uid,
+		OpDivScope:     OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
+	}
+	sql, args := buildScoreDiffSQL(in)
+
+	grants := []int32{7, 9}
+	assert.Equal(t, []any{
+		uid, int32(3), int32(4), int32(1001), grants,
+		uid, int32(4), int32(3), int32(1001), grants,
+	}, args)
+
+	for _, side := range []struct{ user, own, other, system, opdiv string }{
+		{"$1", "$2", "$3", "$4", "$5"},
+		{"$6", "$7", "$8", "$9", "$10"},
+	} {
+		assert.Contains(t, sql, "ufs.userid = "+side.user)
+		assert.Contains(t, sql, "s.datacallid = "+side.own+" AND "+questionnaireVersionSQL("rf.versionid", side.own))
+		assert.Contains(t, sql, "tdc.datacallid IN ("+side.own+", "+side.other+")")
+		assert.Contains(t, sql, "s.fismasystemid = "+side.system)
+		assert.Contains(t, sql, "opdiv_id = ANY("+side.opdiv+")")
+	}
 }
 
 // TestBuildScoreDiffSQL_FismaSystemScope verifies that a single-system request

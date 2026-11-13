@@ -202,9 +202,19 @@ ORDER BY fismasystemid, p.ordr, q.ordr, fn.ordr, functionid
 // pre-anchor cycle compared with a post-anchor one drops those pillars too,
 // rather than reporting every reduced-scope system's answers there as
 // removed: the questionnaire stopped asking, the system changed nothing.
-// Two pre-anchor cycles keep every pillar. Scope reads the system's current
-// environment (scores carry no history of it) and the pillar of this side's
-// own function.
+// Two pre-anchor cycles keep every pillar. One NOT EXISTS covers both calls;
+// the rule is monotone in deadline, so that is the later call's scope.
+//
+// Scope reads the system's current environment (scores carry no history of
+// it) and is judged per side on the pillar of that side's own function. It
+// assumes a lineage keeps its pillar across questionnaire versions: a function
+// a later version moves into or out of an excluded pillar is judged
+// differently on the two sides and shows as added or removed.
+//
+// The scoring key and pillar come from LEFT JOINs on primary keys, evaluated
+// once per row: each matches at most one row and none can drop one, so an
+// unmapped or NULL-key environment, or a function with no question, reaches
+// the NOT EXISTS as NULL and is kept.
 func scoreCycleCTE(input FindScoreDiffInput, dataCallID, otherDataCallID int32, args *[]any, argN *int) string {
 	var userJoin string
 	if input.UserID != nil {
@@ -223,9 +233,7 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID, otherDataCallID int32, 
 	other := fmt.Sprintf("$%d", *argN)
 	*args = append(*args, otherDataCallID)
 	*argN++
-	for _, call := range []string{dc, other} {
-		conds = append(conds, answerScopeSQL(scoreDiffEnvironmentSQL, "rf.functionid", call))
-	}
+	conds = append(conds, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", dc, other))
 
 	if input.FismaSystemID != nil {
 		conds = append(conds, fmt.Sprintf("s.fismasystemid = $%d", *argN))
@@ -246,13 +254,17 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID, otherDataCallID int32, 
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
     INNER JOIN functions rf ON rf.functionid = fo.functionid
     %s
-    WHERE %s`, userJoin, strings.Join(conds, " AND "))
+    %s
+    WHERE %s`, scoreDiffScopeJoins, userJoin, strings.Join(conds, " AND "))
 }
 
-// scoreDiffEnvironmentSQL is the answer's system's raw datacenterenvironment.
-// A scalar subquery, like answerScopeSQL's own lookups, so the scope cannot
-// drop a row by joining fismasystems.
-const scoreDiffEnvironmentSQL = "(SELECT sfs.datacenterenvironment FROM fismasystems sfs WHERE sfs.fismasystemid = s.fismasystemid)"
+// scoreDiffScopeJoins resolve the scoring key and pillar the reduced pillar
+// scope reads. LEFT JOINs on primary keys, so they cannot drop a row or fan
+// one out.
+const scoreDiffScopeJoins = `LEFT JOIN fismasystems sfs ON sfs.fismasystemid = s.fismasystemid
+    LEFT JOIN datacenterenvironments sdce ON sdce.datacenterenvironment = sfs.datacenterenvironment
+    LEFT JOIN questions sq ON sq.questionid = rf.questionid
+    LEFT JOIN pillars sp ON sp.pillarid = sq.pillarid`
 
 func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 	var (

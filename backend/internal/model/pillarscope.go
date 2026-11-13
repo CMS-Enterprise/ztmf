@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 )
 
 // reducedPillarScopeSQL excludes the pillars a seeded rule removes from a
@@ -10,8 +11,8 @@ import (
 // systems scored under that key, on every data call whose deadline is on or
 // after the anchor call's. Shared by the progress counts, the export, the
 // scoring aggregate, the questionnaire, the data call rollover
-// (rolloverScopeSQL, ztmf#645) and Compare Data Calls (scoreCycleCTE) so they
-// cannot disagree.
+// (rolloverScopeSQL, ztmf#645) and Compare Data Calls (scoreCycleCTE, through
+// reducedPillarScopeAnySQL) so they cannot disagree.
 //
 // NOT EXISTS carries the NULL-safety the callers rely on: it never evaluates
 // to NULL, and a NULL scoring key (DECOMMISSIONED maps to NULL) fails the
@@ -28,25 +29,40 @@ import (
 // the placeholder or column for the call being read ("$3" hand-built, "?" via
 // squirrel, "sp.datacallid" inside a CTE).
 func reducedPillarScopeSQL(scoringKeyExpr, pillarExpr, dataCallExpr string) string {
+	return reducedPillarScopeForSQL(scoringKeyExpr, pillarExpr, "= "+dataCallExpr)
+}
+
+// reducedPillarScopeAnySQL is reducedPillarScopeSQL across several calls: the
+// pillar is kept only if it is in scope in every one of them, in one NOT
+// EXISTS rather than one per call. Compare Data Calls uses it to judge a row
+// against both cycles. The rule is monotone in deadline, so this equals
+// judging against the later call alone.
+func reducedPillarScopeAnySQL(scoringKeyExpr, pillarExpr string, dataCallExprs ...string) string {
+	return reducedPillarScopeForSQL(scoringKeyExpr, pillarExpr, "IN ("+strings.Join(dataCallExprs, ", ")+")")
+}
+
+// reducedPillarScopeForSQL is the predicate both share; callMatch completes
+// "tdc.datacallid ".
+func reducedPillarScopeForSQL(scoringKeyExpr, pillarExpr, callMatch string) string {
 	return fmt.Sprintf(`NOT EXISTS (
           SELECT 1
           FROM reducedpillarscopes rps
           INNER JOIN pillars rp ON rp.pillarid = rps.pillarid
           INNER JOIN datacalls eff ON eff.datacallid = rps.effective_datacallid
-          INNER JOIN datacalls tdc ON tdc.datacallid = %s
+          INNER JOIN datacalls tdc ON tdc.datacallid %s
           WHERE rps.scoring_key = %s
             AND rp.pillar = %s
             AND tdc.deadline >= eff.deadline
       )`,
-		dataCallExpr,
+		callMatch,
 		scoringKeyExpr,
 		pillarExpr,
 	)
 }
 
-// answerScopeSQL is reducedPillarScopeSQL for a stored answer, for callers
-// that read scores rather than walk the catalog: the rollover and Compare Data
-// Calls. environmentExpr is the system's raw datacenterenvironment and
+// answerScopeSQL is reducedPillarScopeSQL for a stored answer, for a caller
+// that reads scores rather than walks the catalog and has no join of its own
+// to hang the lookups on: the rollover. environmentExpr is the system's raw datacenterenvironment and
 // functionExpr the function the answer sits on, both valid in the caller's
 // scope.
 //

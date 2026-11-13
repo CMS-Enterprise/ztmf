@@ -217,27 +217,33 @@ func TestQuestionnaireVersionRegressionBarIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			// One real change still surfaces, keyed by lineage. On an answer the
-			// reduced pillar scope keeps in view: call 104 carries hidden SaaS
-			// answers on the excluded pillars, and the diff ignores those
-			// (ztmf#645).
+			// reduced pillar scope keeps in view in both calls, read from the
+			// rule rows: call 104 carries hidden answers on excluded pillars,
+			// and the diff ignores those (ztmf#645). The pillar comes from the
+			// option's function, the column the diff scopes on.
 			var changedRoot int32
 			require.NoError(t, conn.QueryRow(ctx, `
 				UPDATE scores s SET functionoptionid = alt.functionoptionid
 				  FROM functionoptions cur, functionoptions alt
 				 WHERE s.scoreid = (SELECT MIN(sc.scoreid) FROM scores sc
-				                      JOIN fismasystems vfs ON vfs.fismasystemid = sc.fismasystemid
-				                      LEFT JOIN datacenterenvironments vd ON vd.datacenterenvironment = vfs.datacenterenvironment
-				                      JOIN functions vf ON vf.functionid = sc.functionid
+				                      JOIN functionoptions vfo ON vfo.functionoptionid = sc.functionoptionid
+				                      JOIN functions vf ON vf.functionid = vfo.functionid
 				                      LEFT JOIN questions vq ON vq.questionid = vf.questionid
-				                      LEFT JOIN pillars vp ON vp.pillarid = vq.pillarid
+				                      LEFT JOIN fismasystems vfs ON vfs.fismasystemid = sc.fismasystemid
+				                      LEFT JOIN datacenterenvironments vd ON vd.datacenterenvironment = vfs.datacenterenvironment
 				                     WHERE sc.datacallid = $1
-				                       AND NOT COALESCE(vd.scoring_key = 'SaaS' AND vp.pillar IN ('Devices', 'Applications'), FALSE))
+				                       AND NOT EXISTS (SELECT 1 FROM reducedpillarscopes vrule
+				                                         JOIN datacalls vanchor ON vanchor.datacallid = vrule.effective_datacallid
+				                                         JOIN datacalls vcycle ON vcycle.datacallid IN ($1, $2)
+				                                        WHERE vrule.scoring_key = vd.scoring_key
+				                                          AND vrule.pillarid = vq.pillarid
+				                                          AND vcycle.deadline >= vanchor.deadline))
 				   AND cur.functionoptionid = s.functionoptionid
 				   AND alt.functionid = cur.functionid AND alt.score <> cur.score
 				   AND alt.functionoptionid = (SELECT MIN(a2.functionoptionid) FROM functionoptions a2
 				                                WHERE a2.functionid = cur.functionid AND a2.score <> cur.score)
 				RETURNING (SELECT root_functionid FROM functions WHERE functionid = cur.functionid)`,
-				twin).Scan(&changedRoot))
+				twin, src).Scan(&changedRoot))
 			diff, err = FindScoreDiff(ctx, FindScoreDiffInput{FromDataCallID: &src, ToDataCallID: &twin})
 			require.NoError(t, err)
 			require.Len(t, diff, 1)
