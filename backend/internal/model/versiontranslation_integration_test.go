@@ -438,6 +438,28 @@ func TestDataCallRepinWaitsForCompletionIntegration(t *testing.T) {
 	}
 }
 
+// scopeSkipped counts dc's answers a rollover into version v leaves behind for
+// the reduced pillar scope (ztmf#645) when the target call is past the anchor:
+// those that translate onto an excluded pillar for a SaaS-keyed system. Call
+// 103 seeds two such systems with answers on every pillar. Counted per
+// (system, lineage), the key copyPreviousScores counts and deduplicates on.
+func scopeSkipped(t *testing.T, ctx context.Context, conn *pgxpool.Conn, dc, v int32) int {
+	t.Helper()
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT (s.fismasystemid, f.root_functionid))
+		  FROM scores s
+		  JOIN fismasystems fs ON fs.fismasystemid = s.fismasystemid
+		  JOIN datacenterenvironments dce ON dce.datacenterenvironment = fs.datacenterenvironment
+		  JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
+		  `+versionTranslationJoinSQL("$2")+`
+		  JOIN questions q ON q.questionid = tf.questionid
+		  JOIN pillars p ON p.pillarid = q.pillarid
+		 WHERE s.datacallid = $1 AND dce.scoring_key = 'SaaS' AND p.pillar IN ('Devices', 'Applications')`,
+		dc, v).Scan(&n))
+	return n
+}
+
 func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 	ctx, conn := versionTestSetup(t)
 	// Each subtest makes its own source call: a fork's cleanup purges every
@@ -452,11 +474,15 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 		source = readCallState(t, ctx, conn, prev)
 	}
 
-	rollover := func(t *testing.T, version int32) (int32, string) {
+	// skipped is what the reduced pillar scope leaves behind; the 2101 target
+	// is past the seeded anchor, so it is never zero on this fixture.
+	rollover := func(t *testing.T, version int32) (dcID int32, logged string, skipped int) {
 		t.Helper()
+		skipped = scopeSkipped(t, ctx, conn, prev, version)
+		require.Positive(t, skipped, "call 103 carries SaaS answers on the excluded pillars")
 		var dc *DataCall
 		var err error
-		logged := captureRolloverLog(t, func() {
+		logged = captureRolloverLog(t, func() {
 			dc, err = (&DataCall{
 				DataCall:               fmt.Sprintf("%srollover_new_%d", integrationTestPrefix, time.Now().UnixNano()),
 				Deadline:               time.Date(2101, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -472,16 +498,17 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 			SELECT COUNT(*) FROM scores WHERE datacallid = $1 AND (status <> 'not_started' OR last_updated_at IS NOT NULL)`,
 			dc.DataCallID).Scan(&carried))
 		assert.Zero(t, carried, "carried rows reset to not_started with no last_updated_at")
-		return dc.DataCallID, logged
+		assert.Contains(t, logged, fmt.Sprintf("ROLLOVER_SCOPE_SKIPPED datacall=%d skipped=%d", dc.DataCallID, skipped))
+		return dc.DataCallID, logged, skipped
 	}
 
 	t.Run("SameVersion", func(t *testing.T) {
 		newSource(t)
-		dc, logged := rollover(t, 1)
+		dc, logged, skipped := rollover(t, 1)
 		assert.NotContains(t, logged, "VERSION_TRANSLATION_DROPPED")
 		st := readCallState(t, ctx, conn, dc)
 		assert.Equal(t, []int32{1}, st.versions)
-		assert.Len(t, st.rows, len(source.rows))
+		assert.Len(t, st.rows, len(source.rows)-skipped)
 	})
 
 	t.Run("RemovedOptionIsDroppedAndCounted", func(t *testing.T) {
@@ -489,11 +516,11 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 		root, score, lost := mostAnswered(t, ctx, conn, prev)
 		v := forkIdenticalVersion(t, conn)
 		withoutOption(t, ctx, conn, v, root, score)
-		dc, logged := rollover(t, v)
+		dc, logged, skipped := rollover(t, v)
 		assert.Contains(t, logged, fmt.Sprintf("VERSION_TRANSLATION_DROPPED datacall=%d from_version=1 to_version=%d dropped=%d", dc, v, lost))
 		st := readCallState(t, ctx, conn, dc)
 		assert.Equal(t, []int32{v}, st.versions)
-		assert.Len(t, st.rows, len(source.rows)-int(lost))
+		assert.Len(t, st.rows, len(source.rows)-int(lost)-skipped)
 	})
 
 	t.Run("RemovedQuestionIsDroppedAndCounted", func(t *testing.T) {
@@ -517,14 +544,14 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 			_, err := conn.Exec(ctx, stmt, v, root)
 			require.NoError(t, err)
 		}
-		dc, logged := rollover(t, v)
+		dc, logged, skipped := rollover(t, v)
 		assert.Contains(t, logged, fmt.Sprintf("dropped=%d", lost))
-		assert.Len(t, readCallState(t, ctx, conn, dc).rows, len(source.rows)-int(lost))
+		assert.Len(t, readCallState(t, ctx, conn, dc).rows, len(source.rows)-int(lost)-skipped)
 	})
 
 	t.Run("AddedQuestionNeedsNoAnswer", func(t *testing.T) {
 		newSource(t)
-		same, _ := rollover(t, 1)
+		same, _, _ := rollover(t, 1)
 		v := forkIdenticalVersion(t, conn)
 		// A new question for every edition the call's systems are on.
 		_, err := conn.Exec(ctx, `
@@ -537,7 +564,7 @@ func TestRolloverTranslatesAcrossVersionsIntegration(t *testing.T) {
 			INSERT INTO functionoptions (functionid, score, optionname, description)
 			SELECT f.functionid, s, 'o' || s, 'd' FROM f, generate_series(1, 4) s`, v)
 		require.NoError(t, err)
-		dc, _ := rollover(t, v)
+		dc, _, _ := rollover(t, v)
 		before, err := FindScoreProgress(ctx, FindScoreProgressInput{DataCallID: &same})
 		require.NoError(t, err)
 		after, err := FindScoreProgress(ctx, FindScoreProgressInput{DataCallID: &dc})

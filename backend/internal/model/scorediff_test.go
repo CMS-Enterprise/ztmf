@@ -59,8 +59,8 @@ func TestFindScoreDiffInputValidate(t *testing.T) {
 // it diffs two cycles via a FULL OUTER JOIN (so a one-sided answer surfaces),
 // drops unchanged rows with the IS DISTINCT FROM pair, treats nil/empty notes
 // as equal, and attributes the change to the later (To) write through the
-// events lateral. The two cycle CTEs each bind their own datacallid, so the
-// from/to ids appear once each in arg order.
+// events lateral. Each cycle CTE binds its own datacallid, then the other
+// side's for the reduced pillar scope, so the ids appear twice in arg order.
 func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 	in := FindScoreDiffInput{FromDataCallID: int32Ptr(3), ToDataCallID: int32Ptr(4)}
 	sql, args := buildScoreDiffSQL(in)
@@ -70,15 +70,69 @@ func TestBuildScoreDiffSQL_Shape(t *testing.T) {
 	assert.Contains(t, sql, `regexp_replace(COALESCE(f.notes, ''), '\s+', ' ', 'g')`, "notes must be whitespace-normalized before comparison (nil/empty equal, spacing-only differences ignored)")
 	assert.Contains(t, sql, "resource = 'public.scores'", "attribution lateral must read score events")
 	assert.Contains(t, sql, "(payload->>'scoreid')::int = t.scoreid", "attribution must key on the later (To) write")
-	for _, dc := range []string{"$1", "$2"} {
+	for _, dc := range []string{"$1", "$3"} {
 		assert.Contains(t, sql, "s.datacallid = "+dc+" AND "+questionnaireVersionSQL("rf.versionid", dc),
 			"each cycle reads only its own pinned version, on its own datacallid placeholder")
 	}
+	// ztmf#645: each side applies the reduced pillar scope for both calls.
+	assert.Contains(t, sql, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", "$1", "$2"))
+	assert.Contains(t, sql, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", "$3", "$4"))
 
-	// Two cycle filters, no scope: from=3 then to=4, in that order.
-	if assert.Len(t, args, 2, "expected one datacallid arg per cycle") {
-		assert.Equal(t, int32(3), args[0], "from cycle binds first")
-		assert.Equal(t, int32(4), args[1], "to cycle binds second")
+	// from=3 (own, then other 4), to=4 (own, then other 3).
+	assert.Equal(t, []any{int32(3), int32(4), int32(4), int32(3)}, args)
+}
+
+// The diff's scope must not drop a row through a join: an unmapped or
+// NULL-key environment, or a function with no question, reaches NOT EXISTS
+// as NULL and keeps the row (ztmf#645). The lookups are LEFT JOINs on the
+// cycle CTE; an inner join there would drop the answer.
+func TestBuildScoreDiffSQL_ReducedScopeIsNullSafe(t *testing.T) {
+	in := FindScoreDiffInput{FromDataCallID: int32Ptr(3), ToDataCallID: int32Ptr(4)}
+	sql, _ := buildScoreDiffSQL(in)
+	assert.Equal(t, 2, strings.Count(sql, "NOT EXISTS ("), "one predicate per side, covering both calls")
+	assert.Equal(t, 2, strings.Count(sql, scoreDiffScopeJoins), "both cycle CTEs resolve the scope through the same joins")
+
+	// Each cycle CTE's own FROM: every join to a lookup table must be LEFT.
+	for _, cte := range strings.Split(sql, "FROM scores s")[1:] {
+		from := cte[:strings.Index(cte, "WHERE s.datacallid")]
+		for _, table := range []string{"fismasystems", "datacenterenvironments", "questions", "pillars"} {
+			lefts := strings.Count(from, "LEFT JOIN "+table+" ")
+			all := strings.Count(from, "JOIN "+table+" ")
+			assert.Equal(t, 1, lefts, "%s is joined once, LEFT", table)
+			assert.Equal(t, lefts, all, "an inner join to %s on the cycle CTE could drop an answer", table)
+		}
+	}
+}
+
+// TestBuildScoreDiffSQL_AllFiltersTogether pins placeholder order when every
+// filter applies: per side the user, its own call, the other call, the
+// system, then the OpDiv grants.
+func TestBuildScoreDiffSQL_AllFiltersTogether(t *testing.T) {
+	uid := "11111111-1111-1111-1111-111111111111"
+	in := FindScoreDiffInput{
+		FromDataCallID: int32Ptr(3),
+		ToDataCallID:   int32Ptr(4),
+		FismaSystemID:  int32Ptr(1001),
+		UserID:         &uid,
+		OpDivScope:     OpDivScope{RestrictToOpDivIDs: true, OpDivIDs: []int32{7, 9}},
+	}
+	sql, args := buildScoreDiffSQL(in)
+
+	grants := []int32{7, 9}
+	assert.Equal(t, []any{
+		uid, int32(3), int32(4), int32(1001), grants,
+		uid, int32(4), int32(3), int32(1001), grants,
+	}, args)
+
+	for _, side := range []struct{ user, own, other, system, opdiv string }{
+		{"$1", "$2", "$3", "$4", "$5"},
+		{"$6", "$7", "$8", "$9", "$10"},
+	} {
+		assert.Contains(t, sql, "ufs.userid = "+side.user)
+		assert.Contains(t, sql, "s.datacallid = "+side.own+" AND "+questionnaireVersionSQL("rf.versionid", side.own))
+		assert.Contains(t, sql, "tdc.datacallid IN ("+side.own+", "+side.other+")")
+		assert.Contains(t, sql, "s.fismasystemid = "+side.system)
+		assert.Contains(t, sql, "opdiv_id = ANY("+side.opdiv+")")
 	}
 }
 
@@ -94,8 +148,8 @@ func TestBuildScoreDiffSQL_FismaSystemScope(t *testing.T) {
 	sql, args := buildScoreDiffSQL(in)
 
 	assert.Equal(t, 2, strings.Count(sql, "s.fismasystemid = $"), "system filter must apply to both cycle CTEs")
-	// from: datacall, system ; to: datacall, system
-	assert.Equal(t, []any{int32(3), int32(1001), int32(4), int32(1001)}, args)
+	// from: datacall, other datacall, system ; to: the same
+	assert.Equal(t, []any{int32(3), int32(4), int32(1001), int32(4), int32(3), int32(1001)}, args)
 }
 
 // TestBuildScoreDiffSQL_UserScope verifies the ISSO/ISSM path: each cycle CTE
@@ -112,11 +166,11 @@ func TestBuildScoreDiffSQL_UserScope(t *testing.T) {
 	sql, args := buildScoreDiffSQL(in)
 
 	assert.Equal(t, 2, strings.Count(sql, "INNER JOIN users_fismasystems"), "user scope must join both cycle CTEs")
-	for _, dc := range []string{"$2", "$4"} {
+	for _, dc := range []string{"$2", "$5"} {
 		assert.Contains(t, sql, questionnaireVersionSQL("rf.versionid", dc), "the version pin follows the datacallid, not the user id")
 	}
-	// from: userid, datacall ; to: userid, datacall
-	assert.Equal(t, []any{uid, int32(3), uid, int32(4)}, args)
+	// from: userid, datacall, other datacall ; to: the same
+	assert.Equal(t, []any{uid, int32(3), int32(4), uid, int32(4), int32(3)}, args)
 }
 
 // TestBuildScoreDiffSQL_OpDivScope mirrors the OpDiv read-scope contract from

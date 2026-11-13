@@ -4,6 +4,11 @@
 # ROLLOVER_ANOMALY, emitted on any zero, partial, or errored rollover. This turns
 # that token into a metric and alarm so an empty new cycle is detected rather
 # than shipped silently. See ztmf#411.
+#
+# ROLLOVER_SCOPE_SKIPPED is deliberately not alarmed and has no metric filter:
+# it counts answers the target call's reduced pillar scope hides, which every
+# rollover into a reduced-scope cycle leaves behind by design (ztmf#645). A
+# scope that hides every answer logs ROLLOVER_ANOMALY instead, so it alarms.
 
 # Count of ROLLOVER_ANOMALY lines in the API log group.
 resource "aws_cloudwatch_log_metric_filter" "ztmf_api_rollover_anomaly" {
