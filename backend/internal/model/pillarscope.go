@@ -37,8 +37,10 @@ func reducedPillarScopeSQL(scoringKeyExpr, pillarExpr, dataCallExpr string) stri
 // EXISTS rather than one per call. Compare Data Calls uses it to judge a row
 // against both cycles. The rule is monotone in deadline, so this equals
 // judging against the later call alone.
-func reducedPillarScopeAnySQL(scoringKeyExpr, pillarExpr string, dataCallExprs ...string) string {
-	return reducedPillarScopeForSQL(scoringKeyExpr, pillarExpr, "IN ("+strings.Join(dataCallExprs, ", ")+")")
+// It takes at least one call so it can never build an empty IN list.
+func reducedPillarScopeAnySQL(scoringKeyExpr, pillarExpr, firstCall string, otherCalls ...string) string {
+	calls := append([]string{firstCall}, otherCalls...)
+	return reducedPillarScopeForSQL(scoringKeyExpr, pillarExpr, "IN ("+strings.Join(calls, ", ")+")")
 }
 
 // reducedPillarScopeForSQL is the predicate both share; callMatch completes
