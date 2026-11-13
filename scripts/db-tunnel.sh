@@ -76,7 +76,9 @@ for _ in $(seq 1 60); do
   sleep 3
   JSON=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN")
   STATUS=$(echo "$JSON" | jq -r '.tasks[0].lastStatus')
-  AGENT=$(echo "$JSON" | jq -r '.tasks[0].containers[0].managedAgents[]? | select(.name=="ExecuteCommandAgent") | .lastStatus' || true)
+  # Select the ops container by name: with the Falcon sensor on, the task also
+  # has the sensor's init container, so containers[0] is not always ours.
+  AGENT=$(echo "$JSON" | jq -r --arg c "$CONTAINER" '.tasks[0].containers[]? | select(.name==$c) | .managedAgents[]? | select(.name=="ExecuteCommandAgent") | .lastStatus' || true)
   if [[ "$STATUS" == "RUNNING" && "$AGENT" == "RUNNING" ]]; then break; fi
   if [[ "$STATUS" == "STOPPED" ]]; then
     REASON=$(echo "$JSON" | jq -r '.tasks[0].stoppedReason // "unknown"')
@@ -103,7 +105,11 @@ else
   AURORA_HOST=$(aws rds describe-db-clusters \
     --db-cluster-identifier ztmf \
     --query 'DBClusters[0].Endpoint' --output text)
-  RUNTIME_ID=$(echo "$JSON" | jq -r '.tasks[0].containers[0].runtimeId')
+  RUNTIME_ID=$(echo "$JSON" | jq -r --arg c "$CONTAINER" '.tasks[0].containers[]? | select(.name==$c) | .runtimeId // empty')
+  if [[ -z "$RUNTIME_ID" ]]; then
+    echo "could not find a runtimeId for container $CONTAINER in task $TASK_ID" >&2
+    exit 1
+  fi
   TARGET="ecs:${CLUSTER}_${TASK_ID}_${RUNTIME_ID}"
 
   echo "[5/5] forwarding ${AURORA_HOST}:5432 to localhost:${LOCAL_PORT}"

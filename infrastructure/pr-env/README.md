@@ -30,7 +30,16 @@ terraform destroy -auto-approve -var repo=ztmf -var pr_number=123 \
 
 Demo PRs that must sit idle longer than the reaper's 7-day TTL also carry `pr-env:keep`, which stretches it to 15 days (see below).
 
-Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container api --interactive --command sh` or from the `/ztmf/pr-<repo>-<n>` log group.
+Prerequisites in the dev root: `pr_env_enabled = true` (the `/pr/*` CloudFront behavior and the `ztmf/api-pr` and `ztmf/ui` ECR repos). Debug a live environment with `aws ecs execute-command --cluster ztmf --task <id> --container ui --interactive --command sh` (or `postgres`) or from the `/ztmf/pr-<repo>-<n>` log group. The `api` image is distroless and has no shell, so pass a binary directly as `--command` there.
+
+The task runs the CrowdStrike Falcon container sensor in all three containers (`falcon_enabled`, default true; see `../modules/falcon-sensor`), and has 2048 MiB instead of 1024 as headroom for the sensor process running inside each container. Check a live environment's sensor with ECS Exec. This prints an agent ID once the sensor is connected, and works in all three containers (`--container api`, `ui` or `postgres`):
+
+```bash
+aws ecs execute-command --cluster ztmf --task <id> --container api --interactive \
+  --command "/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid"
+```
+
+It goes through the sensor's bundled loader because `ui` and `postgres` are Alpine (musl) images, where running `falconctl` directly fails with "no such file".
 
 ## Reaper and fleet alarm
 

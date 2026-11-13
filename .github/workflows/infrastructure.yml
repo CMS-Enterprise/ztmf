@@ -76,7 +76,7 @@ jobs:
             --desired-status STOPPED --query 'taskArns[:10]' --output text)
           if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
             aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS \
-              --query 'tasks[].{stoppedAt:stoppedAt,stoppedReason:stoppedReason,exitCode:containers[0].exitCode,reason:containers[0].reason}' \
+              --query 'tasks[].{stoppedAt:stoppedAt,stoppedReason:stoppedReason,containers:containers[].{name:name,exitCode:exitCode,reason:reason}}' \
               --output table
             echo "Repeated stops with an exit code mean a startup fatal; full logs: CloudWatch log group $LOG_GROUP"
           else
