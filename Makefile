@@ -349,7 +349,7 @@ test-e2e:
 	@echo "🚀 Starting fresh test environment (port 8090)..."
 	@cd backend && docker compose -f compose-test.yml up -d --build
 	@echo "⏳ Waiting for API to be ready..."
-	@sleep 15
+	@curl -sS -o /dev/null --max-time 5 --retry 90 --retry-delay 1 --retry-all-errors --retry-max-time 90 http://localhost:8090/ || (echo "❌ API did not answer on :8090 within 90 seconds"; cd backend && docker compose -f compose-test.yml logs test-api; docker compose -f compose-test.yml down -v; exit 1)
 	@echo "🔥 Running Emberfall tests..."
 	@sed 's/localhost:8080/localhost:8090/g' backend/emberfall_tests.yml > /tmp/emberfall_test_isolated.yml
 	@emberfall --tests /tmp/emberfall_test_isolated.yml || (echo "❌ Emberfall tests failed"; cd backend && docker compose -f compose-test.yml down -v; exit 1)

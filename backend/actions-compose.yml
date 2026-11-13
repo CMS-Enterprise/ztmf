@@ -8,7 +8,10 @@ services:
       - POSTGRES_PASSWORD
     network_mode: host
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # Check over TCP: while the image initializes the database it runs a
+      # temporary server on the unix socket only, then restarts, so a socket
+      # check can pass before the server the API connects to is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U admin -d ztmf"]
       interval: 5s
       timeout: 5s
       retries: 5
