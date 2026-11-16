@@ -36,3 +36,6 @@ cert_rotation_domain        = "dev.ztmf.cms.gov"
 
 # Per-PR environments (ztmf-misc#321) live under dev.ztmf.cms.gov/pr/<repo>/<n>/.
 pr_env_enabled = true
+
+# CrowdStrike Falcon container sensor in every ECS task.
+falcon_enabled = true

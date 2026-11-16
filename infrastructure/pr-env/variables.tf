@@ -83,3 +83,15 @@ variable "cognito_password" {
     error_message = "cognito_password must be empty or at least 16 characters with a lowercase letter, an uppercase letter, a number, and a symbol."
   }
 }
+
+variable "falcon_enabled" {
+  description = "Run the CrowdStrike Falcon container sensor in every container of the task. Needs the dev account's /crowdstrike/falconctl-opts/ztmf SecureString. When false the task definition is exactly as before."
+  type        = bool
+  default     = true
+}
+
+variable "falcon_image" {
+  description = "Override for the Falcon container sensor image. Null takes the version pinned in ../modules/falcon-sensor."
+  type        = string
+  default     = null
+}

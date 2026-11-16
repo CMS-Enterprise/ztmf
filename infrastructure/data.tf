@@ -167,3 +167,5 @@ locals {
 data "aws_cloudformation_stack" "web_acl" {
   name = "SamShieldAdvancedWaf"
 }
+
+data "aws_partition" "current" {}

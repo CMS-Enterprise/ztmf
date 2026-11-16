@@ -59,3 +59,9 @@ data "aws_kms_alias" "ssm" {
 locals {
   oidc = jsondecode(data.aws_secretsmanager_secret_version.okta.secret_string)
 }
+
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
+data "aws_region" "current" {}

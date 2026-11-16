@@ -152,6 +152,50 @@ with a data source error rather than just blocking a single resource.
 | ------------------------------------------- | -------- | -------------------------------------------------------- | ------------------------------------------ |
 | `/ztmf/<env>/cert-rotation/acm-arn`         | `String` | CloudFront viewer cert, internal ALB listener, cert-rotation Lambda | **Yes** when `enable_cert_rotation_lambda = true` |
 | `/ztmf/<env>/ops/image-tag` (`ztmf_ops_tag`) | `String` | `ztmf_ops` ECS task definition                           | Yes (auto-managed by ops-image workflow)   |
+| `/crowdstrike/falconctl-opts/<cluster>`     | `SecureString` | Falcon sensor (`FALCONCTL_OPTS`) in the `ztmf_api` and `ztmf_ops` tasks, and in dev also every per-PR preview task (`ztmf` cluster) | When `falcon_enabled = true` (pr-env: on by default); see below |
+
+### CrowdStrike Falcon sensor
+
+With `falcon_enabled = true`, every ECS task (`ztmf_api`, `ztmf_ops`, and the
+per-PR environments) runs the Falcon container sensor through
+`modules/falcon-sensor`: an init container copies the sensor into a shared
+volume, and every other container starts through the sensor's entrypoint
+wrapper. Task memory doubles while it is on, as headroom for the sensor process
+that now runs inside each container. `/crowdstrike/falconctl-opts/<cluster>`
+(`<cluster>` is `ztmf` or `ztmf-impl`; the dev `ztmf` one also feeds every
+per-PR preview task) holds the CID, provisioning token and tags, and is created
+by hand outside Terraform. Terraform never reads it; it only builds the ARN for
+the containers' `secrets` and the execution roles, so a missing parameter fails
+the task at start, not the plan. The sensor image is pinned once, as the
+`image` default in `modules/falcon-sensor/variables.tf`; bump it there to move
+every task to a new sensor version. Each root's `falcon_image` is only an
+override and defaults to null.
+
+`dev.tfvars` and `impl.tfvars` turn the sensor on and `prod.tfvars` leaves it
+off. Dev picks up a change on the next merge to `main`. Impl does not apply on
+merge: it gets the change only when someone merges the nightly main-to-impl
+sync PR (`.github/workflows/nightly-impl-sync.yml`), which triggers the impl
+deploy.
+
+To check a sensor, run `falconctl -g --aid` in a container through the
+sensor's bundled loader; it prints an agent ID once the sensor is connected:
+
+```bash
+aws ecs execute-command --cluster <cluster> --task <id> --container <name> --interactive \
+  --command "/tmp/CrowdStrike/rootfs/lib64/ld-linux-x86-64.so.2 --library-path /tmp/CrowdStrike/rootfs/lib64 /tmp/CrowdStrike/rootfs/bin/falconctl -g --aid"
+```
+
+This only works on a task started with ECS Exec enabled. In dev, the easy path
+is `make db-shell-dev`, which starts one (cluster `ztmf`, container `ztmfops`)
+and gives a shell where the same command runs directly. `db-tunnel.sh` accepts
+only dev and prod, and prod has the sensor off, so it is no help elsewhere. In
+impl, start a task from the `ops-impl` task definition in the `ztmf-impl`
+cluster yourself with `aws ecs run-task --enable-execute-command`, using the
+same Fargate launch type and private subnets `db-tunnel.sh` passes and the
+`ztmf_ops_task_impl` security group, then run the command above against it with
+`--container ztmfops` (the container name is the same in every environment).
+The `ztmf_api` service has no ECS Exec, so check its hosts in the Falcon
+console, and its task's `falcon-init` log stream for sensor install errors.
 
 ### Seeding `cert-rotation/acm-arn` for a new environment
 
