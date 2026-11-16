@@ -1,6 +1,6 @@
 name: Feature Request
 description: Request a new feature or enhancement
-labels: ["feature"]
+labels: ["enhancement"]
 projects: ["CMS-Enterprise/44"]
 body:
   - type: dropdown

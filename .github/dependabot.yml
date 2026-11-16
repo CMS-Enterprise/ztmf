@@ -13,3 +13,18 @@ updates:
           - "*"
     commit-message:
       prefix: chore(ci)
+    labels:
+      - dependencies
+      - area/ci-cd
+
+  # Security updates only: open-pull-requests-limit 0 keeps version updates
+  # off. The entry exists so Dependabot's security PRs carry the shared labels
+  # instead of an ecosystem label it creates on its own.
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+      - lang/go
