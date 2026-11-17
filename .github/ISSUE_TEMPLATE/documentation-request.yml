@@ -1,6 +1,6 @@
 name: Documentation Request
 description: Request new or updated documentation
-labels: ["documentation"]
+labels: ["artifact/documentation"]
 projects: ["CMS-Enterprise/44"]
 body:
   - type: dropdown
