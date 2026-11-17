@@ -113,8 +113,8 @@ func buildScoreDiffSQL(input FindScoreDiffInput) (string, []any) {
 	var args []any
 	argN := 1
 
-	fromCTE := scoreCycleCTE(input, *input.FromDataCallID, &args, &argN)
-	toCTE := scoreCycleCTE(input, *input.ToDataCallID, &args, &argN)
+	fromCTE := scoreCycleCTE(input, *input.FromDataCallID, *input.ToDataCallID, &args, &argN)
+	toCTE := scoreCycleCTE(input, *input.ToDataCallID, *input.FromDataCallID, &args, &argN)
 
 	// FULL OUTER JOIN on (system, root_functionid) so a function answered in only
 	// one cycle still surfaces (added or removed answer), and so the same
@@ -194,7 +194,28 @@ ORDER BY fismasystemid, p.ordr, q.ordr, fn.ordr, functionid
 // FindScores (per-user assigned systems, OpDiv grants, or unrestricted). It
 // appends its bound values to args in placeholder order; both the from and to
 // cycles call it so the scope values are bound once per cycle.
-func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN *int) string {
+//
+// Each side also applies the reduced pillar scope (ztmf#545, ztmf#645) for
+// its own call AND the other side's, so a pillar out of scope for the system
+// in either cycle leaves the comparison on both sides. Two post-anchor cycles
+// then agree whether or not one still holds hidden carried-forward rows. A
+// pre-anchor cycle compared with a post-anchor one drops those pillars too,
+// rather than reporting every reduced-scope system's answers there as
+// removed: the questionnaire stopped asking, the system changed nothing.
+// Two pre-anchor cycles keep every pillar. One NOT EXISTS covers both calls;
+// the rule is monotone in deadline, so that is the later call's scope.
+//
+// Scope reads the system's current environment (scores carry no history of
+// it) and is judged per side on the pillar of that side's own function. It
+// assumes a lineage keeps its pillar across questionnaire versions: a function
+// a later version moves into or out of an excluded pillar is judged
+// differently on the two sides and shows as added or removed.
+//
+// The scoring key and pillar come from LEFT JOINs on primary keys, evaluated
+// once per row: each matches at most one row and none can drop one, so an
+// unmapped or NULL-key environment, or a function with no question, reaches
+// the NOT EXISTS as NULL and is kept.
+func scoreCycleCTE(input FindScoreDiffInput, dataCallID, otherDataCallID int32, args *[]any, argN *int) string {
 	var userJoin string
 	if input.UserID != nil {
 		userJoin = fmt.Sprintf("INNER JOIN users_fismasystems ufs ON ufs.fismasystemid = s.fismasystemid AND ufs.userid = $%d", *argN)
@@ -208,6 +229,11 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
 	conds := []string{"s.datacallid = " + dc, questionnaireVersionSQL("rf.versionid", dc)}
 	*args = append(*args, dataCallID)
 	*argN++
+
+	other := fmt.Sprintf("$%d", *argN)
+	*args = append(*args, otherDataCallID)
+	*argN++
+	conds = append(conds, reducedPillarScopeAnySQL("sdce.scoring_key", "sp.pillar", dc, other))
 
 	if input.FismaSystemID != nil {
 		conds = append(conds, fmt.Sprintf("s.fismasystemid = $%d", *argN))
@@ -228,8 +254,17 @@ func scoreCycleCTE(input FindScoreDiffInput, dataCallID int32, args *[]any, argN
     INNER JOIN functionoptions fo ON fo.functionoptionid = s.functionoptionid
     INNER JOIN functions rf ON rf.functionid = fo.functionid
     %s
-    WHERE %s`, userJoin, strings.Join(conds, " AND "))
+    %s
+    WHERE %s`, scoreDiffScopeJoins, userJoin, strings.Join(conds, " AND "))
 }
+
+// scoreDiffScopeJoins resolve the scoring key and pillar the reduced pillar
+// scope reads. LEFT JOINs on primary keys, so they cannot drop a row or fan
+// one out.
+const scoreDiffScopeJoins = `LEFT JOIN fismasystems sfs ON sfs.fismasystemid = s.fismasystemid
+    LEFT JOIN datacenterenvironments sdce ON sdce.datacenterenvironment = sfs.datacenterenvironment
+    LEFT JOIN questions sq ON sq.questionid = rf.questionid
+    LEFT JOIN pillars sp ON sp.pillarid = sq.pillarid`
 
 func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 	var (
@@ -237,19 +272,19 @@ func scanScoreDiff(row pgx.CollectableRow) (*ScoreDiff, error) {
 		fn *string
 		qn *string
 
-		fScoreID    *int32
-		fFOID       *int32
-		fOptScore   *int32
-		fOptName    *string
-		fNotes      *string
-		fAISummary  *bool
+		fScoreID   *int32
+		fFOID      *int32
+		fOptScore  *int32
+		fOptName   *string
+		fNotes     *string
+		fAISummary *bool
 
-		tScoreID    *int32
-		tFOID       *int32
-		tOptScore   *int32
-		tOptName    *string
-		tNotes      *string
-		tAISummary  *bool
+		tScoreID   *int32
+		tFOID      *int32
+		tOptScore  *int32
+		tOptName   *string
+		tNotes     *string
+		tAISummary *bool
 
 		at     *time.Time
 		uID    *string

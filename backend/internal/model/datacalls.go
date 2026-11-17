@@ -98,7 +98,10 @@ func (d *DataCall) Save(ctx context.Context) (*DataCall, error) {
 	// observable, but do not fail the create on a copy error - the datacall row
 	// is already committed and is valid without a rollover (the first-ever cycle
 	// legitimately copies zero rows). copyPreviousScores emits the loud
-	// ROLLOVER_ANOMALY signal on any zero/partial/errored copy.
+	// ROLLOVER_ANOMALY signal on an errored copy, on one that copies fewer rows
+	// than the target call's reduced pillar scope keeps in view, and on one whose
+	// scope hides every answer. Rows left behind for scope alone are expected
+	// and logged as ROLLOVER_SCOPE_SKIPPED (ztmf#645).
 	if d.DataCallID == 0 {
 		if _, err := copyPreviousScores(ctx, dataCall.DataCallID); err != nil {
 			log.Println(err)
