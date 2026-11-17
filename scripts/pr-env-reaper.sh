@@ -52,6 +52,8 @@ findings=$(mktemp)
 trap 'rm -f "$findings"' EXIT
 finding() { echo "- $*" >> "$findings"; echo "FINDING: $*" >&2; }
 log() { echo "$*" >&2; }
+# ::error:: makes GitHub Actions show the message as an error on the run.
+fail() { echo "::error::$*" >&2; exit 1; }
 run() {
   if $DRY_RUN; then log "  [dry-run] $*"; else "$@"; fi
 }
@@ -138,10 +140,16 @@ reap() {
 }
 
 # 1. State keys: the source of truth for what Terraform thinks is running.
-keys=$(aws s3api list-objects-v2 --bucket "$STATE_BUCKET" --prefix pr/ \
-  --query 'Contents[].Key' --output text 2>/dev/null | tr '\t' '\n' | grep -E '^pr/(ztmf|ui)/[0-9]+$' || true)
-services=$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text \
-  | tr '\t' '\n' | sed 's#.*/##' | grep -E '^pr-(ztmf|ui)-[0-9]+$' || true)
+#    A failed list call stops the run before anything is reaped. Read as an
+#    empty list, it would report every live environment as an orphan. Only the
+#    grep gets || true, since no match there is a valid empty set.
+key_list=$(aws s3api list-objects-v2 --bucket "$STATE_BUCKET" --prefix pr/ \
+  --query 'Contents[].Key' --output text) \
+  || fail "aws s3api list-objects-v2 failed for s3://$STATE_BUCKET/pr/, so the reaper stopped before checking any environment."
+keys=$(tr '\t' '\n' <<< "$key_list" | grep -E '^pr/(ztmf|ui)/[0-9]+$' || true)
+service_list=$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text) \
+  || fail "aws ecs list-services failed for cluster $CLUSTER, so the reaper stopped before checking any environment."
+services=$(tr '\t' '\n' <<< "$service_list" | sed 's#.*/##' | grep -E '^pr-(ztmf|ui)-[0-9]+$' || true)
 
 for key in $keys; do
   repo=$(echo "$key" | cut -d/ -f2)
@@ -186,11 +194,16 @@ for svc in $services; do
 done
 
 # 3. GitHub Environments whose PR is closed, left by a teardown that failed
-#    before the retire step or ran without the admin token.
+#    before the retire step or ran without the admin token. A failed list is
+#    a finding rather than a stop, so the findings from steps 1 and 2 still
+#    reach the report.
 for repo in ztmf ui; do
   ghr=$(gh_repo "$repo")
-  envs=$(gh api "repos/$ghr/environments?per_page=100" --jq '.environments[].name' \
-    | grep -E "^pr-$repo-[0-9]+$" || true)
+  if ! env_list=$(gh api "repos/$ghr/environments?per_page=100" --jq '.environments[].name'); then
+    finding "Listing GitHub Environments in $ghr failed, so its pr-* environments were not checked for closed PRs."
+    continue
+  fi
+  envs=$(grep -E "^pr-$repo-[0-9]+$" <<< "$env_list" || true)
   for env in $envs; do
     n=${env##*-}
     if [[ "$(gh api "repos/$ghr/pulls/$n" --jq .state)" == "closed" ]]; then
