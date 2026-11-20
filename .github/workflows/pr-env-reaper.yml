@@ -11,7 +11,10 @@ name: PR Environment Reaper
 #
 # PR_ENV_REAPER_TOKEN is a fine-grained PAT on ztmf, ztmf-ui, and ztmf-misc:
 # GITHUB_TOKEN cannot comment on ztmf-ui PRs, delete its environments, or file
-# issues in ztmf-misc.
+# issues in ztmf-misc. The tracking issue is filed with that same token, so it
+# cannot report the token failing. scripts/pr-env-token-preflight.sh checks
+# the token before anything else and warns ahead of its expiry, while the token
+# can still file the warning.
 
 on:
   schedule:
@@ -39,6 +42,8 @@ env:
   TTL_DAYS: 7
   # Idle limit for a PR labelled pr-env:keep (a demo environment).
   KEEP_TTL_DAYS: 15
+  # Days before PR_ENV_REAPER_TOKEN expires that each run warns about it.
+  TOKEN_WARN_DAYS: 14
   TRACKING_REPO: CMS-Enterprise/ztmf-misc
   TRACKING_TITLE: "pr-env reaper: orphaned environments or a failed run"
 
@@ -52,6 +57,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Token preflight
+        env:
+          GH_TOKEN: ${{ secrets.PR_ENV_REAPER_TOKEN }}
+        run: scripts/pr-env-token-preflight.sh --report token.md
 
       - name: AWS - Get Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -82,8 +92,8 @@ jobs:
           scripts/pr-env-reaper.sh $DRY_RUN_FLAG --report findings.md
 
       # A dry run only writes the summary. Otherwise a clean run does nothing,
-      # and any finding or failure comments on the open tracking issue, or
-      # opens one if none is open.
+      # and a token expiry warning, any finding, or a failure comments on the
+      # open tracking issue, or opens one if none is open.
       - name: Report
         if: always() && !cancelled()
         env:
@@ -92,8 +102,12 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run || false }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          touch findings.md
+          touch token.md findings.md
           {
+            if [ -s token.md ]; then
+              cat token.md
+              echo
+            fi
             if [ "$JOB_STATUS" != "success" ]; then
               echo "The [reaper run]($RUN_URL) failed before finishing, so environments it should have cleaned up may still be running. Check the job log."
               echo
