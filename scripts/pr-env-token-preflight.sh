@@ -8,10 +8,15 @@
 # token first:
 #   - The token must be valid and able to read each repo the reaper uses. A
 #     refusal is a ::error:: naming the repo, also written to the report file
-#     so the tracking issue names it when the token can still post there, and
-#     the script exits 1 once all three are checked. ztmf and ztmf-ui are
-#     public, so for them this catches an expired or revoked token but not one
-#     that lost access to that repo; Reap fails on that later.
+#     so the tracking issue names it when the token can still post there. ztmf
+#     and ztmf-ui are public, so for them this catches an expired or revoked
+#     token but not one that lost access to that repo; Reap fails on that
+#     later.
+#   - A refusal from ztmf or ztmf-ui exits 1 once all three are checked, since
+#     Reap cannot work without those two. A refusal from ztmf-misc alone does
+#     not stop the run: Reap only talks to ztmf and ztmf-ui, so the script
+#     exits 0 and, in CI, sets the step output misc_refused=true for the
+#     workflow's last step to fail the job on.
 #   - GitHub returns a PAT's expiry in the
 #     github-authentication-token-expiration header. Within TOKEN_WARN_DAYS of
 #     that date, a warning goes in the report file, and the workflow's Report
@@ -52,6 +57,8 @@ err=$(mktemp)
 trap 'rm -f "$out" "$err"' EXIT
 
 refused=false
+blocking=false
+misc_refused=false
 refusals=""
 expiry=""
 for repo in ztmf ztmf-ui ztmf-misc; do
@@ -60,6 +67,7 @@ for repo in ztmf ztmf-ui ztmf-misc; do
     log "::error::$SECRET was refused by $OWNER/$repo: $reason"
     refusals+="\`$SECRET\` was refused by $OWNER/$repo: $reason"$'\n\n'
     refused=true
+    if [[ "$repo" == ztmf-misc ]]; then misc_refused=true; else blocking=true; fi
     continue
   fi
   log "$OWNER/$repo accepts the token"
@@ -89,4 +97,8 @@ fi
   printf '%s' "$refusals"
   if [[ -n "$report" ]]; then echo "$report"; fi
 } > "$REPORT"
-if $refused; then exit 1; fi
+if $blocking; then exit 1; fi
+if $misc_refused; then
+  log "Only $OWNER/ztmf-misc refused the token. Reap still runs, and the job fails at its end."
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then echo "misc_refused=true" >> "$GITHUB_OUTPUT"; fi
+fi

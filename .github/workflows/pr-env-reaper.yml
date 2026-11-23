@@ -14,7 +14,9 @@ name: PR Environment Reaper
 # issues in ztmf-misc. The tracking issue is filed with that same token, so it
 # cannot report the token failing. scripts/pr-env-token-preflight.sh checks
 # the token before anything else and warns ahead of its expiry, while the token
-# can still file the warning.
+# can still file the warning. A refusal from ztmf or ztmf-ui fails the
+# preflight, so Reap is skipped; a refusal from ztmf-misc alone lets Reap run
+# and fails the job at the end.
 
 on:
   schedule:
@@ -59,6 +61,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Token preflight
+        id: preflight
         env:
           GH_TOKEN: ${{ secrets.PR_ENV_REAPER_TOKEN }}
         run: scripts/pr-env-token-preflight.sh --report token.md
@@ -133,3 +136,12 @@ jobs:
           else
             gh issue create --repo "$TRACKING_REPO" --title "$TRACKING_TITLE" --body-file report.md
           fi
+
+      # The preflight lets Reap run when only ztmf-misc refuses the token, since
+      # Reap does not use ztmf-misc. Report then cannot post the refusal either,
+      # so this fails the job, dry runs included, to keep the run red.
+      - name: Fail on a ztmf-misc token refusal
+        if: always() && steps.preflight.outputs.misc_refused == 'true'
+        run: |
+          echo "::error::PR_ENV_REAPER_TOKEN was refused by $TRACKING_REPO, so the tracking issue cannot be updated. Regenerate the token with access to ztmf-misc."
+          exit 1
