@@ -53,4 +53,6 @@ AWS_PROFILE=ztmf-dev-ro scripts/pr-env-reaper.sh --dry-run
 
 Or dispatch the workflow with `dry_run`, or with `force_failure` to exercise the tracking issue.
 
+The reaper reaps and files the tracking issue with one token, `PR_ENV_REAPER_TOKEN`, a fine-grained PAT on ztmf, ztmf-ui and ztmf-misc, so it cannot report that token failing. `scripts/pr-env-token-preflight.sh` checks the token against all three repos before anything else. Within 14 days (`TOKEN_WARN_DAYS`) of the token's expiry, it writes a warning that the workflow's Report step posts to the tracking issue on each run. A refusal from ztmf or ztmf-ui fails the preflight, so Reap is skipped, since it needs both. A refusal from ztmf-misc alone does not: Reap does not use ztmf-misc, so it still cleans up, and the job's last step fails the run. The tracking issue cannot be updated in that case, so the failed run, and the scheduled-workflow failure email to whoever last edited the workflow, are the only signs of it.
+
 Independent of GitHub, the dev root's `ztmf-pr-env-task-count-dev` alarm (`infrastructure/monitoring-pr-env.tf`) pages the ztmf-alarms topic when more than `pr_env_max_environments` (10) pr-env tasks run for 10 minutes.
