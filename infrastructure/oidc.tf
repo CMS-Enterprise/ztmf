@@ -25,7 +25,9 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 // PR_ENV_ROLEARN secret: their build, teardown, and publish jobs run on
 // pull_request with no environment, their deploy job runs in a pr-<repo>-<n>
 // environment, and the reaper runs on schedule from main (so a reaper dispatch
-// from any other branch is refused).
+// from any other branch is refused). Those workflows have their own role,
+// ztmf_github_actions_pr_env (iam-github-pr-env.tf); once PR_ENV_ROLEARN in
+// both repos points at it, their subjects come out of this list.
 locals {
   github_actions_subjects_prod = [
     "repo:CMS-Enterprise/ztmf:environment:PROD",
