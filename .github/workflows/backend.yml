@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # Read the required Go from go.mod (setup-go v6 sets GOTOOLCHAIN=local,
           # so a pinned version below go.mod's would not auto-download).
@@ -77,7 +77,7 @@ jobs:
           args: --severity-threshold=high --file=./backend/Dockerfile --policy-path=./backend/.snyk
       
       - name: Start API and Postgres Containers
-        uses: hoverkraft-tech/compose-action@b659c744ee9bed25aea2307c017ad849bd104433 # v3.2.0
+        uses: hoverkraft-tech/compose-action@cdaf49f2d715a87c3387e86cb35c772b14f0efe0 # v3.2.1
         with:
           compose-file: ./backend/actions-compose.yml
         env:
@@ -144,7 +144,7 @@ jobs:
 
       - name: Setup Go
         if: inputs.deploy
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # Read the required Go from go.mod rather than hardcoding it. setup-go
           # v6 sets GOTOOLCHAIN=local, so a pinned version below go.mod's
