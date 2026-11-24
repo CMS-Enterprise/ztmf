@@ -37,3 +37,10 @@ output "alb_dns_name" {
   sensitive   = false
 }
 
+
+# The per-PR environment deploy role, dev only. PR_ENV_ROLEARN in ztmf and
+# ztmf-ui holds this value.
+output "github_actions_pr_env_role_arn" {
+  description = "ARN of the GitHub Actions role the PR environment workflows and the reaper assume (dev only)"
+  value       = var.environment == "dev" ? module.github_actions_pr_env[0].role_arn : null
+}
