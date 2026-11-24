@@ -202,8 +202,10 @@ resource "aws_iam_role_policy" "github_actions_pr_env" {
       // the CMS boundary every role needs and the one managed policy it uses.
       // No condition key limits what PutRolePolicy writes, so a workflow on
       // this role could give a ztmf_pr-* task role anything the poweruser
-      // boundary allows and run a task with it. Fixed task roles in the dev
-      // root would close that.
+      // boundary allows and run a task with it. CreateRole and
+      // UpdateAssumeRolePolicy likewise take any trust policy, so a role it
+      // creates can stay assumable after the run by any principal it names.
+      // Fixed task roles in the dev root would close both.
       {
         Sid    = "TaskRoles"
         Effect = "Allow"
@@ -272,7 +274,9 @@ resource "aws_iam_role_policy" "github_actions_pr_env" {
       },
       // New rules go on dev's shared listener, tagged at creation. After that,
       // only rules carrying the ztmf-pr-env tag can change, so dev's own
-      // login and /api/* rules are out of reach.
+      // login and /api/* rules can't be changed or deleted. IAM can't limit a
+      // new rule's priority or path, so a rule after dev's with a path like
+      // /* would take the requests dev's rules miss.
       {
         Sid      = "ElbCreatePrRule"
         Effect   = "Allow"
@@ -372,6 +376,18 @@ resource "aws_iam_role_policy" "github_actions_pr_env" {
         Effect   = "Allow"
         Action   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPoolDomain"]
         Resource = ["*"]
+      },
+      // CreateUserPool checks TagResource for the tags it carries, before the
+      // pool exists to hold them. This also lets the role tag an existing dev
+      // pool into CognitoPools' reach.
+      {
+        Sid      = "CognitoTagOnCreate"
+        Effect   = "Allow"
+        Action   = ["cognito-idp:TagResource"]
+        Resource = ["*"]
+        Condition = {
+          StringLike = { "aws:RequestTag/ztmf-pr-env" = "pr-*" }
+        }
       },
       {
         Sid    = "CognitoPools"
