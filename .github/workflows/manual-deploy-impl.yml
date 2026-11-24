@@ -1,9 +1,8 @@
 name: Manual Deploy to IMPL
 
 # Deploy a chosen branch to the IMPL environment on demand.
-#   - Primary use: smoke-test the nightly main -> impl sync candidate BEFORE
-#     merging it. Run:
-#       gh workflow run "Manual Deploy to IMPL" --ref automation/sync-main-to-impl
+#   - Run it against any branch to preview that ref on the shared impl env:
+#       gh workflow run "Manual Deploy to IMPL" --ref <branch>
 #   - The deploy AT merge is automatic (orchestration-impl on push to impl). This
 #     workflow is the optional pre-merge preview against the shared impl env.
 # The rollout IS the terraform apply (backend.yml only builds/pushes the image;
